@@ -61,7 +61,7 @@ For this tutorial we will be using domain ```demo.netbird.io``` which points to 
 
    To simplify the setup we have prepared a script to substitute required properties in the [docker-compose.yml.tmpl](https://github.com/netbirdio/netbird/tree/main/infrastructure_files/docker-compose.yml.tmpl) and [management.json.tmpl](https://github.com/netbirdio/netbird/tree/main/infrastructure_files/management.json.tmpl) files.
 
-   The [setup.env](https://github.com/netbirdio/netbird/tree/main/infrastructure_files/setup.env) file contains multiple properties that have to be filled.
+   The [setup.env.example](https://github.com/netbirdio/netbird/tree/main/infrastructure_files/setup.env.example) file contains multiple properties that have to be filled. You need to copy the example file to `setup.env` before updating it.
    :::tip
    You need to fill only the first 5 properties, the rest will be filled automatically at a later step.
    :::
