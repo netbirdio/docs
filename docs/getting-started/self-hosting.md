@@ -90,7 +90,7 @@ For this tutorial we will be using domain ```demo.netbird.io``` which points to 
 
       > Use ```https://YOUR DOMAIN``` as ````Allowed Callback URLs````, ```Allowed Logout URLs```, ```Allowed Web Origins``` and ```Allowed Origins (CORS)```
     * set the variables in the ```setup.env```
-    * Make sure that `Token Endpoint Authentication Method` is set to `None` in your Auth0 Default Application
+    * :warning: Make sure that `Token Endpoint Authentication Method` is set to `None` in your Auth0 Default Application
 6. Configure ```NETBIRD_AUTH0_AUDIENCE``` property.
 
     * Check [Auth0 Create An API](https://auth0.com/docs/quickstart/backend/golang#create-an-api) section to obtain AuthAudience.
