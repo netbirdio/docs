@@ -6,7 +6,7 @@ title: Quickstart Guide
 Step-by-step video guide on YouTube:
 
 <div class="videowrapper">
-<iframe src="https://www.youtube.com/embed/Tu9tPsUWaY0" allow="fullscreen;"></iframe>
+<iframe src="https://www.youtube.com/embed/HYlhvr_eu2U" allow="fullscreen;"></iframe>
 </div>
 <br/>
 This guide describes how to quickly get started with NetBird and create a secure private network with 2 connected machines.
