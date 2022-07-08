@@ -16,10 +16,10 @@ You would need to obtain a [setup key](/overview/setup-keys) to associate NetBir
 
 The setup key could be found in the NetBird Management dashboard under the Setup Keys tab - [https://app.netbird.io/setup-keys](https://app.netbird.io/setup-keys).
 
-Set the ```WT_SETUP_KEY``` environment variable and run the command. 
+Set the ```NB_SETUP_KEY``` environment variable and run the command. 
 
 ```bash
-docker run --rm --privileged -d -e WT_SETUP_KEY=<SETUP KEY> -v netbird-client:/etc/netbird netbirdio/netbird:latest
+docker run --rm --name PEER_NAME --hostname PEER_NAME --cap-add=NET_ADMIN -d -e NB_SETUP_KEY=<SETUP KEY> -v netbird-client:/etc/netbird netbirdio/netbird:latest
 ```
 
 That is it! Enjoy using NetBird.

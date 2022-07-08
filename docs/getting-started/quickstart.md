@@ -69,7 +69,7 @@ Both machines are running Linux but NetBird also works on Windows and MacOS.
 
 - Make sure to [star us on GitHub](https://github.com/netbirdio/netbird)
 - Follow us [on Twitter](https://twitter.com/netbird)
-- Join our [Slack Channel](https://join.slack.com/t/wiretrustee/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A)
+- Join our [Slack Channel](https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A)
 - NetBird release page on GitHub: [releases](https://github.com/netbirdio/netbird/releases/latest)
 
 

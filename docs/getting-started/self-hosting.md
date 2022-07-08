@@ -127,7 +127,7 @@ For this tutorial we will be using domain ```demo.netbird.io``` which points to 
 
 ### Get in touch
 
-Feel free to ping us on [Slack](https://join.slack.com/t/wiretrustee/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A) if you have any questions
+Feel free to ping us on [Slack](https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A) if you have any questions
 
 - NetBird managed version: [https://app.netbird.io](https://app.netbird.io)
 - Make sure to [star us on GitHub](https://github.com/netbirdio/netbird) :pray:

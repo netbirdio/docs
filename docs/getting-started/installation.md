@@ -1,6 +1,10 @@
 ---
 sidebar_position: 2
 title: Installation
+tags:
+- client
+- how-to
+- install
 ---
 
 ### Linux
@@ -89,7 +93,7 @@ title: Installation
 1. Checkout NetBird [releases](https://github.com/netbirdio/netbird/releases/latest)
 2. Download the latest release:
   ```bash
-  curl -o ./netbird_<VERSION>.tar.gz https://github.com/netbirdio/netbird/releases/download/v<VERSION>/netbird_<VERSION>_<OS>_<Arch>.tar.gz
+  curl -L -o ./netbird_<VERSION>.tar.gz https://github.com/netbirdio/netbird/releases/download/v<VERSION>/netbird_<VERSION>_<OS>_<Arch>.tar.gz
   ```
   
 :::note
@@ -185,8 +189,12 @@ In case you are activating a server peer, you can use a [setup key](/overview/se
 
 ### Running NetBird in Docker
 
+Set the ```NB_SETUP_KEY``` environment variable and run the command.
+:::tip Environment variables
+You can pass other settings as environment variables. See [Environment variables](reference/netbird-commands.md#environment-variables) for details.
+:::
 ```bash
-docker run --rm --privileged -d -e WT_SETUP_KEY=<SETUP KEY> -v netbird-client:/etc/netbird netbirdio/netbird:latest
+docker run --rm --name PEER_NAME --hostname PEER_NAME --cap-add=NET_ADMIN -d -e NB_SETUP_KEY=<SETUP KEY> -v netbird-client:/etc/netbird netbirdio/netbird:latest
 ```
 
 See [Docker example](examples/netbird-docker.md) for details.
