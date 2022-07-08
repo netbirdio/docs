@@ -1,6 +1,6 @@
 ---
 id: netbird-commands
-title: netbird commands
+title: NetBird commands
 sidebar_position: 1
 tags:
 - client
@@ -9,7 +9,7 @@ tags:
 The NetBird client installation adds a binary called `netbird` to your system. This binary runs as a daemon service to connect
 your computer or server to the NetBirt network as a peer. But it can also be used as a client to control the daemon service.
 
-This section will explore the commands available to `netbird`.
+This section will explore the commands available in `netbird`.
 ## Syntax
 Use the following syntax to run `netbird` commands from your terminal window:
 ```shell
@@ -24,7 +24,7 @@ To see detailed command information, use the flag `--help` after each command
 :::
 
 ## Global flags
-`netbird` has a set of global flags that are available to every command. They specify settings that are core or shared between two or more commands, e.g. `--setup-key` is used by `login` and `up` to authenticate the client against a management service.
+`netbird` has a set of global flags that are available in every command. They specify settings that are core or shared between two or more commands, e.g. `--setup-key` is used by `login` and `up` to authenticate the client against a management service.
 
 Below is the list of global flags:
 ```shell
@@ -72,7 +72,7 @@ sudo netbird up --log-file console
 :::info
 On Windows, you may need to run the command from an elevated terminal session.
 :::
-In case you need to use a setup key, simple use the flag `--setup-key`:
+In case you need to use a setup key, use the `--setup-key` flag :
 ```shell
 netbird up --setup-key AAAA-BBB-CCC-DDDDDD
 ```
@@ -88,7 +88,7 @@ If you are running on a self-hosted environment, you can pass your management ur
 ```shell
 netbird login --management-url https://api.self-hosted.com:33073
 ```
-In case you need to use a setup key, simple use the flag `--setup-key`:
+In case you need to use a setup key, use the `--setup-key` flag:
 ```shell
 netbird login --setup-key AAAA-BBB-CCC-DDDDDD
 ```
@@ -128,7 +128,7 @@ Interface type: Kernel
 Peers count: 2/3 Connected
 ```
 
-If you want to see more details about the peer connections, you can use the flag `--detail` or `-d`:
+If you want to see more details about the peer connections, you can use the `--detail` or `-d` flag:
 ```shell
 netbird status -d
 ```
@@ -172,7 +172,7 @@ NetBird IP: 100.119.62.6/16
 Interface type: Kernel
 Peers count: 2/3 Connected
 ```
-To filter the peers' output by connection status, you can use the flag `--filter-by-status` with either "connected" or "disconnected" as value:
+To filter the peers' output by connection status, you can use the `--filter-by-status` flag with either "connected" or "disconnected" as value:
 ```shell
 netbird status -d --filter-by-status connected
 ```
@@ -206,7 +206,7 @@ NetBird IP: 100.119.62.6/16
 Interface type: Kernel
 Peers count: 2/3 Connected
 ```
-To filter the peers' output by peer IP addresses, you can use the flag `--filter-by-ips` with one or more IPs separated by a comma as a value:
+To filter the peers' output by peer IP addresses, you can use the `--filter-by-ips` flag with one or more IPs separated by a comma as a value:
 ```shell
 netbird status -d --filter-by-ips 100.119.201.225
 ```
@@ -276,17 +276,21 @@ The minimal form of running the command is:
 ```shell
 sudo netbird ssh user@100.119.230.104
 ```
-If you the remote peer agent is running the ssh service on a different port, you can use the flag `--port` or `-p`:
+If you the remote peer agent is running the ssh service on a different port, you can use the `--port` or `-p` flag:
 ```shell
 sudo netbird ssh -p 3434 user@100.119.230.104
 ```
 
 ### version
-Outputs the `netbird` command version
+Outputs the `netbird` command version.
 #### Usage
 The minimal form of running the command is:
 ```shell
 netbird version
+```
+This will output:
+```shell
+0.8.2
 ```
 
 ### service
