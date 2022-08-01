@@ -13,10 +13,10 @@ and negotiate the peer-to-peer connections.
 Below is the list of NetBird hosted endpoints and ports they listen to:
 * Management service: 
   * **Endpoint**: api.wiretrustee.com
-  * **Port**: TCP/33073
+  * **Port**: TCP/443
 * Signal service:
-    * **Endpoint**: signal.wiretrustee.com
-    * **Port**: TCP/10000
+    * **Endpoint**: signal2.wiretrustee.com
+    * **Port**: TCP/443
 * Relay (TURN) service:
     * **Endpoint**: turn.netbird.io
     * **Port range**: UDP/5555-65535
