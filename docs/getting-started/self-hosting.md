@@ -79,9 +79,10 @@ Let's Encrypt will notify you via this email when certificates are about to expi
 ### Step 3: Configure Identity Provider
 
 NetBird supports generic OpenID (OIDC) protocol allowing for the integration with any IDP that follows the specification.
+Pick the one that suits your needs, follow the steps, and continue with this guide:
 
-Check out the [Available Integrations](/integrations/identity-providers/self-hosted/available-idp-integrations) section,
-pick the one that suits your needs, follow the steps, and continue with this guide.
+- Continue with [Auth0](/integrations/identity-providers/self-hosted/using-netbird-with-auth0) (managed service).
+- Continue with [Keycloak](/integrations/identity-providers/self-hosted/using-netbird-with-keycloak).
 
 ### Step 4: Run configuration script
 Make sure all the required properties set in the ```setup.env``` file and run:
