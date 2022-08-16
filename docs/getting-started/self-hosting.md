@@ -99,12 +99,12 @@ docker-compose up -d
 ```
 ### Step 5: Check docker logs (Optional)
 
-     ```bash
-     docker-compose logs signal
-     docker-compose logs management
-     docker-compose logs coturn
-     docker-compose logs dashboard
-    ```
+ ```bash
+ docker-compose logs signal
+ docker-compose logs management
+ docker-compose logs coturn
+ docker-compose logs dashboard
+```
 
 ### Get in touch
 
