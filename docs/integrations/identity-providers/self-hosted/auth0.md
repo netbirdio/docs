@@ -1,7 +1,7 @@
 ---
 id: using-netbird-with-auth0
 title: Using NetBird with Auth0
-sidebar_position: 1
+sidebar_position: 2
 tags:
 - integrations
 - idp
@@ -38,4 +38,4 @@ To create an Auth0 account, sign up at [https://auth0.com](https://auth0.com/).
     * set the property in the ```setup.env``` file.
 
 ### Step 3: Continue with the self-hosting guide
-You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting).
+You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).

@@ -9,8 +9,11 @@ NetBird is open-source and can be self-hosted on your servers.
 It relies on components developed by NetBird Authors [Management Service](https://github.com/netbirdio/netbird/tree/main/management), [Management UI Dashboard](https://github.com/netbirdio/dashboard), [Signal Service](https://github.com/netbirdio/netbird/tree/main/signal),
 a 3rd party open-source STUN/TURN service [Coturn](https://github.com/coturn/coturn), and an identity provider (available options will be listed later in this guide).
 
-:::tip architecture
 If you would like to learn more about the architecture please refer to the [Architecture section](/overview/architecture).
+
+:::tip netbird as a service
+It might be a good idea to try NetBird before self-hosting. 
+We run NetBird in the cloud, and it will take less than 5 minutes to get started with our managed version. [Check it out!](https://netbird.io/pricing)
 :::
 
 ### Requirements
@@ -19,7 +22,7 @@ If you would like to learn more about the architecture please refer to the [Arch
 - Any Linux OS.
 - Docker Compose installed (see [Install Docker Compose](https://docs.docker.com/compose/install/)).
 - Domain name pointing to the public IP address of your server.
-- Open TCP ports ```80, 443, 33071, 33073, 10000``` (Dashboard, Management HTTP API, Management gRpc API, Signal gRpc respectively) on your server.
+- Open TCP ports ```80, 443, 33073, 10000``` (Dashboard HTTP & HTTPS, Management gRCP & HTTP APIs, Signal gRPC API respectively) on your server.
 - Coturn is used for relay using the STUN/TURN protocols. It requires a listening port, UDP 3478, and range of ports, UDP 49152-65535, for dynamic relay connections. These are set as defaults in setup file, but can be configured to your requirements.
 - Maybe a cup of coffee or tea :)
 
@@ -64,19 +67,21 @@ NETBIRD_AUTH0_AUDIENCE=""
 NETBIRD_LETSENCRYPT_EMAIL=""
 ```
 
-Please follow the steps to get the values.
-
 - Set ```NETBIRD_DOMAIN``` to your domain, e.g.  `demo.netbird.io`
 - Configure ```NETBIRD_LETSENCRYPT_EMAIL``` property:
 
-  This can be any email address. [Let's Encrypt](https://letsencrypt.org/) will create an account while generating a new certificate.
+This can be any email address. [Let's Encrypt](https://letsencrypt.org/) will create an account while generating a new certificate.
 
-  :::tip
-  Let's Encrypt will notify you via this email when certificates are about to expire. NetBird supports automatic renewal by default.
-  :::
+:::tip
+Let's Encrypt will notify you via this email when certificates are about to expire. NetBird supports automatic renewal by default.
+:::
 
-### Step 3:  Configure Identity Provider
+### Step 3: Configure Identity Provider
 
+NetBird supports generic OpenID (OIDC) protocol allowing for the integration with any IDP that follows the specification.
+
+Check out the [Available Integrations](/integrations/identity-providers/self-hosted/available-idp-integrations) section,
+pick the one that suits your needs, follow the steps, and continue with this guide.
 
 ### Step 4: Run configuration script
 Make sure all the required properties set in the ```setup.env``` file and run:
