@@ -10,4 +10,89 @@ tags:
 - how-to
 ---
 
-TODO
+This guide is a part of the [NetBird Self-hosting Guide](/getting-started/self-hosting) and explains how to integrate 
+**self-hosted** NetBird with [Keycloak](https://www.keycloak.org/).
+
+Keycloak is an open source software product to allow single sign-on with Identity and Access Management aimed at modern applications and services.
+
+:::tip managed idp
+If you prefer not to self-host an Identity and Access Management solution, then you could use a managed alternative like
+[Auth0](/integrations/identity-providers/self-hosted/using-netbird-with-auth0).
+:::
+
+The following guide is an adapted version of the original
+[Keycloak on Docker](https://www.keycloak.org/getting-started/getting-started-docker) guide from the official website.
+
+### Step 1: Deploy Keycloak (Optional)
+
+If you have a running instance of Keycloak, you can skip this step; run the Keycloak container on your server otherwise:
+
+```bash
+docker run -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:latest start-dev
+```
+
+:::caution
+We recommend setting the `KEYCLOAK_ADMIN` to something different than `admin` and choosing a secure password.
+:::
+
+### Step 2: Create a realm
+
+To create a realm you need to:
+
+- Open the Keycloak Admin Console
+- Hover the mouse over the dropdown in the top-left corner where it says `Master`, then click on `Create Realm`
+- Fill in the form with the following values:
+  - Realm name: `netbird`
+- Click `Create`
+
+![](/img/integrations/identity-providers/self-hosted/keycloak-create-realm.png)
+
+### Step 3: Create a user
+
+In this step we will create a NetBird administrator user.
+
+- Open the Keycloak Admin Console
+- Make sure, that the selected realm is `Netbird`
+- Click `Users` (left-hand menu)
+- Click `Create new user`
+- Fill in the form with the following values:
+  - Username: `netbird`
+  - First Name: `Your first name`
+  - Last Name: `Your last name`
+- Click `Create`
+
+![](/img/integrations/identity-providers/self-hosted/keycloak-create-user.png)
+
+The user will need an initial password set to be able to log in. To do this:
+- Click `Credentials` tab
+- Click `Set password` button
+- Fill in the password form with a password
+- Set the `Temporary` field to `Off` to prevent having to update password on first login
+
+![](/img/integrations/identity-providers/self-hosted/keycloak-set-password.png)
+
+### Step 4: Create NetBird application client
+
+In this step we will create and configure NetBird application client and register with the Keycloak instance.
+
+- Open the Keycloak Admin Console
+- Make sure, that the selected realm is `Netbird`
+- Click `Clients`
+- Click `Create client` button
+- Fill in the form with the following values:
+  - Client Type: `OpenID Connect`
+  - Client ID: `netbird-client`
+  - Name: `NetBird Application Client`
+
+![](/img/integrations/identity-providers/self-hosted/keycloak-create-client.png)
+
+- Click Next
+- Tick the boxes as on the screenshot below and click Save
+
+![](/img/integrations/identity-providers/self-hosted/keycloak-enable-auth.png)
+
+
+
+
+
+    - Root URL: `https://YOUR DOMAIN/`
