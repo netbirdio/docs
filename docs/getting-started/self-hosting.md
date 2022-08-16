@@ -19,7 +19,7 @@ If you would like to learn more about the architecture please refer to the [Arch
 - Any Linux OS.
 - Docker Compose installed (see [Install Docker Compose](https://docs.docker.com/compose/install/)).
 - Domain name pointing to the public IP address of your server.
-- Open ports ```443, 33071, 33073, 10000``` (Dashboard, Management HTTP API, Management gRpc API, Signal gRpc respectively) on your server.
+- Open TCP ports ```80, 443, 33071, 33073, 10000``` (Dashboard, Management HTTP API, Management gRpc API, Signal gRpc respectively) on your server.
 - Coturn is used for relay using the STUN/TURN protocols. It requires a listening port, UDP 3478, and range of ports, UDP 49152-65535, for dynamic relay connections. These are set as defaults in setup file, but can be configured to your requirements.
 - Maybe a cup of coffee or tea :)
 
