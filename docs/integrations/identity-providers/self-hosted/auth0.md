@@ -31,7 +31,7 @@ To create an Auth0 account, sign up at [https://auth0.com](https://auth0.com/).
 
       > Use ```https://YOUR DOMAIN``` as ````Allowed Callback URLs````, ```Allowed Logout URLs```, ```Allowed Web Origins``` and ```Allowed Origins (CORS)```
     * use Auth0 Client ID to set `NETBIRD_AUTH_CLIENT_ID` e.g., `LBRMAgqIZ7hvpVCaHpQLCJvTzkYYIXJt`
-    * use Auth0 Domain to set `NETBIRD_AUTH_AUTHORITY` to `https://auth0-domain.com/`. Pay attention to the `https://` prefix and the trailing slash `/` 
+    * use Auth0 Domain to set `NETBIRD_AUTH_AUTHORITY` to `https://your-auth0-domain.com/`. Pay attention to the `https://` prefix and the trailing slash `/` 
     * :warning: Make sure that `Token Endpoint Authentication Method` is set to `None` in your Auth0 Default Application
 2. Configure ```NETBIRD_AUTH_AUDIENCE``` property.
 
@@ -39,6 +39,7 @@ To create an Auth0 account, sign up at [https://auth0.com](https://auth0.com/).
     * set the property in the ```setup.env``` file.
 3. Set `NETBIRD_USE_AUTH0` to `true`.
 4. Set `NETBIRD_AUTH_SUPPORTED_SCOPES` to `openid profile email api offline_access email_verified` 
-
+5. Set `NETBIRD_AUTH_JWT_CERTS` to `https://your-auth0-domain.com/.well-known/jwks.json`
+  
 ### Step 3: Continue with the self-hosting guide
 You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).
