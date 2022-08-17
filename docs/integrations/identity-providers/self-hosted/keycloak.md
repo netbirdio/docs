@@ -153,14 +153,15 @@ In this step, we will create and configure the NetBird client audience for Keycl
 
 Your authority configuration will be available under:
 ```
-https://YOUR-KEYCLOAK-HOST:8080/realms/netbird/.well-known/openid-configuration
+https://YOUR-KEYCLOAK-HOST:443/realms/netbird/.well-known/openid-configuration
 ```
 
 - Set properties in the `setup.env` file:
-  - NETBIRD_AUTH_AUTHORITY=`https://YOUR-KEYCLOAK-HOST:8080/realms/netbird`. This is the `issuer` field of the openid-configuration.
+  - NETBIRD_AUTH_AUTHORITY=`https://YOUR-KEYCLOAK-HOST-AND-PORT/realms/netbird`. This is the `issuer` field of the openid-configuration.
   - NETBIRD_AUTH_CLIENT_ID=`netbird-client`
   - NETBIRD_AUTH_AUDIENCE=`netbird-client`
-  - NETBIRD_AUTH_SUPPORTED_SCOPES=`openid profile email offline_access netbird-client-audience`. Use the fields specified in the `scopes_supported` field of the openid-configuration. 
+  - NETBIRD_AUTH_SUPPORTED_SCOPES=`openid profile email offline_access netbird-client-audience`. Use the fields specified in the `scopes_supported` field of the openid-configuration.
+  - NETBIRD_AUTH_JWT_CERTS=`https://YOUR-KEYCLOAK-HOST-AND-PORT/realms/netbird/protocol/openid-connect/certs`. Use `jwks_uri` from the openid-configuration to set `NETBIRD_AUTH_JWT_CERTS`
 
 - You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).
 
