@@ -115,7 +115,7 @@ In this step, we will create and configure the NetBird client audience for Keycl
 - Click `Client scopes` (left-hand menu)
 - Click `Create client scope` button
 - Fill in the form with the following values:
-  - Name: `netbird-client-audience`
+  - Name: `api`
   - Type: `Default`
   - Protocol: `OpenID Connect`
 - Click `Save`
@@ -144,7 +144,7 @@ In this step, we will create and configure the NetBird client audience for Keycl
 - Choose `netbird-client` from the list
 - Switch to `Client scopes` tab
 - Click `Add client scope` button
-- Choose `netbird-client-audience`
+- Choose `api`
 - CLick `Add` choosing `Default`
 - The value `netbird-client` will be used as audience 
 
