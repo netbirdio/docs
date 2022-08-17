@@ -27,11 +27,11 @@ To create an Auth0 account, sign up at [https://auth0.com](https://auth0.com/).
 ### Step 2: Configure Auth0 properties in the setup.env file
 1. Configure ```NETBIRD_AUTH_AUTHORITY``` and ```NETBIRD_AUTH_CLIENT_ID``` properties.
 
-    * To obtain these, please use [Auth0 React SDK Guide](https://auth0.com/docs/quickstart/spa/react/01-login#configure-auth0) up until "Install the Auth0 React SDK".
+    * To obtain these, use [Auth0 React SDK Guide](https://auth0.com/docs/quickstart/spa/react/01-login#configure-auth0) up until "Install the Auth0 React SDK".
 
       > Use ```https://YOUR DOMAIN``` as ````Allowed Callback URLs````, ```Allowed Logout URLs```, ```Allowed Web Origins``` and ```Allowed Origins (CORS)```
-    * set the variables in the ```setup.env```
-    * use Auth0 Domain of your application prefixed with `https://` to set `NETBIRD_AUTH_AUTHORITY` 
+    * use Auth0 Client ID to set `NETBIRD_AUTH_CLIENT_ID` e.g., `LBRMAgqIZ7hvpVCaHpQLCJvTzkYYIXJt`
+    * use Auth0 Domain to set `NETBIRD_AUTH_AUTHORITY` to `https://auth0-domain.com/`. Pay attention to the `https://` prefix and the trailing slash `/` 
     * :warning: Make sure that `Token Endpoint Authentication Method` is set to `None` in your Auth0 Default Application
 2. Configure ```NETBIRD_AUTH_AUDIENCE``` property.
 
