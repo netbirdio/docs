@@ -25,15 +25,24 @@ The following guide is an adapted version of the original
 
 ### Step 1: Deploy Keycloak (Optional)
 
-If you have a running instance of Keycloak, you can skip this step; run the Keycloak container on your server otherwise:
-
-```bash
-docker run -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:latest start-dev
-```
+If you have a running instance of Keycloak, you can skip this step; run the Keycloak container on your server otherwise.
 
 :::caution
 We recommend setting the `KEYCLOAK_ADMIN` to something different than `admin` and choosing a secure password.
+We also recommended running Keycloak with SSL in a production environment.
+
+This step is for demonstration purposes; please refer to the official
+[Keycloak Documentation](https://www.keycloak.org/documentation) for production setups.
 :::
+
+```bash
+docker run -d --name netbird-keycloak -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:latest start-dev
+```
+
+Disable SSL:
+```bash
+docker exec --workdir /opt/keycloak/bin netbird-keycloak ./kcadm.sh update --server http://localhost:8080/ --realm master --user admin --password admin realms/master -s sslRequired=NONE
+```
 
 ### Step 2: Create a realm
 
@@ -44,6 +53,7 @@ To create a realm you need to:
 - Fill in the form with the following values:
   - Realm name: `netbird`
 - Click `Create`
+- Your newly created realm `http://YOUR-KEYCLOAK-HOST:8080/realms/netbird` will be used later to set `NETBIRD_AUTH_AUTHORITY` in the `setup.env` file.
 
 ![](/img/integrations/identity-providers/self-hosted/keycloak-create-realm.png)
 
@@ -57,8 +67,6 @@ In this step we will create a NetBird administrator user.
 - Click `Create new user`
 - Fill in the form with the following values:
   - Username: `netbird`
-  - First Name: `Your first name`
-  - Last Name: `Your last name`
 - Click `Create`
 
 ![](/img/integrations/identity-providers/self-hosted/keycloak-create-user.png)
@@ -68,6 +76,7 @@ The user will need an initial password set to be able to log in. To do this:
 - Click `Set password` button
 - Fill in the password form with a password
 - Set the `Temporary` field to `Off` to prevent having to update password on first login
+- Click `Save`
 
 ![](/img/integrations/identity-providers/self-hosted/keycloak-set-password.png)
 
@@ -82,7 +91,7 @@ In this step we will create NetBird application client and register with the Key
 - Fill in the form with the following values and click Next:
   - Client Type: `OpenID Connect`
   - Client ID: `netbird-client`
-  - Name: `NetBird Application Client`
+- Your newly client `netbird-client` will be used later to set `NETBIRD_AUTH_CLIENT_ID` in the `setup.env`
 
 ![](/img/integrations/identity-providers/self-hosted/keycloak-create-client.png)
 
@@ -147,11 +156,29 @@ In this step, we will create and configure the NetBird client audience for Keycl
 - Click `Add client scope` button
 - Choose `netbird-client-audience`
 - CLick `Add` choosing `Default`
+- The value `netbird-client` will be used as audience 
 
 ![](/img/integrations/identity-providers/self-hosted/keycloack-add-client-scope.png)
 
 ### Step 8: Continue with the self-hosting guide
 
-Set properties in the setup.env file
+Your authority configuration will be available under:
+```
+http://YOUR-KEYCLOAK-HOST:8080/realms/netbird/.well-known/openid-configuration
+```
 
-You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).
+:::tip
+If you are running a demo Keycloak server, then you might need to disable SSL for the `netbird` 
+realm to be able to get the openid-configuration.
+```bash
+docker exec --workdir /opt/keycloak/bin netbird-keycloak ./kcadm.sh update --server http://localhost:8080/ --realm master --user admin --password admin realms/netbird-s sslRequired=NONE
+```
+:::
+
+- Set properties in the `setup.env` file:
+  - NETBIRD_AUTH_AUTHORITY=`http://YOUR-KEYCLOAK-HOST:8080/realms/netbird`. This is the `issuer` field of the openid-configuration.
+  - NETBIRD_AUTH_CLIENT_ID=`netbird-client`
+  - NETBIRD_AUTH_AUDIENCE=`netbird-client`
+  - NETBIRD_AUTH_SUPPORTED_SCOPES=`openid profile email offline_access netbird-client-audience`. Use the fields specified in the `scopes_supported` field of the openid-configuration. 
+
+- You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).
