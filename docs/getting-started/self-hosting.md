@@ -53,16 +53,21 @@ To simplify the setup we have prepared a script to substitute required propertie
 The [setup.env.example](https://github.com/netbirdio/netbird/tree/main/infrastructure_files/setup.env.example) file contains multiple properties that have to be filled. You need to copy the example file to `setup.env` before updating it.
 
 ```bash
+## example file, you can copy this file to setup.env and update its values
+##
 # Dashboard domain. e.g. app.mydomain.com
 NETBIRD_DOMAIN=""
-# e.g. dev-24vkclam.us.auth0.com
-NETBIRD_AUTH0_DOMAIN=""
-# e.g. 61u3JMXRO0oOevc7gCkZLCwePQvT4lL0
-NETBIRD_AUTH0_CLIENT_ID=""
-# e.g. https://app.mydomain.com/ or https://app.mydomain.com,
-# Make sure you used the exact same value for Identifier
-# you used when creating your Auth0 API
-NETBIRD_AUTH0_AUDIENCE=""
+# e.g. https://dev-24vkclam.us.auth0.com/ or https://YOUR-KEYCLOAK-HOST:8080/realms/netbird
+NETBIRD_AUTH_AUTHORITY=""
+# e.g. netbird-client
+NETBIRD_AUTH_CLIENT_ID=""
+# indicates whether to use Auth0 or not: true or false
+NETBIRD_USE_AUTH0=""
+# a list of scopes supported e.g. `openid profile email` for keycloak or `openid profile email api offline_access email_verified` for Auth0
+NETBIRD_AUTH_SUPPORTED_SCOPES=""
+NETBIRD_AUTH_AUDIENCE=""
+# URL of the JWT certificates e.g. https://dev-24vkclam.us.auth0.com/.well-known/jwks.json
+NETBIRD_AUTH_JWT_CERTS=""
 # e.g. hello@mydomain.com
 NETBIRD_LETSENCRYPT_EMAIL=""
 ```

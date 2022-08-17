@@ -102,6 +102,7 @@ In this step we will configure NetBird application client access with the NetBir
   - Valid redirect URIs: `https://YOUR DOMAIN/*`
   - Valid post logout redirect URIs: `https://YOUR DOMAIN/*`
   - Web origins: `+`
+  - Click `Save`
 
 ![](/img/integrations/identity-providers/self-hosted/keycloak-access-settings.png)
 
@@ -116,12 +117,12 @@ In this step, we will create and configure the NetBird client audience for Keycl
 - Fill in the form with the following values:
   - Name: `netbird-client-audience`
   - Type: `Default`
-  - Type: `OpenID Connect`
+  - Protocol: `OpenID Connect`
 - Click `Save`
 
 ![](/img/integrations/identity-providers/self-hosted/keycloak-create-client-scope.png)
 
-- Switch to the `Mappers` tab
+- While in the newly created Client Scope, switch to the `Mappers` tab
 - Click `Configure a new mapper`
 - Choose the `Audience` mapping
 
