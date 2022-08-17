@@ -23,26 +23,15 @@ If you prefer not to self-host an Identity and Access Management solution, then 
 The following guide is an adapted version of the original
 [Keycloak on Docker](https://www.keycloak.org/getting-started/getting-started-docker) guide from the official website.
 
-### Step 1: Deploy Keycloak (Optional)
+### Step 1: Check your Keycloak Instance
 
-If you have a running instance of Keycloak, you can skip this step; run the Keycloak container on your server otherwise.
+For this guide, you need a fully configured Keycloak instance running with configured SSL.
 
-:::caution
-We recommend setting the `KEYCLOAK_ADMIN` to something different than `admin` and choosing a secure password.
-We also recommended running Keycloak with SSL in a production environment.
+We assume that your Keycloak instance is available at https://YOUR-KEYCLOAK-HOST:443. 
+Feel free to change the port if you have configured Keycloak with a different one.
 
-This step is for demonstration purposes; please refer to the official
-[Keycloak Documentation](https://www.keycloak.org/documentation) for production setups.
-:::
-
-```bash
-docker run -d --name netbird-keycloak -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:latest start-dev
-```
-
-Disable SSL:
-```bash
-docker exec --workdir /opt/keycloak/bin netbird-keycloak ./kcadm.sh update --server http://localhost:8080/ --realm master --user admin --password admin realms/master -s sslRequired=NONE
-```
+Most of the OIDC software requires SSL for production use. 
+We encourage you to comply with this requirement to make the world more secure 😊.
 
 ### Step 2: Create a realm
 
@@ -53,7 +42,7 @@ To create a realm you need to:
 - Fill in the form with the following values:
   - Realm name: `netbird`
 - Click `Create`
-- Your newly created realm `http://YOUR-KEYCLOAK-HOST:8080/realms/netbird` will be used later to set `NETBIRD_AUTH_AUTHORITY` in the `setup.env` file.
+- Your newly created realm `https://YOUR-KEYCLOAK-HOST:443/realms/netbird` will be used later to set `NETBIRD_AUTH_AUTHORITY` in the `setup.env` file.
 
 ![](/img/integrations/identity-providers/self-hosted/keycloak-create-realm.png)
 
@@ -164,21 +153,17 @@ In this step, we will create and configure the NetBird client audience for Keycl
 
 Your authority configuration will be available under:
 ```
-http://YOUR-KEYCLOAK-HOST:8080/realms/netbird/.well-known/openid-configuration
+https://YOUR-KEYCLOAK-HOST:8080/realms/netbird/.well-known/openid-configuration
 ```
-
-:::tip
-If you are running a demo Keycloak server, then you might need to disable SSL for the `netbird` 
-realm to be able to get the openid-configuration.
-```bash
-docker exec --workdir /opt/keycloak/bin netbird-keycloak ./kcadm.sh update --server http://localhost:8080/ --realm master --user admin --password admin realms/netbird-s sslRequired=NONE
-```
-:::
 
 - Set properties in the `setup.env` file:
-  - NETBIRD_AUTH_AUTHORITY=`http://YOUR-KEYCLOAK-HOST:8080/realms/netbird`. This is the `issuer` field of the openid-configuration.
+  - NETBIRD_AUTH_AUTHORITY=`https://YOUR-KEYCLOAK-HOST:8080/realms/netbird`. This is the `issuer` field of the openid-configuration.
   - NETBIRD_AUTH_CLIENT_ID=`netbird-client`
   - NETBIRD_AUTH_AUDIENCE=`netbird-client`
   - NETBIRD_AUTH_SUPPORTED_SCOPES=`openid profile email offline_access netbird-client-audience`. Use the fields specified in the `scopes_supported` field of the openid-configuration. 
 
 - You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).
+
+:::note
+Make sure that your Keycloak instance and `NETBIRD_AUTH_AUTHORITY` use HTTPS. Otherwise, the setup won't work.
+:::
