@@ -25,17 +25,20 @@ self-hosted alternatives to the managed Auth0 service like [Keycloak](/integrati
 To create an Auth0 account, sign up at [https://auth0.com](https://auth0.com/).
 
 ### Step 2: Configure Auth0 properties in the setup.env file
-1. Configure ```NETBIRD_AUTH0_DOMAIN``` and ```NETBIRD_AUTH0_CLIENT_ID``` properties.
+1. Configure ```NETBIRD_AUTH_AUTHORITY``` and ```NETBIRD_AUTH_CLIENT_ID``` properties.
 
     * To obtain these, please use [Auth0 React SDK Guide](https://auth0.com/docs/quickstart/spa/react/01-login#configure-auth0) up until "Install the Auth0 React SDK".
 
       > Use ```https://YOUR DOMAIN``` as ````Allowed Callback URLs````, ```Allowed Logout URLs```, ```Allowed Web Origins``` and ```Allowed Origins (CORS)```
     * set the variables in the ```setup.env```
+    * use Auth0 Domain of your application prefixed with `https://` to set `NETBIRD_AUTH_AUTHORITY` 
     * :warning: Make sure that `Token Endpoint Authentication Method` is set to `None` in your Auth0 Default Application
-2. Configure ```NETBIRD_AUTH0_AUDIENCE``` property.
+2. Configure ```NETBIRD_AUTH_AUDIENCE``` property.
 
     * Check [Auth0 Create An API](https://auth0.com/docs/quickstart/backend/golang#create-an-api) section to obtain AuthAudience.
     * set the property in the ```setup.env``` file.
+3. Set `NETBIRD_USE_AUTH0` to `true`.
+4. Set `NETBIRD_AUTH_SUPPORTED_SCOPES` to `openid profile email api offline_access email_verified` 
 
 ### Step 3: Continue with the self-hosting guide
 You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).
