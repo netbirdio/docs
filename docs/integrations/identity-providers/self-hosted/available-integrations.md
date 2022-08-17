@@ -10,5 +10,6 @@ There are a few Identity Provider options that you can choose to run a self-host
 NetBird supports generic OpenID (OIDC) protocol allowing for the integration with any IDP that follows the specification.
 :::
 
-This section describes steps to integrate with self-hosted IDPs like [Keycloak](/integrations/identity-providers/self-hosted/using-netbird-with-keycloak)
-or cloud-managed like [Auth0](/integrations/identity-providers/self-hosted/using-netbird-with-auth0).
+List of available guides:
+- [Auth0](/integrations/identity-providers/self-hosted/using-netbird-with-auth0) (managed service)
+- [Keycloak](/integrations/identity-providers/self-hosted/using-netbird-with-keycloak)

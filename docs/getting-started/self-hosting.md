@@ -53,16 +53,21 @@ To simplify the setup we have prepared a script to substitute required propertie
 The [setup.env.example](https://github.com/netbirdio/netbird/tree/main/infrastructure_files/setup.env.example) file contains multiple properties that have to be filled. You need to copy the example file to `setup.env` before updating it.
 
 ```bash
+## example file, you can copy this file to setup.env and update its values
+##
 # Dashboard domain. e.g. app.mydomain.com
 NETBIRD_DOMAIN=""
-# e.g. dev-24vkclam.us.auth0.com
-NETBIRD_AUTH0_DOMAIN=""
-# e.g. 61u3JMXRO0oOevc7gCkZLCwePQvT4lL0
-NETBIRD_AUTH0_CLIENT_ID=""
-# e.g. https://app.mydomain.com/ or https://app.mydomain.com,
-# Make sure you used the exact same value for Identifier
-# you used when creating your Auth0 API
-NETBIRD_AUTH0_AUDIENCE=""
+# e.g. https://dev-24vkclam.us.auth0.com/ or https://YOUR-KEYCLOAK-HOST:8080/realms/netbird
+NETBIRD_AUTH_AUTHORITY=""
+# e.g. netbird-client
+NETBIRD_AUTH_CLIENT_ID=""
+# indicates whether to use Auth0 or not: true or false
+NETBIRD_USE_AUTH0=""
+# a list of scopes supported e.g. `openid profile email` for keycloak or `openid profile email api offline_access email_verified` for Auth0
+NETBIRD_AUTH_SUPPORTED_SCOPES=""
+NETBIRD_AUTH_AUDIENCE=""
+# URL of the JWT certificates e.g. https://dev-24vkclam.us.auth0.com/.well-known/jwks.json
+NETBIRD_AUTH_JWT_CERTS=""
 # e.g. hello@mydomain.com
 NETBIRD_LETSENCRYPT_EMAIL=""
 ```
@@ -79,9 +84,10 @@ Let's Encrypt will notify you via this email when certificates are about to expi
 ### Step 3: Configure Identity Provider
 
 NetBird supports generic OpenID (OIDC) protocol allowing for the integration with any IDP that follows the specification.
+Pick the one that suits your needs, follow the steps, and continue with this guide:
 
-Check out the [Available Integrations](/integrations/identity-providers/self-hosted/available-idp-integrations) section,
-pick the one that suits your needs, follow the steps, and continue with this guide.
+- Continue with [Auth0](/integrations/identity-providers/self-hosted/using-netbird-with-auth0) (managed service).
+- Continue with [Keycloak](/integrations/identity-providers/self-hosted/using-netbird-with-keycloak).
 
 ### Step 4: Run configuration script
 Make sure all the required properties set in the ```setup.env``` file and run:
@@ -99,12 +105,12 @@ docker-compose up -d
 ```
 ### Step 5: Check docker logs (Optional)
 
-     ```bash
-     docker-compose logs signal
-     docker-compose logs management
-     docker-compose logs coturn
-     docker-compose logs dashboard
-    ```
+ ```bash
+ docker-compose logs signal
+ docker-compose logs management
+ docker-compose logs coturn
+ docker-compose logs dashboard
+```
 
 ### Get in touch
 
