@@ -23,7 +23,7 @@ We run NetBird in the cloud, and it will take less than 5 minutes to get started
 - Docker Compose installed (see [Install Docker Compose](https://docs.docker.com/compose/install/)).
 - Domain name pointing to the public IP address of your server.
 - Open TCP ports ```80, 443, 33073, 10000``` (Dashboard HTTP & HTTPS, Management gRCP & HTTP APIs, Signal gRPC API respectively) on your server.
-- Coturn is used for relay using the STUN/TURN protocols. It requires a listening port, UDP 3478, and range of ports, UDP 49152-65535, for dynamic relay connections. These are set as defaults in setup file, but can be configured to your requirements.
+- Coturn is used for relay using the STUN/TURN protocols. It requires a listening port, `UDP 3478`, and range of ports, `UDP 49152-65535`, for dynamic relay connections. These are set as defaults in setup file, but can be configured to your requirements.
 - Maybe a cup of coffee or tea :)
 
 For this tutorial we will be using domain ```demo.netbird.io``` which points to our Ubuntu 22.04 machine hosted at Hetzner.
@@ -73,9 +73,8 @@ NETBIRD_LETSENCRYPT_EMAIL=""
 ```
 
 - Set ```NETBIRD_DOMAIN``` to your domain, e.g.  `demo.netbird.io`
-- Configure ```NETBIRD_LETSENCRYPT_EMAIL``` property:
-
-This can be any email address. [Let's Encrypt](https://letsencrypt.org/) will create an account while generating a new certificate.
+- Configure ```NETBIRD_LETSENCRYPT_EMAIL``` property.
+  This can be any email address. [Let's Encrypt](https://letsencrypt.org/) will create an account while generating a new certificate.
 
 :::tip
 Let's Encrypt will notify you via this email when certificates are about to expire. NetBird supports automatic renewal by default.

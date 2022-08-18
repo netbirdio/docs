@@ -25,7 +25,7 @@ The following guide is an adapted version of the original
 
 ### Step 1: Check your Keycloak Instance
 
-For this guide, you need a fully configured Keycloak instance running with configured SSL.
+For this guide, you need a fully configured Keycloak instance running with SSL.
 
 We assume that your Keycloak instance is available at https://YOUR-KEYCLOAK-HOST:443. 
 Feel free to change the port if you have configured Keycloak with a different one.
