@@ -23,11 +23,19 @@ If you prefer not to self-host an Identity and Access Management solution, then 
 The following guide is an adapted version of the original
 [Keycloak on Docker](https://www.keycloak.org/getting-started/getting-started-docker) guide from the official website.
 
+### Expected Result
+
+After completing this guide, you can log in to your self-hosted NetBird Dashboard and add your machines 
+to your network using the [Interactive SSO Login feature](/getting-started/installation#running-netbird-with-sso-login) 
+over Keycloak.
+
+![](/img/integrations/identity-providers/self-hosted/keycloack-auth-grant.gif)
+
 ### Step 1: Check your Keycloak Instance
 
 For this guide, you need a fully configured Keycloak instance running with SSL.
 
-We assume that your Keycloak instance is available at https://YOUR-KEYCLOAK-HOST-AND_PORT. 
+We assume that your Keycloak instance is available at **`https://YOUR-KEYCLOAK-HOST-AND_PORT`**. 
 Feel free to change the port if you have configured Keycloak with a different one.
 
 Most of the OIDC software requires SSL for production use. 
