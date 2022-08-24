@@ -24,22 +24,68 @@ self-hosted alternatives to the managed Auth0 service like [Keycloak](/integrati
 ### Step 1: Create Auth0 account
 To create an Auth0 account, sign up at [https://auth0.com](https://auth0.com/).
 
-### Step 2: Configure Auth0 properties in the setup.env file
-1. Configure ```NETBIRD_AUTH_AUTHORITY``` and ```NETBIRD_AUTH_CLIENT_ID``` properties.
+There are five properties of the **`setup.env`** file that we will configure in this guide:
+- `NETBIRD_AUTH_CLIENT_ID`
+- `NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT`
+- `NETBIRD_USE_AUTH0`
+- `NETBIRD_AUTH_AUDIENCE`
+- `NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID` (Optional)
 
-    * To obtain these, use [Auth0 React SDK Guide](https://auth0.com/docs/quickstart/spa/react/01-login#configure-auth0) up until "Install the Auth0 React SDK".
+### Step 2: Create and configure Auth0 application
 
-      > Use ```https://YOUR DOMAIN``` as ````Allowed Callback URLs````, ```Allowed Logout URLs```, ```Allowed Web Origins``` and ```Allowed Origins (CORS)```
-    * use Auth0 Client ID to set `NETBIRD_AUTH_CLIENT_ID` e.g., `LBRMAgqIZ7hvpVCaHpQLCJvTzkYYIXJt`
-    * use Auth0 Domain to set `NETBIRD_AUTH_AUTHORITY` to `https://your-auth0-domain.com/`. Pay attention to the `https://` prefix and the trailing slash `/` 
-    * :warning: Make sure that `Token Endpoint Authentication Method` is set to `None` in your Auth0 Default Application
-2. Configure ```NETBIRD_AUTH_AUDIENCE``` property.
+This Auth0 application will be used to authorize access to NetBird Dashboard (Web UI).
 
-    * Check [Auth0 Create An API](https://auth0.com/docs/quickstart/backend/golang#create-an-api) section to obtain AuthAudience.
-    * set the property in the ```setup.env``` file.
-3. Set `NETBIRD_USE_AUTH0` to `true`.
-4. Set `NETBIRD_AUTH_SUPPORTED_SCOPES` to `openid profile email api offline_access email_verified` 
-5. Set `NETBIRD_AUTH_JWT_CERTS` to `https://your-auth0-domain.com/.well-known/jwks.json`
+- Follow the steps in the [Auth0 React SDK Guide](https://auth0.com/docs/quickstart/spa/react/01-login#configure-auth0) 
+up until "Install the Auth0 React SDK".
+- Use **`https://YOUR DOMAIN`** as: `Allowed Callback URLs`, `Allowed Logout URLs`, `Allowed Web Origins`, `Allowed Origins (CORS)`
+  :::caution
+  Make sure that **`Token Endpoint Authentication Method`** is set to **`None`**.
+  :::
+
+- Use **`Client ID`** to set  ```NETBIRD_AUTH_CLIENT_ID``` property in the `setup.env` file.
+- Use **`Domain`** to configure   ```NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT``` property in the `setup.env` file like so:
+     ```
+   https://<DOMAIN>/.well-known/openid-configuration
+    ``` 
+  :::caution
+  Double-check if the endpoint returns a JSON response by calling it from your browser.
+  :::
+
+### Step 3: Create and configure Auth0 API
+
+This Auth0 API will be used to access NetBird Management Service API. 
+
+- Follow the steps in the [Auth0 Create An API](https://auth0.com/docs/quickstart/backend/golang#create-an-api).
+- Use API **`Identifier`** to set  ```NETBIRD_AUTH_AUDIENCE``` property in the `setup.env` file.
+- Set ```NETBIRD_USE_AUTH0``` to `true`in the `setup.env` file.
   
-### Step 3: Continue with the self-hosting guide
+### Step 4: Enable Interactive SSO Login (Optional)
+
+The [Interactive SSO Login feature](/getting-started/installation#running-netbird-with-sso-login) allows for machine 
+authorization with your Identity Provider. This feature can be used as an alternative to [setup keys](/overview/setup-keys) 
+and is optional.
+
+You can enable it by following these steps:
+- Log in to your Auth0 account https://manage.auth0.com/
+- Go to `Applications` (left-hand menu)
+- Click `Create Application` button (top right)
+- Fill in the form with the following values:
+  - Name: `Interactive Login`
+  - Application type: `Native`
+- Click `Create`
+
+![](/img/integrations/identity-providers/self-hosted/auth0-create-interactive-login-app.png)
+
+- Click `Settings` tab
+- Copy **`Client ID`** to `NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID` in the `setup.env` file
+
+![](/img/integrations/identity-providers/self-hosted/auth0-interactive-login-settings.png)
+
+- Scroll down to the `Advanced Settings` section
+- Enable **`Device Code`**
+- Click `Save Changes`
+
+![](/img/integrations/identity-providers/self-hosted/auth0-grant-types.png)
+
+### Step 4: Continue with the self-hosting guide
 You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).

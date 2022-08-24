@@ -57,17 +57,16 @@ The [setup.env.example](https://github.com/netbirdio/netbird/tree/main/infrastru
 ##
 # Dashboard domain. e.g. app.mydomain.com
 NETBIRD_DOMAIN=""
-# e.g. https://dev-24vkclam.us.auth0.com/ or https://YOUR-KEYCLOAK-HOST:8080/realms/netbird
-NETBIRD_AUTH_AUTHORITY=""
+# OIDC configuration e.g., https://example.eu.auth0.com/.well-known/openid-configuration
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT=""
+NETBIRD_AUTH_AUDIENCE=""
 # e.g. netbird-client
 NETBIRD_AUTH_CLIENT_ID=""
 # indicates whether to use Auth0 or not: true or false
-NETBIRD_USE_AUTH0=""
-# a list of scopes supported e.g. `openid profile email` for keycloak or `openid profile email api offline_access email_verified` for Auth0
-NETBIRD_AUTH_SUPPORTED_SCOPES=""
-NETBIRD_AUTH_AUDIENCE=""
-# URL of the JWT certificates e.g. https://dev-24vkclam.us.auth0.com/.well-known/jwks.json
-NETBIRD_AUTH_JWT_CERTS=""
+NETBIRD_USE_AUTH0="false"
+NETBIRD_AUTH_DEVICE_AUTH_PROVIDER="none"
+# enables Interactive SSO Login feature (Oauth 2.0 Device Authorization Flow)
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID=""
 # e.g. hello@mydomain.com
 NETBIRD_LETSENCRYPT_EMAIL=""
 ```
