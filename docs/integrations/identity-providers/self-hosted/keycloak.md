@@ -157,7 +157,59 @@ In this step, we will create and configure the NetBird client audience for Keycl
 
 ![](/img/integrations/identity-providers/self-hosted/keycloack-add-client-scope.png)
 
-### Step 8: Continue with the self-hosting guide
+### Step 8: Configure custom JWT claims (Optional)
+
+In this step, we will configure custom JWT claims that will be included in every generated token.
+This step is necessary if you want every user created via Keycloak to join the same NetBird network.
+Otherwise, every user will have a separate account and network.
+
+- Open the Keycloak Admin Console
+- Make sure, that the selected realm is `Netbird`
+- Click `Client scopes` (left-hand menu)
+- Click `Create client scope` button
+- Fill in the form with the following values:
+  - Name: `Domain Token Claims`
+  - Type: `Default`
+  - Protocol: `OpenID Connect`
+- Click `Save`
+
+![](/img/integrations/identity-providers/self-hosted/keycloak-domain-token-claim-scope.png)
+
+- While in the newly created Client Scope, switch to the `Mappers` tab
+- Click `Configure a new mapper`
+- Choose the `Hardcoded claim` mapping
+
+![](/img/integrations/identity-providers/self-hosted/keycloack-domain-token-claim-mapper.png)
+
+- Fill in the form with the following values:
+  - Name: `domain`
+  - Token Claim Name: `netbird-clientwt_account_domain`. This is not a typo. The name is a concat of `NETBIRD_AUTH_AUDIENCE` and a `wt_account_domain` string
+  - Claim value: `<YOUR DOMAIN>`. E.g. `netbird.io`
+  - Click `Save`
+
+![](/img/integrations/identity-providers/self-hosted/keycloack-domain-token-claim-mapper-domain.png)
+
+- Repeat the same operation and add a new mapper
+- Fill in the form with the following values:
+  - Name: `domain_category`
+  - Token Claim Name: `netbird-clientwt_account_domain_category`. This is not a typo. The name is a concat of `NETBIRD_AUTH_AUDIENCE` and a `wt_account_domain_category` string
+  - Claim value: `private`
+  - Click `Save`
+
+![](/img/integrations/identity-providers/self-hosted/keycloack-domain-token-claim-mapper-domain-category.png)
+
+- Open the Keycloak Admin Console
+- Make sure, that the selected realm is `Netbird`
+- Click `Clients`
+- Choose `netbird-client` from the list
+- Switch to `Client scopes` tab
+- Click `Add client scope` button
+- Choose `Domain_Token_Claims`
+- CLick `Add` choosing `Default`
+
+![](/img/integrations/identity-providers/self-hosted/keycloack-domain-token-claims-client.png)
+
+### Step 9: Continue with the self-hosting guide
 
 Your authority OIDC configuration will be available under:
 ```
