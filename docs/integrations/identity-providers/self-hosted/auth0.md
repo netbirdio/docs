@@ -81,5 +81,11 @@ You can enable it by following these steps:
 
 ![](/img/integrations/identity-providers/self-hosted/auth0-interactive-login-settings.png)
 
+- Scroll down to the `Advanced Settings` section
+- Enable **`Device Code`**
+- Click `Save Changes`
+
+![](/img/integrations/identity-providers/self-hosted/auth0-grant-types.png)
+
 ### Step 4: Continue with the self-hosting guide
 You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).
