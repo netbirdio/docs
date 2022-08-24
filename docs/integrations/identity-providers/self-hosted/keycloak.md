@@ -152,7 +152,7 @@ In this step, we will create and configure the NetBird client audience for Keycl
 - Switch to `Client scopes` tab
 - Click `Add client scope` button
 - Choose `api`
-- CLick `Add` choosing `Default`
+- Click `Add` choosing `Default`
 - The value `netbird-client` will be used as audience 
 
 ![](/img/integrations/identity-providers/self-hosted/keycloack-add-client-scope.png)
