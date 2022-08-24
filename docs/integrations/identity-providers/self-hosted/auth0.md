@@ -37,16 +37,19 @@ This Auth0 application will be used to authorize access to NetBird Dashboard (We
 
 - Follow the steps in the [Auth0 React SDK Guide](https://auth0.com/docs/quickstart/spa/react/01-login#configure-auth0) 
 up until "Install the Auth0 React SDK".
-  - Use **`https://YOUR DOMAIN`** as: `Allowed Callback URLs`, `Allowed Logout URLs`, `Allowed Web Origins`, `Allowed Origins (CORS)`
-  - :warning: Make sure that **`Token Endpoint Authentication Method`** is set to **`None`**.
-  
+- Use **`https://YOUR DOMAIN`** as: `Allowed Callback URLs`, `Allowed Logout URLs`, `Allowed Web Origins`, `Allowed Origins (CORS)`
+  :::caution
+  Make sure that **`Token Endpoint Authentication Method`** is set to **`None`**.
+  :::
 
 - Use **`Client ID`** to set  ```NETBIRD_AUTH_CLIENT_ID``` property in the `setup.env` file.
 - Use **`Domain`** to configure   ```NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT``` property in the `setup.env` file like so:
      ```
    https://<DOMAIN>/.well-known/openid-configuration
     ``` 
-  :warning: Double-check if the endpoint returns a JSON response by calling it from your browser.
+  :::caution
+  Double-check if the endpoint returns a JSON response by calling it from your browser.
+  :::
 
 ### Step 3: Create and configure Auth0 API
 
