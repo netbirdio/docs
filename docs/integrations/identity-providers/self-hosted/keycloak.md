@@ -157,7 +157,7 @@ In this step, we will create and configure the NetBird client audience for Keycl
 
 ![](/img/integrations/identity-providers/self-hosted/keycloack-add-client-scope.png)
 
-### Step 8: Configure custom JWT claims (Optional)
+### Step 8: Ensure that all users will join the same NetBird network (Optional)
 
 In this step, we will configure custom JWT claims that will be included in every generated token.
 This step is necessary if you want every user created via Keycloak to join the same NetBird network.
