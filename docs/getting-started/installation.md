@@ -53,6 +53,24 @@ tags:
     # for GUI package
     sudo yum install netbird-ui
     ```
+
+**NixOS 22.11+/unstable**
+
+1. Edit your [`configuration.nix`](https://nixos.org/manual/nixos/stable/index.html#sec-changing-config)
+
+    ```nix
+    { config, pkgs, ... }:
+    {
+      services.netbird.enable = true; # for netbird service & CLI
+      environment.systemPackages = [ pkgs.netbird-ui ]; # for GUI
+    }
+    ```
+2. Build and apply new configuration
+
+    ```bash
+    sudo nixos-rebuild switch
+    ```
+
 ### macOS
 **Homebrew install**
 1. Download and install homebrew at https://brew.sh/
