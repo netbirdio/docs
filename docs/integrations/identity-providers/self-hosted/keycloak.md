@@ -29,7 +29,7 @@ After completing this guide, you can log in to your self-hosted NetBird Dashboar
 to your network using the [Interactive SSO Login feature](/getting-started/installation#running-netbird-with-sso-login) 
 over Keycloak.
 
-![](/img/integrations/identity-providers/self-hosted/keycloack-auth-grant.gif)
+![](/img/integrations/identity-providers/self-hosted/keycloak-auth-grant.gif)
 
 ### Step 1: Check your Keycloak Instance
 
