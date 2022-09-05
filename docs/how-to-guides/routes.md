@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 ---
-# Network routes
+# Routing Traffic to Private Networks
 
 NetBird provides fast and reliable end-to-end encryption between peers in your network. You can install the agent on every desktop, VM, container, or physical server and have a fast, secure peer-to-peer mesh network. That is the desired configuration, but some cases do not allow for agent installation or can slow down migration from legacy systems:
 
@@ -12,29 +12,90 @@ NetBird provides fast and reliable end-to-end encryption between peers in your n
 In these cases, you can configure network routes assigning routing peers to connect existing infrastructure. Routing peers will forward packets between your NetBird peers and your other networks; they can masquerade traffic going to your data centers or embedded devices, reducing the need for external route configuration and agent installation.
 
 <p align="center">
-    <img src="/docs/img/how-to-guides/netbird-network-routes.png" alt="high-level-dia" width="600"  />
+    <img src="/docs/img/how-to-guides/netbird-network-routes.png" alt="high-level-dia"  />
 </p>
 
 ## Concepts
 ### Network routes
-A network route describes the network you want to connect with your NetBird peers. It has an identifier, a network CIDR, a routing peer, and some parameters available for managing priority and masquerading.
+A network route describes the network you want to connect with your NetBird peers. It has an identifier, a network range, a routing peer, and some parameters available for managing priority and masquerading.
 :::info
-Network routes is available for NetBird v0.9.0 or later.
+Network routes is available for NetBird [v0.9.0](https://github.com/netbirdio/netbird/releases) or later.
 :::
-### Network identifiers and CIDRs
-Network identifiers are names for each network you want to route traffic from your peers, and network CIDR are IP ranges in CIDR notation which refers to an external network. The combination of identifiers and these ranges makes a single network.
+### Network identifiers and ranges
+Network identifiers are names for each network you want to route traffic from your peers, and ranges are IP ranges declared in CIDR notation which refers to an external network. The combination of identifiers and these ranges makes a single network.
 ### Routing peer
 A routing peer is a node that will route packets between your routed network and the other NetBird peers.
 :::info
 Only Linux OS nodes can be assigned as routing peers.
 :::
 ### High availability routes
-A highly available route is a combination of multiple routes with the same network identifier and CIDR. They have different routing peers offering high-available paths for communication between your peers and external networks.
+A highly available route is a combination of multiple routes with the same network identifier and ranges. They have different routing peers offering high-available paths for communication between your peers and external networks.
 Nodes connected to routing peers will choose one of them to route packets to external networks based on connection type and defined metrics.
 ### Masquerade
-Masquerade hides other NetBird network IPs behind the routing peer local address when accessing the target Network CIDR. This option allows access to your private networks without configuring routes on your local routers or other devices.
+Masquerade hides other NetBird network IPs behind the routing peer local address when accessing the target Network range. This option allows access to your private networks without configuring routes on your local routers or other devices.
 
 If you don't enable this option, you must configure a route to your NetBird network in your external network infrastructure.
 ### Metric and priority
 Metric defines prioritization when choosing the main routing peer in a high availability network. Lower metrics have higher priority.
 
+## Managing network routes
+A network route describes a network you want to connect with your NetBird peers. It has an identifier, a network range, a routing peer, and some parameters available for managing priority and masquerading.
+
+### Creating a network route
+Access the `Network Routes` tab and click the `Add Route` button to create a new route. 
+That will open a route configuration screen where you can add the information about the network you want to route:
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-add-button.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+Now you can enter the details of your route.
+In the example below, we are creating a route with the following information:
+
+- Network identifier: `aws-eu-central-1-vpc`
+- Description: `Production VPC in Frankfurt`
+- Network range: `172.31.0.0/16`
+- Routing peer: `aws-nb-europe-router-az-a`
+
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-create.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+Once you fill in the route information, you can click on the `Create` button to save your new route.
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-saved-new.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+Done! Now every peer connected to your routing peer will be able to send traffic to your external network.
+
+### Creating highly available routes
+To avoid a single point of failure when managing your network, we recommend installing NetBird on every resource. 
+However, you still want to ensure a reliable connection to your private network when running NetBird on every machine is not feasible.
+NetBird Network Routes feature has a High Availability (HA) mode, 
+allowing one or more NetBird peers to serve as routing peers for the same private network.
+
+Creating highly available routes requires the same steps as creating a single route. The only difference is that you must copy the same network identifier and network range from another route.
+
+So if we would like to enable High Availability for the route created in the previous step, we would copy most of the information and assign the new route to a different peer:
+
+- Network identifier: `aws-eu-central-1-vpc`
+- Description: `Production VPC in Frankfurt`
+- Network range: `172.31.0.0/16`
+- Routing peer: `aws-nb-europe-router-az-b`
+
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-create-ha.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+This way, nodes connected to both peer `aws-nb-europe-router-az-a` and peer `aws-nb-europe-router-az-b` would have a highly available connection with the network `172.31.0.0/16`.
+
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-saved-new-ha.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+:::info
+Currently, there is no limitation in the number of routes that form a highly available route. Each connected peer will pick one routing peer to use as the router for a network; this decision is based on metric prioritization and connection attributes like direct or relayed connections.
+:::
+
+### Routes without masquerade
+If you want more transparency and can manage your external network routers, you may choose to disable masquerade for your network routes. In this case, the routing peer won't hide any NetBird peer  IP and will forward the packets to the target network transparently.
+
+That will require a routing configuration on your external network router pointing your NetBird network back to your routing peer. This way, devices that don't have the agent installed can communicate with your NetBird peers.
