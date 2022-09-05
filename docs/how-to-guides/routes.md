@@ -38,3 +38,25 @@ If you don't enable this option, you must configure a route to your NetBird netw
 ### Metric and priority
 Metric defines prioritization when choosing the main routing peer in a high availability network. Lower metrics have higher priority.
 
+## Managing network routes
+The configuration and management of network routes are done through the management dashboard. There is no need to run any configuration commands on your peers.
+### Creating a network route
+After accessing the `Network routes` tab, you can click on the `Add Route` button to create a new route. That will open a route configuration screen where you can add the information about the network you want to route:
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-add-button.png" alt="high-level-dia" width="600" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+Now you can enter the details for your route:
+
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-create.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+Once you are done filling the route information, you can click on the `create` button to save your new route.
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-saved-new.png" alt="high-level-dia" width="600" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+Done! Now every peer connected to your routing peer will be able to send traffic to your external network.
+
+### Masquerading your NetBird traffic
+Configuring a route is enough to route packets from your NetBird peers to your external networks, but in order to make the communication
