@@ -18,10 +18,16 @@ In these cases, you can configure network routes assigning routing peers to conn
 ## Concepts
 ### Network routes
 A network route describes the network you want to connect with your NetBird peers. It has an identifier, a network CIDR, a routing peer, and some parameters available for managing priority and masquerading.
+:::info
+Network routes is available for NetBird v0.9.0 or later.
+:::
 ### Network identifiers and CIDRs
 Network identifiers are names for each network you want to route traffic from your peers, and network CIDR are IP ranges in CIDR notation which refers to an external network. The combination of identifiers and these ranges makes a single network.
 ### Routing peer
 A routing peer is a node that will route packets between your routed network and the other NetBird peers.
+:::info
+Only Linux OS nodes can be assigned as routing peers.
+:::
 ### High availability routes
 A highly available route is a combination of multiple routes with the same network identifier and CIDR. They have different routing peers offering high-available paths for communication between your peers and external networks.
 Nodes connected to routing peers will choose one of them to route packets to external networks based on connection type and defined metrics.
