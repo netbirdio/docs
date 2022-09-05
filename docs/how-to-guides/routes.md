@@ -12,14 +12,14 @@ NetBird provides fast and reliable end-to-end encryption between peers in your n
 In these cases, you can configure network routes assigning routing peers to connect existing infrastructure. Routing peers will forward packets between your NetBird peers and your other networks; they can masquerade traffic going to your data centers or embedded devices, reducing the need for external route configuration and agent installation.
 
 <p align="center">
-    <img src="/docs/img/how-to-guides/netbird-network-routes.png" alt="high-level-dia" width="800"  />
+    <img src="/docs/img/how-to-guides/netbird-network-routes.png" alt="high-level-dia"  />
 </p>
 
 ## Concepts
 ### Network routes
 A network route describes the network you want to connect with your NetBird peers. It has an identifier, a network range, a routing peer, and some parameters available for managing priority and masquerading.
 :::info
-Network routes is available for NetBird v0.9.0 or later.
+Network routes is available for NetBird [v0.9.0](https://github.com/netbirdio/netbird/releases) or later.
 :::
 ### Network identifiers and ranges
 Network identifiers are names for each network you want to route traffic from your peers, and ranges are IP ranges declared in CIDR notation which refers to an external network. The combination of identifiers and these ranges makes a single network.
@@ -39,11 +39,12 @@ If you don't enable this option, you must configure a route to your NetBird netw
 Metric defines prioritization when choosing the main routing peer in a high availability network. Lower metrics have higher priority.
 
 ## Managing network routes
-The configuration and management of network routes are done through the management dashboard. There is no need to run any configuration commands on your peers.
+A network route describes a network you want to connect with your NetBird peers. It has an identifier, a network range, a routing peer, and some parameters available for managing priority and masquerading.
+
 ### Creating a network route
 After accessing the `Network routes` tab, you can click on the `Add Route` button to create a new route. That will open a route configuration screen where you can add the information about the network you want to route:
 <p align="center">
-    <img src="/docs/img/how-to-guides/netbird-network-routes-add-button.png" alt="high-level-dia" width="600" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+    <img src="/docs/img/how-to-guides/netbird-network-routes-add-button.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
 
 Now you can enter the details for your route:
@@ -60,7 +61,7 @@ In the example above, we are creating a route with the following information:
 
 Once you are done filling in the route information, you can click on the `create` button to save your new route.
 <p align="center">
-    <img src="/docs/img/how-to-guides/netbird-network-routes-saved-new.png" alt="high-level-dia" width="600" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+    <img src="/docs/img/how-to-guides/netbird-network-routes-saved-new.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
 Done! Now every peer connected to your routing peer will be able to send traffic to your external network.
 
@@ -81,9 +82,14 @@ So if we would like to enable high availability for the route created in the pre
 This way, nodes connected to both peer `aws-nb-europe-router-az-a` and peer `aws-nb-europe-router-az-b` would have a highly available connection with the network `172.31.0.0/16`.
 
 <p align="center">
-    <img src="/docs/img/how-to-guides/netbird-network-routes-saved-new-ha.png" alt="high-level-dia" width="600" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+    <img src="/docs/img/how-to-guides/netbird-network-routes-saved-new-ha.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
 
 :::info
 Currently, there is no limitation in the number of routes that form a highly available route. Each connected peer will pick one routing peer to use as the router for a network; this decision is based on metric prioritization and connection attributes like direct or relayed connections.
 :::
+
+### Routes without masquerade
+If you want more transparency and can manage your external network routers, you may choose to disable masquerade for your network routes. In this case, the routing peer won't hide any NetBird peer  IP and will forward the packets to the target network transparently.
+
+That will require a routing configuration on your external network router pointing your NetBird network back to your routing peer. This way, devices that don't have the agent installed can communicate with your NetBird peers.
