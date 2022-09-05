@@ -12,7 +12,7 @@ NetBird provides fast and reliable end-to-end encryption between peers in your n
 In these cases, you can configure network routes assigning routing peers to connect existing infrastructure. Routing peers will forward packets between your NetBird peers and your other networks; they can masquerade traffic going to your data centers or embedded devices, reducing the need for external route configuration and agent installation.
 
 <p align="center">
-    <img src="/docs/img/how-to-guides/netbird-network-routes.png" alt="high-level-dia" width="600"  />
+    <img src="/docs/img/how-to-guides/netbird-network-routes.png" alt="high-level-dia" width="800"  />
 </p>
 
 ## Concepts
@@ -51,9 +51,39 @@ Now you can enter the details for your route:
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-network-routes-create.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
+In the example above, we are creating a route with the following information:
 
-Once you are done filling the route information, you can click on the `create` button to save your new route.
+- Network identifier: `aws-eu-central-1-vpc`
+- Description: `Production VPC in Frankfurt`
+- Network range: `172.31.0.0/16`
+- Routing peer: `aws-nb-europe-router-az-a`
+
+Once you are done filling in the route information, you can click on the `create` button to save your new route.
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-network-routes-saved-new.png" alt="high-level-dia" width="600" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
 Done! Now every peer connected to your routing peer will be able to send traffic to your external network.
+
+### Creating highly available routes
+Creating highly available routes requires the same steps as creating a single route. The only difference is that you must copy the same network identifier and network range from another route.
+
+So if we would like to enable high availability for the route created in the previous step, we would copy most of the information and assign the new route to a different peer:
+
+- Network identifier: `aws-eu-central-1-vpc`
+- Description: `Production VPC in Frankfurt`
+- Network range: `172.31.0.0/16`
+- Routing peer: `aws-nb-europe-router-az-b`
+
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-create-ha.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+This way, nodes connected to both peer `aws-nb-europe-router-az-a` and peer `aws-nb-europe-router-az-b` would have a highly available connection with the network `172.31.0.0/16`.
+
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-saved-new-ha.png" alt="high-level-dia" width="600" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+:::info
+Currently, there is no limitation in the number of routes that form a highly available route. Each connected peer will pick one routing peer to use as the router for a network; this decision is based on metric prioritization and connection attributes like direct or relayed connections.
+:::
