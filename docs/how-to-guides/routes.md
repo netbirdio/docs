@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 ---
-# Network routes
+# Routing Traffic to Private Networks
 
 NetBird provides fast and reliable end-to-end encryption between peers in your network. You can install the agent on every desktop, VM, container, or physical server and have a fast, secure peer-to-peer mesh network. That is the desired configuration, but some cases do not allow for agent installation or can slow down migration from legacy systems:
 
@@ -42,33 +42,39 @@ Metric defines prioritization when choosing the main routing peer in a high avai
 A network route describes a network you want to connect with your NetBird peers. It has an identifier, a network range, a routing peer, and some parameters available for managing priority and masquerading.
 
 ### Creating a network route
-After accessing the `Network routes` tab, you can click on the `Add Route` button to create a new route. That will open a route configuration screen where you can add the information about the network you want to route:
+Access the `Network Routes` tab and click the `Add Route` button to create a new route. 
+That will open a route configuration screen where you can add the information about the network you want to route:
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-network-routes-add-button.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
 
-Now you can enter the details for your route:
-
-<p align="center">
-    <img src="/docs/img/how-to-guides/netbird-network-routes-create.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
-</p>
-In the example above, we are creating a route with the following information:
+Now you can enter the details of your route.
+In the example below, we are creating a route with the following information:
 
 - Network identifier: `aws-eu-central-1-vpc`
 - Description: `Production VPC in Frankfurt`
 - Network range: `172.31.0.0/16`
 - Routing peer: `aws-nb-europe-router-az-a`
 
-Once you are done filling in the route information, you can click on the `create` button to save your new route.
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-create.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+Once you fill in the route information, you can click on the `Create` button to save your new route.
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-network-routes-saved-new.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
 Done! Now every peer connected to your routing peer will be able to send traffic to your external network.
 
 ### Creating highly available routes
+To avoid a single point of failure when managing your network, we recommend installing NetBird on every resource. 
+However, you still want to ensure a reliable connection to your private network when running NetBird on every machine is not feasible.
+NetBird Network Routes feature has a High Availability (HA) mode, 
+allowing one or more NetBird peers to serve as routing peers for the same private network.
+
 Creating highly available routes requires the same steps as creating a single route. The only difference is that you must copy the same network identifier and network range from another route.
 
-So if we would like to enable high availability for the route created in the previous step, we would copy most of the information and assign the new route to a different peer:
+So if we would like to enable High Availability for the route created in the previous step, we would copy most of the information and assign the new route to a different peer:
 
 - Network identifier: `aws-eu-central-1-vpc`
 - Description: `Production VPC in Frankfurt`
