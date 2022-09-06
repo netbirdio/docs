@@ -95,7 +95,13 @@ This way, nodes connected to both peer `aws-nb-europe-router-az-a` and peer `aws
 Currently, there is no limitation in the number of routes that form a highly available route. Each connected peer will pick one routing peer to use as the router for a network; this decision is based on metric prioritization and connection attributes like direct or relayed connections.
 :::
 
-### Routes without masquerade
-If you want more transparency and can manage your external network routers, you may choose to disable masquerade for your network routes. In this case, the routing peer won't hide any NetBird peer  IP and will forward the packets to the target network transparently.
+### Routes without masquerading
+If you want more transparency and would like to manage your external network routers, you may choose to disable masquerade for your network routes. 
+In this case, the routing peer won't hide any NetBird peer  IP and will forward the packets to the target network transparently.
 
-That will require a routing configuration on your external network router pointing your NetBird network back to your routing peer. This way, devices that don't have the agent installed can communicate with your NetBird peers.
+That will require a routing configuration on your external network router pointing your NetBird network back to your routing peer. 
+This way, devices that don't have the agent installed can communicate with your NetBird peers.
+
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-network-routes-masquerading.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
