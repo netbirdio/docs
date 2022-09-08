@@ -6,6 +6,10 @@ sidebar_position: 4
 NetBird allows administrators to restrict access to resources (peers) by creating access rules and
 defining what peer groups are permitted to establish connections with one another.
 
+<div class="videowrapper">
+<iframe src="https://www.youtube.com/embed/WvbkACjdsHA" allow="fullscreen;"></iframe>
+</div>
+
 ## Introduction
 A NetBird account comes with a `Default` rule that allows all peers of the account to connect to each other forming a full mesh network.
 In most cases, this is the desired state for a small network or network that has low-security requirements.
