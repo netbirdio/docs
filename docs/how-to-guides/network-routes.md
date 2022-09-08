@@ -3,6 +3,11 @@ sidebar_position: 1
 ---
 # Routing Traffic to Private Networks
 
+<div class="videowrapper">
+<iframe src="https://www.youtube.com/embed/pmrpNttg2lI" allow="fullscreen;"></iframe>
+</div>
+<br/><br/>
+
 NetBird provides fast and reliable end-to-end encryption between peers in your network. You can install the agent on every desktop, VM, container, or physical server and have a fast, secure peer-to-peer mesh network. That is the desired configuration, but some cases do not allow for agent installation or can slow down migration from legacy systems:
 
 - Side-by-side migrations where part of your network is already using NetBird but needs to access services that are not
@@ -14,6 +19,12 @@ In these cases, you can configure network routes assigning routing peers to conn
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-network-routes.png" alt="high-level-dia"  />
 </p>
+
+:::tip try it
+If you want to see the Network Routes feature in action, try our managed version at https://app.netbird.io/routes. 
+
+It's free and simple! :)
+:::
 
 ## Concepts
 ### Network routes
@@ -105,3 +116,13 @@ This way, devices that don't have the agent installed can communicate with your 
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-network-routes-masquerading.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
+
+## Get started
+<p float="center" >
+    <button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</button>
+</p>
+
+- Make sure to [star us on GitHub](https://github.com/netbirdio/netbird)
+- Follow us [on Twitter](https://twitter.com/netbird)
+- Join our [Slack Channel](https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A)
+- NetBird [latest release](https://github.com/netbirdio/netbird/releases) on GitHub
