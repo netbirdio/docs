@@ -10,9 +10,9 @@ sidebar_position: 1
 
 NetBird provides fast and reliable end-to-end encryption between peers in your network. You can install the agent on every desktop, VM, container, or physical server and have a fast, secure peer-to-peer mesh network. That is the desired configuration, but some cases do not allow for agent installation or can slow down migration from legacy systems:
 
-- Side-by-side migrations where part of your network is already using NetBird but needs to access services that are not
-- Systems that we have limited operating system access. e.g., IoT devices, printers, and managed services.
-- Legacy networks where an administrator is unable to install the agent on all nodes
+- Side-by-side migrations where part of your network is already using NetBird but needs to access services that are not.
+- Systems that have limited operating system access. e.g., IoT devices, printers, and managed services.
+- Legacy networks where an administrator is unable to install the agent on all nodes.
 
 In these cases, you can configure network routes assigning routing peers to connect existing infrastructure. Routing peers will forward packets between your NetBird peers and your other networks; they can masquerade traffic going to your data centers or embedded devices, reducing the need for external route configuration and agent installation.
 
