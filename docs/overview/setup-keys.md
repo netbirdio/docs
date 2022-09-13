@@ -26,7 +26,9 @@ Setup keys are available in the NetBird Management dashboard under the Setup Key
 
 By default, we generate 2 setup keys right after account creation. You can easily add new or revoke keys.
 
-![](/img/architecture/setup-keys.png)
+<p align="center">
+    <img src="/docs/img/architecture/setup-keys.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p> 
 
 :::tip revoking a key
 When revoking a key, all machines authenticated with this key will remain connected in the network. The same logic applies when the key expires.
@@ -53,7 +55,7 @@ To add `Auto-assign groups`, open the `Setup Keys` tab and create or update any 
 The use this key to enroll new machine.
 
 <p align="center">
-    <img src="/docs/img/architecture/netbird-peer-auto-tagging-newkey.png" alt="high-level-dia" width="600" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+    <img src="/docs/img/architecture/netbird-peer-auto-tagging-newkey.png" alt="high-level-dia" width="500" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
 
 :::note
