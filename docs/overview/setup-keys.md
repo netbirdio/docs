@@ -37,18 +37,20 @@ Setup keys are set to expire after 30 days. When expired, the setup key can't be
 
 ### Peer Auto-grouping
 
+<p align="center">
+    <img src="/docs/img/architecture/peer-auto-tagging-setupkey.gif" alt="high-level-dia" width="800" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
 NetBird offers a powerful [Access Control feature](/overview/acls) that allows easy access management of your resources. 
 In a basic scenario, you would create multiple groups of peers and create access rules to define what groups can access each other. 
 Adding peers to groups might become time-consuming in large networks with dozens of machines.
-
-<p align="center">
-    <img src="/docs/img/architecture/netbird-peer-auto-tagging-newkey.png" alt="high-level-dia" width="600" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
-</p>
 
 Starting NetBird [v0.9.2](https://github.com/netbirdio/netbird/releases), when creating or updating a setup key, 
 it is possible to specify a list of auto-assign groups. Every peer registered with this key will be automatically added 
 to these groups. All the access control rules enabled for these groups will apply automatically.
 
+To add `Auto-assign groups`, open the `Setup Keys` tab and create or update any existing setup key.
+
 <p align="center">
-    <img src="/docs/img/architecture/peer-auto-tagging-setupkey.gif" alt="high-level-dia" width="800" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+    <img src="/docs/img/architecture/netbird-peer-auto-tagging-newkey.png" alt="high-level-dia" width="600" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
