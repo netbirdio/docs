@@ -52,7 +52,7 @@ it is possible to specify a list of auto-assign groups. Every peer registered wi
 to these groups. All the access control rules enabled for these groups will apply automatically.
 
 To add `Auto-assign groups`, open the `Setup Keys` tab and create or update any existing setup key. 
-The use this key to enroll new machine.
+Then use this key to enroll new machine.
 
 <p align="center">
     <img src="/docs/img/architecture/netbird-peer-auto-tagging-newkey.png" alt="high-level-dia" width="500" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
