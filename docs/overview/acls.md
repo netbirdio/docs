@@ -30,6 +30,10 @@ Some characteristics of groups:
 - They can only be deleted via API.
 - There is a default group called `All`.
 
+:::tip peer auto-grouping
+You can assign groups automatically with the [peer auto-grouping feature](/overview/setup-keys#peer-auto-grouping).
+:::
+
 ### The All Group
 The `All` group is a default group to which every peer in your network is automatically added to. This group cannot be modified or deleted.
 ### Rules
@@ -91,6 +95,10 @@ You can do it by accessing the `Peers` tab and clicking the `Groups` column of a
 <p align="center">
     <img src="/docs/img/overview/associate-peer-groups.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
+
+:::tip peer auto-grouping
+You can assign groups automatically with the [peer auto-grouping feature](/overview/setup-keys#peer-auto-grouping).
+:::
 
 ### Updating Rules
 To update a rule, you can click on the rule's `Name` or on either `Sources` and `Destinations` columns. You could also click the menu 
