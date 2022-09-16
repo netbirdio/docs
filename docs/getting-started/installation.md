@@ -145,7 +145,9 @@ After that you may need to add /usr/bin in your PATH environment variable:
 If you installed the Desktop UI client, you can launch it and click on Connect.
 > It will open your browser, and you will be prompt for email and password. Follow the instructions.
 
-![](/img/getting-started/systray.png)
+<p>
+    <img src="/docs/img/getting-started/netbird-sso-login-ui.gif" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p> 
 
 #### CLI
 Alternatively, you could use command line. Simply run
@@ -154,7 +156,9 @@ Alternatively, you could use command line. Simply run
    ```
 > It will open your browser, and you will be prompt for email and password. Follow the instructions.
 
-![](/img/getting-started/netbird-up.png)
+<p>
+    <img src="/docs/img/getting-started/netbird-sso-login-cmd.gif" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p> 
 
 Check connection status:
 ```bash
