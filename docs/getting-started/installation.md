@@ -15,8 +15,8 @@ tags:
     ```bash
     sudo apt-get update
     sudo apt-get install ca-certificates curl gnupg -y
-    curl -L https://pkgs.wiretrustee.com/debian/public.key | sudo apt-key add -
-    echo 'deb https://pkgs.wiretrustee.com/debian stable main' | sudo tee /etc/apt/sources.list.d/wiretrustee.list
+    curl -sSL https://pkgs.wiretrustee.com/debian/public.key | sudo gpg --dearmor --output /usr/share/keyrings/wiretrustee-archive-keyring.gpg
+    echo 'deb [signed-by=/usr/share/keyrings/wiretrustee-archive-keyring.gpg] https://pkgs.wiretrustee.com/debian stable main' | sudo tee /etc/apt/sources.list.d/wiretrustee.list
     ```
 2. Update APT's cache
 
