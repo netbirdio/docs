@@ -34,4 +34,4 @@ We are collecting the following metrics:
 We are using an installation ID for each management service which is generated once and stored in your management store database. It doesn't have any trace of any other private information, and it helps distinguish each deployment.
 
 ### Metrics pusher IP
-We are not storing pusher the pusher IP address
+We are not storing the pusher IP address; it gets discarded once the request is complete.
