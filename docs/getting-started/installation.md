@@ -216,7 +216,7 @@ Set the ```NB_SETUP_KEY``` environment variable and run the command.
 You can pass other settings as environment variables. See [Environment variables](reference/netbird-commands.md#environment-variables) for details.
 :::
 ```bash
-docker run --rm --name PEER_NAME --hostname PEER_NAME --cap-add=NET_ADMIN -d -e NB_SETUP_KEY=<SETUP KEY> -v netbird-client:/etc/netbird netbirdio/netbird:latest
+docker run --rm --name PEER_NAME --hostname PEER_NAME --cap-add=NET_ADMIN --device=/dev/net/tun -d -e NB_SETUP_KEY=<SETUP KEY> -v netbird-client:/etc/netbird netbirdio/netbird:latest
 ```
 
 See [Docker example](examples/netbird-docker.md) for details.
