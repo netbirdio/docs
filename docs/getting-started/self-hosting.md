@@ -107,12 +107,12 @@ Make sure all the required properties set in the ```setup.env``` file and run:
 
 This will export all the properties as environment variables and generate ```docker-compose.yml``` and ```management.json``` files substituting required variables.
 
-### Step 5: Run docker compose:
+### Step 6: Run docker compose:
 
 ```bash
 docker-compose up -d
 ```
-### Step 5: Check docker logs (Optional)
+### Step 7: Check docker logs (Optional)
 
  ```bash
  docker-compose logs signal
