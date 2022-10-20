@@ -87,7 +87,18 @@ Pick the one that suits your needs, follow the steps, and continue with this gui
 - Continue with [Auth0](/integrations/identity-providers/self-hosted/using-netbird-with-auth0) (managed service).
 - Continue with [Keycloak](/integrations/identity-providers/self-hosted/using-netbird-with-keycloak).
 
-### Step 4: Run configuration script
+### Step 4: Disable single account mode (optional)
+
+NetBird Management service runs in a single account mode by default since version v0.10.1. 
+Management service was creating a separate account for each registered user before v0.10.1. 
+Single account mode ensures that all the users signing up for your self-hosted installation will join the same account/network.
+In most cases, this is the desired behavior. 
+
+If you want to disable the single-account mode, set `--disable-single-account-mode` flag in the 
+[docker-compose.yml.tmpl](https://github.com/netbirdio/netbird/tree/main/infrastructure_files/docker-compose.yml.tmpl) 
+`command` section of the `management` service.
+
+### Step 5: Run configuration script
 Make sure all the required properties set in the ```setup.env``` file and run:
 
  ```bash
