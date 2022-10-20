@@ -1,7 +1,7 @@
 ---
 sidebar_position: 2
 ---
-# Adding Users to your NetBird network
+# Adding Users to your Network
 
 Whether you have a network for personal use or manage your company's corporate network, you'd probably want to invite 
 people to your account and join your NetBird network.
@@ -13,7 +13,7 @@ This way of adding users is managed by the NetBird system and doesn't require ad
 It works only for organizations with private domains.
 
 Whenever a new user signs up with a private domain (e.g., @netbird.io), 
-NetBird creates a new account and associates it with the netbird.io organization (domain). Every consequent user signup with the same @netbird.io domain in their email address will end up under the same organization.
+NetBird creates a new account and associates it with the netbird.io organization (domain) automatically. Every consequent user signup with the same @netbird.io domain in their email address will end up under the same organization.
 
 How does it work? Every time a previously unknown user registers at [app.netbird.io](https://app.netbird.io/), 
 the system classifies the domain part of the email. 
