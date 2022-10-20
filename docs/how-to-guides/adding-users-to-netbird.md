@@ -32,9 +32,17 @@ As the name stands, this way of inviting users is straightforward and works thro
 To invite a new user, proceed to the `Users` tab and click the <button name="button" className="button-6">Invite User</button> button. 
 A user window will pop up where you can specify the name and email address of the invited user. Optionally, you could select a set of groups with which you want this user to be associated.
 
+The invited users will receive an email invitation that they have to confirm.
+After logging in to the system, they will join your network automatically.
+
 <p align="center">
     <img src="/docs/img/how-to-guides/user-invites.gif" alt="high-level-dia" width="800" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
+
+:::info
+If a user already has a NetBird account, you can't invite them. 
+This is a limitation that is likely to be removed in future versions. 
+:::
 
 ### Get started
 <p float="center" >
