@@ -128,7 +128,8 @@ You need to replace some variables from the URL above:
   ```bash
   tar xcf ./netbird_<VERSION>.tar.gz
   sudo mv netbird /usr/bin/netbird
-  chmod +x /usr/bin/netbird
+  sudo chown root:root /usr/bin/netbird
+  sudo chmod +x /usr/bin/netbird
   ```
 After that you may need to add /usr/bin in your PATH environment variable:
   ````bash
