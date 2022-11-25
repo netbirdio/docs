@@ -33,6 +33,9 @@ Nameserver is an upstream DNS server for name resolution, if a query comes and i
 Match domains allow you to route queries of names, matching them to specific nameservers. This is useful when you have an internal DNS configuration that only internal servers can resolve.
 ### All domains option
 The all domains option defines a default nameserver configuration to resolve all domains that don't have a match domain setting. Because not all operating systems support match domain configuration, we recommend configuring at least one nameserver set with this option enabled per distribution group. You may also consider using the group All for distribution, so you don't have to define multiple sets of nameservers to resolve all domains.
+:::info
+A nameserver set may only be configured with either All domains or match domains, you can have both settings in a single configuration as they overlap.
+:::
 ### Distribution groups
 Distribution defines that peers that belong to groups set in this field will receive the nameserver configuration.
 :::info
@@ -40,15 +43,65 @@ When using private nameservers, you may use these groups to link routing peers a
 :::
 
 ## Managing nameserver groups
-
+A nameserver group defines up to 2 nameservers to resolve DNS to a set of peers in distribution groups.
 ### Creating a nameserver group
+Access the `DNS` tab and click the `Add Nameserver` button to create a new nameserver.
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-nameserver-add-button.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+That will open a nameserver selection configuration screen where you can choose between using 3 predefined public nameservers or using a custom setup:
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-nameserver-selection-view.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+#### Selecting predefined nameservers
+If you choose to go with a predefined public nameserver, you can choose between the following:
+- [Google DNS servers](https://developers.google.com/speed/public-dns/docs/using)
+- [Cloudflare DNS servers](https://one.one.one.one/dns/)
+- [Quad9 DNS servers](https://www.quad9.net/)
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-nameserver-selection-view-open.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+After selecting one of the 3 options, you need to assign a group, and you will be done. In the example below, we chose the "All" group:
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-nameserver-all-group.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+#### Entering custom nameservers
+You can also enter your custom nameserver by clicking in Add custom button. Now you can enter the details of your nameserver. 
+
+In the example below, we are creating a nameserver with the following information:
+
+- Name: `Office resolver`
+- Description: `Berlin office resolver`
+- Add at least one nameserver: `192.168.0.32` with port `53`
+- Match mode: `All domains`
+- Distribution group: `Remote developers`
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-nameserver-custom.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
 
 ### Creating a nameserver for specific domains
+Sometimes we want to forward DNS queries to specific nameservers but only for particular domains that match a setting. Taking the example from custom nameservers above, you could select a match mode for only domains listed there; below you can see the same nameserver setup but only for `berlinoffice.com` domain:
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-nameserver-remote-resolver.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+:::info
+Currently, only MacOS, Windows 10+, and Linux running systemd-resolved support nameservers without an all domains resolver. For a better experience, we recommend setting at least one all domain resolver to be applied to all groups.
+:::
 
 ### Distributing the settings with groups
+You can select as many distribution groups as you want for your nameserver setup, keep in mind to link them to peers and if required, to access control rules when using private nameservers.
+### Adding remote private DNS servers
+To add a private DNS server that is running behind routing peers, you need to create resources to ensure communication between your nameserver clients can communicate. In the Berlin office example from previous steps, we have a peer from the `Office network` that can route traffic to the 192.168.0.32 IP, so we need to ensure that a similar network route exists:
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-nameserver-remote-route.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
 
-### Adding  the settings with groups
-
+Then we need to confirm that an access rule exists to connect `Remote developers` to `Office network` group:
+<p align="center">
+    <img src="/docs/img/how-to-guides/netbird-nameserver-remote-rule.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
 ## Get started
 <p float="center" >
     <button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</button>
