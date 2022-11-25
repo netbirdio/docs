@@ -102,6 +102,7 @@ Then we need to confirm that an access rule exists to connect `Remote developers
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-nameserver-remote-rule.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
+
 ## Get started
 <p float="center" >
     <button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</button>
