@@ -16,13 +16,28 @@ You can configure name servers and set distribution groups to control domain nam
 - User a particular DNS server to resolve a specific domain name
 
 ## Concepts
-### Nameserver 
+### Local resolver
+To minimize the number of changes in your system, NetBird will spin up a local DNS resolver.
 
+This local resolver will be responsible for queries to the domain names of peers registered in your network and forwarding queries to upstream nameservers you configure in the system.
+
+It listens on the peer's IP, and usually, it will use the default port 53, but if it is in use, it will use the 5053 port.
+:::info
+Custom port support is not builtin into most operating systems. At the time of release, the supported systems are:
+- MacOS
+- Linux with systemd-resolved
+:::
+### Nameserver
+Nameserver is an upstream DNS server for name resolution, if a query comes and is not a peer domain name, it will be resolved by one of the upstream servers. You can assign private and public IPs and custom ports. Remember that you might need a network route for private addresses to allow peers to connect to it.
 ### Match domains
-
-### All domains
-
+Match domains allow you to route queries of names, matching them to specific nameservers. This is useful when you have an internal DNS configuration that only internal servers can resolve.
+### All domains option
+The all domains option defines a default nameserver configuration to resolve all domains that don't have a match domain setting. Because not all operating systems support match domain configuration, we recommend configuring at least one nameserver set with this option enabled per distribution group. You may also consider using the group All for distribution, so you don't have to define multiple sets of nameservers to resolve all domains.
 ### Distribution groups
+Distribution defines that peers that belong to groups set in this field will receive the nameserver configuration.
+:::info
+When using private nameservers, you may use these groups to link routing peers and clients of the private servers.
+:::
 
 ## Managing nameserver groups
 
@@ -31,6 +46,8 @@ You can configure name servers and set distribution groups to control domain nam
 ### Creating a nameserver for specific domains
 
 ### Distributing the settings with groups
+
+### Adding  the settings with groups
 
 ## Get started
 <p float="center" >
