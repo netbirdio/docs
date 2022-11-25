@@ -14,6 +14,10 @@ You can configure name servers and set distribution groups to control domain nam
 - Use an internal active directory DNS server
 - Use public and distributed servers available on the internet
 - User a particular DNS server to resolve a specific domain name
+ 
+:::info
+Nameservers is available for NetBird [v0.11.0](https://github.com/netbirdio/netbird/releases) or later.
+:::
 
 ## Concepts
 ### Local resolver
