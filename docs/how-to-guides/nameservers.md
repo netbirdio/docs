@@ -107,6 +107,32 @@ Then we need to confirm that an access rule exists to connect `Remote developers
     <img src="/docs/img/how-to-guides/netbird-nameserver-remote-rule.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
 
+## Testing configuration
+### Querying records
+DNS configuration has evolved in the last few years, and each operating system might expose its nameserver configuration differently. Unfortunately, tools like `nslookup` or `dig` didn't get updated to match these OS configurations, and in many cases, they won't use the same servers as your browser to query domain names.
+
+For these cases, we listed some tools to support your checks:
+#### MacOS
+You can use `dscacheutil`:
+```shell
+dscacheutil -q host -a name peer-a.netbird.cloud
+```
+#### Windows
+You can use `Resolve-DnsName` on `Powershell`:
+```shell
+Resolve-DnsName -Name  peer-a.netbird.cloud
+```
+#### Linux
+In most cases, you will be fine with traditional tools because most DNS managers on Linux tend to update the /etc/resolv.conf.
+```shell
+dig peer-a.netbird.cloud
+# or
+nslookup peer-a.netbird.cloud
+```
+If your system is running systemd-resolved, you can also use ```resolvectl```:
+```shell
+resolvectl query peer-a.netbird.cloud
+```
 ## Get started
 <p float="center" >
     <button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</button>
