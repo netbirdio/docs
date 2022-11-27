@@ -1,19 +1,20 @@
 ---
 sidebar_position: 3
 ---
-# Adding DNS servers to your network
-NetBird solves a significant network problem by managing and distributing the IP addresses for your peers. You don't need to design networks or configure [DHCP](https://en.wikipedia.org/wiki/Dynamic_Host_Configuration_Protocol) as it is done in a single place seamlessly. Once IPs are distributed in your network, your peers love them; they can communicate with one another and establish tunnels, and a person with a good memory can memorize and use them to connect to these peers. But let's face it, even though we trust our user's memory capacity, there is a limit to what we can remember; when it starts going above 100 nodes, you will need to look at our dashboard to get IPs for peers you need to access.
+# Manage DNS servers in your network
+NetBird assigns and automatically distributes the IP addresses for your peers. 
+You don't need to design a network or configure [DHCP](https://en.wikipedia.org/wiki/Dynamic_Host_Configuration_Protocol) 
+as it is automatically done in a single place - the NetBird Management service. 
+Once peers have IPs, they can communicate with one another and establish direct encrypted WireGuard® tunnels. 
+You can use these IPs to access the services running on the connected peers (e.g., SSH). 
+Even though we trust our memory capacity, there is a limit to what we can remember, 
+especially when it comes to IP addresses like this one, 100.128.185.34.
 
-For that and many other reasons, [DNS](https://en.wikipedia.org/wiki/Domain_Name_System) was created to give us something easier than numbers to memorize, domain names; these are usually friendly and often mean something related to their purpose, making it much easier to remember them. For instance, an example of the DNS advantages is peer with IP 100.64.185.34, which runs your file storage service, and can easily be accessed using a domain name like files.netbird.cloud.
+Starting [v0.11.0](https://github.com/netbirdio/netbird/releases), NetBird automatically assigns a domain name
+to each peer in a private `netbird.cloud` space that can be used to access the machines. E.g., `my-server.netbird.cloud`.
 
-Having the domain name helps us humans, but we can't avoid that IP because computers still use them to communicate with one another. They do that seamlessly to you; once you issue a domain name in your browser, the computer resolves the name to an IP address by querying a  service called name server. The name server can resolve names to IPs, or they can forward the name queries to other name servers all the way to the top of the DNS hierarchy until it gets an acceptable answer.
-
-You can configure name servers and set distribution groups to control domain name resolution within your NetBird network. To list the use cases for that, you might want a DNS service or resolver are:
-
-- Resolve peer IPs within your network
-- Use an internal active directory DNS server
-- Use public and distributed servers available on the internet
-- User a particular DNS server to resolve a specific domain name
+Besides accessing machines by their domain names, you can configure NetBird to use your private nameservers, 
+control what nameservers a specific [peer group](https://netbird.io/docs/overview/acls#groups) should use, and set up split DNS.
  
 :::info
 Nameservers is available for NetBird [v0.11.0](https://github.com/netbirdio/netbird/releases) or later.
@@ -48,30 +49,32 @@ When using private nameservers, you may use these groups to link routing peers a
 
 ## Managing nameserver groups
 A nameserver group defines up to 2 nameservers to resolve DNS to a set of peers in distribution groups.
+
 ### Creating a nameserver group
 Access the `DNS` tab and click the `Add Nameserver` button to create a new nameserver.
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-nameserver-add-button.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
-That will open a nameserver selection configuration screen where you can choose between using 3 predefined public nameservers or using a custom setup:
-<p align="center">
-    <img src="/docs/img/how-to-guides/netbird-nameserver-selection-view.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
-</p>
+That will open a nameserver selection configuration screen where you can choose between using three predefined public 
+nameservers or using a custom setup.
 
 #### Selecting predefined nameservers
-If you choose to go with a predefined public nameserver, you can choose between the following:
+If you choose a predefined public nameserver option, you can select the following nameservers:
 - [Google DNS servers](https://developers.google.com/speed/public-dns/docs/using)
 - [Cloudflare DNS servers](https://one.one.one.one/dns/)
 - [Quad9 DNS servers](https://www.quad9.net/)
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-nameserver-selection-view-open.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
-After selecting one of the 3 options, you need to assign a group, and you will be done. In the example below, we chose the "All" group:
+
+After selecting one of the three options, you need to assign a peer group for which this nameserver will be effective. 
+In the example below, we chose the "All" group:
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-nameserver-all-group.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
-#### Entering custom nameservers
-You can also enter your custom nameserver by clicking in Add custom button. Now you can enter the details of your nameserver. 
+
+#### Creating custom nameservers
+You can also configure a custom nameserver by clicking the `Add custom` button. Now you can enter the details of your nameserver.
 
 In the example below, we are creating a nameserver with the following information:
 
@@ -85,7 +88,9 @@ In the example below, we are creating a nameserver with the following informatio
 </p>
 
 ### Creating a nameserver for specific domains
-Sometimes we want to forward DNS queries to specific nameservers but only for particular domains that match a setting. Taking the example from custom nameservers above, you could select a match mode for only domains listed there; below you can see the same nameserver setup but only for `berlinoffice.com` domain:
+Sometimes we want to forward DNS queries to specific nameservers but only for particular domains that match a setting.
+Taking the example of custom nameservers above, you could select a match mode for only domains listed there.
+Below you can see the same nameserver setup but only for the `berlinoffice.com` domain:
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-nameserver-remote-resolver.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
@@ -97,7 +102,7 @@ Currently, only MacOS, Windows 10+, and Linux running systemd-resolved support n
 ### Distributing the settings with groups
 You can select as many distribution groups as you want for your nameserver setup, keep in mind to link them to peers and if required, to access control rules when using private nameservers.
 ### Adding remote private DNS servers
-To add a private DNS server that is running behind routing peers, you need to create resources to ensure communication between your nameserver clients can communicate. In the Berlin office example from previous steps, we have a peer from the `Office network` that can route traffic to the 192.168.0.32 IP, so we need to ensure that a similar network route exists:
+To add a private DNS server that is running behind routing peers, you need to create resources to ensure communication between your nameserver clients can communicate. In the Berlin office example from previous steps, we have a peer from the `Office network` that can route traffic to the `192.168.0.32` IP, so we need to ensure that a similar network route exists:
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-nameserver-remote-route.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>

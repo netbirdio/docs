@@ -1,7 +1,7 @@
 ---
 sidebar_position: 2
 ---
-# Adding Users to your Network
+# Add Users to your network
 
 Whether you have a network for personal use or manage your company's corporate network, you'd probably want to invite 
 people to your account and join your NetBird network.
