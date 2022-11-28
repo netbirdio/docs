@@ -1,7 +1,7 @@
 ---
 sidebar_position: 3
 ---
-# Manage DNS servers in your network
+# Manage DNS in your network
 NetBird assigns and automatically distributes the IP addresses for your peers. 
 You don't need to design a network or configure [DHCP](https://en.wikipedia.org/wiki/Dynamic_Host_Configuration_Protocol) 
 as it is automatically done in a single place - the NetBird Management service. 
