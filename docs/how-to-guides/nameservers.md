@@ -8,9 +8,9 @@ sidebar_position: 3
 </div>
 <br/><br/>
 
-NetBird assigns and automatically distributes the IP addresses for your peers. 
 You don't need to design a network or configure [DHCP](https://en.wikipedia.org/wiki/Dynamic_Host_Configuration_Protocol) 
 as it is automatically done in a single place - the NetBird Management service. 
+NetBird assigns and automatically distributes IP addresses to your peers.
 Once peers have IPs, they can communicate with one another and establish direct encrypted WireGuard® tunnels. 
 You can use these IPs to access the services running on the connected peers (e.g., SSH). 
 Even though we trust our memory capacity, there is a limit to what we can remember, 
