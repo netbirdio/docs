@@ -1,7 +1,7 @@
 ---
 sidebar_position: 1
 ---
-# Routing Traffic to Private Networks
+# Routing traffic to private networks
 
 <div class="videowrapper">
 <iframe src="https://www.youtube.com/embed/VQuPuBOAknQ" allow="fullscreen;"></iframe>
