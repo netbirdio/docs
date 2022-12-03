@@ -1,7 +1,7 @@
 ---
 id: using-netbird-with-authentik
 title: Using NetBird with Authentik
-sidebar_position: 3
+sidebar_position: 4
 tags:
 - integrations
 - idp
@@ -31,9 +31,9 @@ to your network using setup keys. New Authentik releases should also support [In
 
 For this guide, we assume you have Authentik configured and running on public-facing domain with SSL. Use the official [Authentik "Get started" guide](https://goauthentik.io/docs/installation).
 
-We also assume that you have at least one user created on your Authentik server and that it's configured properly. You can test your configuration with some other self-hosted application or use service like [OIDC Playground](https://openidconnect.net).
+We also assume that you have at least one user created on your Authentik server and that it's configured properly. You can test your configuration with some other self-hosted application or use a service like [OIDC Playground](https://openidconnect.net).
 
-We will be using **https://authentik.example.com** as our Authentik base URL, pleace replace it to your needs.
+We will be using **https://authentik.example.com** as our Authentik base URL, please replace it to your needs.
 
 
 
@@ -44,7 +44,7 @@ We encourage you to comply with this requirement to make the world more secure ð
 
 ### Step 2: Create a provider
 
-In this step we will create "provider" and "application" for Netbird in Authentik.
+In this step, we will create "provider" and "application" for Netbird in Authentik.
 
 
 
@@ -63,7 +63,7 @@ In this step we will create "provider" and "application" for Netbird in Authenti
     * This step is optional, but if you stay with Hashed UserID, you will end up with nonsense usernames in Netbird. But if you are the only user, it shouldn't matter.
 1. Click on `Finish` to save the provider and continue with Step 3
 
-### Step 3: Create a application
+### Step 3: Create an application
 
 1. In the `Applications` section click on `Applications` and then `Create`
 1. Fill in the `Name` and `Slug` with something sensible (e.g. netbird)
@@ -88,8 +88,5 @@ Double-check if the endpoint returns a JSON response by calling it from your bro
   - NETBIRD_AUTH_AUDIENCE=`ClientID generated in Step 2, Section 7`
 
 
-- You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).
-
-:::note
-Make sure that your Keycloak instance use HTTPS. Otherwise, the setup won't work.
-:::
+- You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider). 
+  - When you complete the __Step 5__ (executing `./configure.sh`), you __have__ to open the `docker-compose.yml` file and remove the last `/` in the URL. The `AUTH_AUTHORITY=https://authentik.example.com/application/o/netbird/` will change to `AUTH_AUTHORITY=https://authentik.example.com/application/o/netbird`
