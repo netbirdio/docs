@@ -105,6 +105,22 @@ tags:
 5. After installing, you can follow the steps from [Running NetBird with SSO Login](#Running-NetBird-with-SSO-Login) steps.
 > To uninstall the client and service, you can use Add/Remove programs
 
+⚠️ In case of any issues with the connection on Windows check the firewall settings. With default Windows 11 firewall setup there could be connectivity issue related to egress traffic.
+
+Recommended way is to add NetBird in firewall settings:
+
+1. Go to "Control panel".
+2. Select "Windows Defender Firewall".
+3. Select "Advanced settings".
+4. Select "Outbound Rules" -> "New rule".
+5. In the new rule select "Program" and click "Next".
+6. Point to the NetBird installation exe file (usually in `C:\Program Files\NetBird\netbird.exe`) and click "Next".
+7. Select "Allow the connection" and click "Next".
+8. Select the network in which rule should be applied (Domain, Private, Public) according to your needs and click "Next".
+9. Provide rule name (e.g. "Netbird Egress Traffic") and click "Finish".
+10. Disconnect and connect to NetBird.
+
+
 ### Binary Install
 **Installation from binary (CLI only)**
 
