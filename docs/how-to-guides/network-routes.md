@@ -49,6 +49,12 @@ If you don't enable this option, you must configure a route to your NetBird netw
 ### Metric and priority
 Metric defines prioritization when choosing the main routing peer in a high availability network. Lower metrics have higher priority.
 
+### Distribution groups
+Distribution defines that peers that belong to groups set in this field will receive the network route.
+:::info
+It doesn't remove the need for the routing peer to be connected to these peers
+:::
+
 ## Managing network routes
 A network route describes a network you want to connect with your NetBird peers. It has an identifier, a network range, a routing peer, and some parameters available for managing priority and masquerading.
 
@@ -66,12 +72,13 @@ In the example below, we are creating a route with the following information:
 - Description: `Production VPC in Frankfurt`
 - Network range: `172.31.0.0/16`
 - Routing peer: `aws-nb-europe-router-az-a`
+- Distribution Groups: `All`
 
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-network-routes-create.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
 
-Once you fill in the route information, you can click on the `Create` button to save your new route.
+Once you fill in the route information, you can click on the `Save` button to save your new route.
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-network-routes-saved-new.png" alt="high-level-dia" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
@@ -83,14 +90,9 @@ However, you still want to ensure a reliable connection to your private network 
 NetBird Network Routes feature has a High Availability (HA) mode, 
 allowing one or more NetBird peers to serve as routing peers for the same private network.
 
-Creating highly available routes requires the same steps as creating a single route. The only difference is that you must copy the same network identifier and network range from another route.
+To enable high-available mode, you can click on `Configure` and select a new peer in the `Add additional routing peer` field, then select the distribution groups and click on `Save`.
 
-So if we would like to enable High Availability for the route created in the previous step, we would copy most of the information and assign the new route to a different peer:
-
-- Network identifier: `aws-eu-central-1-vpc`
-- Description: `Production VPC in Frankfurt`
-- Network range: `172.31.0.0/16`
-- Routing peer: `aws-nb-europe-router-az-b`
+In the following screenshot, we are adding the peer `aws-nb-europe-router-az-b` to the `aws-eu-central-1-vpc` route:
 
 <p align="center">
     <img src="/docs/img/how-to-guides/netbird-network-routes-create-ha.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
@@ -106,6 +108,8 @@ This way, nodes connected to both peer `aws-nb-europe-router-az-a` and peer `aws
 Currently, there is no limitation in the number of routes that form a highly available route. Each connected peer will pick one routing peer to use as the router for a network; this decision is based on metric prioritization and connection attributes like direct or relayed connections.
 :::
 
+### Filtering routes distribution with groups
+You can select as many distribution groups as you want for your network route. You can update them at the routing peer or high-availability group level. Keep in mind to link them to peers and, if required, to add access control rules ensuring connectivity between these peers and the routing peers of your route
 ### Routes without masquerading
 If you want more transparency and would like to manage your external network routers, you may choose to disable masquerade for your network routes. 
 In this case, the routing peer won't hide any NetBird peer  IP and will forward the packets to the target network transparently.
