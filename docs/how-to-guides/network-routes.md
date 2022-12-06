@@ -50,7 +50,7 @@ If you don't enable this option, you must configure a route to your NetBird netw
 Metric defines prioritization when choosing the main routing peer in a high availability network. Lower metrics have higher priority.
 
 ### Distribution groups
-Distribution groups defines that peers that belong to groups set in this field will receive the network route.
+Distribution groups define that peers that belong to groups set in this field will receive the network route.
 :::info
 It doesn't remove the need for the routing peer to be connected to these peers
 :::
