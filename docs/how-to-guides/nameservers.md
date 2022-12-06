@@ -106,7 +106,7 @@ Currently, only MacOS, Windows 10+, and Linux running systemd-resolved support n
 :::
 
 ### Distributing the settings with groups
-You can select as many distribution groups as you want for your nameserver setup, keep in mind to link them to peers and if required, to access control rules when using private nameservers.
+You can select as many distribution groups as you want for your nameserver setup. Keep in mind to link them to peers and, if required, to add access control rules when using private nameservers.
 ### Adding remote private DNS servers
 To add a private DNS server that is running behind routing peers, you need to create resources to ensure communication between your nameserver clients can communicate. In the Berlin office example from previous steps, we have a peer from the `Office network` that can route traffic to the `192.168.0.32` IP, so we need to ensure that a similar network route exists:
 <p align="center">
