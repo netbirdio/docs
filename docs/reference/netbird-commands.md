@@ -29,13 +29,14 @@ To see detailed command information, use the flag `--help` after each command
 Below is the list of global flags:
 ```shell
       --admin-url string        Admin Panel URL [http|https]://[host]:[port] (default "https://app.netbird.io")
-      --config string           Netbird config file location (default "/etc/netbird/config.json")
+  -c, --config string           Netbird config file location (default "/etc/netbird/config.json")
       --daemon-addr string      Daemon service address to serve CLI requests [unix|tcp]://[path|host:port] (default "unix:///var/run/netbird.sock")
       --log-file string         sets Netbird log path. If console is specified the the log will be output to stdout (default "/var/log/netbird/client.log")
-      --log-level string        sets Netbird log level (default "info")
-      --management-url string   Management Service URL [http|https]://[host]:[port] (default "https://api.wiretrustee.com:33073")
-      --preshared-key string    Sets Wireguard PreSharedKey property. If set, then only peers that have the same key can communicate.
-      --setup-key string        Setup key obtained from the Management Service Dashboard (used to register peer)
+  -l, --log-level string        sets Netbird log level (default "info")
+  -m, --management-url string   Management Service URL [http|https]://[host]:[port] (default "https://api.wiretrustee.com:443")
+  -p, --preshared-key string    Sets Wireguard PreSharedKey property. If set, then only peers that have the same key can communicate.
+  -k, --setup-key string        Setup key obtained from the Management Service Dashboard (used to register peer)
+
 ```
 ## Environment Variables
 Every flag of a `netbird` command can be passed as an environment variable. We are using the following rule for the environment variables composition:
@@ -56,6 +57,11 @@ The `up` command would process the variables, read the configuration file on `/o
 Single command to log in and start the NetBird client. It can send a signal to the daemon service or run in the foreground with the flag `--log-file` set as `console`.
 
 The command will check if the peer is logged in and connect to the management service. If the peer is not logged in, by default, it will attempt to initiate an SSO login flow.
+#### Flags
+```shell
+      --dns-resolver-address string   Sets a custom address for NetBird's local DNS resolver. If set, the agent won't attempt to discover the best ip and port to listen on. e.g. --dns-resolver-address 127.0.0.1:5053
+      --external-ip-map strings       Sets external IPs maps between local addresses and interfaces. You can specify a comma-separated list with a single IP and IP/IP or IP/Interface Name. e.g. --external-ip-map 12.34.56.78/10.0.0.1 or --external-ip-map 12.34.56.200,12.34.56.78/10.0.0.1,12.34.56.80/eth1
+```
 #### Usage
 The minimal form of running the command is:
 ```shell
