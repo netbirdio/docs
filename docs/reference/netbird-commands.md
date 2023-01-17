@@ -59,8 +59,10 @@ Single command to log in and start the NetBird client. It can send a signal to t
 The command will check if the peer is logged in and connect to the management service. If the peer is not logged in, by default, it will attempt to initiate an SSO login flow.
 #### Flags
 ```shell
-      --dns-resolver-address string   Sets a custom address for NetBird's local DNS resolver. If set, the agent won't attempt to discover the best ip and port to listen on. e.g. --dns-resolver-address 127.0.0.1:5053
-      --external-ip-map strings       Sets external IPs maps between local addresses and interfaces. You can specify a comma-separated list with a single IP and IP/IP or IP/Interface Name. e.g. --external-ip-map 12.34.56.78/10.0.0.1 or --external-ip-map 12.34.56.200,12.34.56.78/10.0.0.1,12.34.56.80/eth1
+      --dns-resolver-address string   Sets a custom address for NetBird's local DNS resolver. If set, the agent won't attempt to discover the best ip and port to listen on. An empty string "" clears the previous configuration. E.g. --dns-resolver-address 127.0.0.1:5053 or --dns-resolver-address ""
+      --external-ip-map strings       Sets external IPs maps between local addresses and interfaces.You can specify a comma-separated list with a single IP and IP/IP or IP/Interface Name. An empty string "" clears the previous configuration. E.g. --external-ip-map 12.34.56.78/10.0.0.1 or --external-ip-map 12.34.56.200,12.34.56.78/10.0.0.1,12.34.56.80/eth1 or --external-ip-map ""
+  -F, --foreground-mode               start service in foreground
+
 ```
 #### Usage
 The minimal form of running the command is:
