@@ -54,7 +54,7 @@ The `up` command would process the variables, read the configuration file on `/o
 
 ## Commands
 ### up
-Single command to log in and start the NetBird client. It can send a signal to the daemon service or run in the foreground with the flag `--log-file` set as `console`.
+Single command to log in and start the NetBird client. It can send a signal to the daemon service or run in the foreground with the flag `--foreground-mode`.
 
 The command will check if the peer is logged in and connect to the management service. If the peer is not logged in, by default, it will attempt to initiate an SSO login flow.
 #### Flags
