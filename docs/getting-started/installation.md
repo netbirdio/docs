@@ -53,6 +53,33 @@ tags:
     # for GUI package
     sudo yum install netbird-ui
     ```
+    
+**Fedora**
+
+1. Create the repository file:
+    ```bash
+    cat <<EOF | sudo tee /etc/yum.repos.d/wiretrustee.repo
+    [Wiretrustee]
+    name=Wiretrustee
+    baseurl=https://pkgs.wiretrustee.com/yum/
+    enabled=1
+    gpgcheck=0
+    gpgkey=https://pkgs.wiretrustee.com/yum/repodata/repomd.xml.key
+    repo_gpgcheck=1
+    EOF
+    ```
+2. Import the file
+    ```bash
+    sudo dnf config-manager --add-repo /etc/yum.repos.d/wiretrustee.repo
+    ```
+3. Install the package
+    ```bash
+    # for CLI only
+    sudo dnf install netbird
+    # for GUI package
+    sudo dnf install netbird-ui
+    ```
+
 
 **NixOS 22.11+/unstable**
 
