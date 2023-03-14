@@ -19,6 +19,11 @@ You can configure the expiration period in the same section.
     <img src="/docs/img/how-to-guides/peer-login-expiration.png" alt="peer-login-expiration" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
 </p>
 
+
+:::danger
+Enabling peer expiration will cause some peers added with the SSO login to disconnect, and re-authentication will be required.
+:::
+
 ### Disabling expiration individually per peer
 You can disable login expiration per peer without disabling expiration globally.
 In the Peers tab of the web UI click on the peer you want to disable expiration for and use the Login Expiration switch.
