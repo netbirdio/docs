@@ -9,11 +9,17 @@ Every new network has this feature enabled, and the expiration period is set to 
 :::tip
 This feature is only applied to peers added with the [interactive SSO login feature](/getting-started/installation#running-netbird-with-sso-login). Peers, added with a setup key, won't be affected.
 :::
-### Disabling expiration
-Login expiration can be disabled globally for the whole network or individually for each peer.
 
-Go to the Web UI Settings tab to disable expiration globally and use the switch under the Authentication section. 
-You can configure the expiration period in the same section.
+Expired peers will appear in the peers' view with the status `needs login`.
+
+<p align="center">
+    <img src="/docs/img/how-to-guides/peer-needs-login.png" alt="peer-needs-login.png" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
+</p>
+
+### Configure and disable expiration
+The expiration period can be set to anything between one hour and 180 days.
+Go to the Web UI Settings tab and set the desired period in the Authentication section. 
+You can also disable the expiration for the whole network in the same section.
 
 <p align="center">
     <img src="/docs/img/how-to-guides/peer-login-expiration.png" alt="peer-login-expiration" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
@@ -21,11 +27,13 @@ You can configure the expiration period in the same section.
 
 
 :::danger
-Enabling peer expiration will cause some peers added with the SSO login to disconnect, and re-authentication will be required.
+Enabling peer expiration or changing the expiration period will cause some peers added with the SSO login to disconnect, 
+and re-authentication will be required.
 :::
 
-### Disabling expiration individually per peer
-You can disable login expiration per peer without disabling expiration globally.
+### Disable expiration individually per peer
+Sometimes, you might want to disable peer expiration for some peers.
+With NetBird you can disable login expiration per peer without disabling expiration globally.
 In the Peers tab of the web UI click on the peer you want to disable expiration for and use the Login Expiration switch.
 Peers with `expiration disabled` will be marked with a corresponding label in the peers' table.
 
