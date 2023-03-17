@@ -79,6 +79,10 @@ NETBIRD_LETSENCRYPT_EMAIL=""
 Let's Encrypt will notify you via this email when certificates are about to expire. NetBird supports automatic renewal by default.
 :::
 
+:::info
+If you want to setup netbird with your own reverse-Proxy and without using the integrated letsencrypt, follow [this step here instead](#advanced-running-netbird-behind-an-existing-reverse-proxy).
+:::
+
 ### Step 3: Configure Identity Provider
 
 NetBird supports generic OpenID (OIDC) protocol allowing for the integration with any IDP that follows the specification.
@@ -120,6 +124,46 @@ docker-compose up -d
  docker-compose logs coturn
  docker-compose logs dashboard
 ```
+
+### Advanced: Running netbird behind an existing reverse-proxy
+
+If you want to run netbird behind your own reverse-proxy, some additional configuration-steps have to be taken to [Step 2](#step-2--prepare-configuration-files).
+
+:::info
+Not all reverse-proxies are supported as netbird uses *gRPC* for various components.
+:::
+
+#### Configuration for netbird
+
+In `setup.env`:
+- Set ```NETBIRD_DOMAIN``` to your domain, e.g.  `demo.netbird.io`
+- Set ```NETBIRD_DISABLE_LETSENCRYPT=true```
+
+In `base.env`:
+- Set ```NETBIRD_MGMT_API_PORT``` to your reverse-proxy TLS-port (default: 443)
+- Set ```NETBIRD_SIGNAL_PORT``` to your reverse-proxy TLS-port
+
+If required, change/remove the port-mappings for `dasbhoard`, `signal` and `management`-services in `docker-compose.yml.tmpl`.
+
+:::tip info
+The `coturn`-service still needs to be directly accessible under your set-domain as it uses UDP for communication.  
+It uses Port 3478 and `TURN_MIN_PORT` to `TURN_MAX_PORT` specified in `base.setup.env`.
+:::
+
+Now you can continue with [Step 3](#step-3-configure-identity-provider).
+
+#### Configuration for your reverse-proxy
+
+Depending on your port-mappings and choice of reverse-proxy, how you configure the forwards differs greatly.
+
+The following endpoints have to be setup:
+
+Endpoint                        | Protocol  | Target service and internal-port
+------------------------------- | --------- | --------------------------------
+/                               | HTTP      | dashboard:80
+/signalexchange.SignalExchange/ | gRPC      | signal:80
+/api                            | HTTP      | management:443
+/management.ManagementService/  | gRPC      | management:443
 
 ### Get in touch
 
