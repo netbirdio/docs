@@ -165,6 +165,11 @@ Endpoint                        | Protocol  | Target service and internal-port
 /api                            | HTTP      | management:443
 /management.ManagementService/  | gRPC      | management:443
 
+:::tip
+You can find helpful templates with the reverse-proxy-name as suffix (e.g. `docker-compose.yml.tmpl.traefik`)  
+Simply replace the file `docker-compose.yml.tmpl` with the chosen version.
+:::
+
 ### Get in touch
 
 Feel free to ping us on [Slack](https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A) if you have any questions
