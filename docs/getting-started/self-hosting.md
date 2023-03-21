@@ -165,6 +165,8 @@ Endpoint                        | Protocol  | Target service and internal-port
 /api                            | HTTP      | management:443
 /management.ManagementService/  | gRPC      | management:443
 
+Make sure your reverse-Proxy is setup to use the HTTP2-Protocol when forwarding.
+
 :::tip
 You can find helpful templates with the reverse-proxy-name as suffix (e.g. `docker-compose.yml.tmpl.traefik`)  
 Simply replace the file `docker-compose.yml.tmpl` with the chosen version.
