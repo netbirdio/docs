@@ -79,6 +79,10 @@ NETBIRD_LETSENCRYPT_EMAIL=""
 Let's Encrypt will notify you via this email when certificates are about to expire. NetBird supports automatic renewal by default.
 :::
 
+:::info
+If you want to setup netbird with your own reverse-Proxy and without using the integrated letsencrypt, follow [this step here instead](#advanced-running-netbird-behind-an-existing-reverse-proxy).
+:::
+
 ### Step 3: Configure Identity Provider
 
 NetBird supports generic OpenID (OIDC) protocol allowing for the integration with any IDP that follows the specification.
@@ -120,6 +124,51 @@ docker-compose up -d
  docker-compose logs coturn
  docker-compose logs dashboard
 ```
+
+### Advanced: Running netbird behind an existing reverse-proxy
+
+If you want to run netbird behind your own reverse-proxy, some additional configuration-steps have to be taken to [Step 2](#step-2--prepare-configuration-files).
+
+:::info
+Not all reverse-proxies are supported as netbird uses *gRPC* for various components.
+:::
+
+#### Configuration for netbird
+
+In `setup.env`:
+- Set ```NETBIRD_DOMAIN``` to your domain, e.g.  `demo.netbird.io`
+- Set ```NETBIRD_DISABLE_LETSENCRYPT=true```
+- Add ```NETBIRD_MGMT_API_PORT``` to your reverse-proxy TLS-port (default: 443)
+- Add ```NETBIRD_SIGNAL_PORT``` to your reverse-proxy TLS-port
+
+Optional:
+- Add ```TURN_MIN_PORT``` and ```TURN_MAX_PORT``` to configure the port-range used by the Turn-server
+
+:::tip info
+The `coturn`-service still needs to be directly accessible under your set-domain as it uses UDP for communication.
+:::
+
+Now you can continue with [Step 3](#step-3-configure-identity-provider).
+
+#### Configuration for your reverse-proxy
+
+Depending on your port-mappings and choice of reverse-proxy, how you configure the forwards differs greatly.
+
+The following endpoints have to be setup:
+
+Endpoint                        | Protocol  | Target service and internal-port
+------------------------------- | --------- | --------------------------------
+/                               | HTTP      | dashboard:80
+/signalexchange.SignalExchange/ | gRPC      | signal:80
+/api                            | HTTP      | management:443
+/management.ManagementService/  | gRPC      | management:443
+
+Make sure your reverse-Proxy is setup to use the HTTP2-Protocol when forwarding.
+
+:::tip
+You can find helpful templates with the reverse-proxy-name as suffix (e.g. `docker-compose.yml.tmpl.traefik`)  
+Simply replace the file `docker-compose.yml.tmpl` with the chosen version.
+:::
 
 ### Get in touch
 
