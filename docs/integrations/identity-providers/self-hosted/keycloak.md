@@ -215,6 +215,24 @@ Double-check if the endpoint returns a JSON response by calling it from your bro
 
 - You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).
 
+- Set property `IdpManagerConfig` in the `management.json` file with:
+  :::caution
+  The file management.json is created automatically. Please refer [here](/getting-started/self-hosting#step-5-run-configuration-script) for more information.
+  :::
+
+  ```json
+  {
+    "ManagerType":  "keycloak",
+    "KeycloakClientCredentials": {
+        "ClientID": "netbird-backend",
+        "ClientSecret": "<netbird-backend-client-secret>",
+        "GrantType": "client_credentials",
+        "TokenEndpoint": "https://<YOUR-KEYCLOAK-HOST-AND-PORT>/realms/netbird/protocol/openid-connect/token",
+        "AdminEndpoint": "https://<YOUR-KEYCLOAK-HOST-AND-PORT>/admin/realms/netbird"
+    }
+  }
+  ```
+
 :::note
 Make sure that your Keycloak instance use HTTPS. Otherwise, the setup won't work.
 :::
