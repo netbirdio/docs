@@ -138,16 +138,14 @@ Not all reverse-proxies are supported as netbird uses *gRPC* for various compone
 In `setup.env`:
 - Set ```NETBIRD_DOMAIN``` to your domain, e.g.  `demo.netbird.io`
 - Set ```NETBIRD_DISABLE_LETSENCRYPT=true```
+- Add ```NETBIRD_MGMT_API_PORT``` to your reverse-proxy TLS-port (default: 443)
+- Add ```NETBIRD_SIGNAL_PORT``` to your reverse-proxy TLS-port
 
-In `base.env`:
-- Set ```NETBIRD_MGMT_API_PORT``` to your reverse-proxy TLS-port (default: 443)
-- Set ```NETBIRD_SIGNAL_PORT``` to your reverse-proxy TLS-port
-
-If required, change/remove the port-mappings for `dasbhoard`, `signal` and `management`-services in `docker-compose.yml.tmpl`.
+Optional:
+- Add ```TURN_MIN_PORT``` and ```TURN_MAX_PORT``` to configure the port-range used by the Turn-server
 
 :::tip info
-The `coturn`-service still needs to be directly accessible under your set-domain as it uses UDP for communication.  
-It uses Port 3478 and `TURN_MIN_PORT` to `TURN_MAX_PORT` specified in `base.setup.env`.
+The `coturn`-service still needs to be directly accessible under your set-domain as it uses UDP for communication.
 :::
 
 Now you can continue with [Step 3](#step-3-configure-identity-provider).
