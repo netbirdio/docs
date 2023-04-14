@@ -157,7 +157,46 @@ In this step, we will create and configure the NetBird client audience for Keycl
 
 ![](/img/integrations/identity-providers/self-hosted/keycloack-add-client-scope.png)
 
-### Step 8: Continue with the self-hosting guide
+### Step 8: Create a NetBird-Backend client
+
+In this step we will create NetBird backend client and register with the Keycloak instance.
+
+- Open the Keycloak Admin Console
+- Make sure, that the selected realm is `Netbird`
+- Click `Clients`
+- Click `Create client` button
+- Fill in the form with the following values and click Next:
+  - Client Type: `OpenID Connect`
+  - Client ID: `netbird-backend`
+- Your newly client `netbird-backend` will be used later to set `KeycloakClientCredentials` in the `management.json`
+
+![](/img/integrations/identity-providers/self-hosted/keycloak-create-backend-client.png)
+
+- Check the checkboxes as on the screenshot below and click Save
+
+![](/img/integrations/identity-providers/self-hosted/keycloak-backend-client-auth.png)
+
+The client will need secret to authenticate. To do this:
+- Click `Credentials` tab
+- Copy `client secret` will be used later to set `ClientSecret` in the `management.json`
+
+![](/img/integrations/identity-providers/self-hosted/keycloak-backend-client-credentials.png)
+
+### Step 9: Add manage-users role to netbird-backend
+
+- Open the Keycloak Admin Console
+- Make sure, that the selected realm is `Netbird`
+- Click `Clients`
+- Choose `netbird-backend` from the list
+- Switch to `Service accounts roles` tab
+- Click `Assign roles` button
+- Select `Filter by clients` and search for `manage-users`
+
+![](/img/integrations/identity-providers/self-hosted/keycloak-service-account-role.png)
+
+- Check the role checkbox and click assign
+
+![](/img/integrations/identity-providers/self-hosted/keycloak-add-role.png)
 
 Your authority OIDC configuration will be available under:
 ```
@@ -175,6 +214,24 @@ Double-check if the endpoint returns a JSON response by calling it from your bro
   it enables the [Interactive SSO Login feature](/getting-started/installation#running-netbird-with-sso-login) (Oauth 2.0 Device Authorization Flow)
 
 - You can now continue with the [NetBird Self-hosting Guide](/getting-started/self-hosting#step-3-configure-identity-provider).
+
+- Set property `IdpManagerConfig` in the `management.json` file with:
+  :::caution
+  The file management.json is created automatically. Please refer [here](/getting-started/self-hosting#step-5-run-configuration-script) for more information.
+  :::
+
+  ```json
+  {
+    "ManagerType":  "keycloak",
+    "KeycloakClientCredentials": {
+        "ClientID": "netbird-backend",
+        "ClientSecret": "<netbird-backend-client-secret>",
+        "GrantType": "client_credentials",
+        "TokenEndpoint": "https://<YOUR-KEYCLOAK-HOST-AND-PORT>/realms/netbird/protocol/openid-connect/token",
+        "AdminEndpoint": "https://<YOUR-KEYCLOAK-HOST-AND-PORT>/admin/realms/netbird"
+    }
+  }
+  ```
 
 :::note
 Make sure that your Keycloak instance use HTTPS. Otherwise, the setup won't work.
