@@ -17,50 +17,38 @@ const config = {
     projectName: 'netbird',
 
     presets: [
+        // .. Your other presets' config
+        '@docusaurus/preset-classic',
+        // Redocusaurus config
         [
-            'classic',
-            ({
+            'redocusaurus',
+            {
                 docs: {
-
                     sidebarPath: require.resolve('./sidebars.js'),
                     routeBasePath: '/',
                     editUrl: 'https://github.com/netbirdio/docs/tree/main',
-                    docLayoutComponent: "@theme/DocPage",
-                    docItemComponent: "@theme/ApiItem"
-                },
-                theme: {
-                    customCss: require.resolve('./src/css/custom.css'),
+                    primaryColor: '#E78945',
                 },
                 googleAnalytics: {
                     trackingID: 'UA-188381981-2',
                     anonymizeIP: true,
                 },
-            })
-        ],
-    ],
-
-    plugins: [
-        [
-            'docusaurus-plugin-openapi-docs',
-            {
-                id: "apiDocs",
-                docsPluginId: "classic",
-                config: {
-                    api: {
-                        // specPath: "petstore.yaml",
-                        specPath: "openapi.yml",
-                        // specPath: "https://raw.githubusercontent.com/netbirdio/netbird/main/management/server/http/api/openapi.yml", // Path to designated spec file
-                        outputDir: "docs/api", // Output directory for generated .mdx docs
-                        sidebarOptions: {
-                            groupPathsBy: "tag",
-                            categoryLinkSource: "none",
-                        },
-                    }
-                }
+                // Plugin Options for loading OpenAPI files
+                specs: [
+                    {
+                        spec: 'openapi.yml',
+                        route: '/api/',
+                    },
+                ],
+                // Theme Options for modifying how redoc renders them
+                theme: {
+                    // Change with your site colors
+                    primaryColor: '#E78945',
+                    customCss: require.resolve('./src/css/custom.css'),
+                },
             },
         ],
     ],
-    themes: ["docusaurus-theme-openapi-docs"], // Allows use of @theme/ApiItem and other components
 
     themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
@@ -82,14 +70,12 @@ const config = {
                     }, // or position: 'right'
                     {
                         type: 'doc',
-                        docId: 'documentation/introduction',
+                        docId: 'introduction',
                         position: 'right',
                         label: 'Docs',
                     },
                     {
-                        type: 'doc',
-                        docId: 'api/netbird-rest-api',
-                        // docId: 'api/add-pet',
+                        to: '/api/',
                         position: 'right',
                         label: 'API',
                     },
