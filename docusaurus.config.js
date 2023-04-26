@@ -18,12 +18,15 @@ const config = {
 
     presets: [
         [
-            '@docusaurus/preset-classic',
+            'classic',
             ({
                 docs: {
+
                     sidebarPath: require.resolve('./sidebars.js'),
                     routeBasePath: '/',
                     editUrl: 'https://github.com/netbirdio/docs/tree/main',
+                    docLayoutComponent: "@theme/DocPage",
+                    docItemComponent: "@theme/ApiItem"
                 },
                 theme: {
                     customCss: require.resolve('./src/css/custom.css'),
@@ -35,6 +38,29 @@ const config = {
             })
         ],
     ],
+
+    plugins: [
+        [
+            'docusaurus-plugin-openapi-docs',
+            {
+                id: "apiDocs",
+                docsPluginId: "classic",
+                config: {
+                    api: {
+                        // specPath: "petstore.yaml",
+                        specPath: "openapi.yml",
+                        // specPath: "https://raw.githubusercontent.com/netbirdio/netbird/main/management/server/http/api/openapi.yml", // Path to designated spec file
+                        outputDir: "docs/api", // Output directory for generated .mdx docs
+                        sidebarOptions: {
+                            groupPathsBy: "tag",
+                            categoryLinkSource: "none",
+                        },
+                    }
+                }
+            },
+        ],
+    ],
+    themes: ["docusaurus-theme-openapi-docs"], // Allows use of @theme/ApiItem and other components
 
     themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
@@ -56,9 +82,16 @@ const config = {
                     }, // or position: 'right'
                     {
                         type: 'doc',
-                        docId: 'introduction',
+                        docId: 'documentation/introduction',
                         position: 'right',
                         label: 'Docs',
+                    },
+                    {
+                        type: 'doc',
+                        docId: 'api/netbird-rest-api',
+                        // docId: 'api/add-pet',
+                        position: 'right',
+                        label: 'API',
                     },
                     {
                         to: 'https://netbird.io/blog/',
@@ -85,6 +118,11 @@ const config = {
                 textColor: '#091E42',
                 isCloseable: true,
             },
+            docs: {
+                sidebar: {
+                    autoCollapseCategories: true
+                },
+            }
         }),
 };
 
