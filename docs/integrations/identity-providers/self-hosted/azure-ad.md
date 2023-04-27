@@ -146,6 +146,7 @@ Double-check if the endpoint returns a JSON response by calling it from your bro
     }
   }
   ```
-- Modify the `api` scope within dashboard enviroment variable `AUTH_SUPPORTED_SCOPES` located in docker-compose.yml to `api://<application_id>/api`.
+
+- Modify the value of the `AUTH_SUPPORTED_SCOPES` environment variable for the dashboard service in the docker-compose.yml file to `openid profile email offline_access api://<application_id>/api`.
 
 
