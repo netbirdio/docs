@@ -4,16 +4,14 @@ sidebar_position: 4
 
 # Access Control
 NetBird allows administrators to restrict access to resources (peers) by creating access rules and
-defining what peer groups are permitted to establish connections with one another.
-
-<div class="videowrapper">
-<iframe src="https://www.youtube.com/embed/WvbkACjdsHA" allow="fullscreen;"></iframe>
-</div>
+defining what peer groups are permitted to establish connections with one another. Rule can allow connections
+by specific protocol and ports (only on the Linux).
 
 ## Introduction
-A NetBird account comes with a `Default` rule that allows all peers of the account to connect to each other forming a full mesh network.
-In most cases, this is the desired state for a small network or network that has low-security requirements.
-When you need to restrict access to certain resources that belong to specific users or services within your organization, you can create rules that dictate who can access what.
+A NetBird account comes with a `Default` rule that allows all peers of the account to connect to each other by all protocols,
+forming a full mesh network. In most cases, this is the desired state for a small network or network that has low-security requirements.
+When you need to restrict access to certain resources that belong to specific users or services within your organization,
+you can create rules that dictate who can access what.
 
 Access control rules make use of groups to control connections between peers; these groups can be added as `Source` or `Destination` of a rule and will be evaluated when the Management service distributes the list of peers across your network.
 
@@ -36,13 +34,14 @@ You can assign groups automatically with the [peer auto-grouping feature](/overv
 
 ### The All Group
 The `All` group is a default group to which every peer in your network is automatically added to. This group cannot be modified or deleted.
+
 ### Rules
-Rules are lists of `Source` and `Destination` groups of peers that can communicate with each other.
+Rules are defined as sets of Source and Destination peer groups, which specify the allowable communication between them.
+Depending on the rule configuration, this communication can be either bidirectional or unidirectional (only on the Linux).
 Rules are processed when the Management service distributes a network map to all peers of your account. Because you can only create ALLOW rules, there is no processing
 order or priority, so the decision to distribute peer information is based on its association with a group belonging to an existing rule.
 
-Currently, the communication between lists of groups in source and destination lists of a rule is bidirectional,
-meaning that destinations can also initiate connections to a group of peers listed in the source field of the rule.
+If the rule is bidirectional (by default), groups in destination lists can also initiate connections to a group of peers listed in the source field of the rule.
 
 The behavior of a network without any rules is to deny traffic. No peers will be able to communicate with each other.
 
@@ -60,14 +59,14 @@ If you need to restrict communication within your network, you can create new ru
 :::
 
 ### Multiple Mesh Networks
-As mentioned above, rules are bidirectional, which is basically the control of how your network will behave as a mesh network. 
+As mentioned above, rules are bidirectional (except in Linux, where you can use unidirectional connections), which is basically the control of how your network will behave as a mesh network. 
 
 There is a `Default` rule, which configures a Default mesh connection between all peers of your network. With rules, you can define smaller mesh networks by grouping peers and adding these groups to `Source` and `Destination` lists. 
 ## Managing Rules
 
 ### Creating Rules
 After accessing the `Access Control` tab, you can click on the `Add Rule` button to create a new rule. This will open a screen 
-where you need to name the rule, set its status, and add groups to the source and destination lists.
+where you need to name the rule, set its status, and add groups to the source and destination lists. For Linux peers, you also can define the direction of the traffic, specific traffic types, and ports.
 
 <p align="center">
     <img src="/docs/img/overview/create-rule.png" alt="high-level-dia" width="300" style={{boxShadow: '0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19)'}} />
@@ -102,9 +101,12 @@ You can assign groups automatically with the [peer auto-grouping feature](/overv
 
 ### Updating Rules
 To update a rule, you can click on the rule's `Name` or on either `Sources` and `Destinations` columns. You could also click the menu 
-button of a rule and select `View`. This will open the same screen where you can update rule groups, description, or status.
+button of a rule and select `View`. This will open the same screen where you can update rule groups, description, and status or change allowed 
+traffic direction and protocols with ports.
+
 ### Disabling Rules
 To disable a rule, you should follow the steps of [updating rules](#updating-rules) changing its status, and then click on Save.
+
 ### Deleting Rules
 To delete a rule, you should click on the rule's menu and choose `Delete`. A confirmation window will pop up.
 
