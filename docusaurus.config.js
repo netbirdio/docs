@@ -81,15 +81,14 @@ const config = {
                         target: '_self'
                     }, // or position: 'right'
                     {
-                        type: 'doc',
-                        docId: 'documentation/introduction',
+                        type: 'docSidebar',
+                        sidebarId: 'docs',
                         position: 'right',
                         label: 'Docs',
                     },
                     {
-                        type: 'doc',
-                        docId: 'api/netbird-rest-api',
-                        // docId: 'api/add-pet',
+                        type: 'docSidebar',
+                        sidebarId: 'api',
                         position: 'right',
                         label: 'API',
                     },
@@ -105,6 +104,7 @@ const config = {
                         position: 'right',
                     },
                 ],
+                // hideOnScroll: true,
             },
             prism: {
                 theme: lightCodeTheme,
@@ -120,9 +120,13 @@ const config = {
             },
             docs: {
                 sidebar: {
-                    autoCollapseCategories: true
+                    autoCollapseCategories: true,
+                    hideable: true,
                 },
-            }
+            },
+            colorMode: {
+                respectPrefersColorScheme: true,
+            },
         }),
 };
 
