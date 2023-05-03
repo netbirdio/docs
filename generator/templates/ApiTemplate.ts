@@ -171,7 +171,7 @@ url = URI("<%- operation.fullPath %>")
 https = Net::HTTP.new(url.host, url.port)
 https.use_ssl = true
 
-request = Net::HTTP::Post.new(url)
+request = Net::HTTP::<% operation.operation.slice(0, 1).toUpperCase() + operation.operation.slice(1).toLowerCase() %>.new(url)
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>request["Content-Type"] = "application/json"<% }; %>
 <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>request["Accept"] = "application/json"<% }; %>
 request["Authorization"] = "Token <TOKEN>"
