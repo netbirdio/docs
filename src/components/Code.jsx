@@ -21,6 +21,7 @@ const languageNames = {
   python: 'Python',
   ruby: 'Ruby',
   go: 'Go',
+  java: 'Java',
 }
 
 function getPanelTitle({ title, language }) {

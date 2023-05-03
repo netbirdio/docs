@@ -61,7 +61,7 @@ import {HeroPattern} from "@/components/HeroPattern"; import {Note} from "@/comp
     <CodeGroup title="Request" tag="<%- operation.operation.toUpperCase() %>" label="<%- operation.path %>">
 \`\`\`bash {{ title: 'cURL' }}
 curl -X <%- operation.operation.toUpperCase() %> <%- operation.fullPath %> \\
--H "Authorization: Bearer {token}" \\
+-H "Authorization: Token <TOKEN>" \\
 <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>
 -H 'Accept: application/json' \\<% }; %>
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
@@ -69,31 +69,161 @@ curl -X <%- operation.operation.toUpperCase() %> <%- operation.fullPath %> \\
 --data-raw '<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>'<% }; %>
 \`\`\`
 
-    \`\`\`js
-    import ApiClient from '@example/protocol-api'
+\`\`\`js
+const axios = require('axios');
+<% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
+let data = JSON.stringify(<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>);<% }; -%>
 
-    const client = new ApiClient(token)
+let config = {
+  method: '<%- operation.operation.toLowerCase() %>',
+  maxBodyLength: Infinity,
+  url: '<%- operation.path %>',
+  headers: { 
+    <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>'Content-Type': 'application/json',<% }; %>
+    <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>'Accept': 'application/json',<% }; %>
+    'Authorization': 'Token <TOKEN>'
+  }<% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>,<% }; %>
+  <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
+  data : data<% }; %>
+};
 
-    await client.contacts.update('WAz8eIbvDR60rouK', {
-        display_name: 'UncleFrank',
-    })
-    \`\`\`
+axios(config)
+.then((response) => {
+  console.log(JSON.stringify(response.data));
+})
+.catch((error) => {
+  console.log(error);
+});
+\`\`\`
 
-    \`\`\`python
-    from protocol_api import ApiClient
+\`\`\`python
+import requests
+import json
 
-    client = ApiClient(token)
+url = "<%- operation.fullPath %>"
+<% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
+payload = json.dumps(<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>)<% }; -%>
 
-    client.contacts.update("WAz8eIbvDR60rouK", display_name="UncleFrank")
-    \`\`\`
+headers = {
+  <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>'Content-Type': 'application/json',<% }; %>
+  <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>'Accept': 'application/json',<% }; %>
+  'Authorization': 'Token <TOKEN>'
+}
 
-    \`\`\`php
-    $client = new \\Protocol\\ApiClient($token);
+response = requests.request("<%- operation.operation.toUpperCase() %>", url, headers=headers<% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>, data=payload<% }; %>)
 
-    $client->contacts->update('WAz8eIbvDR60rouK', [
-      'display_name' => 'UncleFrank',
-    ]);
-    \`\`\`
+print(response.text)
+\`\`\`
+
+\`\`\`go
+package main
+
+import (
+  "fmt"
+  "strings"
+  "net/http"
+  "io/ioutil"
+)
+
+func main() {
+
+  url := "<%- operation.fullPath %>"
+  method := "<%- operation.operation.toUpperCase() %>"
+  <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
+  payload := strings.NewReader(\`<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>\`)<% }; -%>
+
+  client := &http.Client {
+  }
+  req, err := http.NewRequest(method, url, <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>payload<% } else { %>nil<% }; %>)
+
+  if err != nil {
+    fmt.Println(err)
+    return
+  }
+  
+  <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>req.Header.Add("Content-Type", "application/json")<% }; %>
+  <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>req.Header.Add("Accept", "application/json")<% }; %>
+  req.Header.Add("Authorization", "Token <TOKEN>")
+
+  res, err := client.Do(req)
+  if err != nil {
+    fmt.Println(err)
+    return
+  }
+  defer res.Body.Close()
+
+  body, err := ioutil.ReadAll(res.Body)
+  if err != nil {
+    fmt.Println(err)
+    return
+  }
+  fmt.Println(string(body))
+}
+\`\`\`
+
+\`\`\`ruby
+require "uri"
+require "json"
+require "net/http"
+
+url = URI("<%- operation.fullPath %>")
+
+https = Net::HTTP.new(url.host, url.port)
+https.use_ssl = true
+
+request = Net::HTTP::Post.new(url)
+<% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>request["Content-Type"] = "application/json"<% }; %>
+<% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>request["Accept"] = "application/json"<% }; %>
+request["Authorization"] = "Token <TOKEN>"
+<% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
+request.body = JSON.dump(<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>)<% }; -%>
+
+response = https.request(request)
+puts response.read_body
+\`\`\`
+
+\`\`\`java
+OkHttpClient client = new OkHttpClient().newBuilder()
+  .build();
+MediaType mediaType = MediaType.parse("application/json");
+RequestBody body = RequestBody.create(mediaType, '<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>');
+Request request = new Request.Builder()
+  .url("<%- operation.fullPath %>")
+  .method("<%- operation.operation.toUpperCase() %>", body)
+  <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>.addHeader("Content-Type", "application/json")<% }; %>
+  <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>.addHeader("Accept", "application/json")<% }; %>
+  .addHeader("Authorization: Token <TOKEN>")
+  .build();
+Response response = client.newCall(request).execute();
+\`\`\`
+
+\`\`\`php
+<?php
+
+$curl = curl_init();
+
+curl_setopt_array($curl, array(
+  CURLOPT_URL => '<%- operation.fullPath %>',
+  CURLOPT_RETURNTRANSFER => true,
+  CURLOPT_ENCODING => '',
+  CURLOPT_MAXREDIRS => 10,
+  CURLOPT_TIMEOUT => 0,
+  CURLOPT_FOLLOWLOCATION => true,
+  CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+  CURLOPT_CUSTOMREQUEST => '<%- operation.operation.toUpperCase() %>',
+  CURLOPT_POSTFIELDS =>'<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>',
+  CURLOPT_HTTPHEADER => array(
+    <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>'Content-Type: application/json',<% }; %>
+    <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>'Accept: application/json',<% }; %>
+    'Authorization: Token <TOKEN>'
+  ),
+));
+
+$response = curl_exec($curl);
+
+curl_close($curl);
+echo $response;
+\`\`\`
 
     </CodeGroup>
     <% operation.responseList.forEach(function(response){ %>
