@@ -13,3 +13,4 @@ NetBird supports generic OpenID (OIDC) protocol allowing for the integration wit
 List of available guides:
 - [Auth0](/integrations/identity-providers/self-hosted/using-netbird-with-auth0) (managed service)
 - [Keycloak](/integrations/identity-providers/self-hosted/using-netbird-with-keycloak)
+- [Zitadel](/integrations/identity-providers/self-hosted/using-netbird-with-zitadel)
