@@ -3,6 +3,8 @@ import {HeroPattern} from "@/components/HeroPattern"; import {Note} from "@/comp
 
 <HeroPattern />
 
+export const title = '<%- tag %>'
+
 <% operations.forEach(function(operation){ %>
 
 ## <%- operation.summary %> {{ tag: '<%- operation.operation.toUpperCase() %>' , label: '<%- operation.path %>' }}
@@ -171,7 +173,7 @@ url = URI("<%- operation.fullPath %>")
 https = Net::HTTP.new(url.host, url.port)
 https.use_ssl = true
 
-request = Net::HTTP::<% operation.operation.slice(0, 1).toUpperCase() + operation.operation.slice(1).toLowerCase() %>.new(url)
+request = Net::HTTP::<%- operation.operation.slice(0,1).toUpperCase() + operation.operation.slice(1).toLowerCase()%>.new(url)
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>request["Content-Type"] = "application/json"<% }; %>
 <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>request["Accept"] = "application/json"<% }; %>
 request["Authorization"] = "Token <TOKEN>"
@@ -185,11 +187,12 @@ puts response.read_body
 \`\`\`java
 OkHttpClient client = new OkHttpClient().newBuilder()
   .build();
+<% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
 MediaType mediaType = MediaType.parse("application/json");
-RequestBody body = RequestBody.create(mediaType, '<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>');
+RequestBody body = RequestBody.create(mediaType, '<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>');<% }; %>
 Request request = new Request.Builder()
   .url("<%- operation.fullPath %>")
-  .method("<%- operation.operation.toUpperCase() %>", body)
+  .method("<%- operation.operation.toUpperCase() %>"<% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>, body<% }; %>)
   <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>.addHeader("Content-Type", "application/json")<% }; %>
   <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>.addHeader("Accept", "application/json")<% }; %>
   .addHeader("Authorization: Token <TOKEN>")
@@ -211,7 +214,8 @@ curl_setopt_array($curl, array(
   CURLOPT_FOLLOWLOCATION => true,
   CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
   CURLOPT_CUSTOMREQUEST => '<%- operation.operation.toUpperCase() %>',
-  CURLOPT_POSTFIELDS =>'<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>',
+  <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
+  CURLOPT_POSTFIELDS =>'<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>',<% }; %>
   CURLOPT_HTTPHEADER => array(
     <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>'Content-Type: application/json',<% }; %>
     <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>'Accept: application/json',<% }; %>

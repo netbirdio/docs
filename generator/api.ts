@@ -1,13 +1,12 @@
 import template from './templates/ApiTemplate'
 import { slugify, toArrayWithKey, toTitle, writeToDisk } from './helpers'
 import { OpenAPIV3, OpenAPIV2 } from 'openapi-types'
-import * as yaml from 'yaml';
 import * as fs from 'fs'
 import * as ejs from 'ejs'
 
 export default async function gen(inputFileName: string, outputDir: string, apiUrl: string) {
   const specRaw = fs.readFileSync(inputFileName, 'utf8')
-  const spec = yaml.parse(specRaw) as any
+  const spec = JSON.parse(specRaw) as any
   // console.log('spec', spec)
 
   switch (spec.openapi || spec.swagger) {
@@ -167,6 +166,7 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string, { apiUrl }: { apiU
 
     const content = ejs.render(template, {
       info: spec.info,
+      tag: key,
       sections,
       operations,
       schemas,
