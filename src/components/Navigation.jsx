@@ -365,7 +365,16 @@ export const docsNavigation = [
 
 export const apiNavigation = [
   {
-    title: 'API',
+    title: 'Guides',
+    links: [
+      { title: 'Quickstart', href: '/quickstart' },
+      { title: 'Authentication', href: '/authentication' },
+      { title: 'Errors', href: '/errors' },
+      // { title: 'Events', href: '/accounts' },
+    ],
+  },
+  {
+    title: 'Resources',
     links: [
       { title: 'Accounts', href: '/accounts' },
       { title: 'Users', href: '/users' },
