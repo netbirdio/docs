@@ -179,6 +179,35 @@ function GitHubIcon(props) {
   )
 }
 
+function SlackIcon(props) {
+    return (
+        <svg viewBox="56 56 160 160" aria-hidden="true" {...props}>
+            <g>
+                <g>
+                    <path d="M99.4,151.2c0,7.1-5.8,12.9-12.9,12.9s-12.9-5.8-12.9-12.9c0-7.1,5.8-12.9,12.9-12.9h12.9V151.2z"/>
+                    <path d="M105.9,151.2c0-7.1,5.8-12.9,12.9-12.9s12.9,5.8,12.9,12.9v32.3c0,7.1-5.8,12.9-12.9,12.9s-12.9-5.8-12.9-12.9
+                        C105.9,183.5,105.9,151.2,105.9,151.2z"/>
+                </g>
+                <g>
+                    <path d="M118.8,99.4c-7.1,0-12.9-5.8-12.9-12.9s5.8-12.9,12.9-12.9s12.9,5.8,12.9,12.9v12.9H118.8z"/>
+                    <path d="M118.8,105.9c7.1,0,12.9,5.8,12.9,12.9s-5.8,12.9-12.9,12.9H86.5c-7.1,0-12.9-5.8-12.9-12.9s5.8-12.9,12.9-12.9
+                        C86.5,105.9,118.8,105.9,118.8,105.9z"/>
+                </g>
+                <g>
+                    <path d="M170.6,118.8c0-7.1,5.8-12.9,12.9-12.9c7.1,0,12.9,5.8,12.9,12.9s-5.8,12.9-12.9,12.9h-12.9V118.8z"/>
+                    <path d="M164.1,118.8c0,7.1-5.8,12.9-12.9,12.9c-7.1,0-12.9-5.8-12.9-12.9V86.5c0-7.1,5.8-12.9,12.9-12.9
+                        c7.1,0,12.9,5.8,12.9,12.9V118.8z"/>
+                </g>
+                <g>
+                    <path d="M151.2,170.6c7.1,0,12.9,5.8,12.9,12.9c0,7.1-5.8,12.9-12.9,12.9c-7.1,0-12.9-5.8-12.9-12.9v-12.9H151.2z"/>
+                    <path d="M151.2,164.1c-7.1,0-12.9-5.8-12.9-12.9c0-7.1,5.8-12.9,12.9-12.9h32.3c7.1,0,12.9,5.8,12.9,12.9
+                        c0,7.1-5.8,12.9-12.9,12.9H151.2z"/>
+                </g>
+            </g>
+        </svg>
+    )
+}
+
 function DiscordIcon(props) {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true" {...props}>
@@ -203,14 +232,14 @@ function SmallPrint() {
         &copy; Copyright {new Date().getFullYear()}. All rights reserved.
       </p>
       <div className="flex gap-4">
-        <SocialLink href="#" icon={TwitterIcon}>
+        <SocialLink href="https://twitter.com/netbird" icon={TwitterIcon}>
           Follow us on Twitter
         </SocialLink>
-        <SocialLink href="#" icon={GitHubIcon}>
+        <SocialLink href="https://github.com/netbirdio/netbird" icon={GitHubIcon}>
           Follow us on GitHub
         </SocialLink>
-        <SocialLink href="#" icon={DiscordIcon}>
-          Join our Discord server
+        <SocialLink href="https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A" icon={SlackIcon}>
+          Join us on Slack
         </SocialLink>
       </div>
     </div>
