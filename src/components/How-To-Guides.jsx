@@ -3,26 +3,27 @@ import { Heading } from '@/components/Heading'
 
 const howToGuides = [
   {
-    href: '/docs/getting-started',
-    name: 'Getting Started',
-    description: 'Learn how to start using NetBird.',
+    href: '/docs/managing-your-network#add-users-to-your-network',
+    name: 'Add Users to your network',
+    description: 'Learn how to add users to your network.',
   },
   {
-    href: '/docs/managing-your-network',
-    name: 'Managing your Network',
-    description: 'Learn everything you need to know about managing your network.',
-  },
-  {
-    href: '/docs/examples',
-    name: 'Examples',
+    href: '/docs/managing-your-network#configure-periodic-user-authentication',
+    name: 'Configure periodic user authentication',
     description:
-      'Read some examples of how to use NetBird.',
+      'Learn how to configure periodic user authentication.',
   },
   {
-    href: '/docs/cli',
-    name: 'CLI',
+    href: '/docs/managing-your-network#manage-dns-in-your-network',
+    name: 'DNS',
     description:
-      'Learn how to use the CLI of the NetBird client.',
+      'Learn how to configure DNS servers for your network.',
+  },
+  {
+    href: '/docs/managing-your-network#monitor-system-and-network-activity',
+    name: 'Monitoring system and network activities',
+    description:
+      'Learn how to keep track of system and network activities in your account.',
   },
 ]
 

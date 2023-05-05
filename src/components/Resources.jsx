@@ -13,7 +13,7 @@ const resources = [
     href: '/accounts',
     name: 'Accounts',
     description:
-      'Learn about the contact model and how to create, retrieve, update, delete, and list contacts.',
+      'Learn how to list and update accounts.',
     icon: UserIcon,
     pattern: {
       y: 16,
@@ -27,7 +27,21 @@ const resources = [
     href: '/users',
     name: 'Users',
     description:
-      'Learn about the conversation model and how to create, retrieve, update, delete, and list conversations.',
+      'Learn how to create, update, delete, and list users.',
+    icon: ChatBubbleIcon,
+    pattern: {
+      y: -6,
+      squares: [
+        [-1, 2],
+        [1, 3],
+      ],
+    },
+  },
+  {
+    href: '/tokens',
+    name: 'Tokens',
+    description:
+      'Learn how to create, retrieve, delete, and list tokens.',
     icon: ChatBubbleIcon,
     pattern: {
       y: -6,
@@ -41,7 +55,7 @@ const resources = [
     href: '/peers',
     name: 'Peers',
     description:
-      'Learn about the message model and how to create, retrieve, update, delete, and list messages.',
+      'Learn how to retrieve, update, delete, and list peers.',
     icon: EnvelopeIcon,
     pattern: {
       y: 32,
@@ -55,7 +69,7 @@ const resources = [
     href: '/setup-keys',
     name: 'Setup Keys',
     description:
-      'Learn about the group model and how to create, retrieve, update, delete, and list groups.',
+      'Learn how to create, retrieve, update, and list setup keys.',
     icon: UsersIcon,
     pattern: {
       y: 22,
@@ -66,7 +80,7 @@ const resources = [
     href: '/groups',
     name: 'Groups',
     description:
-      'Learn about the group model and how to create, retrieve, update, delete, and list groups.',
+      'Learn how to create, retrieve, update, delete, and list groups.',
     icon: UsersIcon,
     pattern: {
       y: 22,
@@ -77,7 +91,7 @@ const resources = [
     href: '/rules',
     name: 'rules',
     description:
-      'Learn about the group model and how to create, retrieve, update, delete, and list groups.',
+      'Learn how to create, retrieve, update, delete, and list rules.',
     icon: UsersIcon,
     pattern: {
       y: 22,
@@ -88,7 +102,7 @@ const resources = [
     href: '/policies',
     name: 'Policies',
     description:
-      'Learn about the group model and how to create, retrieve, update, delete, and list groups.',
+      'Learn how to create, retrieve, update, delete, and list policies.',
     icon: UsersIcon,
     pattern: {
       y: 22,
@@ -99,7 +113,7 @@ const resources = [
     href: '/routes',
     name: 'Routes',
     description:
-      'Learn about the group model and how to create, retrieve, update, delete, and list groups.',
+      'Learn about how to create, retrieve, update, delete, and list routes.',
     icon: UsersIcon,
     pattern: {
       y: 22,
@@ -110,7 +124,7 @@ const resources = [
     href: '/dns',
     name: 'DNS',
     description:
-      'Learn about the group model and how to create, retrieve, update, delete, and list groups.',
+      'Learn about how to create, retrieve, update, delete, and list nameserver groups and update and retrieve DNS settings.',
     icon: UsersIcon,
     pattern: {
       y: 22,
@@ -121,7 +135,7 @@ const resources = [
     href: '/events',
     name: 'Events',
     description:
-      'Learn about the group model and how to create, retrieve, update, delete, and list groups.',
+      'Learn about how to list events.',
     icon: UsersIcon,
     pattern: {
       y: 22,
