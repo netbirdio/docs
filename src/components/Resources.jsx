@@ -89,7 +89,7 @@ const resources = [
   },
   {
     href: '/rules',
-    name: 'rules',
+    name: 'Rules',
     description:
       'Learn how to create, retrieve, update, delete, and list rules.',
     icon: UsersIcon,
