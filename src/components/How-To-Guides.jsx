@@ -15,7 +15,7 @@ const howToGuides = [
   },
   {
     href: '/docs/managing-your-network#manage-dns-in-your-network',
-    name: 'DNS',
+    name: 'Manage DNS in your network',
     description:
       'Learn how to configure DNS servers for your network.',
   },
