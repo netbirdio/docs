@@ -35,7 +35,7 @@ export const title = '<%- tag %>'
     <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
     #### Request-Body Parameters
     <Properties>
-        <% schemas.get(operation.requestBody?.content['application/json'].schema.$ref.split('/').pop())?.parameters.forEach(function(parameter){ %>
+        <% components.get(operation.requestBody?.content['application/json'].schema.$ref.split('/').pop())?.parameters.forEach(function(parameter){ %>
           <Property name="<%- parameter.name %>" type="<%- parameter.type %>" required=\{<%- parameter.required %>\} 
           <% if(parameter.enum){ %>
           enumList="<%- parameter.enum %>"
@@ -68,13 +68,13 @@ curl -X <%- operation.operation.toUpperCase() %> <%- operation.fullPath %> \\
 -H 'Accept: application/json' \\<% }; %>
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
 -H 'Content-Type: application/json' \\
---data-raw '<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>'<% }; %>
+--data-raw '<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.schema, null, 2) %>'<% }; %>
 \`\`\`
 
 \`\`\`js
 const axios = require('axios');
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
-let data = JSON.stringify(<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>);<% }; -%>
+let data = JSON.stringify(<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.schema, null, 2) %>);<% }; -%>
 
 let config = {
   method: '<%- operation.operation.toLowerCase() %>',
@@ -104,7 +104,7 @@ import json
 
 url = "<%- operation.fullPath %>"
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
-payload = json.dumps(<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>)<% }; -%>
+payload = json.dumps(<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.schema, null, 2) %>)<% }; -%>
 
 headers = {
   <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>'Content-Type': 'application/json',<% }; %>
@@ -132,7 +132,7 @@ func main() {
   url := "<%- operation.fullPath %>"
   method := "<%- operation.operation.toUpperCase() %>"
   <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
-  payload := strings.NewReader(\`<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>\`)<% }; -%>
+  payload := strings.NewReader(\`<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.schema, null, 2) %>\`)<% }; -%>
 
   client := &http.Client {
   }
@@ -178,7 +178,7 @@ request = Net::HTTP::<%- operation.operation.slice(0,1).toUpperCase() + operatio
 <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>request["Accept"] = "application/json"<% }; %>
 request["Authorization"] = "Token <TOKEN>"
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
-request.body = JSON.dump(<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>)<% }; -%>
+request.body = JSON.dump(<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.schema, null, 2) %>)<% }; -%>
 
 response = https.request(request)
 puts response.read_body
@@ -189,7 +189,7 @@ OkHttpClient client = new OkHttpClient().newBuilder()
   .build();
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
 MediaType mediaType = MediaType.parse("application/json");
-RequestBody body = RequestBody.create(mediaType, '<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>');<% }; %>
+RequestBody body = RequestBody.create(mediaType, '<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.schema, null, 2) %>');<% }; %>
 Request request = new Request.Builder()
   .url("<%- operation.fullPath %>")
   .method("<%- operation.operation.toUpperCase() %>"<% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>, body<% }; %>)
@@ -215,7 +215,7 @@ curl_setopt_array($curl, array(
   CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
   CURLOPT_CUSTOMREQUEST => '<%- operation.operation.toUpperCase() %>',
   <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
-  CURLOPT_POSTFIELDS =>'<%- JSON.stringify(schemas.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2) %>',<% }; %>
+  CURLOPT_POSTFIELDS =>'<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.schema, null, 2) %>',<% }; %>
   CURLOPT_HTTPHEADER => array(
     <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>'Content-Type: application/json',<% }; %>
     <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ -%>'Accept: application/json',<% }; %>
@@ -234,14 +234,20 @@ echo $response;
         <% if(response?.content && response?.content['application/json']){ %>
             <% if(response?.content['application/json'].schema.type === 'array'){ %>
                 <CodeGroup title="Response">
-\`\`\`json {{ title: '200' }}
-<%- JSON.stringify(new Array(schemas.get(response?.content['application/json'].schema.items.$ref?.split('/').pop())?.examples), null, 2)  %>
+\`\`\`json {{ title: 'Example' }}
+<%- JSON.stringify(new Array(components.get(response?.content['application/json'].schema.items.$ref?.split('/').pop())?.example), null, 2)  %>
+\`\`\`
+\`\`\`json {{ title: 'Schema' }}
+<%- JSON.stringify(new Array(components.get(response?.content['application/json'].schema.items.$ref?.split('/').pop())?.schema), null, 2)  %>
 \`\`\`
                 </CodeGroup>
             <% } else { %>
                 <CodeGroup title="Response">
-\`\`\`json {{ title: '200' }}
-<%- JSON.stringify(schemas.get(response?.content['application/json'].schema.$ref?.split('/').pop())?.examples, null, 2)  %>
+\`\`\`json {{ title: 'Example' }}
+<%- JSON.stringify(components.get(response?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2)  %>
+\`\`\`
+\`\`\`json {{ title: 'Schema' }}
+<%- JSON.stringify(components.get(response?.content['application/json'].schema.$ref?.split('/').pop())?.schema, null, 2)  %>
 \`\`\`
                 </CodeGroup>
            <% }; -%>     

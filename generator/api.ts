@@ -49,8 +49,9 @@ export type schemaParameter = {
   enum?: string[]
 }
 
-export type schemaObject = {
-  examples: Object
+export type component = {
+  example: Object
+  schema: Object
   parameters: schemaParameter[]
 }
 
@@ -77,31 +78,39 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string, { apiUrl }: { apiU
     })
   })
 
-  let schemas = new Map<string, schemaObject>();
+  let components = new Map<string, component>();
   Object.entries(spec.components?.schemas).forEach(([key, val]) => {
     const schema = val as OpenAPIV3.SchemaObject
-    let examples = new Map<string, any>();
+    let outputSchema = new Map<string, any>();
+    let outputExample = new Map<string, any>();
     let parameters : schemaParameter[] = []
     if(schema.allOf){
       schema.allOf.forEach((item) => {
         if((item as OpenAPIV3.ReferenceObject).$ref){
-          let schemaObject = schemas.get((item as OpenAPIV3.ReferenceObject).$ref.split('/').pop())
-          let examplesMap = new Map(Object.entries(schemaObject.examples))
-          examplesMap.forEach((value, key) => {
-            examples.set(key, value)
+          let component = components.get((item as OpenAPIV3.ReferenceObject).$ref.split('/').pop())
+          let schemaMap = new Map(Object.entries(component.schema))
+          let exampleMap = new Map(Object.entries(component.example))
+          schemaMap.forEach((value, key) => {
+            outputSchema.set(key, value)
           })
-          parameters = parameters.concat(schemaObject.parameters)
+          exampleMap.forEach((value, key) => {
+            outputExample.set(key, value)
+          })
+          parameters = parameters.concat(component.parameters)
         }
         if((item as OpenAPIV3.SchemaObject).properties){
           Object.entries((item as OpenAPIV3.SchemaObject).properties).forEach(([key, val]) => {
             let property = val as OpenAPIV3.SchemaObject
-            let type
+            let type, exampleValue
             if (property.type === "array") {
               type = new Array(resolveType(property.items, spec.components?.schemas))
+              exampleValue = new Array(resolveExampleValue(property.items, spec.components?.schemas))
             } else {
               type = resolveType(property, spec.components?.schemas)
+              exampleValue = resolveExampleValue(property, spec.components?.schemas)
             }
-            examples.set(key, type)
+            outputSchema.set(key, type)
+            outputExample.set(key, exampleValue)
             let parameter: schemaParameter = {
               name: key,
               type: property.type === "array" ? ((property.items as OpenAPIV3.SchemaObject).type || (property.items as OpenAPIV3.ReferenceObject).$ref.split('/').pop()) + "[]" : property.type,
@@ -120,13 +129,16 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string, { apiUrl }: { apiU
     } else {
       Object.entries(schema.properties).forEach(([key, val]) => {
         let property = val as OpenAPIV3.SchemaObject
-        let type
+        let type, exampleValue
         if(property.type === "array"){
           type = new Array(resolveType(property.items, spec.components?.schemas))
+          exampleValue = new Array(resolveExampleValue(property.items, spec.components?.schemas))
         } else {
           type = resolveType(property, spec.components?.schemas)
+          exampleValue = resolveExampleValue(property, spec.components?.schemas)
         }
-        examples.set(key, type)
+        outputSchema.set(key, type)
+        outputExample.set(key, exampleValue)
         let parameter : schemaParameter = {
           name: key,
           type: property.type === "array" ? ((property.items as OpenAPIV3.SchemaObject).type || (property.items as OpenAPIV3.ReferenceObject).$ref.split('/').pop()) + "[]" : property.type,
@@ -142,12 +154,12 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string, { apiUrl }: { apiU
       })
     }
 
-
-    let output : schemaObject = {
-      examples: Object.fromEntries(examples),
+    let output : component = {
+      example: Object.fromEntries(outputExample),
+      schema: Object.fromEntries(outputSchema),
       parameters: parameters
     }
-    schemas.set(key, output)
+    components.set(key, output)
   })
 
 
@@ -169,7 +181,7 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string, { apiUrl }: { apiU
       tag: key,
       sections,
       operations,
-      schemas,
+      components,
     })
 
     // Write to disk
@@ -196,5 +208,25 @@ function resolveType(items: OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject |
     return Object.fromEntries(map)
   }
   return (items as OpenAPIV3.ArraySchemaObject).type
+}
+
+
+function resolveExampleValue(items: OpenAPIV3.ReferenceObject | OpenAPIV3.SchemaObject | OpenAPIV3.NonArraySchemaObjectType, schemas) : any {
+  if((items as OpenAPIV3.ReferenceObject).$ref){
+    let ref = (items as OpenAPIV3.ReferenceObject).$ref
+    let map = new Map<string, any>()
+    Object.entries(schemas[ref.split('/').pop()].properties).forEach(([key, val]) => {
+      let property = val as OpenAPIV3.SchemaObject
+      let exampleValue
+      if(property.type === "array"){
+        exampleValue = new Array(resolveExampleValue(property.items, schemas))
+      } else {
+        exampleValue = resolveExampleValue(property, schemas)
+      }
+      map.set(key, exampleValue)
+    })
+    return Object.fromEntries(map)
+  }
+  return (items as OpenAPIV3.ArraySchemaObject).example
 }
 
