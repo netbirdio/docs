@@ -63,12 +63,12 @@ export const title = '<%- tag %>'
     <CodeGroup title="Request" tag="<%- operation.operation.toUpperCase() %>" label="<%- operation.path %>">
 \`\`\`bash {{ title: 'cURL' }}
 <% if(true){ -%>
-curl -X <%- operation.operation.toUpperCase() %> <%- operation.fullPath %> \\
--H "Authorization: Token <TOKEN>" \\<% }; -%>
+curl -X <%- operation.operation.toUpperCase() %> <%- operation.fullPath %> \\<% }; -%>
 <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ %>
 -H 'Accept: application/json' \\<% }; -%>
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
--H 'Content-Type: application/json' \\\n--data-raw '<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2) -%>'<% }; %>
+-H 'Content-Type: application/json' \\<% }; %>
+-H "Authorization: Token <TOKEN>" <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>\\\n--data-raw '<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2) -%>'<% }; %>
 \`\`\`
 
 \`\`\`js
