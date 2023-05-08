@@ -109,7 +109,7 @@ In this step we will generate `ClientSecret` for the `netbird` service user.
 
 ![](/img/integrations/identity-providers/self-hosted/zitadel-service-user-secret.png)
 
-### Step 4: Grant manage-users role to netbird service user
+### Step 5: Grant manage-users role to netbird service user
 
 In this step we will grant `Org User Manager` role to `netbird` service user.
 
