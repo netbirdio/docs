@@ -198,7 +198,6 @@ export const docsNavigation = [
     title: 'How-to Guides',
     links: [
       { title: 'Getting Started', href: '/docs/getting-started' },
-      { title: 'Client Installation', href: '/docs/client-installation' },
       { title: 'Managing your Network', href: '/docs/managing-your-network' },
       { title: 'Examples', href: '/docs/examples' },
       { title: 'CLI', href: '/docs/cli' },
