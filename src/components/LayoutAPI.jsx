@@ -4,11 +4,11 @@ import { motion } from 'framer-motion'
 import { Footer } from '@/components/Footer'
 import { Header } from '@/components/Header'
 import { Logo } from '@/components/Logo'
-import { Navigation } from '@/components/Navigation'
+import { NavigationAPI } from '@/components/NavigationAPI'
 import { Prose } from '@/components/Prose'
 import { SectionProvider } from '@/components/SectionProvider'
 
-export function Layout({ children, sections = [] }) {
+export function LayoutAPI({ children, sections = [] }) {
   return (
     <SectionProvider sections={sections}>
       <div className="lg:ml-72 xl:ml-80">
@@ -23,7 +23,7 @@ export function Layout({ children, sections = [] }) {
               </Link>
             </div>
             <Header />
-            <Navigation className="hidden lg:mt-10 lg:block" />
+            <NavigationAPI className="hidden lg:mt-10 lg:block" />
           </div>
         </motion.header>
         <div className="relative px-4 pt-14 sm:px-6 lg:px-8">

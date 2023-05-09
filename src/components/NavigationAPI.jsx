@@ -15,7 +15,7 @@ function useInitialValue(value, condition = true) {
   return condition ? initialValue : value
 }
 
-function TopLevelNavItem({ href, children }) {
+export function TopLevelNavItem({ href, children }) {
   return (
     <li className="md:hidden">
       <Link
@@ -28,7 +28,7 @@ function TopLevelNavItem({ href, children }) {
   )
 }
 
-function NavLink({ href, tag, active, isAnchorLink = false, children }) {
+export function NavLink({ href, tag, active, isAnchorLink = false, children }) {
   return (
     <Link
       href={href}
@@ -87,7 +87,7 @@ function VisibleSectionHighlight({ group, pathname }) {
   )
 }
 
-function ActivePageMarker({ group, pathname }) {
+export function ActivePageMarker({ group, pathname }) {
   let itemHeight = remToPx(2)
   let offset = remToPx(0.25)
   let activePageIndex = group.links.findIndex((link) => link.href === pathname)
@@ -248,7 +248,7 @@ export const apiNavigation = [
   },
 ]
 
-export function Navigation(props) {
+export function NavigationAPI(props) {
   let router = useRouter()
   return (
     <nav {...props}>

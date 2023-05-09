@@ -67,18 +67,18 @@ export function Heading({
 }) {
   let Component = `h${level}`
   let ref = useRef()
-  let registerHeading = useSectionStore((s) => s.registerHeading)
+  // let registerHeading = useSectionStore((s) => s.registerHeading)
 
   let inView = useInView(ref, {
     margin: `${remToPx(-3.5)}px 0px 0px 0px`,
     amount: 'all',
   })
 
-  useEffect(() => {
-    if (level === 2) {
-      registerHeading({ id, ref, offsetRem: tag || label ? 8 : 6 })
-    }
-  })
+  // useEffect(() => {
+  //   if (level === 2) {
+  //     registerHeading({ id, ref, offsetRem: tag || label ? 8 : 6 })
+  //   }
+  // })
 
   return (
     <>
