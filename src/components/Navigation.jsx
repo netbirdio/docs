@@ -217,26 +217,26 @@ export const apiNavigation = [
   {
     title: 'Guides',
     links: [
-      { title: 'Quickstart', href: '/quickstart' },
-      { title: 'Authentication', href: '/authentication' },
-      { title: 'Errors', href: '/errors' },
+      { title: 'Quickstart', href: '/ipa/quickstart' },
+      { title: 'Authentication', href: '/ipa/authentication' },
+      { title: 'Errors', href: '/ipa/errors' },
       // { title: 'Events', href: '/accounts' },
     ],
   },
   {
     title: 'Resources',
     links: [
-      { title: 'Accounts', href: '/accounts' },
-      { title: 'Users', href: '/users' },
-      { title: 'Tokens', href: '/tokens' },
-      { title: 'Peers', href: '/peers' },
-      { title: 'Setup Keys', href: '/setup-keys' },
-      { title: 'Groups', href: '/groups' },
-      { title: 'Rules', href: '/rules' },
-      { title: 'Policies', href: '/policies' },
-      { title: 'Routes', href: '/routes' },
-      { title: 'DNS', href: '/dns' },
-      { title: 'Events', href: '/events' },
+      { title: 'Accounts', href: '/ipa/accounts' },
+      { title: 'Users', href: '/ipa/users' },
+      { title: 'Tokens', href: '/ipa/tokens' },
+      { title: 'Peers', href: '/ipa/peers' },
+      { title: 'Setup Keys', href: '/ipa/setup-keys' },
+      { title: 'Groups', href: '/ipa/groups' },
+      { title: 'Rules', href: '/ipa/rules' },
+      { title: 'Policies', href: '/ipa/policies' },
+      { title: 'Routes', href: '/ipa/routes' },
+      { title: 'DNS', href: '/ipa/dns' },
+      { title: 'Events', href: '/ipa/events' },
     ],
   },
 ]
@@ -248,7 +248,7 @@ export function Navigation(props) {
       <ul role="list">
         <TopLevelNavItem href="https://netbird.io/">Home</TopLevelNavItem>
         <TopLevelNavItem href="/docs/introductions">Docs</TopLevelNavItem>
-        <TopLevelNavItem href="/introductions">API</TopLevelNavItem>
+        <TopLevelNavItem href="/ipa/introductions">API</TopLevelNavItem>
         <TopLevelNavItem href="https://netbird.io/blog/">Blog</TopLevelNavItem>
         <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
         <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A">Support</TopLevelNavItem>
@@ -260,7 +260,7 @@ export function Navigation(props) {
             className={groupIndex === 0 && 'md:mt-0'}
           />
           )) ||
-          !router.route.startsWith('/docs') && apiNavigation.map((group, groupIndex) => (
+          router.route.startsWith('/ipa') && apiNavigation.map((group, groupIndex) => (
           <NavigationGroup
             key={group.title}
             group={group}
