@@ -33,16 +33,9 @@ export default function App({ Component, pageProps }) {
         <meta name="description" content={pageProps.description} />
       </Head>
       <MDXProvider components={mdxComponents}>
-
-          {router.pathname.startsWith("/docs") ? (
-              <LayoutDocs title={pageProps.title.toString()} tableOfContents={tableOfContents} {...pageProps}>
-                  <Component {...pageProps} />
-              </LayoutDocs>
-          ) : (
-              <LayoutAPI {...pageProps}>
-                  <Component {...pageProps} />
-              </LayoutAPI>
-          )}
+          <LayoutDocs title={pageProps.title.toString()} tableOfContents={tableOfContents} {...pageProps}>
+              <Component {...pageProps} />
+          </LayoutDocs>
       </MDXProvider>
     </>
   )

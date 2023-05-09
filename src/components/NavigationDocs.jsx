@@ -1,10 +1,44 @@
-import Link from 'next/link'
 import { useRouter } from 'next/router'
 import clsx from 'clsx'
-import {ActivePageMarker, docsNavigation, NavLink, TopLevelNavItem} from "@/components/NavigationAPI";
-import {useIsInsideMobileNavigation} from "@/components/MobileNavigation";
-import {useSectionStore} from "@/components/SectionProvider";
+import {ActivePageMarker, NavLink, TopLevelNavItem} from "@/components/NavigationAPI";
 import {AnimatePresence, motion} from "framer-motion";
+
+export const docsNavigation = [
+    {
+        title: 'About NetBird',
+        links: [
+            { title: 'Why Wireguard with NetBird?', href: '/docs/about-netbird/why-wireguard-with-netbird' },
+            { title: 'How Netbird Works', href: '/docs/about-netbird/how-netbird-works' },
+            { title: 'NetBird vs. Traditional VPN', href: '/docs/about-netbird/netbird-vs-traditional-vpn' },
+            { title: 'Other', href: '/docs/about-netbird/other' },
+            { title: 'FAQ', href: '/docs/about-netbird/faq' },
+        ],
+    },
+    {
+        title: 'How-to',
+        links: [
+            { title: 'Getting Started', href: '/docs/how-to/getting-started' },
+            { title: 'Peers', href: '/docs/how-to/peers' },
+            { title: 'Setup Keys', href: '/docs/how-to/setup-keys' },
+            { title: 'Access Control', href: '/docs/how-to/access-control' },
+            { title: 'Network Routes', href: '/docs/how-to/network-routes' },
+            { title: 'DNS', href: '/docs/how-to/dns' },
+            { title: 'Users', href: '/docs/how-to/users' },
+            { title: 'Activity', href: '/docs/how-to/activity' },
+            { title: 'Settings', href: '/docs/how-to/settings' },
+            { title: 'Examples', href: '/docs/how-to/examples' },
+            { title: 'CLI', href: '/docs/how-to/cli' },
+        ],
+    },
+    {
+        title: 'Self-Hosted',
+        links: [
+            { title: 'Installation Guide', href: '/docs/selfhosted/selfhosted-guide' },
+            { title: 'Identity Providers', href: '/docs/selfhosted/identity-providers' },
+        ],
+    },
+
+]
 
 export function NavigationDocs(props) {
   return (
@@ -27,32 +61,6 @@ export function NavigationDocs(props) {
     </nav>
   )
 }
-
-// <li key={section.title} className={clsx('relative mt-6', groupIndex === 0 && 'md:mt-0')}>
-//     <h2 className="font-display font-medium text-slate-900 dark:text-white">
-//         {section.title}
-//     </h2>
-//     <ul
-//         role="list"
-//         className="mt-2 space-y-2 border-l-2 border-slate-100 dark:border-slate-800 lg:mt-4 lg:space-y-4 lg:border-slate-200"
-//     >
-//         {section.links.map((link) => (
-//             <li key={link.href} className="relative">
-//                 <Link
-//                     href={link.href}
-//                     className={clsx(
-//                         'block w-full pl-3.5 before:pointer-events-none before:absolute before:-left-1 before:top-1/2 before:h-1.5 before:w-1.5 before:-translate-y-1/2 before:rounded-full',
-//                         link.href === router.pathname
-//                             ? 'font-semibold text-sky-500 before:bg-sky-500'
-//                             : 'text-slate-500 before:hidden before:bg-slate-300 hover:text-slate-600 hover:before:block dark:text-slate-400 dark:before:bg-slate-700 dark:hover:text-slate-300'
-//                     )}
-//                 >
-//                     {link.title}
-//                 </Link>
-//             </li>
-//         ))}
-//     </ul>
-// </li>
 
 function NavigationGroup({ group, className }) {
     // If this is the mobile navigation then we always render the initial

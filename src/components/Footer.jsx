@@ -4,7 +4,8 @@ import { useRouter } from 'next/router'
 import { Transition } from '@headlessui/react'
 
 import { Button } from '@/components/Button'
-import {apiNavigation, docsNavigation, navigation} from '@/components/NavigationAPI'
+import {apiNavigation} from '@/components/NavigationAPI'
+import {docsNavigation} from "@/components/NavigationDocs";
 
 function CheckIcon(props) {
   return (

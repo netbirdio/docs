@@ -79,50 +79,6 @@ function GitHubIcon(props) {
   )
 }
 
-// function Header({ navigation }) {
-//   let [isScrolled, setIsScrolled] = useState(false)
-//
-//   useEffect(() => {
-//     function onScroll() {
-//       setIsScrolled(window.scrollY > 0)
-//     }
-//     onScroll()
-//     window.addEventListener('scroll', onScroll, { passive: true })
-//     return () => {
-//       window.removeEventListener('scroll', onScroll)
-//     }
-//   }, [])
-//
-//   return (
-//     <header
-//       className={clsx(
-//         'sticky top-0 z-50 flex flex-wrap items-center justify-between bg-white px-4 py-5 shadow-md shadow-slate-900/5 transition duration-500 dark:shadow-none sm:px-6 lg:px-8',
-//         isScrolled
-//           ? 'dark:bg-slate-900/95 dark:backdrop-blur dark:[@supports(backdrop-filter:blur(0))]:bg-slate-900/75'
-//           : 'dark:bg-transparent'
-//       )}
-//     >
-//       <div className="mr-6 flex lg:hidden">
-//         <MobileNavigation navigation={navigation} />
-//       </div>
-//       <div className="relative flex flex-grow basis-0 items-center">
-//         <Link href="/" aria-label="Home page">
-//           <Logomark className="h-9 w-9 lg:hidden" />
-//           <Logo className="hidden h-9 w-auto fill-slate-700 dark:fill-sky-100 lg:block" />
-//         </Link>
-//       </div>
-//       <div className="-my-5 mr-6 sm:mr-8 md:mr-0">
-//         <Search />
-//       </div>
-//       <div className="relative flex basis-0 justify-end gap-6 sm:gap-8 md:flex-grow">
-//         <Link href="https://github.com" className="group" aria-label="GitHub">
-//           <GitHubIcon className="h-6 w-6 fill-slate-400 group-hover:fill-slate-500 dark:group-hover:fill-slate-300" />
-//         </Link>
-//       </div>
-//     </header>
-//   )
-// }
-
 function useTableOfContents(tableOfContents) {
   let [currentSection, setCurrentSection] = useState(tableOfContents[0]?.id)
 
@@ -176,7 +132,11 @@ export function LayoutDocs({ children, title, tableOfContents }) {
   let section = navigation.find((section) =>
     section.links.find((link) => link.href === router.pathname)
   )
-  let currentSection = useTableOfContents(tableOfContents)
+
+  let currentSection
+  if(!router.route.startsWith("/ipa")) {
+    currentSection = useTableOfContents(tableOfContents)
+  }
 
   function isActive(section) {
     if (section.id === currentSection) {
@@ -205,7 +165,8 @@ export function LayoutDocs({ children, title, tableOfContents }) {
               </Link>
             </div>
             <Header />
-            <NavigationDocs className="hidden lg:mt-10 lg:block" />
+            {router.route.startsWith("/ipa") ? <NavigationAPI tableOfContents={tableOfContents} className="hidden lg:mt-10 lg:block" /> :
+            <NavigationDocs className="hidden lg:mt-10 lg:block" />}
           </div>
         </motion.header>
         <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-16">
@@ -214,7 +175,7 @@ export function LayoutDocs({ children, title, tableOfContents }) {
           </main>
           <Footer />
         </div>
-        <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6">
+        {!router.route.startsWith("/ipa/resources") && <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6">
           <nav aria-labelledby="on-this-page-title" className="w-56">
             {tableOfContents.length > 0 && (
               <>
@@ -266,7 +227,7 @@ export function LayoutDocs({ children, title, tableOfContents }) {
               </>
             )}
           </nav>
-        </div>
+        </div>}
       </div>
     </>
   )

@@ -101,7 +101,8 @@ function getSections(node) {
       sections.push(`{
         title: ${JSON.stringify(toString(child))},
         id: ${JSON.stringify(child.properties.id)},
-        tagName: ${JSON.stringify(child.tagName)}, 
+        tagName: ${JSON.stringify(child.tagName)},
+        tag: ${JSON.stringify(child.tag)}, 
         ...${child.properties.annotation}
       }`)
     } else if (child.children) {
