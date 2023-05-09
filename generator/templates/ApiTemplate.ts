@@ -68,7 +68,7 @@ curl -X <%- operation.operation.toUpperCase() %> <%- operation.fullPath %> \\<% 
 -H 'Accept: application/json' \\<% }; -%>
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
 -H 'Content-Type: application/json' \\<% }; %>
--H "Authorization: Token <TOKEN>" <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>\\\n--data-raw '<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2) -%>'<% }; %>
+-H 'Authorization: Token <TOKEN>' <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>\\\n--data-raw '<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2) -%>'<% }; %>
 \`\`\`
 
 \`\`\`js
