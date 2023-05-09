@@ -24,22 +24,10 @@ function handleInput(command: string, options: any) {
 export default async function DocGenerator({
   input,
   output,
-  type,
-  url,
 }: {
   input: string
   output: string
-  type:  'api'
-  url?: string
 }) {
-  switch (type) {
-    case 'api':
-      await ApiGenerator(input, output, url || '')
-      break
-
-    default:
-      await console.log('Unrecognized type: ', type)
-      break
-  }
+  await ApiGenerator(input, output)
   return 'Done'
 }

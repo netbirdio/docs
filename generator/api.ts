@@ -4,7 +4,7 @@ import { OpenAPIV3, OpenAPIV2 } from 'openapi-types'
 import * as fs from 'fs'
 import * as ejs from 'ejs'
 
-export default async function gen(inputFileName: string, outputDir: string, apiUrl: string) {
+export default async function gen(inputFileName: string, outputDir: string) {
   const specRaw = fs.readFileSync(inputFileName, 'utf8')
   const spec = JSON.parse(specRaw) as any
   // console.log('spec', spec)
@@ -13,7 +13,7 @@ export default async function gen(inputFileName: string, outputDir: string, apiU
     case '3.0.0':
     case '3.0.1':
     case '3.0.3':
-      await gen_v3(spec, outputDir, { apiUrl })
+      await gen_v3(spec, outputDir)
       break
 
     default:
@@ -55,12 +55,13 @@ export type component = {
   parameters: schemaParameter[]
 }
 
-async function gen_v3(spec: OpenAPIV3.Document, dest: string, { apiUrl }: { apiUrl: string }) {
+async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
   const specLayout = spec.tags || []
   // const operations: enrichedOperation[] = []
   const tagGroups = new Map<string, enrichedOperation[]>()
+  const server = spec.servers.pop().url
   Object.entries(spec.paths).forEach(([key, val]) => {
-    const fullPath = `${apiUrl}${key}`
+    const fullPath = `${server}${key}`
 
     toArrayWithKey(val!, 'operation').forEach((o) => {
       const operation = o as v3OperationWithPath
