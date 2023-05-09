@@ -26,6 +26,16 @@ const nextConfig = {
         destination: '/docs/introductions',
         permanent: true,
       },
+      {
+        source: '/docs',
+        destination: '/docs/introductions',
+        permanent: true,
+      },
+      {
+        source: '/ipa',
+        destination: '/ipa/introductions',
+        permanent: true,
+      },
     ]
   }
 }
