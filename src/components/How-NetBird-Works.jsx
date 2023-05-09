@@ -3,24 +3,24 @@ import { Heading } from '@/components/Heading'
 
 const howNetbirdWorks = [
   {
-    href: 'docs/how-netbird-works#architecture',
+    href: 'docs/about-netbird/how-netbird-works#architecture',
     name: 'Architecture',
     description: 'Learn everything there is to know about the general architecture of NetBird.',
   },
   {
-    href: '/docs/how-netbird-works#general-flow-overview',
+    href: '/docs/about-netbird/how-netbird-works#general-flow-overview',
     name: 'General Flow Overview',
     description:
       'Learn how the general communication between components within the NetBird Cloud works.',
   },
   {
-    href: '/docs/how-netbird-works#setup-keys',
+    href: '/docs/how-to/setup-keys',
     name: 'Setup Keys',
     description:
       'Learn about different kinds of setup keys and how to us them to add peers to your network.',
   },
   {
-    href: '/docs/how-netbird-works#access-control',
+    href: '/docs/how-to/access-control',
     name: 'Access Control',
     description:
       'Learn how to limit communication between different peer groups inside your network.',
