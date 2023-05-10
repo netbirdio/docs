@@ -48,6 +48,7 @@ function collectHeadings(sections, slugify = slugifyWithCounter()) {
         if (section.tagName === 'h2' || section.tagName === 'h3') {
             let title = section.title
             let id = section.id
+            let tag = section.tag
             if (section.tagName === 'h3') {
                 if (!output[output.length - 1]) {
                     throw new Error(
@@ -57,9 +58,10 @@ function collectHeadings(sections, slugify = slugifyWithCounter()) {
                 output[output.length - 1].children.push({
                     id,
                     title,
+                    tag,
                 })
             } else {
-                output.push({ id, title, children: [] })
+                output.push({ id, title, tag, children: [] })
             }
         }
 
