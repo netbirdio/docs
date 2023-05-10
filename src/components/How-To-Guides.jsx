@@ -3,24 +3,24 @@ import { Heading } from '@/components/Heading'
 
 const howToGuides = [
   {
-    href: '/docs/managing-your-network#add-users-to-your-network',
+    href: '/docs/how-to/add-users-to-your-network',
     name: 'Add Users to your network',
     description: 'Learn how to add users to your network.',
   },
   {
-    href: '/docs/managing-your-network#configure-periodic-user-authentication',
+    href: '/docs/how-to/configure-periodic-user-authentication',
     name: 'Configure periodic user authentication',
     description:
       'Learn how to configure periodic user authentication.',
   },
   {
-    href: '/docs/managing-your-network#manage-dns-in-your-network',
+    href: '/docs/how-to/manage-dns-in-your-network',
     name: 'Manage DNS in your network',
     description:
       'Learn how to configure DNS servers for your network.',
   },
   {
-    href: '/docs/managing-your-network#monitor-system-and-network-activity',
+    href: '/docs/how-to/monitor-system-and-network-activity',
     name: 'Monitoring system and network activities',
     description:
       'Learn how to keep track of system and network activities in your account.',

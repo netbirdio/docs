@@ -32,7 +32,7 @@ export default function App({ Component, pageProps }) {
         <meta name="description" content={pageProps.description} />
       </Head>
       <MDXProvider components={mdxComponents}>
-          <Layout title={pageProps.title.toString()} tableOfContents={tableOfContents} {...pageProps}>
+          <Layout title={pageProps.title?.toString()} tableOfContents={tableOfContents} {...pageProps}>
               <Component {...pageProps} />
           </Layout>
       </MDXProvider>
@@ -43,6 +43,9 @@ export default function App({ Component, pageProps }) {
 function collectHeadings(sections, slugify = slugifyWithCounter()) {
     let output = []
 
+    if (sections === undefined) {
+        return []
+    }
     for (let section of sections) {
         if (section.tagName === 'h2' || section.tagName === 'h3') {
             let title = section.title

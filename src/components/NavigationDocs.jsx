@@ -26,6 +26,7 @@ export const docsNavigation = [
             { title: 'Configure periodic user authentication', href: '/docs/how-to/configure-periodic-user-authentication' },
             { title: 'Monitor system and network activity', href: '/docs/how-to/monitor-system-and-network-activity' },
             { title: 'Routing traffic to private networks', href: '/docs/how-to/routing-traffic-to-private-networks' },
+            { title: 'Manage DNS in your network', href: '/docs/how-to/manage-dns-in-your-network' },
             { title: 'Examples', href: '/docs/how-to/examples' },
             { title: 'CLI', href: '/docs/how-to/cli' },
         ],

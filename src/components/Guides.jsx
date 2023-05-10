@@ -3,12 +3,12 @@ import { Heading } from '@/components/Heading'
 
 const guides = [
   {
-    href: '/ipa/authentication',
+    href: '/ipa/guides/authentication',
     name: 'Authentication',
     description: 'Learn how to authenticate your API requests.',
   },
   {
-    href: '/ipa/errors',
+    href: '/ipa/guides/errors',
     name: 'Errors',
     description:
       'Read about the different types of errors returned by the API.',

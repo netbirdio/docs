@@ -1,40 +1,34 @@
 import { Button } from '@/components/Button'
 import { Heading } from '@/components/Heading'
 
-const howNetbirdWorks = [
+const aboutNetbird = [
   {
-    href: 'docs/about-netbird/how-netbird-works#architecture',
-    name: 'Architecture',
-    description: 'Learn everything there is to know about the general architecture of NetBird.',
+    href: '/docs/about-netbird/how-netbird-works',
+    name: 'How NetBird Works',
+    description: 'Learn everything there is to know about how NetBird works.',
   },
   {
-    href: '/docs/about-netbird/how-netbird-works#general-flow-overview',
-    name: 'General Flow Overview',
+    href: '/docs/about-netbird/netbird-vs-traditional-vpn',
+    name: 'NetBird vs. traditional VPN',
     description:
-      'Learn how the general communication between components within the NetBird Cloud works.',
+      'Read how NetBird compares to traditional VPNs and why it is better.',
   },
   {
-    href: '/docs/how-to/setup-keys',
-    name: 'Setup Keys',
+    href: '/docs/about-netbird/why-wireguard-with-netbird',
+    name: 'Why WireGuard with NetBird',
     description:
-      'Learn about different kinds of setup keys and how to us them to add peers to your network.',
-  },
-  {
-    href: '/docs/how-to/access-control',
-    name: 'Access Control',
-    description:
-      'Learn how to limit communication between different peer groups inside your network.',
+      'Learn why NetBird is using WireGuard and how NetBird simplifies the usage.',
   },
 ]
 
-export function HowNetbirdWorks() {
+export function AboutNetbird() {
   return (
     <div className="my-16 xl:max-w-none">
       <Heading level={2} id="howNetbirdWorks">
-        How NetBird Works
+        About NetBird
       </Heading>
       <div className="not-prose mt-4 grid grid-cols-1 gap-8 border-t border-zinc-900/5 pt-10 dark:border-white/5 sm:grid-cols-2 xl:grid-cols-4">
-        {howNetbirdWorks.map((guide) => (
+        {aboutNetbird.map((guide) => (
           <div key={guide.href}>
             <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">
               {guide.name}

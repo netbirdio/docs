@@ -10,7 +10,7 @@ import { UsersIcon } from '@/components/icons/UsersIcon'
 
 const resources = [
   {
-    href: '/ipa/accounts',
+    href: '/ipa/resources/accounts',
     name: 'Accounts',
     description:
       'Learn how to list and update accounts.',
@@ -24,7 +24,7 @@ const resources = [
     },
   },
   {
-    href: '/ipa/users',
+    href: '/ipa/resources/users',
     name: 'Users',
     description:
       'Learn how to create, update, delete, and list users.',
@@ -38,7 +38,7 @@ const resources = [
     },
   },
   {
-    href: '/ipa/tokens',
+    href: '/ipa/resources/tokens',
     name: 'Tokens',
     description:
       'Learn how to create, retrieve, delete, and list tokens.',
@@ -52,7 +52,7 @@ const resources = [
     },
   },
   {
-    href: '/ipa/peers',
+    href: '/ipa/resources/peers',
     name: 'Peers',
     description:
       'Learn how to retrieve, update, delete, and list peers.',
@@ -66,7 +66,7 @@ const resources = [
     },
   },
   {
-    href: '/ipa/setup-keys',
+    href: '/ipa/resources/setup-keys',
     name: 'Setup Keys',
     description:
       'Learn how to create, retrieve, update, and list setup keys.',
@@ -77,7 +77,7 @@ const resources = [
     },
   },
   {
-    href: '/ipa/groups',
+    href: '/ipa/resources/groups',
     name: 'Groups',
     description:
       'Learn how to create, retrieve, update, delete, and list groups.',
@@ -88,7 +88,7 @@ const resources = [
     },
   },
   {
-    href: '/ipa/rules',
+    href: '/ipa/resources/rules',
     name: 'Rules',
     description:
       'Learn how to create, retrieve, update, delete, and list rules.',
@@ -99,7 +99,7 @@ const resources = [
     },
   },
   {
-    href: '/ipa/policies',
+    href: '/ipa/resources/policies',
     name: 'Policies',
     description:
       'Learn how to create, retrieve, update, delete, and list policies.',
@@ -110,7 +110,7 @@ const resources = [
     },
   },
   {
-    href: '/ipa/routes',
+    href: '/ipa/resources/routes',
     name: 'Routes',
     description:
       'Learn about how to create, retrieve, update, delete, and list routes.',
@@ -121,7 +121,7 @@ const resources = [
     },
   },
   {
-    href: '/ipa/dns',
+    href: '/ipa/resources/dns',
     name: 'DNS',
     description:
       'Learn about how to create, retrieve, update, delete, and list nameserver groups and update and retrieve DNS settings.',
@@ -132,7 +132,7 @@ const resources = [
     },
   },
   {
-    href: '/ipa/events',
+    href: '/ipa/resources/events',
     name: 'Events',
     description:
       'Learn about how to list events.',
