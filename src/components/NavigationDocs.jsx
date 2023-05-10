@@ -40,9 +40,9 @@ export const docsNavigation = [
 
 ]
 
-export function NavigationDocs(props) {
+export function NavigationDocs({className}) {
   return (
-    <nav {...props}>
+    <nav className={className}>
       <ul role="list">
           <TopLevelNavItem href="https://netbird.io/">Home</TopLevelNavItem>
           <TopLevelNavItem href="/docs/introductions">Docs</TopLevelNavItem>

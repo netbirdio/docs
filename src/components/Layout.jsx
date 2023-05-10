@@ -158,8 +158,8 @@ export function Layout({ children, title, tableOfContents }) {
               </Link>
             </div>
             <Header />
-            {router.route.startsWith("/ipa") && <NavigationAPI tableOfContents={tableOfContents} className="hidden lg:mt-10 lg:block" />}
-            {router.route.startsWith("/docs") &&<NavigationDocs className="hidden lg:mt-10 lg:block" />}
+            {router.route.startsWith("/ipa") && <NavigationAPI className="hidden lg:mt-10 lg:block" tableOfContents={tableOfContents} />}
+            {router.route.startsWith("/docs") && <NavigationDocs className="hidden lg:mt-10 lg:block" />}
           </div>
         </motion.header>
         <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-16">

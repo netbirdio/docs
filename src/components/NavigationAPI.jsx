@@ -35,9 +35,9 @@ export const apiNavigation = [
   },
 ]
 
-export function NavigationAPI(props) {
+export function NavigationAPI({tableOfContents, className}) {
   return (
-      <nav {...props}>
+      <nav className={className}>
         <ul role="list">
           <TopLevelNavItem href="https://netbird.io/">Home</TopLevelNavItem>
           <TopLevelNavItem href="/docs/introductions">Docs</TopLevelNavItem>
@@ -49,7 +49,7 @@ export function NavigationAPI(props) {
                 <NavigationGroup
                     key={group.title}
                     group={group}
-                    tableOfContents={props.tableOfContents}
+                    tableOfContents={tableOfContents}
                     className={groupIndex === 0 && 'md:mt-0'}
                 />
             ))}
@@ -183,7 +183,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
                       transition: { duration: 0.15 },
                     }}
                   >
-                    {router.route.startsWith("/ipa/resources") && tableOfContents.tableOfContents?.map((section) => (
+                    {router.route.startsWith("/ipa/resources") && tableOfContents?.map((section) => (
                       <li key={section.id}>
                         <NavLink
                           href={`${link.href}#${section.id}`}
