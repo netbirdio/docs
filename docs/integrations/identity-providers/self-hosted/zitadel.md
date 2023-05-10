@@ -50,6 +50,7 @@ Create new zitadel application
 ![](/img/integrations/identity-providers/self-hosted/zitadel-new-application-uri.png)
 
 - Verify applications details and Click `Create` and then click `Close`
+- Check `Refresh Token` checkbox and click `Save`
 
 ![](/img/integrations/identity-providers/self-hosted/zitadel-new-application-overview.png)
 
