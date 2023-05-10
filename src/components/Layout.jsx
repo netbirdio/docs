@@ -102,10 +102,10 @@ function useTableOfContents(tableOfContents) {
     let headings = getHeadings(tableOfContents)
     function onScroll() {
       let top = window.scrollY
-      let current = headings[0].id
+      let current = headings[0]?.id
       for (let heading of headings) {
-        if (top >= heading.top) {
-          current = heading.id
+        if (top >= heading?.top) {
+          current = heading?.id
         } else {
           break
         }
@@ -147,8 +147,6 @@ export function Layout({ children, title, tableOfContents }) {
 
   return (
     <>
-      {/*<Header navigation={navigation} />*/}
-
       <HeroPattern/>
       <div className="relative mx-auto flex max-w-8xl justify-center sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80">
         <motion.header
@@ -172,7 +170,7 @@ export function Layout({ children, title, tableOfContents }) {
           </main>
           <Footer />
         </div>
-        {!router.route.startsWith("/ipa/resources") && <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6">
+        {!router.route.startsWith("/ipa/resources") && !router.route.includes("introductions") && <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6">
           <nav aria-labelledby="on-this-page-title" className="w-56">
             {tableOfContents.length > 0 && (
               <>

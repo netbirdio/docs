@@ -1,7 +1,4 @@
 const template = `
-import {HeroPattern} from "@/components/HeroPattern"; import {Note} from "@/components/mdx";
-
-<HeroPattern />
 
 export const title = '<%- tag %>'
 
