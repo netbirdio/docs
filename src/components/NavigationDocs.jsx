@@ -1,6 +1,6 @@
 import { useRouter } from 'next/router'
 import clsx from 'clsx'
-import {ActivePageMarker, NavLink, TopLevelNavItem} from "@/components/NavigationAPI";
+import {ActivePageMarker, NavLink, TopLevelNavItem, VisibleSectionHighlight} from "@/components/NavigationAPI";
 import {AnimatePresence, motion} from "framer-motion";
 
 export const docsNavigation = [
@@ -81,6 +81,11 @@ function NavigationGroup({ group, className }) {
                 {group.title}
             </motion.h2>
             <div className="relative mt-3 pl-2">
+                <AnimatePresence >
+                    {isActiveGroup && (
+                        <VisibleSectionHighlight group={group} pathname={router.pathname} />
+                    )}
+                </AnimatePresence>
                 <motion.div
                     layout
                     className="absolute inset-y-0 left-2 w-px bg-zinc-900/10 dark:bg-white/5"

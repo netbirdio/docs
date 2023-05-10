@@ -51,29 +51,11 @@ export function NavLink({ href, tag, active, isAnchorLink = false, children }) {
   )
 }
 
-function VisibleSectionHighlight({ group, pathname }) {
-  let [sections, visibleSections] = useInitialValue(
-    [
-      useSectionStore((s) => s.sections),
-      useSectionStore((s) => s.visibleSections),
-    ],
-    useIsInsideMobileNavigation()
-  )
-
-  let isPresent = useIsPresent()
-  let firstVisibleSectionIndex = Math.max(
-    0,
-    [{ id: '_top' }, ...sections].findIndex(
-      (section) => section.id === visibleSections[0]
-    )
-  )
-  let itemHeight = remToPx(2)
-  let height = isPresent
-    ? Math.max(1, visibleSections.length) * itemHeight
-    : itemHeight
-  let top =
-    group.links.findIndex((link) => link.href === pathname) * itemHeight +
-    firstVisibleSectionIndex * itemHeight
+export function VisibleSectionHighlight({ group, pathname }) {
+  let height = remToPx(2)
+  let offset = remToPx(0)
+  let activePageIndex = group.links.findIndex((link) => link.href === pathname)
+  let top = offset + activePageIndex * height
 
   return (
     <motion.div
@@ -128,11 +110,11 @@ function NavigationGroup({ group, className, tableOfContents }) {
         {group.title}
       </motion.h2>
       <div className="relative mt-3 pl-2">
-        {/*<AnimatePresence >*/}
-        {/*  {isActiveGroup && (*/}
-        {/*    <VisibleSectionHighlight group={group} pathname={router.pathname} />*/}
-        {/*  )}*/}
-        {/*</AnimatePresence>*/}
+        <AnimatePresence >
+        {isActiveGroup && (
+            <VisibleSectionHighlight group={group} pathname={router.pathname} />
+        )}
+      </AnimatePresence>
         <motion.div
           layout
           className="absolute inset-y-0 left-2 w-px bg-zinc-900/10 dark:bg-white/5"
@@ -148,7 +130,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
               <NavLink href={link.href} active={link.href === router.pathname}>
                 {link.title}
               </NavLink>
-              {/*<AnimatePresence mode="popLayout" initial={false}>*/}
+              <AnimatePresence mode="popLayout" initial={false}>
                 {link.href === router.pathname && (
                   <motion.ul
                     role="list"
@@ -175,7 +157,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
                     ))}
                   </motion.ul>
                 )}
-              {/*</AnimatePresence>*/}
+              </AnimatePresence>
             </motion.li>
           ))}
         </ul>
