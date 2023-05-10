@@ -133,10 +133,7 @@ export function Layout({ children, title, tableOfContents }) {
     section.links.find((link) => link.href === router.pathname)
   )
 
-  let currentSection
-  if(!router.route.startsWith("/ipa")) {
-    currentSection = useTableOfContents(tableOfContents)
-  }
+  let currentSection = useTableOfContents(tableOfContents)
 
   function isActive(section) {
     if (section.id === currentSection) {
