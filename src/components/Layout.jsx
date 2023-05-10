@@ -122,7 +122,7 @@ function useTableOfContents(tableOfContents) {
   return currentSection
 }
 
-export function LayoutDocs({ children, title, tableOfContents }) {
+export function Layout({ children, title, tableOfContents }) {
   let router = useRouter()
   let isHomePage = router.pathname === '/'
   let allLinks = navigation.flatMap((section) => section.links)
