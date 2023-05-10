@@ -4,9 +4,7 @@ import { useRouter } from 'next/router'
 import clsx from 'clsx'
 
 import { Logo, Logomark } from '@/components/Logo'
-import { MobileNavigation } from '@/components/MobileNavigation'
 import { Prose } from '@/components/Prose'
-import { Search } from '@/components/Search'
 import {HeroPattern} from "@/components/HeroPattern";
 import {NavigationDocs} from "@/components/NavigationDocs";
 import {Header} from "@/components/Header";
@@ -160,8 +158,8 @@ export function Layout({ children, title, tableOfContents }) {
               </Link>
             </div>
             <Header />
-            {router.route.startsWith("/ipa") ? <NavigationAPI tableOfContents={tableOfContents} className="hidden lg:mt-10 lg:block" /> :
-            <NavigationDocs className="hidden lg:mt-10 lg:block" />}
+            {router.route.startsWith("/ipa") && <NavigationAPI tableOfContents={tableOfContents} className="hidden lg:mt-10 lg:block" />}
+            {router.route.startsWith("/docs") &&<NavigationDocs className="hidden lg:mt-10 lg:block" />}
           </div>
         </motion.header>
         <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-16">
@@ -174,12 +172,12 @@ export function Layout({ children, title, tableOfContents }) {
           <nav aria-labelledby="on-this-page-title" className="w-56">
             {tableOfContents.length > 0 && (
               <>
-                {/*<h2*/}
-                {/*  id="on-this-page-title"*/}
-                {/*  className="font-display text-sm font-medium text-slate-900 dark:text-white"*/}
-                {/*>*/}
-                {/*  On this page*/}
-                {/*</h2>*/}
+                <h2
+                  id="on-this-page-title"
+                  className="font-display text-sm font-medium text-slate-900 dark:text-white"
+                >
+                  On this page
+                </h2>
                 <ol role="list" className="mt-4 space-y-3 text-sm">
                   {tableOfContents.map((section) => (
                     <li key={section.id}>

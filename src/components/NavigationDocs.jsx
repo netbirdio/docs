@@ -2,6 +2,7 @@ import { useRouter } from 'next/router'
 import clsx from 'clsx'
 import {ActivePageMarker, NavLink, TopLevelNavItem, VisibleSectionHighlight} from "@/components/NavigationAPI";
 import {AnimatePresence, motion} from "framer-motion";
+import {Button} from "@/components/mdx";
 
 export const docsNavigation = [
     {
@@ -18,10 +19,10 @@ export const docsNavigation = [
         title: 'How-to',
         links: [
             { title: 'Getting Started', href: '/docs/how-to/getting-started' },
-            { title: 'Setup Keys', href: '/docs/how-to/setup-keys' },
-            { title: 'Access Control', href: '/docs/how-to/access-control' },
-            { title: 'Users', href: '/docs/how-to/users' },
-            { title: 'Add users to your network', href: '/docs/how-to/add-users-to-you-network' },
+            { title: 'Register peers using setup keys', href: '/docs/how-to/register-peers-using-setup-keys' },
+            { title: 'Restrict access to peers', href: '/docs/how-to/restrict-access-to-peers' },
+            { title: 'Add Users to your network', href: '/docs/how-to/add-users-to-you-network' },
+            { title: 'Use service users with access token', href: '/docs/how-to/use-service-users-with-access-token' },
             { title: 'Configure periodic user authentication', href: '/docs/how-to/configure-periodic-user-authentication' },
             { title: 'Monitor system and network activity', href: '/docs/how-to/monitor-system-and-network-activity' },
             { title: 'Routing traffic to private networks', href: '/docs/how-to/routing-traffic-to-private-networks' },
@@ -56,20 +57,21 @@ export function NavigationDocs(props) {
                   className={groupIndex === 0 && 'md:mt-0'}
               />
           ))}
+          <li className="sticky bottom-0 z-10 mt-6 min-[416px]:hidden">
+              <Button href="https://app.netbird.io/" variant="filled" className="w-full">
+                  Sign in
+              </Button>
+          </li>
       </ul>
     </nav>
   )
 }
 
 function NavigationGroup({ group, className }) {
-    // If this is the mobile navigation then we always render the initial
-    // state, so that the state does not change during the close animation.
-    // The state will still update when we re-open (re-render) the navigation.
     let router = useRouter()
 
     let isActiveGroup =
         group.links.findIndex((link) => link.href === router.pathname) !== -1
-
 
     return (
         <li className={clsx('relative mt-6', className)}>

@@ -5,6 +5,8 @@ import { create } from 'zustand'
 
 import { Header } from '@/components/Header'
 import { NavigationAPI } from '@/components/NavigationAPI'
+import {NavigationDocs} from "@/components/NavigationDocs";
+import {useRouter} from "next/router";
 
 function MenuIcon(props) {
   return (
@@ -51,6 +53,8 @@ export function MobileNavigation() {
   let isInsideMobileNavigation = useIsInsideMobileNavigation()
   let { isOpen, toggle, close } = useMobileNavigationStore()
   let ToggleIcon = isOpen ? XIcon : MenuIcon
+
+  let router = useRouter()
 
   return (
     <IsInsideMobileNavigationContext.Provider value={true}>
@@ -103,7 +107,8 @@ export function MobileNavigation() {
                   layoutScroll
                   className="fixed bottom-0 left-0 top-14 w-full overflow-y-auto bg-white px-4 pb-4 pt-6 shadow-lg shadow-zinc-900/10 ring-1 ring-zinc-900/7.5 dark:bg-zinc-900 dark:ring-zinc-800 min-[416px]:max-w-sm sm:px-6 sm:pb-10"
                 >
-                  <NavigationAPI />
+                  {router.route.startsWith("/ipa") ? <NavigationAPI tableOfContents={[]} /> :
+                      <NavigationDocs />}
                 </motion.div>
               </Transition.Child>
             </Dialog.Panel>
