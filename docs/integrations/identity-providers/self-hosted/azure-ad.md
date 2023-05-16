@@ -17,7 +17,7 @@ It is a 3rd party managed service and can't be self-hosted.
 
 :::tip self-hosted idp
 If you prefer to have full control over authentication and authorization of your NetBird network, there are good
-self-hosted alternatives to the managed Auth0 service like [Keycloak](/integrations/identity-providers/self-hosted/using-netbird-with-keycloak).
+self-hosted alternatives to the managed Azure service like [Keycloak](/integrations/identity-providers/self-hosted/using-netbird-with-keycloak).
 :::
 
 Before you start creating and configuring an Azure AD application, ensure that you have the following:

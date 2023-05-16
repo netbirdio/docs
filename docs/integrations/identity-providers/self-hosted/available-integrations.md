@@ -15,3 +15,4 @@ List of available guides:
 - [Azure AD](/integrations/identity-providers/self-hosted/using-netbird-with-azure-ad) (managed service)
 - [Keycloak](/integrations/identity-providers/self-hosted/using-netbird-with-keycloak)
 - [Zitadel](/integrations/identity-providers/self-hosted/using-netbird-with-zitadel)
+- [Okta](/integrations/identity-providers/self-hosted/using-netbird-with-okta) (managed service)
