@@ -10,7 +10,7 @@ export const docsNavigation = [
         links: [
             { title: 'Why WireGuard with NetBird?', href: '/docs/about-netbird/why-wireguard-with-netbird' },
             { title: 'How NetBird works', href: '/docs/about-netbird/how-netbird-works' },
-            { title: 'NetBird vs. Traditional VPN', href: '/docs/about-netbird/netbird-vs-traditional-vpn' },
+            { title: 'NetBird vs. traditional VPN', href: '/docs/about-netbird/netbird-vs-traditional-vpn' },
             { title: 'Other', href: '/docs/about-netbird/other' },
             { title: 'FAQ', href: '/docs/about-netbird/faq' },
         ],
@@ -18,7 +18,7 @@ export const docsNavigation = [
     {
         title: 'How-to',
         links: [
-            { title: 'Getting Started', href: '/docs/how-to/getting-started' },
+            { title: 'Getting started', href: '/docs/how-to/getting-started' },
             { title: 'Use setup keys for automation', href: '/docs/how-to/register-machines-using-setup-keys' },
             { title: 'Manage network access', href: '/docs/how-to/manage-network-access' },
             { title: 'Add users to your network', href: '/docs/how-to/add-users-to-your-network' },
@@ -34,8 +34,8 @@ export const docsNavigation = [
     {
         title: 'Self-Hosted',
         links: [
-            { title: 'Installation Guide', href: '/docs/selfhosted/selfhosted-guide' },
-            { title: 'Identity Providers', href: '/docs/selfhosted/identity-providers' },
+            { title: 'Installation guide', href: '/docs/selfhosted/selfhosted-guide' },
+            { title: 'Supported identity providers (IDPs)', href: '/docs/selfhosted/identity-providers' },
         ],
     },
 
