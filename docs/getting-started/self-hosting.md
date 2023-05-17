@@ -133,24 +133,7 @@ If you want to run netbird behind your own reverse-proxy, some additional config
 Not all reverse-proxies are supported as netbird uses *gRPC* for various components.
 :::
 
-#### Configuration for netbird
-
-In `setup.env`:
-- Set ```NETBIRD_DOMAIN``` to your domain, e.g.  `demo.netbird.io`
-- Set ```NETBIRD_DISABLE_LETSENCRYPT=true```
-- Add ```NETBIRD_MGMT_API_PORT``` to your reverse-proxy TLS-port (default: 443)
-- Add ```NETBIRD_SIGNAL_PORT``` to your reverse-proxy TLS-port
-
-Optional:
-- Add ```TURN_MIN_PORT``` and ```TURN_MAX_PORT``` to configure the port-range used by the Turn-server
-
-:::tip info
-The `coturn`-service still needs to be directly accessible under your set-domain as it uses UDP for communication.
-:::
-
-Now you can continue with [Step 3](#step-3-configure-identity-provider).
-
-#### Configuration for your reverse-proxy
+#### Service overview for reverse proxies
 
 Depending on your port-mappings and choice of reverse-proxy, how you configure the forwards differs greatly.
 
@@ -169,6 +152,31 @@ Make sure your reverse-Proxy is setup to use the HTTP2-Protocol when forwarding.
 You can find helpful templates with the reverse-proxy-name as suffix (e.g. `docker-compose.yml.tmpl.traefik`)  
 Simply replace the file `docker-compose.yml.tmpl` with the chosen version.
 :::
+
+#### General configuration for reverse proxies
+
+In `setup.env`:
+- Set ```NETBIRD_DOMAIN``` to your domain, e.g.  `demo.netbird.io`
+- Set ```NETBIRD_DISABLE_LETSENCRYPT=true```
+- Add ```NETBIRD_MGMT_API_PORT``` to your reverse-proxy TLS-port (default: 443)
+- Add ```NETBIRD_SIGNAL_PORT``` to your reverse-proxy TLS-port
+
+Optional:
+- Add ```TURN_MIN_PORT``` and ```TURN_MAX_PORT``` to configure the port-range used by the Turn-server
+
+:::tip info
+The `coturn`-service still needs to be directly accessible under your set-domain as it uses UDP for communication.
+:::
+
+Now you can continue with [Step 3](#step-3-configure-identity-provider).
+
+##### Furthor Modifications for Nginx
+You can use the provided `nginx.tmp.conf` as a base for your configuration:
+- Set ```server_name``` to your domain, e.g. `demo.netbird.io`
+- Modify the exposed port of the ```dashboard``` service in the ```docker-compose.yml```
+- Modify the internal port of the ```management``` service to `80` in the ```docker-compose.yml```
+- Set the correct ports for the proxied ```dashboard```, ```signal``` and ```management``` service
+- Provide your own ssl certificates, using ```Let's Encrypt``` or your certificate provider of choice
 
 ### Get in touch
 
