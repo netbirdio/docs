@@ -87,6 +87,10 @@ Once you are done configuring the rule, click the `Create` button to save it. Yo
 Because of its permissiveness, new rules will take effect once you remove the `Default` rule.
 :::
 
+:::caution Reminder
+Protocol type All or ICMP must be bi-directional, also directional traffic for TCP and UDP protocol requires at least one port to be defined.
+:::
+
 #### Adding peers to groups
 If you create a new group when defining a rule, you will need to associate peers with this group. 
 You can do it by accessing the `Peers` tab and clicking the `Groups` column of any peer you want to associate with the new group. 
