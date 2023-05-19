@@ -16,7 +16,7 @@ export const docsNavigation = [
         ],
     },
     {
-        title: 'How-to',
+        title: 'How-to guides',
         links: [
             { title: 'Getting started', href: '/docs/how-to/getting-started' },
             { title: 'Installation', href: '/docs/how-to/installation' },
@@ -24,7 +24,7 @@ export const docsNavigation = [
             { title: 'Manage network access', href: '/docs/how-to/manage-network-access' },
             { title: 'Add users to your network', href: '/docs/how-to/add-users-to-your-network' },
             { title: 'Access NetBird API', href: '/docs/how-to/access-netbird-public-api' },
-            { title: 'Configure periodic user authentication', href: '/docs/how-to/configure-periodic-user-authentication' },
+            { title: 'Enforce periodic authentication', href: '/docs/how-to/enforce-periodic-user-authentication' },
             { title: 'Monitor system and network activity', href: '/docs/how-to/monitor-system-and-network-activity' },
             { title: 'Route traffic to private networks', href: '/docs/how-to/routing-traffic-to-private-networks' },
             { title: 'Manage DNS in your network', href: '/docs/how-to/manage-dns-in-your-network' },
@@ -33,7 +33,7 @@ export const docsNavigation = [
         ],
     },
     {
-        title: 'Self-Hosted',
+        title: 'Self-hosted NetBird',
         links: [
             { title: 'Installation guide', href: '/docs/selfhosted/selfhosted-guide' },
             { title: 'Supported identity providers (IDPs)', href: '/docs/selfhosted/identity-providers' },
@@ -79,7 +79,7 @@ function NavigationGroup({ group, className }) {
         <li className={clsx('relative mt-6', className)}>
             <motion.h2
                 layout="position"
-                className="text-xs font-semibold text-zinc-900 dark:text-white"
+                className="text-s font-semibold text-zinc-900 dark:text-white"
             >
                 {group.title}
             </motion.h2>
