@@ -25,17 +25,17 @@ const nextConfig = {
     return [
       {
         source: '/',
-        destination: '/docs/introductions',
+        destination: '/docs/introduction',
         permanent: true,
       },
       {
         source: '/docs',
-        destination: '/docs/introductions',
+        destination: '/docs/introduction',
         permanent: true,
       },
       {
         source: '/ipa',
-        destination: '/ipa/introductions',
+        destination: '/ipa/introduction',
         permanent: true,
       },
     ]
