@@ -19,6 +19,7 @@ export const docsNavigation = [
         title: 'How-to',
         links: [
             { title: 'Getting started', href: '/docs/how-to/getting-started' },
+            { title: 'Installation', href: '/docs/how-to/installation' },
             { title: 'Use setup keys for automation', href: '/docs/how-to/register-machines-using-setup-keys' },
             { title: 'Manage network access', href: '/docs/how-to/manage-network-access' },
             { title: 'Add users to your network', href: '/docs/how-to/add-users-to-your-network' },
