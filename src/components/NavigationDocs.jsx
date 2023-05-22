@@ -33,7 +33,7 @@ export const docsNavigation = [
         ],
     },
     {
-        title: 'Self-hosted NetBird',
+        title: 'Self-hosting NetBird',
         links: [
             { title: 'Installation guide', href: '/docs/selfhosted/selfhosted-guide' },
             { title: 'Supported IdPs', href: '/docs/selfhosted/identity-providers' },
@@ -79,7 +79,7 @@ function NavigationGroup({ group, className }) {
         <li className={clsx('relative mt-6', className)}>
             <motion.h2
                 layout="position"
-                className="text-s font-semibold text-zinc-900 dark:text-white"
+                className="text-xs font-semibold text-zinc-900 dark:text-white"
             >
                 {group.title}
             </motion.h2>
