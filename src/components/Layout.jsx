@@ -146,7 +146,7 @@ export function Layout({ children, title, tableOfContents }) {
   return (
     <>
       <HeroPattern/>
-      <div className="relative mx-auto flex max-w-8xl justify-center sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80">
+      <div className="relative mx-auto flex max-w-8xl sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80">
         <motion.header
             layoutScroll
             className="contents lg:pointer-events-none lg:fixed lg:inset-0 lg:z-40 lg:flex"
@@ -168,7 +168,7 @@ export function Layout({ children, title, tableOfContents }) {
           </main>
           <Footer />
         </div>
-        {!router.route.startsWith("/ipa/resources") && !router.route.includes("introduction") && <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6">
+        {!router.route.startsWith("/ipa/resources") && <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6">
           <nav aria-labelledby="on-this-page-title" className="w-56">
             {tableOfContents.length > 0 && (
               <>
