@@ -36,7 +36,7 @@ export const docsNavigation = [
         title: 'Self-hosted NetBird',
         links: [
             { title: 'Installation guide', href: '/docs/selfhosted/selfhosted-guide' },
-            { title: 'Supported identity providers (IDPs)', href: '/docs/selfhosted/identity-providers' },
+            { title: 'Supported IdPs', href: '/docs/selfhosted/identity-providers' },
         ],
     },
 
