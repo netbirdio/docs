@@ -146,8 +146,7 @@ export function Layout({ children, title, tableOfContents }) {
   return (
     <>
       <HeroPattern/>
-      <div className="relative mx-auto flex max-w-8xl justify-center xl:px-8 lg:ml-52 xl:ml-60">
-      {/*<div className="relative mx-auto flex max-w-8xl justify-center sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80">*/}
+      <div className="relative mx-auto flex max-w-8xl justify-center sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80">
         <motion.header
             layoutScroll
             className="contents lg:pointer-events-none lg:fixed lg:inset-0 lg:z-40 lg:flex"
