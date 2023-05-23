@@ -26,11 +26,7 @@ const nextConfig = {
     return [
       {
         source: '/',
-        destination: '/docs/introduction',
-      },
-      {
-        source: '/docs',
-        destination: '/docs/introduction',
+        destination: '/introduction',
       },
       {
         source: '/api',

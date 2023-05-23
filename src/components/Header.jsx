@@ -69,7 +69,7 @@ export const Header = forwardRef(function Header({ className }, ref) {
         <nav className="hidden md:block">
           <ul role="list" className="flex items-center gap-8">
             <TopLevelNavItem href="https://netbird.io/">Home</TopLevelNavItem>
-            <TopLevelNavItem href="/docs">Docs</TopLevelNavItem>
+            <TopLevelNavItem href="/">Docs</TopLevelNavItem>
             <TopLevelNavItem href="/api">API</TopLevelNavItem>
             <TopLevelNavItem href="https://netbird.io/blog/">Blog</TopLevelNavItem>
             <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
