@@ -2,7 +2,6 @@ import nextMDX from '@next/mdx'
 import { remarkPlugins } from './mdx/remark.mjs'
 import { rehypePlugins } from './mdx/rehype.mjs'
 import { recmaPlugins } from './mdx/recma.mjs'
-import rehypeSlug from "rehype-slug";
 
 const withMDX = nextMDX({
   options: {
@@ -14,8 +13,10 @@ const withMDX = nextMDX({
   },
 })
 
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  assetPrefix: '/docs-static',
   reactStrictMode: true,
   pageExtensions: ['js', 'jsx', 'ts', 'tsx', 'mdx'],
   experimental: {
