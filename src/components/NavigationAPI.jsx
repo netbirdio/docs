@@ -11,26 +11,26 @@ export const apiNavigation = [
   {
     title: 'Guides',
     links: [
-      { title: 'Quickstart', href: '/ipa/guides/quickstart' },
-      { title: 'Authentication', href: '/ipa/guides/authentication' },
-      { title: 'Errors', href: '/ipa/guides/errors' },
+      { title: 'Quickstart', href: '/api/guides/quickstart' },
+      { title: 'Authentication', href: '/api/guides/authentication' },
+      { title: 'Errors', href: '/api/guides/errors' },
       // { title: 'Events', href: '/accounts' },
     ],
   },
   {
     title: 'Resources',
     links: [
-      { title: 'Accounts', href: '/ipa/resources/accounts' },
-      { title: 'Users', href: '/ipa/resources/users' },
-      { title: 'Tokens', href: '/ipa/resources/tokens' },
-      { title: 'Peers', href: '/ipa/resources/peers' },
-      { title: 'Setup Keys', href: '/ipa/resources/setup-keys' },
-      { title: 'Groups', href: '/ipa/resources/groups' },
-      { title: 'Rules', href: '/ipa/resources/rules' },
-      { title: 'Policies', href: '/ipa/resources/policies' },
-      { title: 'Routes', href: '/ipa/resources/routes' },
-      { title: 'DNS', href: '/ipa/resources/dns' },
-      { title: 'Events', href: '/ipa/resources/events' },
+      { title: 'Accounts', href: '/api/resources/accounts' },
+      { title: 'Users', href: '/api/resources/users' },
+      { title: 'Tokens', href: '/api/resources/tokens' },
+      { title: 'Peers', href: '/api/resources/peers' },
+      { title: 'Setup Keys', href: '/api/resources/setup-keys' },
+      { title: 'Groups', href: '/api/resources/groups' },
+      { title: 'Rules', href: '/api/resources/rules' },
+      { title: 'Policies', href: '/api/resources/policies' },
+      { title: 'Routes', href: '/api/resources/routes' },
+      { title: 'DNS', href: '/api/resources/dns' },
+      { title: 'Events', href: '/api/resources/events' },
     ],
   },
 ]
@@ -40,8 +40,8 @@ export function NavigationAPI({tableOfContents, className}) {
       <nav className={className}>
         <ul role="list">
           <TopLevelNavItem href="https://netbird.io/">Home</TopLevelNavItem>
-          <TopLevelNavItem href="/docs/introduction">Docs</TopLevelNavItem>
-          <TopLevelNavItem href="/ipa/introduction">API</TopLevelNavItem>
+          <TopLevelNavItem href="/docs">Docs</TopLevelNavItem>
+          <TopLevelNavItem href="/api">API</TopLevelNavItem>
           <TopLevelNavItem href="https://netbird.io/blog/">Blog</TopLevelNavItem>
           <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
           <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A">Support</TopLevelNavItem>
@@ -183,7 +183,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
                       transition: { duration: 0.15 },
                     }}
                   >
-                    {router.route.startsWith("/ipa/resources") && tableOfContents?.map((section) => (
+                    {router.route.startsWith("/api/resources") && tableOfContents?.map((section) => (
                       <li key={section.id}>
                         <NavLink
                           href={`${link.href}#${section.id}`}

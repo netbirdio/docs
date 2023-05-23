@@ -22,22 +22,23 @@ const nextConfig = {
   experimental: {
     scrollRestoration: true,
   },
-  redirects: async () => {
+  rewrites: async () => {
     return [
       {
         source: '/',
         destination: '/docs/introduction',
-        permanent: true,
       },
       {
         source: '/docs',
         destination: '/docs/introduction',
-        permanent: true,
       },
       {
-        source: '/ipa',
+        source: '/api',
         destination: '/ipa/introduction',
-        permanent: true,
+      },
+      {
+        source: '/api/:path*',
+        destination: '/ipa/:path*',
       }
     ]
   }
