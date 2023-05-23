@@ -138,7 +138,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
   let router = useRouter()
 
   let isActiveGroup =
-    group.links.findIndex((link) => link.href === router.pathname) !== -1
+    group.links.findIndex((link) => link.href === router.pathname.replace("ipa", "api")) !== -1
 
   return (
     <li className={clsx('relative mt-6', className)}>
@@ -151,7 +151,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
       <div className="relative mt-3 pl-2">
         <AnimatePresence >
           {isActiveGroup && (
-              <VisibleSectionHighlight group={group} pathname={router.pathname} />
+              <VisibleSectionHighlight group={group} pathname={router.pathname.replace("ipa", "api")} />
           )}
         </AnimatePresence>
         <motion.div
@@ -160,17 +160,17 @@ function NavigationGroup({ group, className, tableOfContents }) {
         />
         <AnimatePresence initial={false}>
           {isActiveGroup && (
-            <ActivePageMarker group={group} pathname={router.pathname} />
+            <ActivePageMarker group={group} pathname={router.pathname.replace("ipa", "api")} />
           )}
         </AnimatePresence>
         <ul role="list" className="border-l border-transparent">
           {group.links.map((link) => (
             <motion.li key={link.href} layout="position" className="relative">
-              <NavLink href={link.href} active={link.href === router.pathname}>
+              <NavLink href={link.href} active={link.href === router.pathname.replace("ipa", "api")}>
                 {link.title}
               </NavLink>
               <AnimatePresence mode="popLayout" initial={false}>
-                {link.href === router.pathname && (
+                {link.href === router.pathname.replace("ipa", "api") && (
                   <motion.ul
                     role="list"
                     initial={{ opacity: 0 }}
