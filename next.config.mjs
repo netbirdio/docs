@@ -38,7 +38,7 @@ const nextConfig = {
         source: '/ipa',
         destination: '/ipa/introduction',
         permanent: true,
-      },
+      }
     ]
   }
 }
