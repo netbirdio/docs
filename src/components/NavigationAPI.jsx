@@ -183,7 +183,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
                       transition: { duration: 0.15 },
                     }}
                   >
-                    {router.route.startsWith("/api/resources") && tableOfContents?.map((section) => (
+                    {router.route.startsWith("/ipa/resources") && tableOfContents?.map((section) => (
                       <li key={section.id}>
                         <NavLink
                           href={`${link.href}#${section.id}`}
