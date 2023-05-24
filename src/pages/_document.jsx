@@ -40,6 +40,7 @@ export default function Document() {
     <Html lang="en">
       <Head>
         <script dangerouslySetInnerHTML={{ __html: modeScript }} />
+          <link rel="shortcut icon" href="/docs-static/img/favicon.ico" />
       </Head>
       <body className="bg-white antialiased dark:bg-zinc-900">
         <Main />
