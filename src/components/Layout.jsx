@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/router'
 import clsx from 'clsx'
 
-import { Logo, Logomark } from '@/components/Logo'
+import { Logo } from '@/components/Logo'
 import { Prose } from '@/components/Prose'
 import {HeroPattern} from "@/components/HeroPattern";
 import {NavigationDocs} from "@/components/NavigationDocs";
@@ -167,7 +167,6 @@ export function Layout({ children, title, tableOfContents }) {
           </main>
           <Footer />
         </div>
-        {/*{router.route.startsWith("/ipa/resources") && <div className="w-64"></div>}*/}
         {!router.route.startsWith("/ipa/resources") && <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6">
           <nav aria-labelledby="on-this-page-title" className="w-80">
             {tableOfContents.length > 0 && (
