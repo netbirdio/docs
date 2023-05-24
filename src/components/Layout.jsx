@@ -158,8 +158,7 @@ export function Layout({ children, title, tableOfContents }) {
               </Link>
             </div>
             <Header />
-            {router.route.startsWith("/ipa") && <NavigationAPI className="hidden lg:mt-10 lg:block" tableOfContents={tableOfContents} />}
-            {!router.route.startsWith("/ipa") && <NavigationDocs className="hidden lg:mt-10 lg:block" />}
+            {router.route.startsWith("/ipa") ? <NavigationAPI className="hidden lg:mt-10 lg:block" tableOfContents={tableOfContents} /> : <NavigationDocs className="hidden lg:mt-10 lg:block" />}
           </div>
         </motion.header>
         <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-5">
@@ -168,6 +167,7 @@ export function Layout({ children, title, tableOfContents }) {
           </main>
           <Footer />
         </div>
+        {/*{router.route.startsWith("/ipa/resources") && <div className="w-64"></div>}*/}
         {!router.route.startsWith("/ipa/resources") && <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6">
           <nav aria-labelledby="on-this-page-title" className="w-80">
             {tableOfContents.length > 0 && (
