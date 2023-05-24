@@ -3,35 +3,35 @@ import { Heading } from '@/components/Heading'
 
 const howToGuides = [
   {
-    href: '/docs/how-to/getting-started',
+    href: '/how-to/getting-started',
     name: 'Quickstart guide',
     description: 'Start using NetBird in under 5 minutes.',
   },
   {
-    href: '/docs/how-to/manage-network-access',
+    href: '/how-to/manage-network-access',
     name: 'Manage network access',
     description:
         'Learn how to use access controls to manage access to your machines.',
   },
   {
-    href: '/docs/how-to/add-users-to-your-network',
+    href: '/how-to/add-users-to-your-network',
     name: 'Add users to your network',
     description: 'learn how to add team members to your NetBird network.',
   },
   {
-    href: '/docs/how-to/routing-traffic-to-private-networks',
+    href: '/how-to/routing-traffic-to-private-networks',
     name: 'Route traffic to private networks',
     description:
       'Learn how to provide access to LANs, VPS, and corporate private networks.',
   },
   {
-    href: '/docs/how-to/monitor-system-and-network-activity',
+    href: '/how-to/monitor-system-and-network-activity',
     name: 'Log and monitor network activity',
     description:
       'Learn how to keep track of system and network activities in your account.',
   },
   {
-    href: '/docs/how-to/manage-dns-in-your-network',
+    href: '/how-to/manage-dns-in-your-network',
     name: 'Manage DNS in your network',
     description:
         'Learn how to configure name servers in your private network.',

@@ -40,7 +40,7 @@ export function NavigationAPI({tableOfContents, className}) {
       <nav className={className}>
         <ul role="list">
           <TopLevelNavItem href="https://netbird.io/">Home</TopLevelNavItem>
-          <TopLevelNavItem href="/docs">Docs</TopLevelNavItem>
+          <TopLevelNavItem href="/">Docs</TopLevelNavItem>
           <TopLevelNavItem href="/api">API</TopLevelNavItem>
           <TopLevelNavItem href="https://netbird.io/blog/">Blog</TopLevelNavItem>
           <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
