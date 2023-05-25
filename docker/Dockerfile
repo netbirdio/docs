@@ -16,15 +16,17 @@ RUN npm install --production
 # Copy all files
 COPY ./ ./
 
+COPY /docker/entrypoint.sh ./entrypoint.sh
+
 # Build app
 RUN npm run build
+
+RUN chmod u+x /usr/app/entrypoint.sh
 
 # Expose the listening port
 EXPOSE 3000
 
-# Run container as non-root (unprivileged) user
-# The node user is provided in the Node.js Alpine base image
-USER node
+# apply env variables to the Nextjs .env file
+ENTRYPOINT ["/usr/app/entrypoint.sh"]
 
-# Run npm start script with PM2 when container starts
-CMD [ "pm2-runtime", "npm", "--", "start" ]
+CMD npm run start
