@@ -23,12 +23,9 @@ export default function App({ Component, pageProps }) {
   return (
     <>
       <Head>
-        {router.pathname === '/' ? (
-          <title>NetBird Docs</title>
-        ) : (
-            router.pathname.startsWith('/docs') ?
-          <title>{`${pageProps.title} - NetBird Docs`}</title> : <title>{`${pageProps.title} - NetBird API`}</title>
-        )}
+        {router.route.startsWith('/ipa') ?
+            <title>{`${pageProps.title} - NetBird API`}</title> : <title>{`${pageProps.title} - NetBird Docs`}</title>
+        }
         <meta name="description" content={pageProps.description} />
       </Head>
       <MDXProvider components={mdxComponents}>
