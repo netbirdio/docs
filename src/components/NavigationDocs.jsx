@@ -23,6 +23,7 @@ export const docsNavigation = [
             { title: 'Use setup keys for automation', href: '/how-to/register-machines-using-setup-keys' },
             { title: 'Manage network access', href: '/how-to/manage-network-access' },
             { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
+            { title: 'Add machines to your network', href: '/how-to/add-machines-to-your-network' },
             { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
             { title: 'Enforce periodic authentication', href: '/how-to/enforce-periodic-user-authentication' },
             { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
