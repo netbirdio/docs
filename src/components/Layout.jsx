@@ -3,7 +3,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/router'
 import clsx from 'clsx'
 
-import { Logo, Logomark } from '@/components/Logo'
+import { Logo } from '@/components/Logo'
 import { Prose } from '@/components/Prose'
 import {HeroPattern} from "@/components/HeroPattern";
 import {NavigationDocs} from "@/components/NavigationDocs";
@@ -17,54 +17,54 @@ const navigation = [
     title: 'Introduction',
     links: [
       { title: 'Getting started', href: '/' },
-      { title: 'Installation', href: '/docs/installation' },
+      { title: 'Installation', href: '/installation' },
     ],
   },
   {
     title: 'Core concepts',
     links: [
-      { title: 'Understanding caching', href: '/docs/understanding-caching' },
+      { title: 'Understanding caching', href: '/understanding-caching' },
       {
         title: 'Predicting user behavior',
-        href: '/docs/predicting-user-behavior',
+        href: '/predicting-user-behavior',
       },
-      { title: 'Basics of time-travel', href: '/docs/basics-of-time-travel' },
+      { title: 'Basics of time-travel', href: '/basics-of-time-travel' },
       {
         title: 'Introduction to string theory',
-        href: '/docs/introduction-to-string-theory',
+        href: '/introduction-to-string-theory',
       },
-      { title: 'The butterfly effect', href: '/docs/the-butterfly-effect' },
+      { title: 'The butterfly effect', href: '/the-butterfly-effect' },
     ],
   },
   {
     title: 'Advanced guides',
     links: [
-      { title: 'Writing plugins', href: '/docs/writing-plugins' },
-      { title: 'Neuralink integration', href: '/docs/neuralink-integration' },
-      { title: 'Temporal paradoxes', href: '/docs/temporal-paradoxes' },
-      { title: 'Testing', href: '/docs/testing' },
-      { title: 'Compile-time caching', href: '/docs/compile-time-caching' },
+      { title: 'Writing plugins', href: '/writing-plugins' },
+      { title: 'Neuralink integration', href: '/neuralink-integration' },
+      { title: 'Temporal paradoxes', href: '/temporal-paradoxes' },
+      { title: 'Testing', href: '/testing' },
+      { title: 'Compile-time caching', href: '/compile-time-caching' },
       {
         title: 'Predictive data generation',
-        href: '/docs/predictive-data-generation',
+        href: '/predictive-data-generation',
       },
     ],
   },
   {
     title: 'API reference',
     links: [
-      { title: 'CacheAdvance.predict()', href: '/docs/cacheadvance-predict' },
-      { title: 'CacheAdvance.flush()', href: '/docs/cacheadvance-flush' },
-      { title: 'CacheAdvance.revert()', href: '/docs/cacheadvance-revert' },
-      { title: 'CacheAdvance.regret()', href: '/docs/cacheadvance-regret' },
+      { title: 'CacheAdvance.predict()', href: '/cacheadvance-predict' },
+      { title: 'CacheAdvance.flush()', href: '/cacheadvance-flush' },
+      { title: 'CacheAdvance.revert()', href: '/cacheadvance-revert' },
+      { title: 'CacheAdvance.regret()', href: '/cacheadvance-regret' },
     ],
   },
   {
     title: 'Contributing',
     links: [
-      { title: 'How to contribute', href: '/docs/how-to-contribute' },
-      { title: 'Architecture guide', href: '/docs/architecture-guide' },
-      { title: 'Design principles', href: '/docs/design-principles' },
+      { title: 'How to contribute', href: '/how-to-contribute' },
+      { title: 'Architecture guide', href: '/architecture-guide' },
+      { title: 'Design principles', href: '/design-principles' },
     ],
   },
 ]
@@ -146,7 +146,7 @@ export function Layout({ children, title, tableOfContents }) {
   return (
     <>
       <HeroPattern/>
-      <div className="relative mx-auto flex max-w-8xl justify-center sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80">
+      <div className="relative mx-auto flex max-w-8xl sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80">
         <motion.header
             layoutScroll
             className="contents lg:pointer-events-none lg:fixed lg:inset-0 lg:z-40 lg:flex"
@@ -158,18 +158,17 @@ export function Layout({ children, title, tableOfContents }) {
               </Link>
             </div>
             <Header />
-            {router.route.startsWith("/ipa") && <NavigationAPI className="hidden lg:mt-10 lg:block" tableOfContents={tableOfContents} />}
-            {router.route.startsWith("/docs") && <NavigationDocs className="hidden lg:mt-10 lg:block" />}
+            {router.route.startsWith("/ipa") ? <NavigationAPI className="hidden lg:mt-10 lg:block" tableOfContents={tableOfContents} /> : <NavigationDocs className="hidden lg:mt-10 lg:block" />}
           </div>
         </motion.header>
-        <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-16">
+        <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-5">
           <main className="py-16">
             <Prose as="article">{children}</Prose>
           </main>
           <Footer />
         </div>
-        {!router.route.startsWith("/ipa/resources") && !router.route.includes("introductions") && <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6">
-          <nav aria-labelledby="on-this-page-title" className="w-56">
+        {!router.route.startsWith("/ipa/resources") && <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6 pl-12">
+          <nav aria-labelledby="on-this-page-title" className="w-80">
             {tableOfContents.length > 0 && (
               <>
                 <h2

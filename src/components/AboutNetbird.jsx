@@ -3,21 +3,21 @@ import { Heading } from '@/components/Heading'
 
 const aboutNetbird = [
   {
-    href: '/docs/about-netbird/how-netbird-works',
-    name: 'How NetBird Works',
-    description: 'Learn everything there is to know about how NetBird works.',
+    href: '/about-netbird/how-netbird-works',
+    name: 'How NetBird works',
+    description: 'Concepts, architecture, protocols, and more.',
   },
   {
-    href: '/docs/about-netbird/netbird-vs-traditional-vpn',
+    href: '/about-netbird/netbird-vs-traditional-vpn',
     name: 'NetBird vs. traditional VPN',
     description:
-      'Read how NetBird compares to traditional VPNs and why it is better.',
+      'Learn how NetBird compares to traditional VPNs and why it is better.',
   },
   {
-    href: '/docs/about-netbird/why-wireguard-with-netbird',
+    href: '/about-netbird/why-wireguard-with-netbird',
     name: 'Why WireGuard with NetBird',
     description:
-      'Learn why NetBird is using WireGuard and how NetBird simplifies the usage.',
+      'Learn why and how NetBird uses WireGuard.',
   },
 ]
 

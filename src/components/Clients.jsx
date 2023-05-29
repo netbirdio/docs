@@ -10,7 +10,7 @@ import { UsersIcon } from '@/components/icons/UsersIcon'
 
 const clients = [
   {
-    href: '/docs/client-installation#linux',
+    href: '/client-installation#linux',
     name: 'Linux',
     description:
       'Learn how to install the NetBird client on Linux devices.',
@@ -24,7 +24,7 @@ const clients = [
     },
   },
   {
-    href: '/docs/client-installation#mac-os',
+    href: '/client-installation#mac-os',
     name: 'MacOS',
     description:
       'Learn how to install the NetBird client on MacOS devices.',
@@ -38,7 +38,7 @@ const clients = [
     },
   },
   {
-    href: '/docs/client-installation#windows',
+    href: '/client-installation#windows',
     name: 'Windows',
     description:
       'Learn how to install the NetBird client on Windows devices.',
@@ -52,7 +52,7 @@ const clients = [
     },
   },
   {
-    href: '/docs/client-installation#android',
+    href: '/client-installation#android',
     name: 'Android',
     description:
       'Learn how to install the NetBird client on Android devices.',
@@ -63,7 +63,7 @@ const clients = [
     },
   },
   {
-    href: '/docs/client-installation#ios',
+    href: '/client-installation#ios',
     name: 'iOS',
     description:
       'Learn how to install the NetBird client on OS devices.',

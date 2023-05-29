@@ -8,34 +8,36 @@ export const docsNavigation = [
     {
         title: 'About NetBird',
         links: [
-            { title: 'Why WireGuard with NetBird?', href: '/docs/about-netbird/why-wireguard-with-netbird' },
-            { title: 'How NetBird works', href: '/docs/about-netbird/how-netbird-works' },
-            { title: 'NetBird vs. Traditional VPN', href: '/docs/about-netbird/netbird-vs-traditional-vpn' },
-            { title: 'Other', href: '/docs/about-netbird/other' },
-            { title: 'FAQ', href: '/docs/about-netbird/faq' },
+            { title: 'Why WireGuard with NetBird?', href: '/about-netbird/why-wireguard-with-netbird' },
+            { title: 'How NetBird works', href: '/about-netbird/how-netbird-works' },
+            { title: 'NetBird vs. traditional VPN', href: '/about-netbird/netbird-vs-traditional-vpn' },
+            { title: 'Other', href: '/about-netbird/other' },
+            { title: 'FAQ', href: '/about-netbird/faq' },
         ],
     },
     {
-        title: 'How-to',
+        title: 'How-to guides',
         links: [
-            { title: 'Getting Started', href: '/docs/how-to/getting-started' },
-            { title: 'Use setup keys for automation', href: '/docs/how-to/register-machines-using-setup-keys' },
-            { title: 'Manage network access', href: '/docs/how-to/manage-network-access' },
-            { title: 'Add users to your network', href: '/docs/how-to/add-users-to-your-network' },
-            { title: 'Access NetBird API', href: '/docs/how-to/access-netbird-public-api' },
-            { title: 'Configure periodic user authentication', href: '/docs/how-to/configure-periodic-user-authentication' },
-            { title: 'Monitor system and network activity', href: '/docs/how-to/monitor-system-and-network-activity' },
-            { title: 'Route traffic to private networks', href: '/docs/how-to/routing-traffic-to-private-networks' },
-            { title: 'Manage DNS in your network', href: '/docs/how-to/manage-dns-in-your-network' },
-            { title: 'Examples', href: '/docs/how-to/examples' },
-            { title: 'CLI', href: '/docs/how-to/cli' },
+            { title: 'Getting started', href: '/how-to/getting-started' },
+            { title: 'Installation', href: '/how-to/installation' },
+            { title: 'Use setup keys for automation', href: '/how-to/register-machines-using-setup-keys' },
+            { title: 'Manage network access', href: '/how-to/manage-network-access' },
+            { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
+            { title: 'Add machines to your network', href: '/how-to/add-machines-to-your-network' },
+            { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
+            { title: 'Enforce periodic authentication', href: '/how-to/enforce-periodic-user-authentication' },
+            { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
+            { title: 'Route traffic to private networks', href: '/how-to/routing-traffic-to-private-networks' },
+            { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
+            { title: 'Examples', href: '/how-to/examples' },
+            { title: 'CLI', href: '/how-to/cli' },
         ],
     },
     {
-        title: 'Self-Hosted',
+        title: 'Self-hosting NetBird',
         links: [
-            { title: 'Installation Guide', href: '/docs/selfhosted/selfhosted-guide' },
-            { title: 'Identity Providers', href: '/docs/selfhosted/identity-providers' },
+            { title: 'Installation guide', href: '/selfhosted/selfhosted-guide' },
+            { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
         ],
     },
 
@@ -46,8 +48,8 @@ export function NavigationDocs({className}) {
     <nav className={className}>
       <ul role="list">
           <TopLevelNavItem href="https://netbird.io/">Home</TopLevelNavItem>
-          <TopLevelNavItem href="/docs/introductions">Docs</TopLevelNavItem>
-          <TopLevelNavItem href="/ipa/introductions">API</TopLevelNavItem>
+          <TopLevelNavItem href="/">Docs</TopLevelNavItem>
+          <TopLevelNavItem href="/api">API</TopLevelNavItem>
           <TopLevelNavItem href="https://netbird.io/blog/">Blog</TopLevelNavItem>
           <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
           <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A">Support</TopLevelNavItem>
@@ -103,34 +105,6 @@ function NavigationGroup({ group, className }) {
                             <NavLink href={link.href} active={link.href === router.pathname}>
                                 {link.title}
                             </NavLink>
-                            {/*<AnimatePresence mode="popLayout" initial={false}>*/}
-                            {/*    {link.href === router.pathname && sections.length > 0 && (*/}
-                            {/*        <motion.ul*/}
-                            {/*            role="list"*/}
-                            {/*            initial={{ opacity: 0 }}*/}
-                            {/*            animate={{*/}
-                            {/*                opacity: 1,*/}
-                            {/*                transition: { delay: 0.1 },*/}
-                            {/*            }}*/}
-                            {/*            exit={{*/}
-                            {/*                opacity: 0,*/}
-                            {/*                transition: { duration: 0.15 },*/}
-                            {/*            }}*/}
-                            {/*        >*/}
-                            {/*            {sections.map((section) => (*/}
-                            {/*                <li key={section.id}>*/}
-                            {/*                    <NavLink*/}
-                            {/*                        href={`${link.href}#${section.id}`}*/}
-                            {/*                        tag={section.tag}*/}
-                            {/*                        isAnchorLink*/}
-                            {/*                    >*/}
-                            {/*                        {section.title}*/}
-                            {/*                    </NavLink>*/}
-                            {/*                </li>*/}
-                            {/*            ))}*/}
-                            {/*        </motion.ul>*/}
-                            {/*    )}*/}
-                            {/*</AnimatePresence>*/}
                         </motion.li>
                     ))}
                 </ul>

@@ -126,7 +126,7 @@ function PageLink({ label, page, previous = false }) {
 
 function PageNavigation() {
   let router = useRouter()
-  let allPages = router.route.startsWith('/docs') ? docsNavigation.flatMap((group) => group.links) : apiNavigation.flatMap((group) => group.links)
+  let allPages = !router.route.startsWith('/ipa') ? docsNavigation.flatMap((group) => group.links) : apiNavigation.flatMap((group) => group.links)
   let currentPageIndex = allPages.findIndex(
     (page) => page.href === router.pathname
   )
