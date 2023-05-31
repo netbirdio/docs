@@ -7,11 +7,39 @@ on:
       - "**"
   pull_request:
 
+  workflow_dispatch:
+    inputs:
+      generateAPI:
+        description: 'Generates API pages if set'
+        required: false
+        default: false
+        type: boolean
 jobs:
   docs_build_n_push:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+
+      - name: Download openapi definition
+        if: ${{ inputs.generateAPI }}
+        run: |
+          curl -s -o generator/openapi.yml https://raw.githubusercontent.com/netbirdio/netbird/main/management/server/http/api/openapi.yml
+
+      - name: generate api pages
+        if: ${{ inputs.generateAPI }}
+        run: npm run gen
+
+      - name: Commit and push changes
+        if: ${{ inputs.generateAPI }}
+        run: |
+          git config --global user.email "no-reply@github.com"
+          git config --global user.name "GitHub Actions"
+          
+          git add -A
+          git commit -m "Update API pages"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git push
+
       -
         name: Docker meta
         id: meta
