@@ -139,33 +139,6 @@ function resolveParametersAllOf(object: OpenAPIV3.SchemaObject, components: Open
   return parameters
 }
 
-function resolveParametersProperties(value: OpenAPIV3.SchemaObject, components: OpenAPIV3.ComponentsObject) : schemaParameter[] {
-  let parameters: schemaParameter[] = []
-  for(const [key, property] of Object.entries(value.properties)) {
-    let type: string = ""
-    switch (property["type"]) {
-      case "array":
-        type = ((property["items"] as OpenAPIV3.SchemaObject).type || (property["items"] as OpenAPIV3.ReferenceObject).$ref.split('/').pop()) + "[]"
-        break;
-      case "object":
-      default:
-        type = property["type"]
-    }
-      let parameter: schemaParameter = {
-        name: key,
-        type: type,
-        description: property["description"],
-        required: value.required?.includes(key) || false,
-        minimum: property["minimum"],
-        maximum: property["maximum"],
-        minLength: property["minLength"],
-        maxLength: property["maxLength"],
-        enum: property["enum"],
-      }
-      parameters.push(parameter)
-  }
-  return parameters
-}
 
 function readParameters(components: OpenAPIV3.ComponentsObject) : Map<string, schemaParameter[]> {
   let parameters = new Map<string, schemaParameter[]>();
@@ -258,6 +231,7 @@ function resolveProperties(value: OpenAPIV3.SchemaObject, components: OpenAPIV3.
   }
   return [Object.fromEntries(schemas), Object.fromEntries(examples)]
 }
+
 
 function mergeMaps(map1: Map<string, Object>, map2: Map<string, Object>) : Map<string, Object> {
   return new Map([...Array.from(map1.entries()), ...Array.from(map2.entries())]);
