@@ -48,6 +48,12 @@ export type schemaParameter = {
   enum?: string[]
 }
 
+export type component = {
+  example: Object
+  schema: Object
+  parameters: schemaParameter[]
+}
+
 async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
   const specLayout = spec.tags || []
   // const operations: enrichedOperation[] = []
@@ -72,9 +78,7 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
     })
   })
 
-  let [schemas, examples, parameters] = readComponents(spec.components)
-
-  console.log(parameters.get("Account"))
+  let components = readComponents(spec.components)
 
   tagGroups.forEach((value: enrichedOperation[], key: string) => {
 
@@ -94,9 +98,7 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
       tag: key,
       sections,
       operations,
-      examples,
-      schemas,
-      parameters,
+      components,
     })
 
     // Write to disk
@@ -106,19 +108,22 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
   })
 }
 
-function readComponents(components: OpenAPIV3.ComponentsObject) :  [Map<string, Object>, Map<string, Object>, Map<string, schemaParameter[]>] {
-  let examples = new Map<string, Object>();
-  let schemas = new Map<string, Object>();
-  let parameters = new Map<string, schemaParameter[]>();
+function readComponents(components: OpenAPIV3.ComponentsObject) :  Map<string, component> {
+  let componentsOutput = new Map<string, component>()
 
   for (const [key, value] of Object.entries(components.schemas)) {
     let [schema, example, parameter] = resolveComponents(value, components)
-    examples.set(key, example)
-    schemas.set(key, schema)
-    parameters.set(key, parameter)
+
+    let component = {
+        example: example,
+        schema: schema,
+        parameters: parameter
+    }
+    componentsOutput.set(key, component)
   }
 
-  return [schemas, examples, parameters]
+
+  return componentsOutput
 }
 
 function resolveComponents(value: OpenAPIV3.ReferenceObject | OpenAPIV3.ArraySchemaObject | OpenAPIV3.NonArraySchemaObject, components: OpenAPIV3.ComponentsObject) : [Object, Object, schemaParameter[]] {
