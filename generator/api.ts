@@ -74,8 +74,7 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
 
   let [schemas, examples, parameters] = readComponents(spec.components)
 
-  console.log(examples.get("Route"))
-  console.log(schemas.get("Route"))
+  console.log(parameters.get("Account"))
 
   tagGroups.forEach((value: enrichedOperation[], key: string) => {
 
@@ -107,64 +106,22 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
   })
 }
 
-function resolveParameters(value: OpenAPIV3.ReferenceObject | OpenAPIV3.ArraySchemaObject | OpenAPIV3.NonArraySchemaObject, components: OpenAPIV3.ComponentsObject) : schemaParameter[] {
-  if((value as OpenAPIV3.ReferenceObject).$ref) {
-    let subcomponentName = (value as OpenAPIV3.ReferenceObject).$ref.split('/').pop()
-    let subcomponent = components.schemas[subcomponentName]
-    return resolveParameters(subcomponent, components)
-  }
-  if((value as OpenAPIV3.SchemaObject).properties) {
-    return resolveParametersProperties(value as OpenAPIV3.SchemaObject, components)
-  }
-  if((value as OpenAPIV3.SchemaObject).allOf) {
-    return resolveParametersAllOf(value as OpenAPIV3.SchemaObject, components)
-  }
-  return
-}
-
-function resolveParametersAllOf(object: OpenAPIV3.SchemaObject, components: OpenAPIV3.ComponentsObject) : schemaParameter[] {
-  let parameters: schemaParameter[] = []
-  for (const [key, value] of Object.entries(object.allOf)) {
-    if((value as OpenAPIV3.ReferenceObject).$ref) {
-      let subcomponentName = (value as OpenAPIV3.ReferenceObject).$ref.split('/').pop()
-      let subcomponent = components.schemas[subcomponentName]
-      let parameter = resolveParameters(subcomponent, components)
-      parameters = parameters.concat(parameter)
-    }
-    if((value as OpenAPIV3.SchemaObject).properties) {
-      let parameter = resolveParametersProperties(value as OpenAPIV3.SchemaObject, components)
-      parameters = parameters.concat(parameter)
-    }
-  }
-  return parameters
-}
-
-
-function readParameters(components: OpenAPIV3.ComponentsObject) : Map<string, schemaParameter[]> {
-  let parameters = new Map<string, schemaParameter[]>();
-  for (const [key, value] of Object.entries(components.schemas)) {
-    let parameter = resolveParameters(value, components)
-    parameters.set(key, parameter)
-  }
-  return parameters
-
-}
-
 function readComponents(components: OpenAPIV3.ComponentsObject) :  [Map<string, Object>, Map<string, Object>, Map<string, schemaParameter[]>] {
   let examples = new Map<string, Object>();
   let schemas = new Map<string, Object>();
-  let parameters = readParameters(components)
+  let parameters = new Map<string, schemaParameter[]>();
 
   for (const [key, value] of Object.entries(components.schemas)) {
-    let [schema, example] = resolveComponents(value, components)
+    let [schema, example, parameter] = resolveComponents(value, components)
     examples.set(key, example)
     schemas.set(key, schema)
+    parameters.set(key, parameter)
   }
 
   return [schemas, examples, parameters]
 }
 
-function resolveComponents(value: OpenAPIV3.ReferenceObject | OpenAPIV3.ArraySchemaObject | OpenAPIV3.NonArraySchemaObject, components: OpenAPIV3.ComponentsObject) : [Object, Object] {
+function resolveComponents(value: OpenAPIV3.ReferenceObject | OpenAPIV3.ArraySchemaObject | OpenAPIV3.NonArraySchemaObject, components: OpenAPIV3.ComponentsObject) : [Object, Object, schemaParameter[]] {
   if((value as OpenAPIV3.ReferenceObject).$ref) {
     let subcomponentName = (value as OpenAPIV3.ReferenceObject).$ref.split('/').pop()
     let subcomponent = components.schemas[subcomponentName]
@@ -177,23 +134,25 @@ function resolveComponents(value: OpenAPIV3.ReferenceObject | OpenAPIV3.ArraySch
     return resolveAllOf(value as OpenAPIV3.SchemaObject, components)
   }
   if((value as OpenAPIV3.SchemaObject).type || (value as OpenAPIV3.SchemaObject).example) {
-    return [(value as OpenAPIV3.SchemaObject).type, (value as OpenAPIV3.SchemaObject).example]
+    return [(value as OpenAPIV3.SchemaObject).type, (value as OpenAPIV3.SchemaObject).example, null]
   }
 }
 
-function resolveAllOf(object: OpenAPIV3.SchemaObject, components: OpenAPIV3.ComponentsObject) : [Object, Object] {
+function resolveAllOf(object: OpenAPIV3.SchemaObject, components: OpenAPIV3.ComponentsObject) : [Object, Object, schemaParameter[]] {
   let examples = new Map<string, any>()
   let schemas = new Map<string, any>()
+  let parameters: schemaParameter[] = []
   for (const [key, value] of Object.entries(object.allOf)) {
     let example;
     let schema;
+    let parameter;
     if((value as OpenAPIV3.ReferenceObject).$ref) {
       let subcomponentName = (value as OpenAPIV3.ReferenceObject).$ref.split('/').pop()
       let subcomponent = components.schemas[subcomponentName];
-      [schema, example] = resolveComponents(subcomponent, components)
+      [schema, example, parameter] = resolveComponents(subcomponent, components)
     }
     if((value as OpenAPIV3.SchemaObject).properties) {
-      [schema, example] = resolveProperties(value as OpenAPIV3.SchemaObject, components)
+      [schema, example, parameter] = resolveProperties(value as OpenAPIV3.SchemaObject, components)
     }
     if(!(example instanceof Map)) {
       example = new Map(Object.entries(example))
@@ -201,16 +160,20 @@ function resolveAllOf(object: OpenAPIV3.SchemaObject, components: OpenAPIV3.Comp
     if(!(schema instanceof Map)) {
       schema = new Map(Object.entries(schema))
     }
+    parameters = parameters.concat(parameter)
     examples = mergeMaps(examples, example)
     schemas = mergeMaps(schemas, schema)
   }
-  return [Object.fromEntries(schemas), Object.fromEntries(examples)]
+  return [Object.fromEntries(schemas), Object.fromEntries(examples), parameters]
 }
 
-function resolveProperties(value: OpenAPIV3.SchemaObject, components: OpenAPIV3.ComponentsObject): [Object, Object] {
+
+function resolveProperties(value: OpenAPIV3.SchemaObject, components: OpenAPIV3.ComponentsObject): [Object, Object, schemaParameter[]] {
   let examples = new Map<string, Object>()
   let schemas = new Map<string, Object>()
+  let parameters: schemaParameter[] = []
   for(const [key, property] of Object.entries(value.properties)) {
+    let type: string = ""
     if(property["$ref"]) {
       let [schema, example] = resolveComponents(property, components)
       examples.set(key, example)
@@ -219,19 +182,32 @@ function resolveProperties(value: OpenAPIV3.SchemaObject, components: OpenAPIV3.
     }
     switch (property["type"]) {
       case "array":
+        type = ((property["items"] as OpenAPIV3.SchemaObject).type || (property["items"] as OpenAPIV3.ReferenceObject).$ref.split('/').pop()) + "[]"
         let [schema, example] = resolveComponents(property["items"], components)
         examples.set(key, new Array(example))
         schemas.set(key, new Array(schema))
         break;
       case "object":
       default:
+        type = property["type"]
         examples.set(key, property["example"])
         schemas.set(key, property["type"])
     }
+    let parameter: schemaParameter = {
+      name: key,
+      type: type,
+      description: property["description"],
+      required: value.required?.includes(key) || false,
+      minimum: property["minimum"],
+      maximum: property["maximum"],
+      minLength: property["minLength"],
+      maxLength: property["maxLength"],
+      enum: property["enum"],
+    }
+    parameters.push(parameter)
   }
-  return [Object.fromEntries(schemas), Object.fromEntries(examples)]
+  return [Object.fromEntries(schemas), Object.fromEntries(examples), parameters]
 }
-
 
 function mergeMaps(map1: Map<string, Object>, map2: Map<string, Object>) : Map<string, Object> {
   return new Map([...Array.from(map1.entries()), ...Array.from(map2.entries())]);
