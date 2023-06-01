@@ -113,7 +113,6 @@ function readComponents(components: OpenAPIV3.ComponentsObject) :  Map<string, c
 
   for (const [key, value] of Object.entries(components.schemas)) {
     let [schema, example, parameter] = resolveComponents(value, components)
-
     let component = {
         example: example,
         schema: schema,
@@ -121,7 +120,6 @@ function readComponents(components: OpenAPIV3.ComponentsObject) :  Map<string, c
     }
     componentsOutput.set(key, component)
   }
-
 
   return componentsOutput
 }
@@ -180,9 +178,10 @@ function resolveProperties(value: OpenAPIV3.SchemaObject, components: OpenAPIV3.
   for(const [key, property] of Object.entries(value.properties)) {
     let type: string = ""
     if(property["$ref"]) {
-      let [schema, example] = resolveComponents(property, components)
+      let [schema, example, parameter] = resolveComponents(property, components)
       examples.set(key, example)
       schemas.set(key, schema)
+      parameters = parameters.concat(parameter)
       continue
     }
     switch (property["type"]) {
