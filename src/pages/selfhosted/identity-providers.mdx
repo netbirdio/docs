@@ -24,12 +24,16 @@ instance on your own.
 ### Step 1: Create Auth0 account
 To create an Auth0 account, sign up at [https://auth0.com](https://auth0.com/).
 
-There are five properties of the **`setup.env`** file that we will configure in this guide:
+There are multiple properties of the **`setup.env`** file that we will configure in this guide:
 - `NETBIRD_AUTH_CLIENT_ID`
 - `NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT`
 - `NETBIRD_USE_AUTH0`
 - `NETBIRD_AUTH_AUDIENCE`
 - `NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID` (Optional)
+- `NETBIRD_MGMT_IDP`
+- `NETBIRD_IDP_MGMT_CLIENT_ID`
+- `NETBIRD_IDP_MGMT_CLIENT_SECRET`
+- `NETBIRD_IDP_MGMT_EXTRA_AUDIENCE`
 
 ### Step 2: Create and configure Auth0 application
 
@@ -44,6 +48,7 @@ up until "Install the Auth0 React SDK".
 
 - Use **`Client ID`** to set  ```NETBIRD_AUTH_CLIENT_ID``` property in the `setup.env` file.
 - Use **`Domain`** to configure   ```NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT``` property in the `setup.env` file like so:
+
 ```bash
  https://<DOMAIN>/.well-known/openid-configuration
 ```
@@ -70,8 +75,8 @@ You can enable it by following these steps:
 - Go to `Applications` (left-hand menu)
 - Click `Create Application` button (top right)
 - Fill in the form with the following values:
-- Name: `Interactive Login`
-- Application type: `Native`
+    - Name: `Interactive Login`
+    - Application type: `Native`
 - Click `Create`
 
 <p>
@@ -93,9 +98,54 @@ You can enable it by following these steps:
     <img src="/docs-static/img/integrations/identity-providers/self-hosted/auth0-grant-types.png" alt="high-level-dia" className="imagewrapper"/>
 </p>
 
+### Step 5: Create and configuire Machine to Machine application.
+This application will be used to authorize access to Auth0 Management API.
 
-### Step 4: Continue with the self-hosting guide
-You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-3-configure-identity-provider).
+- Log in to your Auth0 account https://manage.auth0.com/
+- Go to `Applications` (left-hand menu)
+- Click `Create Application` button (top right)
+- Fill in the form with the following values:
+    - Name: `Netbird API`
+    - Application type: `Machine to Machine Applications`
+- Click `Create`
+
+<p>
+    <img src="/docs-static/img/integrations/identity-providers/self-hosted/auth0-create-machine-app.png" alt="high-level-dia" className="imagewrapper"/>
+</p>
+
+- Fill the form with the following values:
+    - API: `Auth0 Management API`
+    - Permissions: `read:users`, `update:users`, `create:users`, `read:users_app_metadata`, `update:users_app_metadata`, `create:users_app_metadata`
+    - Click `Authorize`
+
+<p>
+    <img src="/docs-static/img/integrations/identity-providers/self-hosted/auth0-machine-authorization.png" alt="high-level-dia" className="imagewrapper"/>
+</p>
+
+- Click `Settings` tab
+- Copy **`Client ID`** to `NETBIRD_IDP_MGMT_CLIENT_ID` in the `setup.env` file
+- Copy **`Client SECRET`** to `NETBIRD_IDP_MGMT_CLIENT_SECRET` in the `setup.env` file
+- Copy **`DOMAIN`** to `NETBIRD_IDP_MGMT_EXTRA_AUDIENCE` in the `setup.env` file
+
+<p>
+    <img src="/docs-static/img/integrations/identity-providers/self-hosted/auth0-machine-settings.png" alt="high-level-dia" className="imagewrapper"/>
+</p>
+
+- Set properties in the `setup.env` file:
+```json
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<DOMAIN>/.well-known/openid-configuration"
+NETBIRD_USE_AUTH0=true
+NETBIRD_AUTH_CLIENT_ID="<Client_ID>"
+NETBIRD_AUTH_AUDIENCE="<IDENTIFIER>"
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<INTERACTIVE_CLIENT_ID>"
+
+NETBIRD_MGMT_IDP="auth0"
+NETBIRD_IDP_MGMT_CLIENT_ID="<NETBIRD_API_CLIENT_ID>"
+NETBIRD_IDP_MGMT_CLIENT_SECRET="<NETBIRD_API_CLIENT_SECRET>"
+NETBIRD_IDP_MGMT_EXTRA_AUDIENCE="https://<DOMAIN>/api/v2/"
+```
+
+- You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-3-configure-identity-provider).
 
 ## Keycloak
 
@@ -281,7 +331,7 @@ In this step we will create NetBird backend client and register with the Keycloa
 - Fill in the form with the following values and click Next:
 - Client Type: `OpenID Connect`
 - Client ID: `netbird-backend`
-- Your newly client `netbird-backend` will be used later to set `KeycloakClientCredentials` in the `management.json`
+- Your newly client `netbird-backend` will be used later to set `NETBIRD_IDP_MGMT_CLIENT_ID` in the `setup.env`
 
 <p>
     <img src="/docs-static/img/integrations/identity-providers/self-hosted/keycloak-create-backend-client.png" alt="high-level-dia" className="imagewrapper"/>
@@ -295,7 +345,7 @@ In this step we will create NetBird backend client and register with the Keycloa
 
 The client will need secret to authenticate. To do this:
 - Click `Credentials` tab
-- Copy `client secret` will be used later to set `ClientSecret` in the `management.json`
+- Copy `client secret` will be used later to set `NETBIRD_IDP_MGMT_CLIENT_SECRET` in the `setup.env`
 
 <p>
     <img src="/docs-static/img/integrations/identity-providers/self-hosted/keycloak-backend-client-credentials.png" alt="high-level-dia" className="imagewrapper"/>
@@ -323,38 +373,29 @@ The client will need secret to authenticate. To do this:
 
 Your authority OIDC configuration will be available under:
 ```bash
-https://<YOUR-KEYCLOAK-HOST-AND-PORT>/realms/netbird/.well-known/openid-configuration
+https://< YOUR_KEYCLOAK_HOST_AND_PORT >/realms/netbird/.well-known/openid-configuration
 ```
 <Note>
     Double-check if the endpoint returns a JSON response by calling it from your browser.
 </Note>
 
 - Set properties in the `setup.env` file:
-- NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT=`https://<YOUR-KEYCLOAK-HOST-AND-PORT>/realms/netbird/.well-known/openid-configuration`.
-- NETBIRD_AUTH_CLIENT_ID=`netbird-client`
-- NETBIRD_AUTH_AUDIENCE=`netbird-client`
-- NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID=`netbird-client`. Optional,
+```json
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT=`https://<YOUR_KEYCLOAK_HOST_AND_PORT>/realms/netbird/.well-known/openid-configuration`.
+NETBIRD_USE_AUTH0=false
+NETBIRD_AUTH_CLIENT_ID=`netbird-client`
+NETBIRD_AUTH_AUDIENCE=`netbird-client`
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID=`netbird-client`. Optional,
 it enables the [Interactive SSO Login feature](/how-to/getting-started#running-net-bird-with-sso-login) (Oauth 2.0 Device Authorization Flow)
 
-- You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-3-configure-identity-provider).
+NETBIRD_MGMT_IDP="keycloak"
+NETBIRD_IDP_MGMT_CLIENT_ID="netbird-backend"
+NETBIRD_IDP_MGMT_CLIENT_SECRET="<NETBIRD_BACKEND_CLIENT_SECRET>"
+NETBIRD_IDP_MGMT_EXTRA_ADMIN_ENDPOINT="https://<YOUR_KEYCLOAK_HOST_AND_PORT>/admin/realms/netbird"
 
-- Set property `IdpManagerConfig` in the `management.json` file with:
-<Note>
-    The file management.json is created automatically. Please refer [here](/getting-started/self-hosting#step-5-run-configuration-script) for more information.
-</Note>
+```
 
-```json
-{
-  "ManagerType":  "keycloak",
-  "KeycloakClientCredentials": {
-      "ClientID": "netbird-backend",
-      "ClientSecret": "<netbird-backend-client-secret>",
-      "GrantType": "client_credentials",
-      "TokenEndpoint": "https://<YOUR-KEYCLOAK-HOST-AND-PORT>/realms/netbird/protocol/openid-connect/token",
-      "AdminEndpoint": "https://<YOUR-KEYCLOAK-HOST-AND-PORT>/admin/realms/netbird"
-  }
-}
-  ```
+- You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-5-run-configuration-script).
 
 <Note>
     Make sure that your Keycloak instance use HTTPS. Otherwise, the setup won't work.
@@ -483,7 +524,7 @@ In this step, we will create and configure NetBird application in azure AD.
 
 Your authority OIDC configuration will be available under:
 ```bash
-https://login.microsoftonline.com/<tenant_id>/v2.0/.well-known/openid-configuration
+https://login.microsoftonline.com/<TENANT_ID>/v2.0/.well-known/openid-configuration
 ```
 <Note>
     Double-check if the endpoint returns a JSON response by calling it from your browser.
@@ -491,40 +532,28 @@ https://login.microsoftonline.com/<tenant_id>/v2.0/.well-known/openid-configurat
 
 - Set properties in the `setup.env` file:
 ```json
-NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://login.microsoftonline.com/<tenant_id>/v2.0/.well-known/openid-configuration"
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://login.microsoftonline.com/<TENANT_ID>/v2.0/.well-known/openid-configuration"
 NETBIRD_USE_AUTH0=false
-NETBIRD_AUTH_CLIENT_ID="<application_id>"
-NETBIRD_AUTH_AUDIENCE="<application_id>"
-NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<application_id>"
+NETBIRD_AUTH_CLIENT_ID="<APPLICATION_ID>"
+NETBIRD_AUTH_AUDIENCE="<APPLICATION_ID>"
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<APPLICATION_ID>"
 NETBIRD_AUTH_REDIRECT_URI="/auth"
 NETBIRD_AUTH_SILENT_REDIRECT_URI="/silent-auth"
 NETBIRD_AUTH_USER_ID_CLAIM="oid"
+
+NETBIRD_MGMT_IDP="azure"
+NETBIRD_IDP_MGMT_CLIENT_ID="<APPLICATION_ID>"
+NETBIRD_IDP_MGMT_CLIENT_SECRET="<CLIENT_SECRET>"
+NETBIRD_IDP_MGMT_EXTRA_OBJECT_ID="<OBJECT_ID>"
+NETBIRD_IDP_MGMT_EXTRA_GRAPH_API_ENDPOINT="https://graph.microsoft.com/v1.0"
+
 ```
 
-- You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-3-configure-identity-provider/selfhosted/selfhosted-guide#step-3-configure-identity-provider).
+- You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-5-run-configuration-script).
 
-- Set property `IdpManagerConfig` in the `management.json` file with:
-<Note>
-    The file management.json is created automatically. Please refer [here](/getting-started/self-hosting#step-5-run-configuration-script) for more information.
-</Note>
+- Modify the value of the `AUTH_SUPPORTED_SCOPES` environment variable for the dashboard service in the docker-compose.yml file to `openid profile email offline_access api://<APPLICATION_ID>/api`.
 
-```json
-{
-  "ManagerType": "azure",
-  "AzureClientCredentials": {
-      "ClientID": "<application_id>",
-      "ClientSecret": "<client_secret>",
-      "GrantType": "client_credentials",
-      "ObjectID": "<object_id>",
-      "TokenEndpoint": "https://login.microsoftonline.com/<tenant_id>/oauth2/v2.0/token",
-      "GraphAPIEndpoint": "https://graph.microsoft.com/v1.0"
-  }
-}
-```
-
-- Modify the value of the `AUTH_SUPPORTED_SCOPES` environment variable for the dashboard service in the docker-compose.yml file to `openid profile email offline_access api://<application_id>/api`.
-
-- Modify `Scope` value in `DeviceAuthorizationFlow` within the `management.json` to `api://<application_id>/api`.
+- Modify `Scope` value in `DeviceAuthorizationFlow` within the `management.json` to `api://<APPLICATION_ID>/api`.
 
 ## Zitadel
 
@@ -640,7 +669,7 @@ In this step we will create a `netbird` service user.
 In this step we will generate `ClientSecret` for the `netbird` service user.
 
 - Click `Actions` in the top right corner and click `Generate Client Secret`
-- Copy `ClientSecret` from the dialog will be used later to set `ClientSecret` in the `management.json`
+- Copy `ClientSecret` from the dialog will be used later to set `NETBIRD_IDP_MGMT_CLIENT_ID` in the `setup.env`
 
 <p>
     <img src="/docs-static/img/integrations/identity-providers/self-hosted/zitadel-service-user-secret.png" alt="high-level-dia" className="imagewrapper"/>
@@ -663,7 +692,7 @@ In this step we will grant `Org User Manager` role to `netbird` service user.
 Your authority OIDC configuration will be available under:
 
 ```bash
-https://< YOUR-ZITADEL-HOST-AND-PORT >/.well-known/openid-configuration
+https://< YOUR_ZITADEL_HOST_AND_PORT >/.well-known/openid-configuration
 ```
 
 :::caution
@@ -672,38 +701,26 @@ Double-check if the endpoint returns a JSON response by calling it from your bro
 
 - Set properties in the `setup.env` file:
 ```json
-NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<YOUR-ZITADEL-HOST-AND-PORT>/.well-known/openid-configuration"
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<YOUR_ZITADEL_HOST_AND_PORT>/.well-known/openid-configuration"
 NETBIRD_USE_AUTH0=false
-NETBIRD_AUTH_CLIENT_ID="<Client ID>"
-NETBIRD_AUTH_AUDIENCE="<Client ID>"
-NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<Client ID>"
+NETBIRD_AUTH_CLIENT_ID="<CLIENT_ID>"
+NETBIRD_AUTH_AUDIENCE="<CLIENT_ID>"
 NETBIRD_AUTH_REDIRECT_URI="/auth"
 NETBIRD_AUTH_SILENT_REDIRECT_URI="/silent-auth"
+
+
 NETBIRD_AUTH_DEVICE_AUTH_PROVIDER="hosted"
-NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<Client ID>"
-NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE="<Client ID>"
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<CLIENT_ID>"
+NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE="<CLIENT_ID>"
+
+NETBIRD_MGMT_IDP="zitadel"
+NETBIRD_IDP_MGMT_CLIENT_ID="netbird"
+NETBIRD_IDP_MGMT_CLIENT_SECRET="<CLIENT_SECRET>"
+NETBIRD_IDP_MGMT_EXTRA_MANAGEMENT_ENDPOINT="https://<YOUR_ZITADEL_HOST_AND_PORT>/management/v1"
 
 ```
 
-- You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-3-configure-identity-provider).
-
-- Set property `IdpManagerConfig` in the `management.json` file with:
-:::caution
-The file management.json is created automatically. Please refer [here](/selfhosted/selfhosted-guide#step-5-run-configuration-script) for more information.
-:::
-
-```json
-{
-  "ManagerType":  "zitadel",
-  "ZitadelClientCredentials": {
-      "ClientID": "netbird",
-      "ClientSecret": "<CLIENT SECRET>",
-      "GrantType": "client_credentials",
-      "TokenEndpoint": "https://<YOUR-ZITADEL-HOST-AND-PORT>/oauth/v2/token",
-      "ManagementEndpoint": "https://<YOUR-ZITADEL-HOST-AND-PORT>/management/v1"
-  }
-}
-  ```
+- You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-5-run-configuration-script).
 
 ## Authentik
 
@@ -795,7 +812,7 @@ In this step, we will add `Netbird` service account to `authentik Admins` group.
 Your authority OIDC configuration will be available under:
 
 ```bash
-https://< YOUR-AUTHENTIK-HOST-AND-PORT >/application/o/netbird/.well-known/openid-configuration
+https://< YOUR_AUTHENTIK_HOST_AND_PORT >/application/o/netbird/.well-known/openid-configuration
 ```
 
 <Note>
@@ -804,36 +821,21 @@ Double-check if the endpoint returns a JSON response by calling it from your bro
 
 - Set properties in the `setup.env` file:
 ```json
-NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<YOUR-AUTHENTIK-HOST-AND-PORT>/application/o/netbird/.well-known/openid-configuration"
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<YOUR_AUTHENTIK_HOST_AND_PORT>/application/o/netbird/.well-known/openid-configuration"
 NETBIRD_USE_AUTH0=false
-NETBIRD_AUTH_CLIENT_ID="<PROVIDER Client ID>"
-NETBIRD_AUTH_AUDIENCE="<PROVIDER Client ID>"
-NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<PROVIDER Client ID>"
-NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE="<PROVIDER Client ID>"
+NETBIRD_AUTH_CLIENT_ID="<PROVIDER_CLIENT_ID>"
+NETBIRD_AUTH_AUDIENCE="<PROVIDER_CLIENT_ID>"
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<PROVIDER_CLIENT_ID>"
+NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE="<PROVIDER_CLIENT_ID>"
+
+NETBIRD_MGMT_IDP="authentik"
+NETBIRD_IDP_MGMT_CLIENT_ID="<PROVIDER_CLIENT_ID>"
+NETBIRD_IDP_MGMT_EXTRA_USERNAME="Netbird"
+NETBIRD_IDP_MGMT_EXTRA_PASSWORD="<SERVICE_ACCOUNT_PASSWORD>"
+
 ```
 
-- You can now continue with the [NetBird Self-hosting Guide](/docs/selfhosted/selfhosted-guide#step-3-configure-identity-provider).
-
-- Set property `IdpManagerConfig` in the `management.json` file with:
-<Note>
-The file management.json is created automatically. Please refer [here](/docs/selfhosted/selfhosted-guide#step-5-run-configuration-script) for more information.
-</Note>
-
-```json
-{
-  "ManagerType":  "authentik",
-  "ClientConfig": {
-      "Issuer": "https://<YOUR-AUTHENTIK-HOST-AND-PORT>",
-      "ClientID": "<PROVIDER Client ID>",
-      "TokenEndpoint": "https://<YOUR-AUTHENTIK-HOST-AND-PORT>/application/o/token",
-      "GrantType": "client_credentials"
-  },
-  "ExtraConfig": {
-      "Username": "Netbird",
-      "Password": "<SERVICE ACCOUNT PASSWORD>",
-  }
-}
-  ```
+- You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-5-run-configuration-script).
 
 ## Okta
 
@@ -933,7 +935,7 @@ In this step, we will generate netbird api token in okta for authorizing calls t
 
 Your authority OIDC configuration will be available under:
 ```bash
-https://< your_okta_organization_url >/.well-known/openid-configuration
+https://< YOUR_OKTA_ORGANIZATION_URL >/.well-known/openid-configuration
 ```
 <Note>
     Double-check if the endpoint returns a JSON response by calling it from your browser.
@@ -941,41 +943,25 @@ https://< your_okta_organization_url >/.well-known/openid-configuration
 
 - Set properties in the `setup.env` file:
 ```json
-NETBIRD_DOMAIN="<your_domain>"
-NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<your_okta_organization_url>/.well-known/openid-configuration"
+NETBIRD_DOMAIN="<YOUR_DOMAIN>"
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<YOUR_OKTA_ORGANIZATION_URL>/.well-known/openid-configuration"
 NETBIRD_USE_AUTH0=false
-NETBIRD_AUTH_AUDIENCE="<netbird_client_id>"
-NETBIRD_AUTH_CLIENT_ID="<netbird_client_id>"
+NETBIRD_AUTH_AUDIENCE="<<NETBIRD_CLIENT_ID>>"
+NETBIRD_AUTH_CLIENT_ID="<NETBIRD_CLIENT_ID>"
 NETBIRD_AUTH_REDIRECT_URI="/auth"
 NETBIRD_AUTH_SILENT_REDIRECT_URI="/silent-auth"
 NETBIRD_TOKEN_SOURCE="idToken"
 
 NETBIRD_AUTH_DEVICE_AUTH_PROVIDER="hosted"
-NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<netbird_native_client_id>"
-NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE="<netbird_native_client_id>"
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<NETBIRD_NATIVE_CLIENT_ID>>"
+NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE="<NETBIRD_NATIVE_CLIENT_ID>"
 NETBIRD_AUTH_DEVICE_AUTH_SCOPE="openid email"
 NETBIRD_AUTH_DEVICE_AUTH_USE_ID_TOKEN=true
+
+NETBIRD_MGMT_IDP="okta"
+NETBIRD_IDP_MGMT_EXRA_API_TOKEN="<api_token>"
 ```
 
-- You can now continue with the [NetBird Self-hosting Guide](/docs/selfhosted/selfhosted-guide#step-3-configure-identity-provider/docs/selfhosted/selfhosted-guide#step-3-configure-identity-provider).
-
-- Set property `IdpManagerConfig` in the `management.json` file with:
-<Note>
-    The file management.json is created automatically. Please refer [here](/getting-started/self-hosting#step-5-run-configuration-script) for more information.
-</Note>
-
-```json
-{
-  "ManagerType": "okta",
-  "ClientConfig": {
-      "Issuer": "<ISSUER_URL>",
-      "TokenEndpoint": "<ISSUER_URL>/oauth2/v1/token",
-      "GrantType": "client_credentials"
-  },
-  "ExtraConfig": {
-      "APIToken": "<api_token>",
-  }
-}
-```
+- You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-5-run-configuration-script).
 
 - Modify the value of the `AUTH_SUPPORTED_SCOPES` environment variable for the dashboard service in the docker-compose.yml file to `openid profile email`.
