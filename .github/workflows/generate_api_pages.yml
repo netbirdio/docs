@@ -1,0 +1,43 @@
+name: generate api pages
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Netbird release tag version'
+        required: true
+        default: "refs/tags/vX.Y.Z"
+        type: string
+
+jobs:
+  generate_api_pages:
+    runs-on: macos-latest
+    steps:
+      - name: Parse tag input
+        id: semver_parser
+        uses: booxmedialtd/ws-action-parse-semver@v1
+        with:
+          input_string: ${{ github.event.inputs.tag }}
+          version_extractor_regex: '\/v(.*)$'
+
+      - uses: actions/checkout@v2
+
+      - name: Install swagger-codegen
+        if: ${{ inputs.generateAPI }}
+        run: brew install swagger-codegen
+
+      - name: Generate api pages for netbird main openapi definition
+        if: ${{ inputs.generateAPI }}
+        run: |
+          swagger-codegen generate -i https://raw.githubusercontent.com/netbirdio/netbird/v${{ steps.semver_parser.outputs.fullversion }}/management/server/http/api/openapi.yml -l openapi -o generator/openapi
+          npx ts-node generator/index.ts gen --input generator/openapi/openapi.json --output src/pages/ipa/resources
+
+      - name: Commit and push changes
+        if: ${{ inputs.generateAPI }}
+        run: |
+          git config --global user.email "no-reply@github.com"
+          git config --global user.name "GitHub Actions"
+          
+          git add -A
+          git commit -m "Update API pages"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git push
