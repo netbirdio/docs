@@ -9,6 +9,9 @@ import '@/styles/tailwind.css'
 import 'focus-visible'
 import {Layout} from "@/components/Layout";
 import {slugifyWithCounter} from "@sindresorhus/slugify";
+import {ToastContainer} from "react-toastify";
+import 'react-toastify/dist/ReactToastify.css';
+import {dom} from "@fortawesome/fontawesome-svg-core";
 
 function onRouteChange() {
   useMobileNavigationStore.getState().close()
@@ -23,6 +26,7 @@ export default function App({ Component, pageProps }) {
   return (
     <>
       <Head>
+        <style>{dom.css()}</style>
         {router.route.startsWith('/ipa') ?
             <title>{`${pageProps.title} - NetBird API`}</title> : <title>{`${pageProps.title} - NetBird Docs`}</title>
         }
@@ -33,6 +37,7 @@ export default function App({ Component, pageProps }) {
               <Component {...pageProps} />
           </Layout>
       </MDXProvider>
+      <ToastContainer />
     </>
   )
 }

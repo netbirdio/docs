@@ -11,6 +11,10 @@ import {Header} from "@/components/Header";
 import {NavigationAPI} from "@/components/NavigationAPI";
 import {motion} from "framer-motion";
 import {Footer} from "@/components/Footer";
+import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+import { faPaperclip } from '@fortawesome/free-solid-svg-icons';
+import { faGithub } from '@fortawesome/free-brands-svg-icons';
+import {toast} from "react-toastify";
 
 const navigation = [
   {
@@ -131,6 +135,25 @@ export function Layout({ children, title, tableOfContents }) {
     section.links.find((link) => link.href === router.pathname)
   )
 
+  const buttonStyle = {
+    display: 'inline',
+    minWidth: '90px',
+    textAlign: 'left',
+    justifyContent: 'center',
+    alignItems: 'center',
+  };
+
+  const iconStyle = {
+    fontSize: '18px',
+  };
+
+  const copyToClipboard = () => {
+    const currentURL = window.location.href;
+    navigator.clipboard.writeText(currentURL);
+    toast.info('Page URL copied to clipboard!', {
+      position: toast.POSITION.BOTTOM_RIGHT,
+    });
+  };
   let currentSection = useTableOfContents(tableOfContents)
 
   function isActive(section) {
@@ -168,6 +191,28 @@ export function Layout({ children, title, tableOfContents }) {
           <Footer />
         </div>
         {!router.route.startsWith("/ipa/resources") && <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6 pl-12">
+          <ol role="list" className="mt-4 space-y-3 text-sm mb-8">
+            <li key="copy-link">
+              <button
+                  style={buttonStyle}
+                  onClick={copyToClipboard}
+                  className="dark:hover:text-slate-300 dark:text-slate-400 text-slate-500 hover:text-slate-700 font-normal'"
+              >
+                <FontAwesomeIcon icon={faPaperclip} style={iconStyle} className="icon pr-1" />
+                <text>Copy link</text>
+              </button>
+            </li>
+            <li key="edit-on-github">
+              <Link
+                  href={"https://github.com/netbirdio/docs/tree/main/src/pages" + router.pathname + ".mdx"}
+                  className="dark:hover:text-slate-300 dark:text-slate-400 text-slate-500 hover:text-slate-700 font-normal'"
+                  style={{display: "flex", alignItems: 'center'}}
+              >
+                <FontAwesomeIcon icon={faGithub} style={iconStyle} className="icon pr-1" />
+                <text>Edit on Github</text>
+              </Link>
+            </li>
+          </ol>
           <nav aria-labelledby="on-this-page-title" className="w-80">
             {tableOfContents.length > 0 && (
               <>
