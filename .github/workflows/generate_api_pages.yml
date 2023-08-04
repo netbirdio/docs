@@ -32,12 +32,22 @@ jobs:
           swagger-codegen generate -i https://raw.githubusercontent.com/netbirdio/netbird/v${{ steps.semver_parser.outputs.fullversion }}/management/server/http/api/openapi.yml -l openapi -o generator/openapi
           npx ts-node generator/index.ts gen --input generator/openapi/openapi.json --output src/pages/ipa/resources
 
+      - name: Check git diff and send to output
+        id: git_diff
+        run: |
+          if git --no-pager diff --exit-code; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi 
+
       - name: Commit and push changes
+        if: steps.git_diff.outputs.changed == 'true'
         run: |
           git config --global user.email "dev@netbird.io"
           git config --global user.name "DevBot NetBird"
           
           git add -A
-          git commit -m "Update API pages"
+          git commit -m "Update API pages with v${{ steps.semver_parser.outputs.fullversion }}"
           git remote set-url origin https://x-access-token:${{ secrets.DEV_GITHUB_TOKEN }}@github.com/${{ github.repository }}
-          git push
+          git push --force
