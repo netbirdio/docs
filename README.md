@@ -24,7 +24,6 @@ $ npm run dev
 
 This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
 
-
 ## Contributing to the docs
 
 You can click the **Fork** button in the upper-right area of the screen to create a copy of this repository in your GitHub account. This copy is called a _fork_. Make any changes you want in your fork, and when you are ready to send those changes to us, go to your fork and create a new pull request to let us know about it.
