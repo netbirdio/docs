@@ -26,6 +26,7 @@ export const docsNavigation = [
             { title: 'Manage network access', href: '/how-to/manage-network-access' },
             { title: 'Enforce periodic authentication', href: '/how-to/enforce-periodic-user-authentication' },
             { title: 'Route traffic to private networks', href: '/how-to/routing-traffic-to-private-networks' },
+            { title: 'Management SQLite Store', href: '/how-to/sqlite-store'},
             { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
             { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
             { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
