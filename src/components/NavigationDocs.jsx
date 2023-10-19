@@ -38,8 +38,7 @@ export const docsNavigation = [
         links: [
             { title: 'Quickstart guide', href: '/selfhosted/selfhosted-quickstart' },
             { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
-            // hide the sqlite guid as this is work in progress
-            //{ title: 'Management SQLite Store', href: '/selfhosted/sqlite-store'},
+            { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store'},
             { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
         ],
     },
