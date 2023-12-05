@@ -19,7 +19,27 @@ export const docsNavigation = [
         title: 'How-to guides',
         links: [
             { title: 'Getting started', href: '/how-to/getting-started' },
-            { title: 'Installation', href: '/how-to/installation' },
+            { title: 'Installation', href: '/how-to/installation'},
+
+            /*
+            Nested Navigation items example
+            {
+                title: 'Nested Nav Item',
+                links: [
+                    { title: 'Test 1', href: '/test-1' },
+                    { title: 'Test 2', href: '/test-2' },
+                    { title: 'Test 3', href: '/test-3' },
+                    {
+                        title: 'Deeply Nested Nav Item',
+                        links: [
+                            { title: 'Test 1', href: '/test-1' },
+                            { title: 'Test 2', href: '/test-2' },
+                            { title: 'Test 3', href: '/test-3' },
+                        ]
+                    },
+                ]
+            },*/
+
             { title: 'Add machines to your network', href: '/how-to/add-machines-to-your-network' },
             { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
             { title: 'Use setup keys for automation', href: '/how-to/register-machines-using-setup-keys' },
@@ -72,44 +92,53 @@ export function NavigationDocs({className}) {
   )
 }
 
-function NavigationGroup({ group, className }) {
+function NavigationGroup({ group, className,hasChildren }) {
     let router = useRouter()
-
     let isActiveGroup =
-        group.links.findIndex((link) => link.href === router.pathname) !== -1
+        group.links.findIndex((link) => link.href=== router.pathname) !== -1;
 
     return (
-        <li className={clsx('relative mt-6', className)}>
+        <li className={clsx('relative', className, hasChildren ? "mt-2" : "mt-6")}>
             <motion.h2
                 layout="position"
                 className="text-xs font-semibold text-zinc-900 dark:text-white"
             >
                 {group.title}
             </motion.h2>
-            <div className="relative mt-3 pl-2">
-                <AnimatePresence >
-                    {isActiveGroup && (
-                        <VisibleSectionHighlight group={group} pathname={router.pathname} />
-                    )}
-                </AnimatePresence>
-                <motion.div
-                    layout
-                    className="absolute inset-y-0 left-2 w-px bg-zinc-900/10 dark:bg-white/5"
-                />
-                <AnimatePresence initial={false}>
-                    {isActiveGroup && (
-                        <ActivePageMarker group={group} pathname={router.pathname} />
-                    )}
-                </AnimatePresence>
+            <div className={clsx("relative", hasChildren ? "" : "mt-3 pl-2")}>
+                {!hasChildren &&
+                    <>
+                        <AnimatePresence >
+                            {isActiveGroup && (
+                                <VisibleSectionHighlight group={group} pathname={router.pathname} />
+                            )}
+                        </AnimatePresence>
+                        <motion.div
+                            layout
+                            className="absolute inset-y-0 left-2 w-px bg-zinc-900/10 dark:bg-white/5"
+                        />
+                        <AnimatePresence initial={false}>
+                            {isActiveGroup && (
+                                <ActivePageMarker group={group} pathname={router.pathname} />
+                            )}
+                        </AnimatePresence>
+                    </>
+                }
+
                 <ul role="list" className="border-l border-transparent">
-                    {group.links.map((link) => (
-                        <motion.li key={link.href} layout="position" className="relative">
-                            <NavLink href={link.href} active={link.href === router.pathname}>
-                                {link.title}
-                            </NavLink>
-                        </motion.li>
-                    ))}
+                    {group.links.map((link) =>  {
+                        return link.href ?
+                            <motion.li key={link.href} layout="position" className="relative">
+                                <NavLink href={link.href} active={link.href === router.pathname} links={link.links}>
+                                    {link.title}
+                                </NavLink>
+                            </motion.li>
+                            :
+                            <NavigationGroup className={"ml-4"} key={link.title} group={link} hasChildren={true} />
+                    })}
                 </ul>
+
+
             </div>
         </li>
     )

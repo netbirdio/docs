@@ -1,10 +1,10 @@
-import {forwardRef, Fragment, useEffect, useState} from 'react'
+import {forwardRef, Fragment, useState} from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { Transition } from '@headlessui/react'
 
 import { Button } from '@/components/Button'
-import {apiNavigation} from '@/components/NavigationAPI'
+import {apiNavigation, flattenNavItems} from '@/components/NavigationAPI'
 import {docsNavigation} from "@/components/NavigationDocs";
 
 function CheckIcon(props) {
@@ -126,7 +126,9 @@ function PageLink({ label, page, previous = false }) {
 
 function PageNavigation() {
   let router = useRouter()
-  let allPages = !router.route.startsWith('/ipa') ? docsNavigation.flatMap((group) => group.links) : apiNavigation.flatMap((group) => group.links)
+  let allPages = !router.route.startsWith('/ipa')
+      ? docsNavigation.flatMap((group) => flattenNavItems(group.links, true))
+      : apiNavigation.flatMap((group) => flattenNavItems(group.links,true));
   let currentPageIndex = allPages.findIndex(
     (page) => page.href === router.pathname
   )

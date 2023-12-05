@@ -1,11 +1,10 @@
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import clsx from 'clsx'
-import { AnimatePresence, motion, useIsPresent } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from '@/components/Button'
 import { Tag } from '@/components/Tag'
 import { remToPx } from '@/lib/remToPx'
-import {useIsInsideMobileNavigation} from "@/components/MobileNavigation";
 
 export const apiNavigation = [
   {
@@ -75,33 +74,63 @@ export function TopLevelNavItem({ href, children }) {
   )
 }
 
-export function NavLink({ href, tag, active, isAnchorLink = false, children }) {
+export function NavLink({ href, tag, active, isAnchorLink = false, children, links, isChildren = false }) {
+  let router = useRouter();
+
   return (
-    <Link
-      href={href}
-      aria-current={active ? 'page' : undefined}
-      className={clsx(
-        'flex justify-between gap-2 py-1 pr-3 text-sm transition',
-        isAnchorLink ? 'pl-7' : 'pl-4',
-        active
-          ? 'text-zinc-900 dark:text-white'
-          : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'
-      )}
-    >
-      <span className="truncate">{children}</span>
-      {tag && (
-        <Tag variant="small" color="zinc">
-          {tag}
-        </Tag>
-      )}
-    </Link>
+      <div className={"relative"}>
+
+           <Link
+              href={href ? href : "#"}
+              aria-current={active ? 'page' : undefined}
+              className={clsx(
+                  'flex justify-between gap-2 py-1 pr-3 text-sm transition',
+                  isAnchorLink ? 'pl-7' : 'pl-4',
+                  active
+                      ? 'text-zinc-900 dark:text-white'
+                      : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white',
+                  isChildren ? 'pl-7' : 'pl-4',
+              )}
+          >
+              <span className="truncate">{children}</span>
+              {tag && (
+                  <Tag variant="small" color="zinc">
+                      {tag}
+                  </Tag>
+              )}
+          </Link>
+
+        {links &&
+            <ul role="list">
+              {links.map((link,index) => (
+                  <motion.li key={index} layout="position" className="relative">
+                    <NavLink href={link.href} active={link.href === router.pathname} isChildren={true}>
+                      {link.title}
+                    </NavLink>
+                  </motion.li>
+              ))}
+            </ul>
+        }
+  </div>
+
   )
+}
+
+export function flattenNavItems(links, onlyLinks = false) {
+    let output = []
+    for (let link of links) {
+        output.push(link)
+        if (link.links) output.push(...flattenNavItems(link.links, onlyLinks))
+    }
+    if(onlyLinks) output = output.filter((link) => link.href)
+    return output
 }
 
 export function VisibleSectionHighlight({ group, pathname }) {
   let height = remToPx(2)
   let offset = remToPx(0)
-  let activePageIndex = group.links.findIndex((link) => link.href === pathname)
+  let links = flattenNavItems(group.links);
+  let activePageIndex = links.findIndex((link) => link.href === pathname)
   let top = offset + activePageIndex * height
 
   return (
@@ -119,7 +148,8 @@ export function VisibleSectionHighlight({ group, pathname }) {
 export function ActivePageMarker({ group, pathname }) {
   let itemHeight = remToPx(2)
   let offset = remToPx(0.25)
-  let activePageIndex = group.links.findIndex((link) => link.href === pathname)
+  let links = flattenNavItems(group.links);
+  let activePageIndex = links.findIndex((link) => link.href === pathname)
   let top = offset + activePageIndex * itemHeight
 
   return (
@@ -136,7 +166,6 @@ export function ActivePageMarker({ group, pathname }) {
 
 function NavigationGroup({ group, className, tableOfContents }) {
   let router = useRouter()
-
   let isActiveGroup =
     group.links.findIndex((link) => link.href === router.pathname.replace("ipa", "api")) !== -1
 
