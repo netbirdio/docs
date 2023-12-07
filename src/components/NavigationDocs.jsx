@@ -1,8 +1,16 @@
 import { useRouter } from 'next/router'
 import clsx from 'clsx'
-import {ActivePageMarker, NavLink, TopLevelNavItem, VisibleSectionHighlight} from "@/components/NavigationAPI";
+import {
+    ActivePageMarker,
+    NavLink,
+    TopLevelNavItem,
+    VisibleSectionHighlight
+} from "@/components/NavigationAPI";
 import {AnimatePresence, motion} from "framer-motion";
 import {Button} from "@/components/mdx";
+import {useEffect, useState} from "react";
+import {NavigationStateProvider, useNavigationState} from "@/components/NavigationState";
+import ChevronDownIcon from "@/components/icons/ChevronDownIcon";
 
 export const docsNavigation = [
     {
@@ -20,26 +28,23 @@ export const docsNavigation = [
         links: [
             { title: 'Getting started', href: '/how-to/getting-started' },
             { title: 'Installation', href: '/how-to/installation'},
-
-            /*
-            Nested Navigation items example
-            {
+            /*{
                 title: 'Nested Nav Item',
+                id: 'nested-nav-item',
                 links: [
-                    { title: 'Test 1', href: '/test-1' },
-                    { title: 'Test 2', href: '/test-2' },
-                    { title: 'Test 3', href: '/test-3' },
+                    { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
+                    { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
                     {
                         title: 'Deeply Nested Nav Item',
+                        id: 'deeply-nested-nav-item',
                         links: [
-                            { title: 'Test 1', href: '/test-1' },
-                            { title: 'Test 2', href: '/test-2' },
-                            { title: 'Test 3', href: '/test-3' },
+                            { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
+                            { title: 'Examples', href: '/how-to/examples' },
+                            { title: 'CLI', href: '/how-to/cli' },
                         ]
                     },
                 ]
             },*/
-
             { title: 'Add machines to your network', href: '/how-to/add-machines-to-your-network' },
             { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
             { title: 'Use setup keys for automation', href: '/how-to/register-machines-using-setup-keys' },
@@ -65,6 +70,7 @@ export const docsNavigation = [
 
 ]
 
+
 export function NavigationDocs({className}) {
   return (
     <nav className={className}>
@@ -76,11 +82,13 @@ export function NavigationDocs({className}) {
           <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
           <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A">Support</TopLevelNavItem>
           {docsNavigation.map((group, groupIndex) => (
-              <NavigationGroup
-                  key={group.title}
-                  group={group}
-                  className={groupIndex === 0 && 'md:mt-0'}
-              />
+              <NavigationStateProvider key={group.title}>
+                  <NavigationGroup
+                      group={group}
+                      index={groupIndex}
+                      className={groupIndex === 0 && 'md:mt-0'}
+                  />
+              </NavigationStateProvider>
           ))}
           <li className="sticky bottom-0 z-10 mt-6 min-[416px]:hidden">
               <Button href="https://app.netbird.io/" variant="filled" className="w-full">
@@ -92,25 +100,49 @@ export function NavigationDocs({className}) {
   )
 }
 
-function NavigationGroup({ group, className,hasChildren }) {
+
+function NavigationGroup({ group, className, hasChildren,index }) {
     let router = useRouter()
-    let isActiveGroup =
-        group.links.findIndex((link) => link.href=== router.pathname) !== -1;
+    let isActiveGroup = group.links.findIndex((link) => link.href=== router.pathname) !== -1;
+
+    const [activeIndex, setActiveIndex] = useState(0);
+    const [isOpen, setIsOpen] = useState(!hasChildren);
+
+    // Recalculate active index on route and navigation state change (e.g. dropdown toggle)
+    const [state,update] = useNavigationState();
+    useEffect(() => {
+        let links = [];
+        document.querySelectorAll(`.outer-wrapper-${index} [data-nb-link]`).forEach((link) => {
+            links.push(Number(link.getAttribute('data-nb-link')));
+        });
+        const activeIndex = links.findIndex((link) => link === 1);
+        setActiveIndex(activeIndex)
+    }, [router.pathname, state]);
 
     return (
-        <li className={clsx('relative', className, hasChildren ? "mt-2" : "mt-6")}>
+
+        <li className={clsx('relative', className, hasChildren ? "" : "mt-6", `outer-wrapper-${index}`)}>
             <motion.h2
-                layout="position"
-                className="text-xs font-semibold text-zinc-900 dark:text-white"
+                layout={"size"}
+                className={clsx(
+                    "flex justify-between items-center gap-2 group",
+                    hasChildren ? "text-zinc-700 select-none py-1 pr-3 hover:text-zinc-900 dark:text-zinc-300 font-medium dark:hover:text-white text-sm cursor-pointer" : "text-xs font-semibold text-zinc-900 dark:text-white"
+                    )}
+                onClick={() => {
+                    setIsOpen(!isOpen)
+                    update()
+                }}
+                data-nb-link={"group"}
             >
                 {group.title}
+                {hasChildren && <ChevronDownIcon className={clsx("fill-zinc-700 group-hover:fill-zinc-900 dark:fill-zinc-300 dark:group-hover:fill-white","transition", isOpen ? "transform rotate-180" : "")} size={10} />}
             </motion.h2>
             <div className={clsx("relative", hasChildren ? "" : "mt-3 pl-2")}>
                 {!hasChildren &&
                     <>
                         <AnimatePresence >
                             {isActiveGroup && (
-                                <VisibleSectionHighlight group={group} pathname={router.pathname} />
+                                <VisibleSectionHighlight group={group} pathname={router.pathname} active={activeIndex} />
                             )}
                         </AnimatePresence>
                         <motion.div
@@ -119,26 +151,39 @@ function NavigationGroup({ group, className,hasChildren }) {
                         />
                         <AnimatePresence initial={false}>
                             {isActiveGroup && (
-                                <ActivePageMarker group={group} pathname={router.pathname} />
+                                <ActivePageMarker group={group} pathname={router.pathname} active={activeIndex}/>
                             )}
                         </AnimatePresence>
                     </>
                 }
 
-                <ul role="list" className="border-l border-transparent">
-                    {group.links.map((link) =>  {
-                        return link.href ?
-                            <motion.li key={link.href} layout="position" className="relative">
-                                <NavLink href={link.href} active={link.href === router.pathname} links={link.links}>
-                                    {link.title}
-                                </NavLink>
-                            </motion.li>
-                            :
-                            <NavigationGroup className={"ml-4"} key={link.title} group={link} hasChildren={true} />
-                    })}
-                </ul>
+                <AnimatePresence mode={"wait"} initial={false}>
+                    {isOpen && <motion.ul
+                        role="list"
+                        initial={{ opacity: 0 }}
+                        animate={{
+                            opacity: 1,
+                            transition: { delay: 0.1 },
+                        }}
+                        exit={{
+                            opacity: 0,
+                            transition: { duration: 0.15 },
+                        }}
+                        className="border-l border-transparent">
+                            {group.links.map((link) =>  {
+                                return link.href ?
+                                    <motion.li key={link.href} className="relative" data-netbird-nav={link.href}>
+                                        <span data-visible={true}></span>
+                                        <NavLink href={link.href} active={link.href === router.pathname} links={link.links}>
+                                            {link.title}
+                                        </NavLink>
+                                    </motion.li>
+                                    :
+                                    <NavigationGroup className={"ml-4"} key={link.title + isOpen} group={link} hasChildren={true} />
+                            })}
+                    </motion.ul>}
 
-
+                </AnimatePresence>
             </div>
         </li>
     )
