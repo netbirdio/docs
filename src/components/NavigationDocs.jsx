@@ -163,7 +163,7 @@ function NavigationGroup({ group, className, hasChildren,index }) {
                         initial={{ opacity: 0 }}
                         animate={{
                             opacity: 1,
-                            transition: { delay: 0.1 },
+                            transition: { delay: 0.05 },
                         }}
                         exit={{
                             opacity: 0,
@@ -172,7 +172,7 @@ function NavigationGroup({ group, className, hasChildren,index }) {
                         className="border-l border-transparent">
                             {group.links.map((link) =>  {
                                 return link.href ?
-                                    <motion.li key={link.href} className="relative" data-netbird-nav={link.href}>
+                                    <motion.li key={link.href} layout={"position"} className="relative" data-netbird-nav={link.href}>
                                         <span data-visible={true}></span>
                                         <NavLink href={link.href} active={link.href === router.pathname} links={link.links}>
                                             {link.title}
