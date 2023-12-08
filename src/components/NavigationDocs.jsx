@@ -28,15 +28,14 @@ export const docsNavigation = [
         links: [
             { title: 'Getting started', href: '/how-to/getting-started' },
             { title: 'Installation', href: '/how-to/installation'},
-            /*{
+            {
                 title: 'Nested Nav Item',
-                id: 'nested-nav-item',
+                isOpen: true,
                 links: [
                     { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
                     { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
                     {
                         title: 'Deeply Nested Nav Item',
-                        id: 'deeply-nested-nav-item',
                         links: [
                             { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
                             { title: 'Examples', href: '/how-to/examples' },
@@ -44,7 +43,7 @@ export const docsNavigation = [
                         ]
                     },
                 ]
-            },*/
+            },
             { title: 'Add machines to your network', href: '/how-to/add-machines-to-your-network' },
             { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
             { title: 'Use setup keys for automation', href: '/how-to/register-machines-using-setup-keys' },
@@ -106,7 +105,12 @@ function NavigationGroup({ group, className, hasChildren,index }) {
     let isActiveGroup = group.links.findIndex((link) => link.href=== router.pathname) !== -1;
 
     const [activeIndex, setActiveIndex] = useState(0);
-    const [isOpen, setIsOpen] = useState(!hasChildren);
+    const [isOpen, setIsOpen] = useState(()=>{
+        if(group.isOpen){
+            return group.isOpen === true
+        }
+        return !hasChildren;
+    });
 
     // Recalculate active index on route and navigation state change (e.g. dropdown toggle)
     const [state,update] = useNavigationState();
@@ -131,6 +135,7 @@ function NavigationGroup({ group, className, hasChildren,index }) {
                 onClick={() => {
                     setIsOpen(!isOpen)
                     update()
+                    if(!isOpen) router.push(group.links[0].href)
                 }}
                 data-nb-link={"group"}
             >
