@@ -47,7 +47,7 @@ export function NavigationAPI({tableOfContents, className}) {
           <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
           <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A">Support</TopLevelNavItem>
           {apiNavigation.map((group, groupIndex) => (
-              <NavigationStateProvider key={group.title}>
+              <NavigationStateProvider key={group.title} index={groupIndex}>
                 <NavigationGroup
                     group={group}
                     tableOfContents={tableOfContents}
@@ -81,9 +81,10 @@ export function NavLink({ href, tag, active, isAnchorLink = false, children, lin
   let router = useRouter();
 
   return (
-      <div className={"relative"} data-nb-link={active ? 1 : 0}>
+      <div className={"relative"} >
            <Link
               href={href ? href : "#"}
+              data-nb-link={active ? 1 : 0}
               aria-current={active ? 'page' : undefined}
               className={clsx(
                   'flex justify-between gap-2 py-1 pr-3 text-sm transition',
@@ -128,21 +129,18 @@ export function flattenNavItems(links, onlyLinks = false) {
     return output
 }
 
-export function VisibleSectionHighlight({ group, pathname, active }) {
+export function VisibleSectionHighlight() {
     const router = useRouter();
     let height = remToPx(2)
     let offset = remToPx(0)
-    let links = flattenNavItems(group.links);
-    let activePageIndex = !active ? links.findIndex((link) => link.href === pathname) : active -1;
+    const [activeIndex] = useNavigationState();
     const [top, setTop] = useState(0);
 
-    // Update the top position when the active page changes or navigation state changes (e.g. dropdown toggle)
-    const [state] = useNavigationState();
     useEffect(() => {
-        setTop(offset + (activePageIndex) * height);
-    }, [activePageIndex,active, router.pathname,state]);
+        setTop(offset + (activeIndex) * height);
+    }, [activeIndex, router.pathname]);
 
-    return (
+    return activeIndex >= 0 && (
         <motion.div
             layout
             initial={{ opacity: 0 }}
@@ -154,21 +152,18 @@ export function VisibleSectionHighlight({ group, pathname, active }) {
     )
 }
 
-export function ActivePageMarker({ group, pathname,active = 0 }) {
+export function ActivePageMarker() {
     const router = useRouter();
     let itemHeight = remToPx(2)
     let offset = remToPx(0.25)
-    let links = flattenNavItems(group.links);
-    let activePageIndex = !active ? links.findIndex((link) => link.href === pathname) : active -1;
+    const [activeIndex] = useNavigationState();
     const [top, setTop] = useState(0);
 
-    // Update the top position when the active page changes or navigation state changes (e.g. dropdown toggle)
-    const [state] = useNavigationState();
     useEffect(() => {
-        setTop(offset + (activePageIndex) * itemHeight);
-    }, [activePageIndex,active, router.pathname,state]);
+        setTop(offset + (activeIndex) * itemHeight);
+    }, [activeIndex, router.pathname]);
 
-    return (
+    return activeIndex >= 0 && (
         <motion.div
             layout
             className="absolute left-2 h-6 w-px bg-orange-500"
@@ -189,6 +184,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
     <li className={clsx('relative mt-6', className)}>
       <motion.h2
         layout="position"
+        data-nb-link={group.title}
         className="text-xs font-semibold text-zinc-900 dark:text-white"
       >
         {group.title}

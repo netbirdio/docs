@@ -8,7 +8,7 @@ import {
 } from "@/components/NavigationAPI";
 import {AnimatePresence, motion} from "framer-motion";
 import {Button} from "@/components/mdx";
-import {useEffect, useState} from "react";
+import {useState} from "react";
 import {NavigationStateProvider, useNavigationState} from "@/components/NavigationState";
 import ChevronDownIcon from "@/components/icons/ChevronDownIcon";
 
@@ -32,14 +32,15 @@ export const docsNavigation = [
                 title: 'Nested Nav Item',
                 isOpen: true,
                 links: [
-                    { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
-                    { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
+                    { title: 'Quickstart guide', href: '/selfhosted/selfhosted-quickstart' },
+                    { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
+                    { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store'},
                     {
                         title: 'Deeply Nested Nav Item',
                         links: [
-                            { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
-                            { title: 'Examples', href: '/how-to/examples' },
-                            { title: 'CLI', href: '/how-to/cli' },
+                            { title: 'NetBird vs. traditional VPN', href: '/about-netbird/netbird-vs-traditional-vpn' },
+                            { title: 'Other', href: '/about-netbird/other' },
+                            { title: 'FAQ', href: '/about-netbird/faq' },
                         ]
                     },
                 ]
@@ -55,6 +56,7 @@ export const docsNavigation = [
             { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
             { title: 'Examples', href: '/how-to/examples' },
             { title: 'CLI', href: '/how-to/cli' },
+
         ],
     },
     {
@@ -81,7 +83,7 @@ export function NavigationDocs({className}) {
           <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
           <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A">Support</TopLevelNavItem>
           {docsNavigation.map((group, groupIndex) => (
-              <NavigationStateProvider key={group.title}>
+              <NavigationStateProvider key={group.title} index={groupIndex}>
                   <NavigationGroup
                       group={group}
                       index={groupIndex}
@@ -99,33 +101,31 @@ export function NavigationDocs({className}) {
   )
 }
 
-
-function NavigationGroup({ group, className, hasChildren,index }) {
-    let router = useRouter()
-    let isActiveGroup = group.links.findIndex((link) => link.href=== router.pathname) !== -1;
-
-    const [activeIndex, setActiveIndex] = useState(0);
-    const [isOpen, setIsOpen] = useState(()=>{
-        if(group.isOpen){
-            return group.isOpen === true
+const findActiveGroupIndex = (group, pathname) => {
+    let activeIndex = -1;
+    group.links.forEach((link, index) => {
+        if (link.href === pathname) {
+            activeIndex = index;
+        } else if (link.links) {
+            const childIndex = findActiveGroupIndex(link, pathname);
+            if (childIndex !== -1) {
+                activeIndex = index;
+            }
         }
-        return !hasChildren;
     });
+    return activeIndex;
+}
 
-    // Recalculate active index on route and navigation state change (e.g. dropdown toggle)
-    const [state,update] = useNavigationState();
-    useEffect(() => {
-        let links = [];
-        document.querySelectorAll(`.outer-wrapper-${index} [data-nb-link]`).forEach((link) => {
-            links.push(Number(link.getAttribute('data-nb-link')));
-        });
-        const activeIndex = links.findIndex((link) => link === 1);
-        setActiveIndex(activeIndex)
-    }, [router.pathname, state]);
+
+function NavigationGroup({ group, className, hasChildren }) {
+    let router = useRouter()
+    let isActiveGroup = findActiveGroupIndex(group, router.pathname) !== -1;
+    const [isOpen, setIsOpen] = useState(group.isOpen ? group.isOpen :!hasChildren);
+    const [, setActiveHighlight] = useNavigationState();
 
     return (
 
-        <li className={clsx('relative', className, hasChildren ? "" : "mt-6", `outer-wrapper-${index}`)}>
+        <li className={clsx('relative', className, hasChildren ? "" : "mt-6")}>
             <motion.h2
                 layout={"size"}
                 className={clsx(
@@ -134,10 +134,14 @@ function NavigationGroup({ group, className, hasChildren,index }) {
                     )}
                 onClick={() => {
                     setIsOpen(!isOpen)
-                    update()
-                    if(!isOpen) router.push(group.links[0].href)
+                    if(!isOpen) {
+                        router.push(group.links[0].href)
+                        setActiveHighlight()
+                    }else {
+                        setActiveHighlight(group.title)
+                    }
                 }}
-                data-nb-link={"group"}
+                data-nb-link={group.title}
             >
                 {group.title}
                 {hasChildren && <ChevronDownIcon className={clsx("fill-zinc-700 group-hover:fill-zinc-900 dark:fill-zinc-300 dark:group-hover:fill-white","transition", isOpen ? "transform rotate-180" : "")} size={10} />}
@@ -147,7 +151,7 @@ function NavigationGroup({ group, className, hasChildren,index }) {
                     <>
                         <AnimatePresence >
                             {isActiveGroup && (
-                                <VisibleSectionHighlight group={group} pathname={router.pathname} active={activeIndex} />
+                                <VisibleSectionHighlight group={group} pathname={router.pathname} />
                             )}
                         </AnimatePresence>
                         <motion.div
@@ -156,7 +160,7 @@ function NavigationGroup({ group, className, hasChildren,index }) {
                         />
                         <AnimatePresence initial={false}>
                             {isActiveGroup && (
-                                <ActivePageMarker group={group} pathname={router.pathname} active={activeIndex}/>
+                                <ActivePageMarker group={group} pathname={router.pathname}/>
                             )}
                         </AnimatePresence>
                     </>
@@ -177,8 +181,7 @@ function NavigationGroup({ group, className, hasChildren,index }) {
                         className="border-l border-transparent">
                             {group.links.map((link) =>  {
                                 return link.href ?
-                                    <motion.li key={link.href} layout={"position"} className="relative" data-netbird-nav={link.href}>
-                                        <span data-visible={true}></span>
+                                    <motion.li key={link.href} layout={"position"} className="relative">
                                         <NavLink href={link.href} active={link.href === router.pathname} links={link.links}>
                                             {link.title}
                                         </NavLink>
