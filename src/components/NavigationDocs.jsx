@@ -28,7 +28,7 @@ export const docsNavigation = [
         links: [
             { title: 'Getting started', href: '/how-to/getting-started' },
             { title: 'Installation', href: '/how-to/installation'},
-            {
+            /*{
                 title: 'Nested Nav Item',
                 isOpen: true,
                 links: [
@@ -44,7 +44,7 @@ export const docsNavigation = [
                         ]
                     },
                 ]
-            },
+            },*/
             { title: 'Add machines to your network', href: '/how-to/add-machines-to-your-network' },
             { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
             { title: 'Use setup keys for automation', href: '/how-to/register-machines-using-setup-keys' },
