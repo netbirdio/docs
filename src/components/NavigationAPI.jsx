@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import clsx from 'clsx'
-import { AnimatePresence, motion, useIsPresent } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from '@/components/Button'
 import { Tag } from '@/components/Tag'
 import { remToPx } from '@/lib/remToPx'
-import {useIsInsideMobileNavigation} from "@/components/MobileNavigation";
+import {useEffect, useState} from "react";
+import {NavigationStateProvider, useNavigationState} from "@/components/NavigationState";
 
 export const apiNavigation = [
   {
@@ -46,12 +47,13 @@ export function NavigationAPI({tableOfContents, className}) {
           <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
           <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A">Support</TopLevelNavItem>
           {apiNavigation.map((group, groupIndex) => (
+              <NavigationStateProvider key={group.title} index={groupIndex}>
                 <NavigationGroup
-                    key={group.title}
                     group={group}
                     tableOfContents={tableOfContents}
                     className={groupIndex === 0 && 'md:mt-0'}
                 />
+              </NavigationStateProvider>
             ))}
           <li className="sticky bottom-0 z-10 mt-6 min-[416px]:hidden">
             <Button href="https://app.netbird.io/" variant="filled" className="w-full">
@@ -75,68 +77,106 @@ export function TopLevelNavItem({ href, children }) {
   )
 }
 
-export function NavLink({ href, tag, active, isAnchorLink = false, children }) {
+export function NavLink({ href, tag, active, isAnchorLink = false, children, links, isChildren = false }) {
+  let router = useRouter();
+
   return (
-    <Link
-      href={href}
-      aria-current={active ? 'page' : undefined}
-      className={clsx(
-        'flex justify-between gap-2 py-1 pr-3 text-sm transition',
-        isAnchorLink ? 'pl-7' : 'pl-4',
-        active
-          ? 'text-zinc-900 dark:text-white'
-          : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'
-      )}
-    >
-      <span className="truncate">{children}</span>
-      {tag && (
-        <Tag variant="small" color="zinc">
-          {tag}
-        </Tag>
-      )}
-    </Link>
+      <div className={"relative"} >
+           <Link
+              href={href ? href : "#"}
+              data-nb-link={active ? 1 : 0}
+              aria-current={active ? 'page' : undefined}
+              className={clsx(
+                  'flex justify-between gap-2 py-1 pr-3 text-sm transition',
+                  isAnchorLink ? 'pl-7' : 'pl-4',
+                  active
+                      ? 'text-zinc-900 dark:text-white'
+                      : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white',
+                  isChildren ? 'pl-7' : 'pl-4',
+              )}
+          >
+              <span className="truncate">{children}</span>
+              {tag && (
+                  <Tag variant="small" color="zinc">
+                      {tag}
+                  </Tag>
+              )}
+          </Link>
+
+        {links &&
+            <ul role="list">
+              {links.map((link,index) => (
+                  <motion.li key={index} layout="position" className="relative">
+                    <NavLink href={link.href} active={link.href === router.pathname} isChildren={true}>
+                      {link.title}
+                    </NavLink>
+                  </motion.li>
+              ))}
+            </ul>
+        }
+  </div>
+
   )
 }
 
-export function VisibleSectionHighlight({ group, pathname }) {
-  let height = remToPx(2)
-  let offset = remToPx(0)
-  let activePageIndex = group.links.findIndex((link) => link.href === pathname)
-  let top = offset + activePageIndex * height
-
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1, transition: { delay: 0.2 } }}
-      exit={{ opacity: 0 }}
-      className="absolute inset-x-0 top-0 bg-zinc-800/2.5 will-change-transform dark:bg-white/2.5"
-      style={{ borderRadius: 8, height, top }}
-    />
-  )
+export function flattenNavItems(links, onlyLinks = false) {
+    let output = []
+    for (let link of links) {
+        output.push(link)
+        if (link.links) output.push(...flattenNavItems(link.links, onlyLinks))
+    }
+    if(onlyLinks) output = output.filter((link) => link.href)
+    return output
 }
 
-export function ActivePageMarker({ group, pathname }) {
-  let itemHeight = remToPx(2)
-  let offset = remToPx(0.25)
-  let activePageIndex = group.links.findIndex((link) => link.href === pathname)
-  let top = offset + activePageIndex * itemHeight
+export function VisibleSectionHighlight() {
+    const router = useRouter();
+    let height = remToPx(2)
+    let offset = remToPx(0)
+    const [activeIndex] = useNavigationState();
+    const [top, setTop] = useState(0);
 
-  return (
-    <motion.div
-      layout
-      className="absolute left-2 h-6 w-px bg-orange-500"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1, transition: { delay: 0.2 } }}
-      exit={{ opacity: 0 }}
-      style={{ top }}
-    />
-  )
+    useEffect(() => {
+        setTop(offset + (activeIndex) * height);
+    }, [activeIndex, router.pathname]);
+
+    return activeIndex >= 0 && (
+        <motion.div
+            layout
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: { delay: 0.2 } }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-x-0 top-0 bg-zinc-800/2.5 will-change-transform dark:bg-white/2.5"
+            style={{ borderRadius: 8, height, top }}
+        />
+    )
+}
+
+export function ActivePageMarker() {
+    const router = useRouter();
+    let itemHeight = remToPx(2)
+    let offset = remToPx(0.25)
+    const [activeIndex] = useNavigationState();
+    const [top, setTop] = useState(0);
+
+    useEffect(() => {
+        setTop(offset + (activeIndex) * itemHeight);
+    }, [activeIndex, router.pathname]);
+
+    return activeIndex >= 0 && (
+        <motion.div
+            layout
+            className="absolute left-2 h-6 w-px bg-orange-500"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, transition: { delay: 0.2 } }}
+            exit={{ opacity: 0 }}
+            style={{ top }}
+        />
+    )
 }
 
 function NavigationGroup({ group, className, tableOfContents }) {
   let router = useRouter()
-
   let isActiveGroup =
     group.links.findIndex((link) => link.href === router.pathname.replace("ipa", "api")) !== -1
 
@@ -144,6 +184,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
     <li className={clsx('relative mt-6', className)}>
       <motion.h2
         layout="position"
+        data-nb-link={group.title}
         className="text-xs font-semibold text-zinc-900 dark:text-white"
       >
         {group.title}
