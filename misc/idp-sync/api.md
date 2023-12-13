@@ -9,7 +9,7 @@ Authentication is required for all API requests. Please refer to the [authentica
 ## Endpoints
 
 ### Create Integration
-By default, for new integration synchronization is enabled.
+The new integration synchronization is enabled by default when created.
 
 Request:
 - `serviceAccountKey`: A Base64 encoded string derived from a service account key JSON. For the creation of the service account key JSON, refer to the provided [IdP guideline](idp.md).
