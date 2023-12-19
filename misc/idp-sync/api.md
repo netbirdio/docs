@@ -9,7 +9,7 @@ Authentication is required for all API requests. Please refer to the [authentica
 ## Google Endpoints
 
 ### Create Integration
-By default, for new integration synchronization is enabled.
+The new integration synchronization is enabled by default when created.
 
 Request:
 - `serviceAccountKey`: A Base64 encoded string derived from a service account key JSON. For the creation of the service account key JSON, refer to the provided [IdP guideline](idp.md).
@@ -171,7 +171,7 @@ Response
 Before proceeding with the setup, please ensure that you have configured Azure as per the guidelines outlined in the [IdP guideline](idp.md).
 
 ### Create Integration
-By default, for new integration synchronization is enabled.
+The new integration synchronization is enabled by default when created.
 
 Request:
 - `clientSecret`: A Base64 encoded string derived from Azure Directory application client credential secret.
