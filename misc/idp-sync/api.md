@@ -6,7 +6,7 @@ This reference provides detailed information on managing integrations via NetBir
 ## Authentication
 Authentication is required for all API requests. Please refer to the [authentication guideline](https://docs.netbird.io/how-to/access-netbird-public-api) for how to create and authenticate API calls using Personal Access Tokens (PAT).
 
-## Google Endpoints
+## Google Workspace Integration
 
 ### Create Integration
 The new integration synchronization is enabled by default when created.
@@ -167,7 +167,7 @@ Response
 ```
 
 
-## Azure Endpoints
+## Azure AD Integration
 Before proceeding with the setup, please ensure that you have configured Azure as per the guidelines outlined in the [IdP guideline](idp.md).
 
 ### Create Integration
