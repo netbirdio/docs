@@ -68,3 +68,92 @@ Read how to manage and secure your service keys [here](https://cloud.google.com/
 </p>
 
 - Navigate to [Account Settings](https://admin.google.com/ac/accountsettings/profile?hl=en_US) page and take note of `Customer ID`
+
+
+## Azure AD
+
+Before you start creating and configuring an Azure AD application, ensure that you have the following:
+- User account with admin permissions: You must have an Azure AD user account with the appropriate permissions to create
+and manage Azure AD applications. If you don't have the required permissions, ask your Azure AD administrator to grant them to you.
+
+#### Step 1. Create and configure Azure AD application
+- Navigate to [Azure Active Directory](https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/Overview)
+- Click `App Registrations` in the left menu then click on the `+ New registration` button to create a new application.
+- Fill in the form with the following values and click `Register`
+  - Name: `NetBird`
+  - Account Types: `Accounts in this organizational directory only (Default Directory only - Single tenant)`
+  - Redirect URI: select `Single-page application (SPA)` and URI as `https://app.netbird.io/silent-auth`
+
+<p>
+    <img src="media/azure-new-application.png" alt="azure-new-application"/>
+</p>
+
+
+#### Step 2. Platform configurations
+- Click `Authentication` on the left side menu
+- Under the `Single-page application` Section, add another URI `https://app.netbird.io/auth` and click `Save`
+
+<p>
+    <img src="media/azure-spa-uri-setup.png" alt="azure-spa-uri-setup" />
+</p>
+
+
+#### Step 3. Create a NetBird application scope
+- Click `Expose an API` on the left menu
+- In `Application ID URI` click `Add` and then `Save`
+<p>
+    <img src="media/azure-add-application-uri.png" alt="azure-add-application-uri" />
+</p>
+
+- Under `Scopes defined by this API` click `+ Add a Scope`
+- Fill in the form with the following values and click `Add scope`
+  - Scope name: `api`
+  - State: `Enabled`
+
+<p>
+    <img src="media/azure-add-scope.png" alt="azure-add-scope" />
+</p>
+
+- Under `Authorized client Applications`, click on `+ add a client application` and enter the following:
+- Fill in the form with the following values and click `Add application`
+- Client ID: same as your Application ID URI minus the `api://`
+
+<p>
+    <img src="media/azure-authorize-application.png" alt="azure-authorize-application" />
+</p>
+
+#### Step 4. Add API permissions
+
+- Click `API permissions` on the left menu
+- Click `Add a permission`
+- Click `Microsoft Graph` and then click `Application permissions` tab
+- In `Select permissions` select `User.Read.All` and `Group.Read.All` and click  `Add permissions`
+
+<p>
+    <img src="media/azure-openid-permissions.png" alt="azure-openid-permissions" />
+</p> 
+
+- Click `Grant admin conset for Default Directory` and click `Yes`
+
+<p>
+    <img src="media/azure-grant-admin-conset.png" alt="azure-grant-admin-conset"/>
+</p>
+
+#### Step 5. Update token version
+- Click `Manifest` on left menu
+- Search for `accessTokenAcceptedVersion` and change the value from `null` to `2`
+- Click `Save`
+
+#### Step 6. Generate client secret
+- Click `Certificates & secrets` on left menu
+- Click `New client secret`
+- Fill in the form with the following values and click `Add`
+- Description: `NetBird`
+- Copy `Value` and save it as it can be viewed only once after creation.
+
+<p>
+    <img src="media/azure-client-secret.png" alt="azure-client-secret" />
+</p>
+
+- Navigate to [Owner applications](https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/RegisteredApps).
+- Select `NetBird` application in overview page, take note of `Application (client) ID` and `Directory (tenant) ID`.
