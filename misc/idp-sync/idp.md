@@ -14,8 +14,8 @@ Before you start creating and configuring an Google Workspace application, ensur
 - Navigate to [API Credentials](https://console.cloud.google.com/apis/credentials) page
 - Click `CREATE CREDENTIALS` at the top and select `Service account`
 - Fill in the form with the following values and click `CREATE`
-    - Service account name: `NetBird`
-    - Service account ID: `netbird`
+  - Service account name: `NetBird`
+  - Service account ID: `netbird`
 - Click `DONE`
 <p>
     <img src="media/google-service-account-create.png" alt="service-account-create"/>
@@ -41,8 +41,8 @@ Read how to manage and secure your service keys [here](https://cloud.google.com/
 - Select `Account` on the left menu and then click `Admin Roles`
 - Click `Create new role`
 - Fill in the form with the following values and click `CREATE`
-    - name: `User and Group Management ReadOnly`
-    - description: `User and Group Management ReadOnly`
+  - name: `User and Group Management ReadOnly`
+  - description: `User and Group Management ReadOnly`
 - Click `CONTINUE`
 <p>
     <img src="media/google-new-admin-role.png" alt="new-admin-role"/>
@@ -74,7 +74,7 @@ Read how to manage and secure your service keys [here](https://cloud.google.com/
 
 Before you start creating and configuring an Azure AD application, ensure that you have the following:
 - User account with admin permissions: You must have an Azure AD user account with the appropriate permissions to create
-and manage Azure AD applications. If you don't have the required permissions, ask your Azure AD administrator to grant them to you.
+  and manage Azure AD applications. If you don't have the required permissions, ask your Azure AD administrator to grant them to you.
 
 #### Step 1. Create and configure Azure AD application
 - Navigate to [Azure Active Directory](https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/Overview)
