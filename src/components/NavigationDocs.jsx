@@ -55,6 +55,7 @@ export const docsNavigation = [
             { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
             { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
             { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
+            { title: 'Netstack - Cloud functions', href: '/how-to/netstack' },
             { title: 'Examples', href: '/how-to/examples' },
             { title: 'CLI', href: '/how-to/cli' },
 
