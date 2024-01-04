@@ -11,8 +11,10 @@ Authentication is required for all API requests. Please refer to the [authentica
 ### Create Integration
 Request:
 - `platform`: A string representing the platform name. For Datadog, the value is `datadog`.
-- `api_url`: The URL of the Datadog HTTP API endpoint. This URL differs based on the region. To find the correct URL, refer to the [Datadog documentation](https://docs.datadoghq.com/api/latest/logs/#send-logs).
-- `api_key`: The API key for the Datadog HTTP API endpoint. This key can be created in the [Datadog Console](https://app.datadoghq.com/organization-settings/api-keys).
+- `config`: A JSON object containing the configuration parameters for the respective platform.
+  - Datadog
+    - `api_url`: The URL of the Datadog HTTP API endpoint. This URL differs based on the region. To find the correct URL, refer to the [Datadog documentation](https://docs.datadoghq.com/api/latest/logs/#send-logs).
+    - `api_key`: The API key for the Datadog HTTP API endpoint. This key can be created in the [Datadog Console](https://app.datadoghq.com/organization-settings/api-keys).
 - `enabled`: A flag to enable/disable the integration.
 
 ```shell
@@ -99,8 +101,10 @@ Updates the selected parameters for a specific integration.
 
 Request:
 - `platform`: A string representing the platform name. For Datadog, the value is `datadog`.
-- `api_url`: The URL of the Datadog HTTP API endpoint. This URL differs based on the region. To find the correct URL, refer to the [Datadog documentation](https://docs.datadoghq.com/api/latest/logs/#send-logs).
-- `api_key`: The API key for the Datadog HTTP API endpoint. This key can be created in the [Datadog Console](https://app.datadoghq.com/organization-settings/api-keys).
+- `config`: A JSON object containing the configuration parameters for the respective platform.
+    - Datadog
+        - `api_url`: The URL of the Datadog HTTP API endpoint. This URL differs based on the region. To find the correct URL, refer to the [Datadog documentation](https://docs.datadoghq.com/api/latest/logs/#send-logs).
+        - `api_key`: The API key for the Datadog HTTP API endpoint. This key can be created in the [Datadog Console](https://app.datadoghq.com/organization-settings/api-keys).
 - `enabled`: A flag to enable/disable the integration.
 
 ```shell
