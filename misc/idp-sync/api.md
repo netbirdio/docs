@@ -85,7 +85,7 @@ Response
 ### Force Integration Sync
 Request
 ```shell
-curl --request GET \
+curl --request POST \
   --url https://api.netbird.io/api/integrations/google-idp/<ID>/sync \
   --header 'Accept: application/json' \
   --header 'Authorization: Token <PAT>'
@@ -252,7 +252,7 @@ Response
 ### Force Integration Sync
 Request
 ```shell
-curl --request GET \
+curl --request POST \
   --url https://api.netbird.io/api/integrations/azure-idp/<ID>/sync \
   --header 'Accept: application/json' \
   --header 'Authorization: Token <PAT>'
