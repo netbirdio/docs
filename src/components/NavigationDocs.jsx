@@ -57,6 +57,7 @@ export const docsNavigation = [
             { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
             { title: 'Examples', href: '/how-to/examples' },
             { title: 'CLI', href: '/how-to/cli' },
+            { title: 'Delete your NetBird account', href: '/how-to/delete-account' },
 
         ],
     },
