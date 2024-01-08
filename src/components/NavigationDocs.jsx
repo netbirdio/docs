@@ -51,6 +51,7 @@ export const docsNavigation = [
             { title: 'Use setup keys for automation', href: '/how-to/register-machines-using-setup-keys' },
             { title: 'Manage network access', href: '/how-to/manage-network-access' },
             { title: 'Enforce periodic authentication', href: '/how-to/enforce-periodic-user-authentication' },
+            { title: 'Enable post-quantum security', href: '/how-to/enable-post-quantum-security' },
             { title: 'Route traffic to private networks', href: '/how-to/routing-traffic-to-private-networks' },
             { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
             { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
