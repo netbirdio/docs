@@ -54,6 +54,7 @@ export const docsNavigation = [
             { title: 'Route traffic to private networks', href: '/how-to/routing-traffic-to-private-networks' },
             { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
             { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
+            { title: 'Stream Activity Events to third-party platforms', href: '/how-to/stream-activity-events-to-third-party' },
             { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
             { title: 'Examples', href: '/how-to/examples' },
             { title: 'CLI', href: '/how-to/cli' },
