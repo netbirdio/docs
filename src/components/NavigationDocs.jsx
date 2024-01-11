@@ -59,6 +59,7 @@ export const docsNavigation = [
             { title: 'Examples', href: '/how-to/examples' },
             { title: 'CLI', href: '/how-to/cli' },
             { title: 'Delete your NetBird account', href: '/how-to/delete-account' },
+            { title: 'IdP sync', href: '/how-to/idp-sync' },
 
         ],
     },
