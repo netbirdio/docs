@@ -12,7 +12,7 @@ Authentication is required for all API requests. Please refer to the [authentica
 By default, for new integration synchronization is enabled.
 
 Request:
-- `service_account_key`: A Base64 encoded string derived from a service account key JSON. For the creation of the service account key JSON, refer to the provided [IdP guideline](idp.md).
+- `service_account_key`: A Base64 encoded string derived from a service account key JSON. For the creation of the service account key JSON, refer to the provided [IdP guideline](https://docs.netbird.io/how-to/idp-sync#google-work-space).
   Encode service account JSON to base64 by using the command:
 ```shell
   base64 -i <SERVICE_ACCOUNT_KEY_PATH>
@@ -102,7 +102,7 @@ Response
 Updates the selected parameters for a specific integration.
 
 Request
-- `service_account_key`: A Base64 encoded string derived from a service account key JSON.For the creation of the service account key JSON, refer to the provided [IdP guideline](idp.md).
+- `service_account_key`: A Base64 encoded string derived from a service account key JSON.For the creation of the service account key JSON, refer to the provided [IdP guideline](https://docs.netbird.io/how-to/idp-sync#google-work-space).
   Encode service account JSON to base64 by using the command:
 ```shell
   base64 -i <SERVICE_ACCOUNT_KEY_PATH>
@@ -168,7 +168,7 @@ Response
 
 
 ## Azure Endpoints
-Before proceeding with the setup, please ensure that you have configured Azure as per the guidelines outlined in the [IdP guideline](idp.md).
+Before proceeding with the setup, please ensure that you have configured Azure as per the guidelines outlined in the [IdP guideline](https://docs.netbird.io/how-to/idp-sync#azure-ad).
 
 ### Create Integration
 By default, for new integration synchronization is enabled.
