@@ -72,6 +72,12 @@ export const docsNavigation = [
             { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
         ],
     },
+        {
+        title: 'Troubleshooting',
+        links: [
+            { title: 'Troubleshooting guide', href: '/troubleshooting/guide' },
+        ],
+    },
 
 ]
 
