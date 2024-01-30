@@ -57,7 +57,7 @@ export const docsNavigation = [
             { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
             { title: 'Activity event streaming', href: '/how-to/activity-event-streaming' },
             { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
-            { title: 'Netstack - Cloud functions', href: '/how-to/netstack' },
+            { title: 'Running NetBird on FaaS', href: '/how-to/netbird-on-faas' },
             { title: 'Examples', href: '/how-to/examples' },
             { title: 'CLI', href: '/how-to/cli' },
             { title: 'Delete your NetBird account', href: '/how-to/delete-account' },
