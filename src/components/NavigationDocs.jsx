@@ -60,7 +60,7 @@ export const docsNavigation = [
             { title: 'CLI', href: '/how-to/cli' },
             { title: 'Delete your NetBird account', href: '/how-to/delete-account' },
             { title: 'IdP sync', href: '/how-to/idp-sync' },
-
+            { title: 'Troubleshooting client issues', href: '/how-to/troubleshooting-client' },
         ],
     },
     {
@@ -70,15 +70,9 @@ export const docsNavigation = [
             { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
             { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store'},
             { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
+            { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
         ],
     },
-        {
-        title: 'Troubleshooting',
-        links: [
-            { title: 'Troubleshooting guide', href: '/troubleshooting/guide' },
-        ],
-    },
-
 ]
 
 
