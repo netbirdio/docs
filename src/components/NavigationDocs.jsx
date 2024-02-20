@@ -62,7 +62,7 @@ export const docsNavigation = [
             { title: 'CLI', href: '/how-to/cli' },
             { title: 'Delete your NetBird account', href: '/how-to/delete-account' },
             { title: 'IdP sync', href: '/how-to/idp-sync' },
-            { title: 'posture checks', href: '/how-to/posture-checks' },
+            { title: 'Manage posture checks', href: '/how-to/manage-posture-checks' },
             { title: 'Report bugs and issues', href: '/how-to/report-bug-issues' },
             { title: 'Troubleshooting client issues', href: '/how-to/troubleshooting-client' },
         ],
