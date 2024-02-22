@@ -12,6 +12,7 @@ export default async function gen(inputFileName: string, outputDir: string) {
     case '3.0.0':
     case '3.0.1':
     case '3.0.3':
+    case '3.1.0':
       await gen_v3(spec, outputDir)
       break
 
