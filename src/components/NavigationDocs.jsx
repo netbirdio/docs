@@ -60,6 +60,7 @@ export const docsNavigation = [
             { title: 'Running NetBird on FaaS', href: '/how-to/netbird-on-faas' },
             { title: 'Delete your NetBird account', href: '/how-to/delete-account' },
             { title: 'Manage access with posture checks', href: '/how-to/manage-posture-checks' },
+            { title: 'Deploy routing peers to Kubernetes', href: '/how-to/routing-peers-and-kubernetes' },
             { title: 'Report bugs and issues', href: '/how-to/report-bug-issues' },
             { title: 'Troubleshooting client issues', href: '/how-to/troubleshooting-client' },
             { title: 'Examples', href: '/how-to/examples' },
