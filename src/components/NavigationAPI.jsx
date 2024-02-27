@@ -29,6 +29,8 @@ export const apiNavigation = [
       { title: 'Groups', href: '/api/resources/groups' },
       { title: 'Rules', href: '/api/resources/rules' },
       { title: 'Policies', href: '/api/resources/policies' },
+      { title: 'Posture-Checks', href: '/api/resources/posture-checks' },
+      { title: 'Geo-Locations', href: '/api/resources/geo-locations' },
       { title: 'Routes', href: '/api/resources/routes' },
       { title: 'DNS', href: '/api/resources/dns' },
       { title: 'Events', href: '/api/resources/events' },

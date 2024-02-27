@@ -29,30 +29,85 @@ export const title = '<%- tag %>'
         <% }); -%>
     </Properties>
     <% }; -%>
-    <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
+    <% if(operation.requestBody && operation.requestBody["content"]["application/json"].schema.properties){ %>
     #### Request-Body Parameters
     <Properties>
-        <% components.get(operation.requestBody?.content['application/json'].schema.$ref.split('/').pop())?.parameters.forEach(function(parameter){ %>
-          <Property name="<%- parameter.name %>" type="<%- parameter.type %>" required=\{<%- parameter.required %>\} 
-          <% if(parameter.enum){ %>
-          enumList="<%- parameter.enum %>"
-          <% }; -%> 
-          <% if(parameter.minimum){ %>
-          min=\{<%- parameter.minimum %>\}
-          <% }; -%> 
-          <% if(parameter.maximum){ %>
-          max=\{<%- parameter.maximum %>\}
-          <% }; -%>
-          <% if(parameter.minLength){ %>
-          minLen=\{<%- parameter.minLength %>\}
-          <% }; -%>
-          <% if(parameter.maxLength){ %>
-          maxLen=\{<%- parameter.maxLength %>\}
-          <% }; -%> > 
-          <%- parameter.description %>
-          </Property>
-        <% }); -%>
-    </Properties>   
+    
+ 
+<%
+function renderProperties(properties, required = [], depth = 0) {
+    Object.entries(properties).forEach(([key, value]) => {
+        let type = value.type;
+        // Check if the property is required at the current level
+        var isRequired = required.includes(key) ? 'true' : 'false';
+
+        // Handle array types
+        if (type === 'array' && value.items) {
+            if (value.items.type === 'object' && value.items.properties) {
+                // For array of objects, type will be handled individually for items
+                type = 'object[]';
+            } else {
+                // For arrays of primitive types
+                type = value.items.type + '[]';
+            }
+        }
+
+        // Open Property tag with correctly formatted attributes
+        %><Property name="<%- key %>" type="<%- type %>" required={<%- isRequired %>}<%
+        if(value.enum) { 
+            %> enumList={<%- JSON.stringify(value.enum) %>}<%
+        }
+        if(value.minimum !== undefined) { 
+            %> min={<%- value.minimum %>}<%
+        }
+        if(value.maximum !== undefined) { 
+            %> max={<%- value.maximum %>}<%
+        }
+        if(value.minLength !== undefined) { 
+            %> minLen={<%- value.minLength %>}<%
+        }
+        if(value.maxLength !== undefined) { 
+            %> maxLen={<%- value.maxLength %>}<%
+        }
+        %>><%
+
+        // Handle object types or array of objects with nested properties
+        if ((type === 'object' && value.properties) || (type === 'object[]' && value.items.properties)) {
+            %><details class="custom-details" open>
+    <summary><%- value.description || 'More Information' %></summary>
+<%
+            if (type === 'object[]') {
+                // Render nested properties for each item in the array of objects
+                renderProperties(value.items.properties, value.items.required || [], depth + 1);
+            } else {
+                // Render nested properties for a single object
+                renderProperties(value.properties, value.required || [], depth + 1);
+            }
+            %></details><%
+        } else {
+            // For non-object types or arrays of primitive types, directly show the description if available
+            if(value.description) {
+                %><%- value.description %><%
+            }
+        }
+
+        // Close Property tag
+        %></Property>
+<%
+    });
+}
+
+// Start rendering from the root schema
+var schema = operation.requestBody["content"]["application/json"].schema;
+if(schema && schema.properties) {
+    // Pass the root level \`required\` array
+    renderProperties(schema.properties, schema.required || []);
+}
+%>
+
+
+      
+    </Properties>
      <% }; -%>
   </Col>
 
@@ -65,13 +120,13 @@ curl -X <%- operation.operation.toUpperCase() %> <%- operation.fullPath %> \\<% 
 -H 'Accept: application/json' \\<% }; -%>
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
 -H 'Content-Type: application/json' \\<% }; %>
--H 'Authorization: Token <TOKEN>' <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>\\\n--data-raw '<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2) -%>'<% }; %>
+-H 'Authorization: Token <TOKEN>' <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>\\\n--data-raw '<%- JSON.stringify(operation.request.example, null, 2) -%>'<% }; %>
 \`\`\`
 
 \`\`\`js
 const axios = require('axios');
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
-let data = JSON.stringify(<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2) %>);<% }; -%>
+let data = JSON.stringify(<%- JSON.stringify(operation.request.example, null, 2) %>);<% }; -%>
 
 let config = {
   method: '<%- operation.operation.toLowerCase() %>',
@@ -103,7 +158,7 @@ import json
 
 url = "<%- operation.fullPath %>"
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
-payload = json.dumps(<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2) %>)<% }; -%>
+payload = json.dumps(<%- JSON.stringify(operation.request.example, null, 2) %>)<% }; -%>
 
 <% if(true){%>headers: { <% }; -%>
   <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
@@ -133,7 +188,7 @@ func main() {
   url := "<%- operation.fullPath %>"
   method := "<%- operation.operation.toUpperCase() %>"
   <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
-  payload := strings.NewReader(\`<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2) %>\`)<% }; -%>
+  payload := strings.NewReader(\`<%- JSON.stringify(operation.request.example, null, 2) %>\`)<% }; -%>
 
   client := &http.Client {
   }
@@ -183,7 +238,7 @@ request["Content-Type"] = "application/json"<% }; -%>
 request["Accept"] = "application/json"<% }; %>
 request["Authorization"] = "Token <TOKEN>"
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
-request.body = JSON.dump(<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2) %>)<% }; -%>
+request.body = JSON.dump(<%- JSON.stringify(operation.request.example, null, 2) %>)<% }; -%>
 
 response = https.request(request)
 puts response.read_body
@@ -194,7 +249,7 @@ OkHttpClient client = new OkHttpClient().newBuilder()
   .build();
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
 MediaType mediaType = MediaType.parse("application/json");
-RequestBody body = RequestBody.create(mediaType, '<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2) %>');<% }; %>
+RequestBody body = RequestBody.create(mediaType, '<%- JSON.stringify(operation.request.example, null, 2) %>');<% }; %>
 Request request = new Request.Builder()
   .url("<%- operation.fullPath %>")
   <% if(true){ %>.method("<%- operation.operation.toUpperCase() %>"<% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>, body<% }; %>)<% }; -%>
@@ -222,7 +277,7 @@ curl_setopt_array($curl, array(
   CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
   <% if(true){ %>CURLOPT_CUSTOMREQUEST => '<%- operation.operation.toUpperCase() %>',<% }; -%>
   <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
-  CURLOPT_POSTFIELDS => '<%- JSON.stringify(components.get(operation.requestBody?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2) %>',<% }; %>
+  CURLOPT_POSTFIELDS => '<%- JSON.stringify(operation.request.example, null, 2) %>',<% }; %>
   <% if(true){ %>CURLOPT_HTTPHEADER => array(<% }; -%>
     <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
     'Content-Type: application/json',<% }; -%>
@@ -239,29 +294,18 @@ echo $response;
 \`\`\`
 
     </CodeGroup>
-    <% operation.responseList.forEach(function(response){ %>
-        <% if(response?.content && response?.content['application/json']){ %>
-            <% if(response?.content['application/json'].schema.type === 'array'){ %>
-                <CodeGroup title="Response">
+    
+    <% if(operation.response){ %>
+    <CodeGroup title="Response">
 \`\`\`json {{ title: 'Example' }}
-<%- JSON.stringify(new Array(components.get(response?.content['application/json'].schema.items.$ref?.split('/').pop())?.example), null, 2)  %>
+<%- JSON.stringify(operation.response.example, null, 2) %>
 \`\`\`
 \`\`\`json {{ title: 'Schema' }}
-<%- JSON.stringify(new Array(components.get(response?.content['application/json'].schema.items.$ref?.split('/').pop())?.schema), null, 2)  %>
+<%- JSON.stringify(operation.response.schema, null, 2) %>
 \`\`\`
-                </CodeGroup>
-            <% } else { %>
-                <CodeGroup title="Response">
-\`\`\`json {{ title: 'Example' }}
-<%- JSON.stringify(components.get(response?.content['application/json'].schema.$ref?.split('/').pop())?.example, null, 2)  %>
-\`\`\`
-\`\`\`json {{ title: 'Schema' }}
-<%- JSON.stringify(components.get(response?.content['application/json'].schema.$ref?.split('/').pop())?.schema, null, 2)  %>
-\`\`\`
-                </CodeGroup>
-           <% }; -%>     
-        <% }; -%>
-    <% }); -%>
+    </CodeGroup>
+    <% }; %>
+ 
   </Col>
 </Row>
 
