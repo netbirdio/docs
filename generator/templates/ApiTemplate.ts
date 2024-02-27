@@ -31,29 +31,23 @@ export const title = '<%- tag %>'
     <% }; -%>
     <% if(operation.requestBody && operation.requestBody["content"]["application/json"].schema.properties){ %>
     #### Request-Body Parameters
-    <Properties>
     
- 
-<%
+    <%
 function renderProperties(properties, required = [], depth = 0) {
+    %><Properties><%
     Object.entries(properties).forEach(([key, value]) => {
         let type = value.type;
-        // Check if the property is required at the current level
-        var isRequired = required.includes(key) ? 'true' : 'false';
+        var isRequired = required.includes(key) ? '{true}' : '{false}';
 
-        // Handle array types
         if (type === 'array' && value.items) {
             if (value.items.type === 'object' && value.items.properties) {
-                // For array of objects, type will be handled individually for items
                 type = 'object[]';
             } else {
-                // For arrays of primitive types
                 type = value.items.type + '[]';
             }
         }
 
-        // Open Property tag with correctly formatted attributes
-        %><Property name="<%- key %>" type="<%- type %>" required={<%- isRequired %>}<%
+        %><Property name="<%- key %>" type="<%- type %>" required=<%- isRequired %><%
         if(value.enum) { 
             %> enumList={<%- JSON.stringify(value.enum) %>}<%
         }
@@ -69,45 +63,33 @@ function renderProperties(properties, required = [], depth = 0) {
         if(value.maxLength !== undefined) { 
             %> maxLen={<%- value.maxLength %>}<%
         }
-        %>><%
-
-        // Handle object types or array of objects with nested properties
-        if ((type === 'object' && value.properties) || (type === 'object[]' && value.items.properties)) {
-            %><details class="custom-details" open>
-    <summary><%- value.description || 'More Information' %></summary>
-<%
-            if (type === 'object[]') {
-                // Render nested properties for each item in the array of objects
-                renderProperties(value.items.properties, value.items.required || [], depth + 1);
-            } else {
-                // Render nested properties for a single object
-                renderProperties(value.properties, value.required || [], depth + 1);
-            }
-            %></details><%
-        } else {
-            // For non-object types or arrays of primitive types, directly show the description if available
-            if(value.description) {
-                %><%- value.description %><%
-            }
-        }
-
-        // Close Property tag
-        %></Property>
-<%
-    });
+        %>>%>
+        <% if ((type === 'object' && value.properties) || (type === 'object[]' && value.items.properties)) { %>
+            <details class="custom-details" open>
+                <summary><%- value.description || 'More Information' %></summary>
+                <Properties>
+                <% if (type === 'object[]') { %>
+                    <% renderProperties(value.items.properties, value.items.required || [], depth + 1); %>
+                <% } else { %>
+                    <% renderProperties(value.properties, value.required || [], depth + 1); %>
+                <% } %>
+                </Properties>
+            </details>
+        <% } else { %>
+            <% if(value.description) { %><%- value.description %><% } %>
+        <% } %>
+        </Property>
+    <% });
+    %></Properties><%
 }
 
-// Start rendering from the root schema
 var schema = operation.requestBody["content"]["application/json"].schema;
 if(schema && schema.properties) {
-    // Pass the root level \`required\` array
     renderProperties(schema.properties, schema.required || []);
 }
 %>
 
-
-      
-    </Properties>
+    
      <% }; -%>
   </Col>
 
