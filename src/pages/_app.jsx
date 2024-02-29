@@ -6,6 +6,7 @@ import * as mdxComponents from '@/components/mdx'
 import { useMobileNavigationStore } from '@/components/MobileNavigation'
 
 import '@/styles/tailwind.css'
+import '@/styles/global.css';
 import 'focus-visible'
 import {Layout} from "@/components/Layout";
 import {slugifyWithCounter} from "@sindresorhus/slugify";

@@ -98,12 +98,12 @@ export function Property({ name, type, required, min, max, minLen, maxLen, enumL
           {type}
         </dd>
         <dt className="sr-only">Required</dt>
-        <dd className="font-mono text-xs text-red-600 dark:text-red-600">
-          {required && 'required'}
-        </dd>
-        <dd className="font-mono text-xs text-zinc-400 dark:text-zinc-500">
-          {!required && 'optional'}
-        </dd>
+          {required && <dd className="font-mono text-xs text-red-600 dark:text-red-600">
+          required
+        </dd>}
+          {!required && <dd className="font-mono text-xs text-zinc-400 dark:text-zinc-500">
+          optional
+        </dd>}
         <dt className="sr-only">Enum</dt>
         <dd className="w-full flex-none [&>:first-child]:mt-0 [&>:last-child]:mb-0">
           {/*{enumList && "Possible values: [" + enumList.split(',').forEach((type) => (<tag>{type}</tag>)) + "]"}*/}
