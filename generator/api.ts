@@ -104,10 +104,10 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
         }
       }
 
-      if(operation.summary == "List all Tokens") {
-        console.log(response.example)
-        console.log(operation.responses["200"]["content"]["application/json"].schema.items.properties)
-      }
+      // if(operation.summary == "List all Tokens") {
+      //   console.log(response.example)
+      //   console.log(operation.responses["200"]["content"]["application/json"].schema.items.properties)
+      // }
 
 
       const enriched = {
