@@ -38,7 +38,7 @@ REPO="https://github.com/netbirdio/netbird/"
 LATEST_TAG=$(basename $(curl -fs -o/dev/null -w %{redirect_url} ${REPO}releases/latest))
 echo $LATEST_TAG
 
-# this comman will clone the latest tag
+# this command will clone the latest tag
 git clone --depth 1 --branch $LATEST_TAG $REPO
 ```
 
@@ -184,6 +184,24 @@ Make sure your reverse-Proxy is setup to use the HTTP2-Protocol when forwarding.
     Simply replace the file `docker-compose.yml.tmpl` with the chosen version.
 </Note>
 
+## Advanced: Additional configurations for cloud providers
+
+### Hetzner
+Hetzner uses stateless [firewall](https://docs.hetzner.com/robot/dedicated-server/firewall/), which means it doesn't "keep track of" whether or not an incoming packet belongs to an established connection. In this case, you may add to this server firewall an UDP port range equals to the result of:
+```bash
+sudo cat /proc/sys/net/ipv4/ip_local_port_range
+```
+More info can be found at this GitHub [issue](https://github.com/netbirdio/netbird/issues/390#issuecomment-1185298689).
+
+### Oracle Cloud Infrastructure (OCI)
+Linux images provided by Oracle Cloud includes some default [firewall rules](https://docs.oracle.com/en-us/iaas/Content/Compute/References/bestpracticescompute.htm#Essentia) which block ingress UDP on port 3478. This is required by Coturn without which only peers in same LAN would be able to communicate with each other but not peers on different networks. Besides opening [required](#requirements) ports on _Security Rules_, you also need to run below command on the virtual machine.
+```bash
+sudo iptables -I INPUT -p udp -m udp --dport 3478 -j ACCEPT
+```
+<Note>
+Oracle Cloud discourages use of UFW. You will have to use IPTABLES.
+</Note>
+
 ## Backup
 To backup your NetBird installation, you need to copy the configuration files, and the Management service databases.
 
@@ -201,6 +219,12 @@ docker compose start management
 ```
 
 ## Upgrade
+<Note>
+The users with management on version < [v0.15.3](https://github.com/netbirdio/netbird/releases/tag/v0.15.3) 
+should first upgrade their systems to [v0.25.9](https://github.com/netbirdio/netbird/releases/tag/v0.25.9), 
+run management to properly migrate rules to policies, and then upgrade to **0.26.0+**.
+</Note>
+
 To upgrade NetBird to the latest version, you need to review the [release notes](https://github.com/netbirdio/netbird/releases) for any breaking changes and follow the upgrade steps below:
 1. Run the backup steps described in the [backup](#backup-net-bird) section.
 2. Pull the latest NetBird docker images:

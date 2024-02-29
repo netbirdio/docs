@@ -1,0 +1,173 @@
+# Troubleshooting client issues
+
+This document offers practical tips and insights to help you debug various problems, ensuring a seamless user experience.
+
+## NetBird agent status
+The netbird agent is a daemon service that runs in the background; it provides information about peers connected and about the NetBird control services. You can check the status of the agent with the following command:
+
+```shell
+netbird status --detail
+````
+This will output the following information:
+
+```shell
+Peers detail:
+ server-a.netbird.cloud:
+  NetBird IP: 100.75.232.118/32
+  Public key: kndklnsakldvnsld+XeRF4CLr/lcNF+DSdkd/t0nZHDqmE=
+  Status: Connected
+  -- detail --
+  Connection type: P2P
+  Direct: true
+  ICE candidate (Local/Remote): host/host
+  ICE candidate endpoints (Local/Remote): 10.128.0.35:51820/10.128.0.54:51820
+  Last connection update: 2024-01-30 08:52:51
+  Last Wireguard handshake: 2024-01-30 10:58:13
+  Transfer status (received/sent) 6.1 KiB/20.6 KiB
+
+ server-b.netbird.cloud:
+  NetBird IP: 100.75.226.48/32
+  Public key: Mi6jtrK5Tokndklnsakldvnsld+XeRF4CLr/lcNF+DSdkd=
+  Status: Connected
+  -- detail --
+  Connection type: Relayed
+  Direct: false
+  ICE candidate (Local/Remote): relay/host
+  ICE candidate endpoints (Local/Remote): 108.54.10.33:60434/10.128.0.12:51820
+  Last connection update: 2024-01-30 08:52:51
+  Last Wireguard handshake: 2024-01-30 10:58:13
+  Transfer status (received/sent) 6.1 KiB/20.6 KiB
+
+Daemon version: 0.25.5
+CLI version: 0.25.5
+Management: Connected to https://api.netbird.io:443
+Signal: Connected to https://signal.netbird.io:443
+Relays:
+  [stun:turn.netbird.io:5555] is Available
+  [turns:turn.netbird.ioo:443?transport=tcp] is Available
+FQDN: maycons-mbp-2.netbird.cloud
+NetBird IP: 100.75.143.239/16
+Interface type: Kernel
+Peers count: 2/2 Connected
+```
+As you can see, the output shows the peers connected, the NetBird IP address, the public key, the connection status, and the connection type.
+The status will also report if there is an issue connecting to the relay servers, the management server, or the signal server.
+
+As for Peers, the status will show the following information:
+* `Connection type`: P2P, Relayed, where relayed connections indicate a limitation in the network that prevents a direct connection between the peers.
+* `Direct`: true/false, where true indicates a direct connection between the peers without a local proxy. This case is common when the local peer is allocating the relay connection.
+* `ICE candidate (Local/Remote)`: relay/host, where relay indicates that the local peer is using a relay connection and host indicates that the remote peer is using a direct connection.
+* `Last Wireguard handshake`: Indicating the last time the Wireguard handshake was performed. Usually, this is performed every 2 minutes, and if you don't see an update here or if the value is empty, that indicates that the connection wasn't possible yet.
+* `Transfer status (received/sent)`: Indicating the amount of data received and sent by the peer. This is useful to check if the connection is being used.
+
+See more details about the status command [here](/how-to/cli#status).
+
+## Getting client logs
+By default, client logs are located in the `/var/log/netbird/client.log` folder on macOS and Linux and in the `C:\ProgramData\netbird\client.log` folder on Windows.
+
+You can analyze the logs to identify the root cause of the problem. If you need help, open a [github issue](https://github.com/netbirdio/netbird/issues/new/choose) and attach the logs.
+
+## Enabling debug logs on agent
+
+### On Linux with systemd
+The default systemd unit file reads a set of environment variables from the path `/etc/sysconfig/netbird`. You can add the following line to the file to enable debug logs:
+
+```shell
+sudo mkdir -p /etc/sysconfig
+echo 'NB_LOG_LEVEL=debug' | sudo tee -a /etc/sysconfig/netbird
+sudo systemctl restart netbird
+```
+
+### On Other Linux and MacOS
+```shell
+sudo netbird service stop
+sudo netbird service uninstall
+sudo netbird service install --log-level debug # or trace
+sudo netbird service start
+```
+
+### On Windows
+You need to run the following commands with an elevated Powershell window.
+
+```shell
+netbird service stop
+netbird service uninstall
+netbird service install --log-level debug # or trace
+netbird service start
+```
+
+### On Docker
+You can set the environment variable `NB_LOG_LEVEL` to `debug` to enable debug logs.
+
+```shell
+docker run --rm --name PEER_NAME --hostname PEER_NAME --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --cap-add=SYS_RESOURCE -d \
+-e NB_SETUP_KEY=<SETUP KEY> -e NB_LOG_LEVEL=debug -v netbird-client:/etc/netbird netbirdio/netbird:latest
+```
+
+### On Android
+Enable the ADB in the developer menu on the Android device. 
+In the app set the the Trace log level setting - it is a checkbox in the advanced menu.
+With the ADB tool, you can get the logs from your device. The ADB is part of the SDK platform tools pack (zip file). 
+You can download it from [here](https://developer.android.com/tools/releases/platform-tools). 
+Please extract it and run the next command in the case of Linux: 
+```shell
+sudo adb logcat -v time | grep GoLog
+```
+
+## Running the agent in foreground mode
+You can run the agent in foreground mode to see the logs in the terminal. This is useful to debugging issues with the agent.
+
+### Linux and MacOS
+```shell
+sudo netbird service stop
+sudo netbird up -F
+```
+
+### Windows
+On Windows, the agent depends on the Wireguard's `wintun.dll` and can only be executed as a system account.
+To run the agent in foreground mode, you need to use a tool called [PSExec](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec).
+
+Once you have downloaded and extracted `psexec` open an elevated Powershell window:
+```shell
+netbird service stop
+.\PsExec64.exe -s cmd.exe /c "netbird up -F --log-level debug > c:\windows\temp\netbird.out.log 2>&1"
+```
+
+In case you need to configure environment variables, you need to add them as system variables so they get picked up by the agent on the next psexec run:
+```shell
+[Environment]::SetEnvironmentVariable("PIONS_LOG_DEBUG", "all", "Machine")
+````
+
+## Enabling WireGuard in user space
+Sometimes, you want to test NetBird running on userspace mode instead of a kernel module. That can be a check to see if there is a problem with NetBird's firewall management in kernel mode.
+
+You must run the agent in foreground mode and set the environment variable `NB_WG_KERNEL_DISABLED` to `true`.
+```shell
+sudo netbird service stop
+sudo bash -c 'NB_WG_KERNEL_DISABLED=true netbird up -F'  > /tmp/netbird.log
+```
+
+##  Debugging GRPC
+
+The NetBird agent communicates with the Management and Signal servers using the GRPC framework. With these parameters, you can
+set verbose logging for this service.
+
+```shell
+sudo netbird service stop
+sudo bash -c 'GRPC_GO_LOG_VERBOSITY_LEVEL=99 GRPC_GO_LOG_SEVERITY_LEVEL=info netbird up -F' > /tmp/netbird.log
+```
+
+## Debugging ICE connections
+
+The Netbird agent communicates with other peers through the Interactive Connectivity Establishment (ICE) protocol described in the [RFC 8445](https://datatracker.ietf.org/doc/html/rfc8445). To debug the connection procedure,
+set verbose logging for the the [Pion/ICE](https://github.com/pion/ice) library with the `PIONS_LOG_DEBUG` or `PIONS_LOG_TRACE` variable.
+
+```shell {{ title: 'Environment variable' }}
+PIONS_LOG_DEBUG=all
+NB_LOG_LEVEL=debug
+```
+
+```shell
+sudo netbird service stop
+sudo bash -c 'PIONS_LOG_DEBUG=all NB_LOG_LEVEL=debug netbird up -F' > /tmp/netbird.log
+```

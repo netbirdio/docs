@@ -55,11 +55,17 @@ export const docsNavigation = [
             { title: 'Route traffic to private networks', href: '/how-to/routing-traffic-to-private-networks' },
             { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
             { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
+            { title: 'Activity event streaming', href: '/how-to/activity-event-streaming' },
             { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
+            { title: 'Running NetBird on FaaS', href: '/how-to/netbird-on-faas' },
+            { title: 'Delete your NetBird account', href: '/how-to/delete-account' },
+            { title: 'Manage access with posture checks', href: '/how-to/manage-posture-checks' },
+            { title: 'Deploy routing peers to Kubernetes', href: '/how-to/routing-peers-and-kubernetes' },
+            { title: 'Report bugs and issues', href: '/how-to/report-bug-issues' },
+            { title: 'Troubleshooting client issues', href: '/how-to/troubleshooting-client' },
             { title: 'Examples', href: '/how-to/examples' },
             { title: 'CLI', href: '/how-to/cli' },
-            { title: 'Delete your NetBird account', href: '/how-to/delete-account' },
-
+            { title: 'IdP sync', href: '/how-to/idp-sync' },
         ],
     },
     {
@@ -69,9 +75,10 @@ export const docsNavigation = [
             { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
             { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store'},
             { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
+            { title: 'Management Geolocation', href: '/selfhosted/geo-support' },
+            { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
         ],
     },
-
 ]
 
 

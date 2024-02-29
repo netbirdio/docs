@@ -4,7 +4,7 @@ export const title = '<%- tag %>'
 
 <% operations.forEach(function(operation){ %>
 
-## <%- operation.summary %> {{ tag: '<%- operation.operation.toUpperCase() %>' , label: '<%- operation.path %>' }}
+## <%- operation.summary %> {{ tag: '<%- operation.operation.toUpperCase() %>' , label: '<%- operation.path %>' }} <% if(operation.deprecated) { %><Badge status="warning" text="Deprecated" /><% } %>
 
 <Row>
   <Col>
