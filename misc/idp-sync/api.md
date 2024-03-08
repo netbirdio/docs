@@ -377,9 +377,9 @@ Response
 ## Okta SCIM Endpoints
 
 ### Create Integration
-By default, for new integration synchronization is enabled.
+Create a Okta SCIM integration with the following request. The new integration will be enabled by default.
 
-Request:
+Request input:
 -  `group_prefixes`: Specifies list of starts_with patterns for group provision. If the group name matches one the the pattern it will be provisioned regardless of the members. Optional. The default value is empty list.
 -  `user_group_prefixes`: Specifies list of starts_with patterns for user provision. If the user belongs to group which name matches one the the pattern the user will be provisioned. Optional. The default value is empty list.
 - `enabled`: Optional. Used to disable/enable the integration.
@@ -396,6 +396,7 @@ curl --request POST \
 }'
 ```
 
+
 Response
 ```json
 {
@@ -405,6 +406,31 @@ Response
 	"user_group_prefixes": [],
 	"auth_token": "nbs_pBmR9mwBpsJH03B0DGojHzhLTRndg90QGPsS"
 }
+```
+
+> Take a note of the `auth_token` returned; you will need it to configure the Okta application.
+
+
+### Get all Okta integrations for the account
+Request
+```shell
+curl --request GET \
+  --url https://api.netbird.io/api/integrations/okta-scim-idp \
+  --header 'Accept: application/json' \
+  --header 'Authorization: Token <PAT>'
+```
+
+Response
+```json
+[
+  {
+  	"id": 1,
+  	"enabled": true,
+  	"group_prefixes": [],
+  	"user_group_prefixes": [],
+  	"auth_token": "nbs_pBm*********************************"
+  }
+]
 ```
 
 ### Get Integration by ID
@@ -427,28 +453,6 @@ Response
 }
 ```
 
-### Get All Integrations By AccountID
-Request
-```shell
-curl --request GET \
-  --url https://api.netbird.io/api/integrations/okta-scim-idp \
-  --header 'Accept: application/json' \
-  --header 'Authorization: Token <PAT>'
-```
-
-Response
-```json
-[
-  {
-  	"id": 1,
-  	"enabled": true,
-  	"group_prefixes": [],
-  	"user_group_prefixes": [],
-  	"auth_token": "nbs_pBm*********************************"
-  }
-]
-```
-
 ### Regenerate Auth token
 Request
 ```shell
@@ -457,6 +461,7 @@ curl --request POST \
   --header 'Accept: application/json' \
   --header 'Authorization: Token <PAT>'
 ```
+> Replace ID with the integration ID you want to update.
 
 Response
 ```json
@@ -490,6 +495,8 @@ curl --request PUT \
 }'
 ```
 
+> Replace ID with the integration ID you want to update.
+
 Response
 ```json
 {
@@ -509,6 +516,9 @@ curl --request DELETE \
   --header 'Accept: application/json' \
   --header 'Authorization: Token <PAT>'
 ```
+
+> Replace ID with the integration ID you want to update.
+
 Response
 ```json
 {}
@@ -522,6 +532,9 @@ curl --request GET \
   --header 'Accept: application/json' \
   --header 'Authorization: Token <PAT>'
 ```
+
+> Replace ID with the integration ID you want to update.
+
 Response
 ```json
 [
