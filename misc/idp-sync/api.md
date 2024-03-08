@@ -365,3 +365,164 @@ Response
   }
 ]
 ```
+
+## Okta SCIM Endpoints
+
+### Create Integration
+By default, for new integration synchronization is enabled.
+
+Request:
+-  `group_prefixes`: Specifies list of starts_with patterns for group provision. If the group name matches one the the pattern it will be provisioned regardless of the members. Optional. The default value is empty list.
+-  `user_group_prefixes`: Specifies list of starts_with patterns for user provision. If the user belongs to group which name matches one the the pattern the user will be provisioned. Optional. The default value is empty list.
+- `enabled`: Optional. Used to disable/enable the integration.
+
+```shell
+curl --request POST \
+  --url https://api.netbird.io/api/integrations/okta-scim-idp \
+  --header 'Accept: application/json' \
+  --header 'Authorization: Token <PAT>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "group_prefixes": [],
+    "user_group_prefixes": []
+}'
+```
+
+Response
+```json
+{
+	"id": 1,
+	"enabled": true,
+	"group_prefixes": [],
+	"user_group_prefixes": [],
+	"auth_token": "nbs_pBmR9mwBpsJH03B0DGojHzhLTRndg90QGPsS"
+}
+```
+
+### Get Integration by ID
+Request
+```shell
+curl --request GET \
+  --url https://api.netbird.io/api/integrations/okta-scim-idp/<ID> \
+  --header 'Accept: application/json' \
+  --header 'Authorization: Token <PAT>'
+```
+
+Response
+```json
+{
+	"id": 1,
+	"enabled": true,
+	"group_prefixes": [],
+	"user_group_prefixes": [],
+	"auth_token": "nbs_pBm*********************************"
+}
+```
+
+### Get All Integrations By AccountID
+Request
+```shell
+curl --request GET \
+  --url https://api.netbird.io/api/integrations/okta-scim-idp \
+  --header 'Accept: application/json' \
+  --header 'Authorization: Token <PAT>'
+```
+
+Response
+```json
+[
+  {
+  	"id": 1,
+  	"enabled": true,
+  	"group_prefixes": [],
+  	"user_group_prefixes": [],
+  	"auth_token": "nbs_pBm*********************************"
+  }
+]
+```
+
+### Regenerate Auth token
+Request
+```shell
+curl --request POST \
+  --url https://api.netbird.io/api/integrations/okta-scim-idp/<ID>/token \
+  --header 'Accept: application/json' \
+  --header 'Authorization: Token <PAT>'
+```
+
+Response
+```json
+{
+	"id": 1,
+	"enabled": true,
+	"group_prefixes": [],
+	"user_group_prefixes": [],
+	"auth_token": "nbs_pBmR9mwBpsJH03B0DGojHzhLTRndg90QGPsS"
+}
+```
+
+### Update Integration
+Updates the selected parameters for a specific integration.
+
+Request
+-  `group_prefixes`: Specifies list of starts_with patterns for group provision. If the group name matches one the the pattern it will be provisioned regardless of the members. Optional. The default value is empty list.
+-  `user_group_prefixes`: Specifies list of starts_with patterns for user provision. If the user belongs to group which name matches one the the pattern the user will be provisioned. Optional. The default value is empty list.
+- `enabled`: Optional. Used to disable/enable the integration.
+
+```shell
+curl --request PUT \
+  --url https://api.netbird.io/api/integrations/okta-scim-idp/<ID> \
+  --header 'Accept: application/json' \
+  --header 'Authorization: Token <PAT>' \
+  --header 'Content-Type: application/json' \
+  --data '{
+	"enabled": true,
+	"group_prefixes": [],
+	"user_group_prefixes": []
+}'
+```
+
+Response
+```json
+{
+	"id": 1,
+	"enabled": true,
+	"group_prefixes": [],
+	"user_group_prefixes": [],
+	"auth_token": "nbs_pBmR9mwBpsJH03B0DGojHzhLTRndg90QGPsS"
+}
+```
+
+### Delete Integration
+Request
+```shell
+curl --request DELETE \
+  --url https://api.netbird.io/api/integrations/okta-scim-idp/<ID> \
+  --header 'Accept: application/json' \
+  --header 'Authorization: Token <PAT>'
+```
+Response
+```json
+{}
+```
+
+### Get Integration sync logs
+Request
+```shell
+curl --request GET \
+  --url https://api.netbird.io/api/integrations/okta-scim-idp/<ID>/logs \
+  --header 'Accept: application/json' \
+  --header 'Authorization: Token <PAT>'
+```
+Response
+```json
+[
+  {
+    "id": <ID>,
+    "level": "info",
+    "timestamp": "timestamp UTC",
+    "message": "message"
+  }
+]
+```
+
