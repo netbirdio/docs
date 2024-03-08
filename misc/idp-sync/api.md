@@ -1,5 +1,13 @@
 # Integration API Documentation
 
+Table of contents
+* [Introduction](#introduction)
+* [Authentication](#authentication)
+* [Google endpoints](#google-endpoints)
+* [Azure/Entra ID](#azure-endpoints)
+* [Okta SCIM endpoints](#okta-scim-endpoints)
+
+
 ## Introduction
 This reference provides detailed information on managing integrations via NetBird Cloud API.
 
