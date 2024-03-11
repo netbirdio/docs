@@ -1,10 +1,10 @@
 import { useRouter } from 'next/router'
 import clsx from 'clsx'
 import {
-    ActivePageMarker,
-    NavLink,
-    TopLevelNavItem,
-    VisibleSectionHighlight
+   ActivePageMarker,
+   NavLink,
+   TopLevelNavItem,
+   VisibleSectionHighlight
 } from "@/components/NavigationAPI";
 import {AnimatePresence, motion} from "framer-motion";
 import {Button} from "@/components/mdx";
@@ -12,77 +12,149 @@ import {useState} from "react";
 import {NavigationStateProvider, useNavigationState} from "@/components/NavigationState";
 import ChevronDownIcon from "@/components/icons/ChevronDownIcon";
 
+
 export const docsNavigation = [
     {
-        title: 'About NetBird',
+        title: 'ABOUT',
         links: [
-            { title: 'Why WireGuard with NetBird?', href: '/about-netbird/why-wireguard-with-netbird' },
-            { title: 'How NetBird works', href: '/about-netbird/how-netbird-works' },
+            { title: 'How NetBird works', href: '/about-netbird/how-netbird-works'},
             { title: 'NetBird vs. traditional VPN', href: '/about-netbird/netbird-vs-traditional-vpn' },
-            { title: 'Other', href: '/about-netbird/other' },
-            { title: 'FAQ', href: '/about-netbird/faq' },
-        ],
-    },
-    {
-        title: 'How-to guides',
-        links: [
-            { title: 'Getting started', href: '/how-to/getting-started' },
-            { title: 'Installation', href: '/how-to/installation'},
-            /*{
-                title: 'Nested Nav Item',
-                isOpen: true,
-                links: [
-                    { title: 'Quickstart guide', href: '/selfhosted/selfhosted-quickstart' },
-                    { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
-                    { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store'},
-                    {
-                        title: 'Deeply Nested Nav Item',
-                        links: [
-                            { title: 'NetBird vs. traditional VPN', href: '/about-netbird/netbird-vs-traditional-vpn' },
-                            { title: 'Other', href: '/about-netbird/other' },
-                            { title: 'FAQ', href: '/about-netbird/faq' },
-                        ]
-                    },
-                ]
-            },*/
-            { title: 'Add machines to your network', href: '/how-to/add-machines-to-your-network' },
-            { title: 'Approve peers', href: '/how-to/approve-peers' },
-            { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
-            { title: 'Use setup keys for automation', href: '/how-to/register-machines-using-setup-keys' },
-            { title: 'Manage network access', href: '/how-to/manage-network-access' },
-            { title: 'Enforce periodic authentication', href: '/how-to/enforce-periodic-user-authentication' },
-            { title: 'Enable post-quantum cryptography', href: '/how-to/enable-post-quantum-cryptography' },
-            { title: 'Route traffic to private networks', href: '/how-to/routing-traffic-to-private-networks' },
-            { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
-            { title: 'Monitor system and network activity', href: '/how-to/monitor-system-and-network-activity' },
-            { title: 'Activity event streaming', href: '/how-to/activity-event-streaming' },
-            { title: 'Access NetBird API', href: '/how-to/access-netbird-public-api' },
-            { title: 'Running NetBird on FaaS', href: '/how-to/netbird-on-faas' },
-            { title: 'Delete your NetBird account', href: '/how-to/delete-account' },
-            { title: 'Manage access with posture checks', href: '/how-to/manage-posture-checks' },
-            { title: 'Deploy routing peers to Kubernetes', href: '/how-to/routing-peers-and-kubernetes' },
-            { title: 'Report bugs and issues', href: '/how-to/report-bug-issues' },
-            { title: 'Troubleshooting client issues', href: '/how-to/troubleshooting-client' },
-            { title: 'Examples', href: '/how-to/examples' },
+            { title: 'Why WireGuard with NetBird', href: '/about-netbird/why-wireguard-with-netbird' },
             { title: 'CLI', href: '/how-to/cli' },
-            { title: 'IdP sync', href: '/how-to/idp-sync' },
+            { title: 'FAQ', href: '/about-netbird/faq' },
+            /*{ title: 'Whats new in version xx', href: '/welcome/how-netbird-works' },
+            { title: 'Release notes', href: '/about-netbird/netbird-vs-traditional-vpn' },*/
+         
         ],
     },
     {
-        title: 'Self-hosting NetBird',
+        title: 'GETTING STARTED',
         links: [
-            { title: 'Quickstart guide', href: '/selfhosted/selfhosted-quickstart' },
-            { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
-            { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store'},
-            { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
-            { title: 'Management Geolocation', href: '/selfhosted/geo-support' },
-            { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
+            { title: 'Quickstart Guide', href: '/how-to/getting-started' },
+            {title: 'Install NetBird', href: '/how-to/installation' },
+ 
+           
+           /* { title: 'Update NetBird', href: '/how-to/enforce-periodic-user-authentication' },*/
+ 
+ 
         ],
     },
-]
-
-
-export function NavigationDocs({className}) {
+    {
+        title: 'MANAGE NETBIRD',
+        links: [
+            {
+             title: 'Peers',
+             isOpen: false,
+             links: [
+                 { title: 'Add peers to your network', href: '/how-to/add-machines-to-your-network' },
+                 { title: 'Approve peers', href: '/how-to/approve-peers' },
+                 { title: 'Setup keys', href: '/how-to/register-machines-using-setup-keys' },
+             ]
+         },
+         {
+             title: 'Access Control',
+             isOpen: false,
+             links: [
+                 { title: 'Manage Network Access', href: '/how-to/manage-network-access' },
+                 { title: 'Posture Checks', href: '/how-to/manage-posture-checks' },
+             ]
+         },
+         {
+             title: 'Network Routes',
+             isOpen: false,
+             links: [
+                 { title: 'Routing traffic to private networks', href: '/how-to/routing-traffic-to-private-networks' },
+                 
+             ]
+         },
+         {
+             title: 'DNS',
+             isOpen: false,
+             links: [
+                 { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
+             ]
+         },
+         {
+             title: 'Team',
+             isOpen: false,
+             links: [
+                 { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
+                     
+             ]
+         },
+         {
+             title: 'Activity',
+             links: [
+                 { title: 'Activity Events', href: '/how-to/monitor-system-and-network-activity' }, 
+              
+             ],
+         },
+         {
+             title: 'Settings',
+             isOpen: false,
+             links: [
+                 {title: 'Authentication', href: '/how-to/enforce-periodic-user-authentication' },
+                 {title: 'Delete Account/Danger Zone', href: '/how-to/delete-account' }
+                 /*{title: 'Groups', href: '/about-netbird/netbird-vs-traditional-vpn' },
+                 {title: 'Plans & Billing', href: '/about-netbird/netbird-vs-traditional-vpn' },*/
+                 
+             ]
+         },
+         {
+             title: 'Integrations',
+             isOpen: false,
+             links: [
+                 {title: 'Activity Event Streaming', href: '/how-to/activity-event-streaming' },
+                 {title: 'Identity Provider', href: '/how-to/idp-sync' },
+                 {title: 'Enable Post Quantum Cryptography', href: '/how-to/enable-post-quantum-cryptography' },
+                 
+             ]
+         },
+        ],
+        
+    },
+    
+    {
+     title: 'USE CASES',
+     links: [
+         { title: 'NetBird on FaaS', href: '/how-to/netbird-on-faas' },
+         { title: 'Routing peers and Kubernetes', href: '/how-to/routing-peers-and-kubernetes'},
+         { title: 'NetBird Client on AWS ECS', href: '/how-to/examples'},
+     ],
+ 
+ 
+ },
+ {
+  title: 'SELF-HOSTED NETBIRD',
+  links: [
+      { title: 'Quickstart guide', href: '/selfhosted/selfhosted-quickstart' },
+      { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
+      { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store'},
+      { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
+      { title: 'Management Geolocation', href: '/selfhosted/geo-support' },
+  ],
+  
+  
+ },
+    
+    {
+     title: 'GET MORE HELP',
+     links: [
+         { title: 'Troubleshooting client issues', href: '/how-to/troubleshooting-client' },
+         { title: 'Report bug issues', href: '/how-to/report-bug-issues' },
+ 
+     ],
+     
+     
+    },
+ 
+ ]
+ 
+ 
+ 
+ 
+ 
+ export function NavigationDocs({className}) {
   return (
     <nav className={className}>
       <ul role="list">
@@ -109,9 +181,10 @@ export function NavigationDocs({className}) {
       </ul>
     </nav>
   )
-}
-
-const findActiveGroupIndex = (group, pathname) => {
+ }
+ 
+ 
+ const findActiveGroupIndex = (group, pathname) => {
     let activeIndex = -1;
     group.links.forEach((link, index) => {
         if (link.href === pathname) {
@@ -124,17 +197,21 @@ const findActiveGroupIndex = (group, pathname) => {
         }
     });
     return activeIndex;
-}
-
-
-function NavigationGroup({ group, className, hasChildren }) {
+ }
+ 
+ 
+ 
+ 
+ function NavigationGroup({ group, className, hasChildren }) {
     let router = useRouter()
     let isActiveGroup = findActiveGroupIndex(group, router.pathname) !== -1;
     const [isOpen, setIsOpen] = useState(group.isOpen ? group.isOpen :!hasChildren);
     const [, setActiveHighlight] = useNavigationState();
-
+ 
+ 
     return (
-
+ 
+ 
         <li className={clsx('relative', className, hasChildren ? "" : "mt-6")}>
             <motion.h2
                 layout={"size"}
@@ -175,7 +252,8 @@ function NavigationGroup({ group, className, hasChildren }) {
                         </AnimatePresence>
                     </>
                 }
-
+ 
+ 
                 <AnimatePresence mode={"wait"} initial={false}>
                     {isOpen && <motion.ul
                         role="list"
@@ -200,9 +278,10 @@ function NavigationGroup({ group, className, hasChildren }) {
                                     <NavigationGroup className={"ml-4"} key={link.title + isOpen} group={link} hasChildren={true} />
                             })}
                     </motion.ul>}
-
+ 
+ 
                 </AnimatePresence>
             </div>
         </li>
     )
-}
+ }
