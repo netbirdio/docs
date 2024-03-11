@@ -20,7 +20,6 @@ export const docsNavigation = [
             { title: 'How NetBird works', href: '/about-netbird/how-netbird-works'},
             { title: 'NetBird vs. traditional VPN', href: '/about-netbird/netbird-vs-traditional-vpn' },
             { title: 'Why WireGuard with NetBird', href: '/about-netbird/why-wireguard-with-netbird' },
-            { title: 'CLI', href: '/how-to/cli' },
             { title: 'FAQ', href: '/about-netbird/faq' },
             /*{ title: 'Whats new in version xx', href: '/welcome/how-netbird-works' },
             { title: 'Release notes', href: '/about-netbird/netbird-vs-traditional-vpn' },*/
@@ -32,7 +31,7 @@ export const docsNavigation = [
         links: [
             { title: 'Quickstart Guide', href: '/how-to/getting-started' },
             {title: 'Install NetBird', href: '/how-to/installation' },
- 
+            { title: 'CLI', href: '/how-to/cli' },
            
            /* { title: 'Update NetBird', href: '/how-to/enforce-periodic-user-authentication' },*/
  
@@ -141,7 +140,7 @@ export const docsNavigation = [
      title: 'GET MORE HELP',
      links: [
          { title: 'Troubleshooting client issues', href: '/how-to/troubleshooting-client' },
-         { title: 'Report bug issues', href: '/how-to/report-bug-issues' },
+         { title: 'Report bugs and issues', href: '/how-to/report-bug-issues' },
  
      ],
      
