@@ -28,7 +28,7 @@ export const docsNavigation = [
         ],
     },
     {
-        title: 'GETTING STARTED',
+        title: 'GET STARTED',
         links: [
             { title: 'Quickstart Guide', href: '/how-to/getting-started' },
             {title: 'Install NetBird', href: '/how-to/installation' },
@@ -125,7 +125,7 @@ export const docsNavigation = [
  
  },
  {
-  title: 'SELF-HOSTED NETBIRD',
+  title: 'SELF-HOST NETBIRD',
   links: [
       { title: 'Quickstart guide', href: '/selfhosted/selfhosted-quickstart' },
       { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
