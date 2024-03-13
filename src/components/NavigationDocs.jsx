@@ -123,6 +123,15 @@ export const docsNavigation = [
  
  
  },
+    {
+        title: 'PUBLIC API',
+        links: [
+            { title: 'Access public API', href: '/how-to/access-netbird-public-api' },
+
+        ],
+
+
+    },
  {
   title: 'SELF-HOST NETBIRD',
   links: [
@@ -131,6 +140,7 @@ export const docsNavigation = [
       { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store'},
       { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
       { title: 'Management Geolocation', href: '/selfhosted/geo-support' },
+      { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
   ],
   
   
