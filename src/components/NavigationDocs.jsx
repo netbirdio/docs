@@ -109,6 +109,15 @@ export const docsNavigation = [
                  
              ]
          },
+
+            {
+                title: 'Public API',
+                isOpen: false,
+                links: [
+                    { title: 'Access public API', href: '/how-to/access-netbird-public-api' },
+
+                ]
+            },
         ],
         
     },
@@ -123,15 +132,6 @@ export const docsNavigation = [
  
  
  },
-    {
-        title: 'PUBLIC API',
-        links: [
-            { title: 'Access public API', href: '/how-to/access-netbird-public-api' },
-
-        ],
-
-
-    },
  {
   title: 'SELF-HOST NETBIRD',
   links: [
