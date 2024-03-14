@@ -103,7 +103,7 @@ function useTableOfContents(tableOfContents) {
     if (tableOfContents.length === 0) return
     let headings = getHeadings(tableOfContents)
     function onScroll() {
-      let top = window.scrollY
+      let top = window.scrollY + 10;
       let current = headings[0]?.id
       for (let heading of headings) {
         if (top >= heading?.top) {
@@ -112,6 +112,7 @@ function useTableOfContents(tableOfContents) {
           break
         }
       }
+      console.log(top, current?.top)
       setCurrentSection(current)
     }
     window.addEventListener('scroll', onScroll, { passive: true })
