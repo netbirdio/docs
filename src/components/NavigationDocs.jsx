@@ -217,10 +217,7 @@ export const docsNavigation = [
     const [isOpen, setIsOpen] = useState(group.isOpen ? group.isOpen :!hasChildren);
     const [, setActiveHighlight] = useNavigationState();
  
- 
     return (
- 
- 
         <li className={clsx('relative', className, hasChildren ? "" : "mt-6")}>
             <motion.h2
                 layout={"size"}
@@ -231,13 +228,14 @@ export const docsNavigation = [
                 onClick={() => {
                     setIsOpen(!isOpen)
                     if(!isOpen) {
-                        router.push(group.links[0].href)
+                        if(!isActiveGroup) router.push(group.links[0].href)
                         setActiveHighlight()
                     }else {
                         setActiveHighlight(group.title)
                     }
                 }}
                 data-nb-link={group.title}
+                data-nb-active={hasChildren && isActiveGroup ? "1" : "0"}
             >
                 {group.title}
                 {hasChildren && <ChevronDownIcon className={clsx("fill-zinc-700 group-hover:fill-zinc-900 dark:fill-zinc-300 dark:group-hover:fill-white","transition", isOpen ? "transform rotate-180" : "")} size={10} />}
