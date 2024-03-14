@@ -112,7 +112,6 @@ function useTableOfContents(tableOfContents) {
           break
         }
       }
-      console.log(top, current?.top)
       setCurrentSection(current)
     }
     window.addEventListener('scroll', onScroll, { passive: true })
