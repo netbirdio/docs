@@ -18,8 +18,9 @@ export function NavigationStateProvider({ children,index }) {
         });
         links.shift();
 
+        const activeGroupTitle = groupTitle ? groupTitle : document.querySelector(`.outer-wrapper-${index} [data-nb-active="1"]`)?.getAttribute('data-nb-link');
         const activeIndex = links.findIndex((link) => link === "1");
-        const activeGroupIndex = links.findIndex((link) => link === groupTitle);
+        const activeGroupIndex = links.findIndex((link) => link === activeGroupTitle);
 
         if(activeGroupIndex !== -1 && activeIndex === -1){
             setActiveIndex(activeGroupIndex);
@@ -30,7 +31,7 @@ export function NavigationStateProvider({ children,index }) {
     }
 
     useEffect(() => {
-        setActiveHighlight();
+        setActiveHighlight().then();
     }, [router.pathname]);
 
     return (
