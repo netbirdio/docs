@@ -93,7 +93,8 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  {title: 'Authentication', href: '/how-to/enforce-periodic-user-authentication' },
-                 {title: 'Delete Account/Danger Zone', href: '/how-to/delete-account' }
+                 {title: 'Delete Account/Danger Zone', href: '/how-to/delete-account' },
+                 {title: 'Plans & Billing', href: '/how-to/payments-integration' }
                  /*{title: 'Groups', href: '/about-netbird/netbird-vs-traditional-vpn' },
                  {title: 'Plans & Billing', href: '/about-netbird/netbird-vs-traditional-vpn' },*/
                  
