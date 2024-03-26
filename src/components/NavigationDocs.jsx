@@ -84,7 +84,7 @@ export const docsNavigation = [
          {
              title: 'Activity',
              links: [
-                 { title: 'Activity Events', href: '/how-to/monitor-system-and-network-activity' }, 
+                 { title: 'Activity events', href: '/how-to/monitor-system-and-network-activity' },
               
              ],
          },
@@ -93,7 +93,7 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  {title: 'Authentication', href: '/how-to/enforce-periodic-user-authentication' },
-                 {title: 'Delete Account/Danger Zone', href: '/how-to/delete-account' }
+                 {title: 'Delete account/danger zone', href: '/how-to/delete-account' }
                  /*{title: 'Groups', href: '/about-netbird/netbird-vs-traditional-vpn' },
                  {title: 'Plans & Billing', href: '/about-netbird/netbird-vs-traditional-vpn' },*/
                  
@@ -103,9 +103,9 @@ export const docsNavigation = [
              title: 'Integrations',
              isOpen: false,
              links: [
-                 {title: 'Activity Event Streaming', href: '/how-to/activity-event-streaming' },
-                 {title: 'Identity Provider', href: '/how-to/idp-sync' },
-                 {title: 'Enable Post Quantum Cryptography', href: '/how-to/enable-post-quantum-cryptography' },
+                 {title: 'Activity event streaming', href: '/how-to/activity-event-streaming' },
+                 {title: 'Identity provider sync', href: '/how-to/idp-sync' },
+                 {title: 'Enable post quantum cryptography', href: '/how-to/enable-post-quantum-cryptography' },
                  
              ]
          },
@@ -125,7 +125,7 @@ export const docsNavigation = [
     {
      title: 'USE CASES',
      links: [
-         { title: 'NetBird on FaaS', href: '/how-to/netbird-on-faas' },
+         { title: 'Serverless and NetBird', href: '/how-to/netbird-on-faas' },
          { title: 'Routing peers and Kubernetes', href: '/how-to/routing-peers-and-kubernetes'},
          { title: 'NetBird Client on AWS ECS', href: '/how-to/examples'},
      ],
