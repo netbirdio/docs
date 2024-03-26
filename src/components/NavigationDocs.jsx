@@ -94,7 +94,7 @@ export const docsNavigation = [
              links: [
                  {title: 'Authentication', href: '/how-to/enforce-periodic-user-authentication' },
                  {title: 'Delete account/danger zone', href: '/how-to/delete-account' },
-                 {title: 'Plans & Billing', href: '/how-to/payments-integration' }
+                 {title: 'Plans and billing', href: '/how-to/plans-and-billing' }
                  
              ]
          },
