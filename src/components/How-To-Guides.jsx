@@ -25,6 +25,11 @@ const howToGuides = [
       'Learn how to provide access to LANs, VPS, and corporate private networks.',
   },
   {
+    href: '/how-to/configuring-default-routes-for-internet-traffic',
+    name: 'Configure default routes and traffic for the Internet',
+    description: 'Understand how to set up your network for accessing the internet through default routes, also known as "exit nodes".',
+  },
+  {
     href: '/how-to/monitor-system-and-network-activity',
     name: 'Log and monitor network activity',
     description:
