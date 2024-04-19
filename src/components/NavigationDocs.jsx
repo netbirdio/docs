@@ -105,7 +105,7 @@ export const docsNavigation = [
                  {title: 'Activity event streaming', href: '/how-to/activity-event-streaming' },
                  {title: 'Identity provider sync', href: '/how-to/idp-sync' },
                  {title: 'Enable post quantum cryptography', href: '/how-to/enable-post-quantum-cryptography' },
-                 {title: 'Endpoint Detection and Response (EDR)', href: '/how-to/endpoint-detection-and-response' },
+                 {title: 'Endpoint detection and response (EDR)', href: '/how-to/endpoint-detection-and-response' },
              ]
          },
 
