@@ -102,7 +102,7 @@ export const docsNavigation = [
              title: 'Integrations',
              isOpen: false,
              links: [
-                 {title: 'Activity event streaming', href: '/how-to/activity-event-streaming' },
+                 {title: 'Activity event streaming', href: '/how-to/activity-event-streaming-to-siem-systems' },
                  {title: 'Identity provider sync', href: '/how-to/idp-sync' },
                  {title: 'Enable post quantum cryptography', href: '/how-to/enable-post-quantum-cryptography' },
                  {title: 'Endpoint Detection and Response (EDR)', href: '/how-to/endpoint-detection-and-response' },
