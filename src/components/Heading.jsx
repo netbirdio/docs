@@ -51,7 +51,7 @@ function Anchor({ id, inView, children }) {
           </div>
         </div>
       )}
-      {children}
+      <div>{children}</div>
     </Link>
   )
 }
