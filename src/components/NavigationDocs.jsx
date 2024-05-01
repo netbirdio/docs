@@ -64,6 +64,7 @@ export const docsNavigation = [
              links: [
                  { title: 'Routing traffic to private networks', href: '/how-to/routing-traffic-to-private-networks' },
                  { title: 'Configuring default routes for Internet traffic', href: '/how-to/configuring-default-routes-for-internet-traffic' },
+                 { title: 'Resolve overlapping routes', href: '/how-to/resolve-overlapping-routes' },
              ]
          },
          {
