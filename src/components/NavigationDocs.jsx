@@ -139,8 +139,9 @@ export const docsNavigation = [
       { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
       { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store'},
       { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
-      { title: 'Management Geolocation', href: '/selfhosted/geo-support' },
+      { title: 'Management geolocation', href: '/selfhosted/geo-support' },
       { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
+      { title: 'Self-hosted vs. Cloud-hosted NetBird', href: '/selfhosted/self-hosted-vs-cloud-netbird' },
   ],
   
   
