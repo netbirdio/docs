@@ -1,0 +1,114 @@
+# Management Postgresql store
+
+<Note>
+This feature provides experimental support for using Postgres as the storage engine. Please use with caution and ensure proper testing in your environment.
+</Note>
+
+## Using Postgres for fresh installations
+
+As of version 0.26.0, the default configuration for fresh installations is SQLite storage.
+However, users have the option to leverage the benefits of Postgres for new instances.
+To enable Postgres, add to your `setup.env` the following variable:
+```bash
+NETBIRD_STORE_CONFIG_ENGINE=postgres
+```
+This will result in a configuration similar to the following in your `management.json` file:
+```json
+    "StoreConfig": {
+        "Engine": "postgres"
+    }
+```
+You can switch back to sqlite storage by setting the `NETBIRD_STORE_CONFIG_ENGINE` variable to `sqlite`.
+<Note>
+    Switching between storage options requires migration steps to prevent data loss.
+</Note>
+
+
+## Migrating from SQLite store to Postgres store
+This migration process allows users to seamlessly transition between storage options while maintaining data integrity.
+
+<Note>
+    The following commands assume you use the latest docker version with the compose plugin. If you have docker-compose installed as a standalone, please use docker-compose as a command.
+</Note>
+
+1. Backup your data store (`store.db` in `datadir` - default `/var/lib/netbird/`)
+```bash
+mkdir backup
+docker compose cp -a management:/var/lib/netbird/. backup/
+```
+
+2. Import Sqlite data to Postgres
+
+For migrating the Sqlite data we rely on the [pgloader](https://github.com/dimitri/pgloader) tool. You can install it by running
+`sudo apt-get install pgloader` on debian or `brew install pgloader` on MacOS.
+
+```bash
+pgloader --type sqlite backup/store.db postgresql://<PG_USER>:<PG_PASSWORD>@<PG_HOST>:<PG_PORT>/<PG_DB_NAME>
+```
+
+3. Enable Postgres by updating the `management.json` file and setting the `Engine` field to `postgres` as the following example:
+```json
+"StoreConfig": {
+    "Engine": "postgres"
+}
+```
+
+4. Create `.env` file with the following content:
+```bash
+NETBIRD_STORE_ENGINE_POSTGRES_DSN="host=<PG_HOST> user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB_NAME> port=<PG_PORT>"
+```
+
+5. Update `docker-compose.yml` file to  pass the postgres configuration to the `management` container
+```yaml
+environment:
+  - NETBIRD_STORE_ENGINE_POSTGRES_DSN=${NETBIRD_STORE_ENGINE_POSTGRES_DSN}
+env_file:
+  - .env
+```
+
+6. Restart the management service
+```bash
+docker compose restart management
+```
+
+7. Check logs to confirm the store switch:
+```bash
+docker compose logs management
+```
+You should see an entry similar to:
+```
+2024-05-10T15:09:34Z INFO management/server/store.go:109: using Postgres store engine
+```
+
+## Rollback to Sqlite store
+To rollback to the Sqlite  store, follow these steps:
+<Note>
+    The following commands assume you use the latest docker version with the compose plugin. If you have docker-compose installed as a standalone, please use docker-compose as a command.
+</Note>
+
+1. Restore `store.db` backup
+```bash
+docker compose cp backup/. management:/var/lib/netbird/
+```
+
+2. Enable SQLite by updating the `management.json` file and setting the `Engine` field to `sqlite` as the following example:
+```json
+"StoreConfig": {
+    "Engine": "sqlite"
+}
+```
+
+3. Restart the Management service.
+```bash
+docker compose restart management
+```
+
+4. Check logs to confirm the store switch:
+```bash
+docker compose logs management
+```
+
+You should see an entry similar to:
+```
+2024-05-10T15:09:34Z INFO management/server/store.go:109: using SQLite file store engine
+```
