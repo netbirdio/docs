@@ -115,7 +115,8 @@ You should see an entry similar to:
 
 ## Optional Rollback Postgres data to Sqlite
 
-This is optional and should be used only if you want to rollback the data from Postgres to Sqlite while running the same NetBird version
+This is optional and should be used only if you want to rollback the data from Postgres to SQLite while running the same NetBird version.
+For migrating the Postgres data, we rely on the `pg_dump`, `sed`, and `sqlite3` tools. Make sure these are installed before proceeding
 
 1. Export Postgres data
 ```bash
@@ -136,18 +137,22 @@ sed \
 -e '/^[[:space:]]*SELECT/d' data.sql > data.sql
 ```
 
-3. Copy data to the management container
+3. Generate database schema from Sqlite backup
 ```bash
-docker compose cp data.sql management:/var/lib/netbird/data.sql
-```
-
-4. Restore exported data
-```bash
-docker compose exec management sh -c "apt-get install -y sqlite3 && sqlite3 /var/lib/netbird/store.db '.schema' > /var/lib/netbird/schema.sql"
-docker compose exec management sh -c "rm /var/lib/netbird/store.db && sqlite3 /var/lib/netbird/store.db '.read /var/lib/netbird/schema.sql' && sqlite3 /var/lib/netbird/store.db '.read /var/lib/netbird/data.sql'"
+sqlite3 backup/store.db '.schema' > schema.sql"
 ````
 
-5. Restart the Management service.
+4. Create Sqlite database with Postgres exported data
+```bash
+sqlite3 store.db '.read schema.sql' && sqlite3 store.db '.read data.sql'
+```
+
+5. Copy db to the management container
+```bash
+docker compose cp store.db management:/var/lib/netbird/store.db
+```
+
+6. Restart the Management service.
 ```bash
 docker compose restart management
 ```
