@@ -142,7 +142,7 @@ url = "<%- operation.fullPath %>"
 <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ -%>
 payload = json.dumps(<%- JSON.stringify(operation.request.example, null, 2) %>)<% }; -%>
 
-<% if(true){%>headers: { <% }; -%>
+<% if(true){%>headers = { <% }; -%>
   <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
   'Content-Type': 'application/json',<% }; -%>
   <% if(operation.responseList[0].content && operation.responseList[0].content['application/json']){ %>
