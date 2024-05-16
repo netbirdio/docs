@@ -46,19 +46,41 @@ For migrating the Sqlite data we rely on the [pgloader](https://github.com/dimit
 pgloader --type sqlite backup/store.db "postgresql://<PG_USER>:<PG_PASSWORD>@<PG_HOST>:<PG_PORT>/<PG_DB_NAME>"
 ```
 
-3. Enable Postgres by updating the `management.json` file and setting the `Engine` field to `postgres` as the following example:
+3. Resolve any compatibility issues that may arise due to the migration process.
+
+<Note>
+As of version 0.26.0, NetBird used SQLite as its default database store. However, SQLite lacked support for cascading deletions,
+which means that related entries were not automatically removed when their parent entries were deleted.
+ With the migration to PostgreSQL, foreign key constraints are enforced, including cascading deletes, to ensure referential integrity.
+</Note>
+
+To address this, you can execute the following SQL commands in your PostgreSQL database:
+
+```sql
+DELETE FROM policy_rules WHERE policy_rules.policy_id NOT IN (SELECT id FROM policies);
+```
+
+```sql
+DELETE FROM routes WHERE routes.account_id NOT IN (SELECT id FROM accounts);
+```
+
+```sql
+DELETE FROM name_server_groups WHERE name_server_groups.account_id NOT IN (SELECT id FROM accounts);
+```
+
+4. Enable Postgres by updating the `management.json` file and setting the `Engine` field to `postgres` as the following example:
 ```json
 "StoreConfig": {
     "Engine": "postgres"
 }
 ```
 
-4. Create `.env` file with the following content:
+5. Create `.env` file with the following content:
 ```bash
 NETBIRD_STORE_ENGINE_POSTGRES_DSN="host=<PG_HOST> user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB_NAME> port=<PG_PORT>"
 ```
 
-5. Update `docker-compose.yml` file to  pass the postgres configuration to the `management` container
+6. Update `docker-compose.yml` file to  pass the postgres configuration to the `management` container
 ```yaml
 environment:
   - NETBIRD_STORE_ENGINE_POSTGRES_DSN=${NETBIRD_STORE_ENGINE_POSTGRES_DSN}
@@ -66,12 +88,12 @@ env_file:
   - .env
 ```
 
-6. Restart the management service
+7. Restart the management service
 ```bash
 docker compose restart management
 ```
 
-7. Check logs to confirm the store switch:
+8. Check logs to confirm the store switch:
 ```bash
 docker compose logs management
 ```
