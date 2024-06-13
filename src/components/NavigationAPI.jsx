@@ -27,7 +27,6 @@ export const apiNavigation = [
       { title: 'Peers', href: '/api/resources/peers' },
       { title: 'Setup Keys', href: '/api/resources/setup-keys' },
       { title: 'Groups', href: '/api/resources/groups' },
-      { title: 'Rules', href: '/api/resources/rules' },
       { title: 'Policies', href: '/api/resources/policies' },
       { title: 'Posture-Checks', href: '/api/resources/posture-checks' },
       { title: 'Geo-Locations', href: '/api/resources/geo-locations' },
