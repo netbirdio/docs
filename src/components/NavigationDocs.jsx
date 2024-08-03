@@ -128,6 +128,7 @@ export const docsNavigation = [
          { title: 'Serverless and NetBird', href: '/how-to/netbird-on-faas' },
          { title: 'Routing peers and Kubernetes', href: '/how-to/routing-peers-and-kubernetes'},
          { title: 'NetBird Client on AWS ECS', href: '/how-to/examples'},
+         { title: 'Netbird on Mikrotik Router', href: '/how-to/client-on-mikrotik-router' },
      ],
  
  
