@@ -56,15 +56,6 @@ export const docsNavigation = [
              links: [
                  { title: 'Groups & Policies', href: '/how-to/manage-network-access' },
                  { title: 'Posture Checks', href: '/how-to/manage-posture-checks' },
-
-                 {
-                     title: 'Onboard & Offboard Users',
-                     isOpen: false,
-                     links: [
-                         { title: 'Microsoft Entra ID', href: '/how-to/manage-posture-checks' },
-                         { title: 'Okta', href: '/how-to/microsoft-entra-id-provisioning' },
-                     ]
-                 }
              ]
          },
          {
@@ -93,8 +84,8 @@ export const docsNavigation = [
                      href: '/how-to/provision-users-and-groups-from-idp',
                      isOpen: false,
                      links: [
-                         { title: 'Microsoft Entra ID', href: '/how-to/microsoft-entra-id-provisioning' },
-                         { title: 'Okta', href: '/how-to/microsoft-entra-id-provisioning' },
+                         { title: 'Microsoft Entra ID', href: '/how-to/microsoft-entra-id-sync' },
+                         { title: 'Okta', href: '/how-to/microsoft-entra-id-sync' },
                      ]
                  },
              ]
