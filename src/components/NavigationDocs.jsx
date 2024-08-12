@@ -85,7 +85,8 @@ export const docsNavigation = [
                      isOpen: false,
                      links: [
                          { title: 'Microsoft Entra ID', href: '/how-to/microsoft-entra-id-sync' },
-                         { title: 'Okta', href: '/how-to/microsoft-entra-id-sync' },
+                         { title: 'Okta', href: '/how-to/okta-sync' },
+                         { title: 'Google Workspace', href: '/how-to/google-workspace-sync'},
                      ]
                  },
              ]
