@@ -81,7 +81,7 @@ export const docsNavigation = [
                  { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
                  {
                      title: 'Provision Users & Groups from Identity Provider',
-                     href: '/how-to/provision-users-and-groups-from-idp',
+                     href: '/how-to/idp-sync',
                      isOpen: false,
                      links: [
                          { title: 'Microsoft Entra ID', href: '/how-to/microsoft-entra-id-sync' },
