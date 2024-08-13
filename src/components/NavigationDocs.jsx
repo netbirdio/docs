@@ -54,7 +54,7 @@ export const docsNavigation = [
              title: 'Access Control',
              isOpen: false,
              links: [
-                 { title: 'Manage Network Access', href: '/how-to/manage-network-access' },
+                 { title: 'Groups & Policies', href: '/how-to/manage-network-access' },
                  { title: 'Posture Checks', href: '/how-to/manage-posture-checks' },
              ]
          },
@@ -79,7 +79,16 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
-                     
+                 {
+                     title: 'Provision Users & Groups from Identity Provider',
+                     href: '/how-to/provision-users-and-groups-from-idp',
+                     isOpen: false,
+                     links: [
+                         { title: 'Microsoft Entra ID', href: '/how-to/microsoft-entra-id-sync' },
+                         { title: 'Okta', href: '/how-to/okta-sync' },
+                         { title: 'Google Workspace', href: '/how-to/google-workspace-sync'},
+                     ]
+                 },
              ]
          },
          {
