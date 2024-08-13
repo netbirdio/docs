@@ -80,7 +80,7 @@ export const docsNavigation = [
              links: [
                  { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
                  {
-                     title: 'Provision Users & Groups from Identity Provider',
+                     title: 'Provision Users & Groups',
                      href: '/how-to/idp-sync',
                      isOpen: false,
                      links: [
@@ -94,8 +94,17 @@ export const docsNavigation = [
          {
              title: 'Activity',
              links: [
-                 { title: 'Activity events', href: '/how-to/monitor-system-and-network-activity' },
-              
+                 { title: 'Activity Events', href: '/how-to/monitor-system-and-network-activity' },
+                 {
+                     title: 'Stream Activity Events',
+                     href: '/how-to/activity-event-streaming',
+                     isOpen: false,
+                     links: [
+                         { title: 'Datadog', href: '/how-to/stream-activity-to-datadog' },
+                         { title: 'Amazon S3', href: '/how-to/stream-activity-to-amazon-s3' },
+                         { title: 'Amazon Firehose', href: '/how-to/stream-activity-to-amazon-firehose'},
+                     ]
+                 },
              ],
          },
          {
