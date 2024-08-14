@@ -89,6 +89,11 @@ export const docsNavigation = [
                          { title: 'Google Workspace', href: '/how-to/google-workspace-sync'},
                      ]
                  },
+                 {
+                     title: 'Offboard Team Members',
+                     href: '/how-to/auto-offboard-team-members',
+                     isOpen: false,
+                 },
              ]
          },
          {
