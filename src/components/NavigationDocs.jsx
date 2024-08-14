@@ -56,6 +56,15 @@ export const docsNavigation = [
              links: [
                  { title: 'Groups & Policies', href: '/how-to/manage-network-access' },
                  { title: 'Posture Checks', href: '/how-to/manage-posture-checks' },
+                 {
+                     title: 'Integrate EDR',
+                     href: '/how-to/endpoint-detection-and-response',
+                     isOpen: false,
+                     links: [
+                         { title: 'CrowdStrike Falcon', href: '/how-to/crowdstrike-edr' },
+                     ]
+                 },
+
              ]
          },
          {
@@ -127,7 +136,6 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  {title: 'Enable post quantum cryptography', href: '/how-to/enable-post-quantum-cryptography' },
-                 {title: 'Endpoint detection and response (EDR)', href: '/how-to/endpoint-detection-and-response' },
              ]
          },
 
