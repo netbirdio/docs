@@ -48,6 +48,7 @@ export const docsNavigation = [
                  { title: 'Add peers to your network', href: '/how-to/add-machines-to-your-network' },
                  { title: 'Approve peers', href: '/how-to/approve-peers' },
                  { title: 'Setup keys', href: '/how-to/register-machines-using-setup-keys' },
+                 { title: 'Configure IPv6 support', href: '/how-to/configure-ipv6-for-peers' },
              ]
          },
          {
