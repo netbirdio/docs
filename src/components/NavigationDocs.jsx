@@ -100,7 +100,7 @@ export const docsNavigation = [
                  },
                  {
                      title: 'Auto-Offboard Users',
-                     href: '/how-to/auto-offboard-team-members',
+                     href: '/how-to/auto-offboard-users',
                      isOpen: false,
                  },
              ]
