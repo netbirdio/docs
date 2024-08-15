@@ -45,9 +45,9 @@ export const docsNavigation = [
              title: 'Peers',
              isOpen: false,
              links: [
-                 { title: 'Add peers to your network', href: '/how-to/add-machines-to-your-network' },
-                 { title: 'Approve peers', href: '/how-to/approve-peers' },
-                 { title: 'Setup keys', href: '/how-to/register-machines-using-setup-keys' },
+                 { title: 'Add Peers', href: '/how-to/add-machines-to-your-network' },
+                 { title: 'Approve Peers', href: '/how-to/approve-peers' },
+                 { title: 'Setup Keys', href: '/how-to/register-machines-using-setup-keys' },
              ]
          },
          {
