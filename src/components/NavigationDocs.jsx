@@ -99,7 +99,7 @@ export const docsNavigation = [
                      ]
                  },
                  {
-                     title: 'Offboard Team Members',
+                     title: 'Auto-Offboard Users',
                      href: '/how-to/auto-offboard-team-members',
                      isOpen: false,
                  },
