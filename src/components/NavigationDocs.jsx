@@ -45,9 +45,9 @@ export const docsNavigation = [
              title: 'Peers',
              isOpen: false,
              links: [
-                 { title: 'Add peers to your network', href: '/how-to/add-machines-to-your-network' },
-                 { title: 'Approve peers', href: '/how-to/approve-peers' },
-                 { title: 'Setup keys', href: '/how-to/register-machines-using-setup-keys' },
+                 { title: 'Add Peers', href: '/how-to/add-machines-to-your-network' },
+                 { title: 'Approve Peers', href: '/how-to/approve-peers' },
+                 { title: 'Setup Keys', href: '/how-to/register-machines-using-setup-keys' },
              ]
          },
          {
@@ -56,6 +56,15 @@ export const docsNavigation = [
              links: [
                  { title: 'Groups & Policies', href: '/how-to/manage-network-access' },
                  { title: 'Posture Checks', href: '/how-to/manage-posture-checks' },
+                 {
+                     title: 'Integrate EDR',
+                     href: '/how-to/endpoint-detection-and-response',
+                     isOpen: false,
+                     links: [
+                         { title: 'CrowdStrike Falcon', href: '/how-to/crowdstrike-edr' },
+                     ]
+                 },
+
              ]
          },
          {
@@ -88,6 +97,11 @@ export const docsNavigation = [
                          { title: 'Okta', href: '/how-to/okta-sync' },
                          { title: 'Google Workspace', href: '/how-to/google-workspace-sync'},
                      ]
+                 },
+                 {
+                     title: 'Auto-Offboard Users',
+                     href: '/how-to/auto-offboard-users',
+                     isOpen: false,
                  },
              ]
          },
@@ -122,7 +136,6 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  {title: 'Enable post quantum cryptography', href: '/how-to/enable-post-quantum-cryptography' },
-                 {title: 'Endpoint detection and response (EDR)', href: '/how-to/endpoint-detection-and-response' },
              ]
          },
 
