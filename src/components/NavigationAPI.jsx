@@ -46,7 +46,7 @@ export function NavigationAPI({tableOfContents, className}) {
           <TopLevelNavItem href="/api">API</TopLevelNavItem>
           <TopLevelNavItem href="https://netbird.io/knowledge-hub/">Learn</TopLevelNavItem>
           <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
-          <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-vrahf41g-ik1v7fV8du6t0RwxSrJ96A">Support</TopLevelNavItem>
+          <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-2p5zwhm4g-8fHollzrQa5y4PZF5AEpvQ">Support</TopLevelNavItem>
           {apiNavigation.map((group, groupIndex) => (
               <NavigationStateProvider key={group.title} index={groupIndex}>
                 <NavigationGroup
