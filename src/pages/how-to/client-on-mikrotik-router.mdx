@@ -1,51 +1,51 @@
 import {Note} from "@/components/mdx";
 
-# Netbird client on MikroTik router
+# NetBird client on MikroTik router
 
 RouterOS is MikroTik's operating system that powers MikroTik's physical routers, switches and Cloud Hosted Routers (CHR).\
 Container is MikroTik's implementation of Linux containers, added in RouterOS v7.4 as an extra package,
 allowing users to run containerized environments within RouterOS.\
-In this guide we'll deploy Netbird client in a MikroTik container.
+In this guide we'll deploy NetBird client in a MikroTik container.
 
 ## Use cases
-Running Netbird on MikroTik router or CHR enables cost-effective remote access to RouterOS devices (and their networks)
+Running NetBird on MikroTik router or CHR enables cost-effective remote access to RouterOS devices (and their networks)
 without the need for additional hardware. In some usecases this can greatly simplify the setup and eliminate the need for additional infrastructure.
 
 ### Branch offices
 Not all remote locations have a server room or a similar setup where they can just throw in an additional machine to run Netbird.
-Think small shops or branch offices which barely have a network cabinet to fit a switch and a router.\
+Think of small shops or branch offices that barely have a network cabinet to fit a switch and a router.\
 Running Netbird directly on a router allows us to have remote access to perform basic network management and monitoring
 without having to maintain an additional machine for Netbird router, or even worse - using one of the business-critical Netbird clients as a router. \
-Idea is that all computers on the network would still run client, and this container would only be used for infrastructure management, monitoring
+The idea is that all computers on the network would still run clients, and this container would only be used for infrastructure management, monitoring
 and maybe one or two small camera streams.
 Note that container routing in RouterOS is currently very CPU-bound and is likely not good enough for massive file transfers, database connectivity
 nor proper camera streaming.
 
 ### Field routers
-Some companies have field teams who carry around MikroTik routers to guarantee connectivity without having to rely on field infrastructure.
+For companies with field teams operating in remote areas, the use of MikroTik routers is a game-changer. These routers ensure connectivity without the reliance on field infrastructure, a unique advantage that sets them apart.
 Think construction sites, pop-up events, field support teams for vehicles or industrial equipment, etc.\
-Team members would still run Netbird on computers and phones, but a separate IT or infra team needs to be able to remotely manage MikroTik devices
-to help with unpredicted issues in the field. For example reconfigure the router to piggyback the entire network over location's guest Wi-Fi or quickly switch between
+Team members would still run NetBird on computers and phones, but a separate IT or infra team needs to be able to remotely manage MikroTik devices
+to help with unpredicted issues in the field. For example, reconfigure the router to piggyback the entire network over the location's guest Wi-Fi or quickly switch between
 that and 4G or satellite backup, depending on the type of failure.\
-Traditionally we would always have 4G in routers for minimal management connectivity and then run CHR in a cloud VM. Those routers would all start
-VPN tunnels to the cloud VM so that IT team can connect to the router if needed. And on top of that we would need an additional Netbird router in the cloud to enable
-remote access from Netbird to that cloud router and NAT to to remote devices.\
-Running Netbird directly on field routers removes the need for a lot of complexity because there's no longer a need for CHR to serve as a VPN concentrator, nor
-a dedicated VM to route Netbird clients to MikroTiks.
+Traditionally, we would always have 4G in routers for minimal management connectivity and then run CHR in a cloud VM. Those routers would all start
+VPN tunnels to the cloud VM so the IT team can connect to the router if needed. On top of that, we would need an additional NetBird router in the cloud to enable
+remote access from NetBird to that cloud router and NAT to remote devices.\
+Running NetBird directly on field routers removes the need for a lot of complexity because there's no longer a need for CHR to serve as a VPN concentrator or
+a dedicated VM to route NetBird clients to MikroTiks.
 
 ## Limitations
 <Note>
   Use at your own risk. All [RouterOS containers warnings](https://help.MikroTik.com/docs/display/ROS/Container#Container-Disclaimer) apply.\
-  This is unsupported by both MikroTik and Netbird because it uses MikroTik's beta and Netbird's legacy features.
+  This is unsupported by both MikroTik and NetBird because it uses MikroTik's beta and NetBird's legacy features.
 </Note>
 
 There are quite a few caveats to this approach because containers on RouterOS are still
-a relatively new feature, provide relatively slow throughput and are CPU-bound. They are also very restrictive compared to
-standard Kubernetes or Docker platforms so Netbird can't take advantage of kernel modules or netfilter rules.\
+a relatively new feature, provide relatively slow throughput, and are CPU-bound. They are also very restrictive compared to
+standard Kubernetes or Docker platforms, so NetBird can't take advantage of kernel modules or netfilter rules.\
 Also, very few current MikroTik devices are optimized for running containers, so we should be careful when deploying this in production.
 - Routing through RouterOS containers is relatively slow, CPU intensive and may overload smaller devices.
-- Netbird in RouterOS containers can not use an exit node (because it uses legacy routing mode).
-- Netbird in RouterOS containers can't perform NAT, but it can do direct routing and we can do NAT on RouterOS instead.
+- NetBird in RouterOS containers can not use an exit node (because it uses legacy routing mode).
+- NetBird in RouterOS containers can't perform NAT, but it can do direct routing, and we can do NAT on RouterOS instead.
 
 ## Tested on
 - Cloud Hosted Router (a.k.a CHR, x86) v7.15.3, v7.16b7
@@ -58,17 +58,17 @@ Also, very few current MikroTik devices are optimized for running containers, so
 2. [Enabled container mode](https://help.MikroTik.com/docs/display/ROS/Container#Container-EnableContainermode)
 3. [Installed RouterOS container package](https://help.MikroTik.com/docs/display/ROS/Container#Container-Containeruseexample) 
 from [extra packages](https://MikroTik.com/download)
-4. Adequate storage, such as a good quality USB thumb drive or external SSD. 
-We should not put container filesystem or container pull caches on router's built-in flash storage.
+4. Adequate storage, such as a good quality USB thumb drive or external SSD.
+We should not put a container filesystem or container pull caches in the router's built-in flash storage.
 Normal container use could wear out the built-in storage's write cycles or fill up the disk space, thus bricking or even destroying the router.\
-In case our device has plenty of RAM we can use tmpfs for container filesystem and image cache, but that complicates the setup due to race conditions after reboot.
-Please check RouterOS documentation and MikroTik forum if you would like to go that route.
+If our device has plenty of RAM, we can use Tmpfs for the container filesystem and image cache, but that complicates the setup due to race conditions after reboot.
+Please check RouterOS documentation and the MikroTik forum if you want to go that route.
 
 ### Prepare RouterOS for container networking
 These actions can be performed on RouterOS either via SSH or in Terminal (via Winbox or Web interface), or using Winbox gui.\
 More information is available in [MikroTik's management tools documentation](https://help.mikrotik.com/docs/display/ROS/Management+tools).
 
-Create a bridge interface for containers and VETH interface for netbird container:
+Create a bridge interface for containers and VETH interface for NetBird container:
 ```shell
 /interface/veth/add name=netbird address=172.17.0.2/24 gateway=172.17.0.1
 /interface/bridge/add name=containers
@@ -79,26 +79,26 @@ Set up NAT for containers so they can access the internet and other networks:
 ```shell
 /ip/firewall/nat/add chain=srcnat action=masquerade src-address=172.17.0.0/24
 ```
-Because Netbird in RouterOS containers can't perform NAT, we'll want to add a route from MikroTik to our Netbird subnet via Netbird container.
-This assumes our Netbird subnet is `100.80.0.0/16`.
+Because NetBird in RouterOS containers can't perform NAT, we'll want to add a route from MikroTik to our NetBird subnet via NetBird container.
+This assumes our NetBird subnet is `100.80.0.0/16`.
 ```shell
 /ip/route/add dst-address=100.80.0.0/16 gateway=172.17.0.2
 ```
 
-We'll also want to add appropriate in, out and forward rules but those vary depending on the network setup so we won't cover those in this guide.
+We'll also want to add appropriate in, out, and forward rules, but those vary depending on the network setup, so we won't cover them in this guide.
 
-We should probably also allow remote DNS queries from the container to router's DNS server.
+We should also allow remote DNS queries from the container to the router's DNS server.
 Just also make sure that router's firewall rules are set to block external access to DNS ports and also allow access to DNS ports from containers.
 This is out of this guide's scope but it's important to mention because we'll be setting container's resolvers to router's IP addresses.
 
-Enable container functionality logging in RouterOS and configure DockerHub registry cache on external disk.
+Enable container functionality logging in RouterOS and configure DockerHub registry cache on the external disk.
 This assumes that our USB drive is mounted as `/usb1`:
 ```shell
 /system/logging add topics=container
 /container/config/set registry-url=https://registry-1.docker.io tmpdir=/usb1/pull
 ```
 
-### Prepare the Netbird container
+### Prepare the NetBird container
 ```shell
 /container/mounts/add name=netbird_etc src=disk1/etc dst=/etc/netbird
 ```
@@ -117,7 +117,7 @@ add key=NB_USE_LEGACY_ROUTING name=netbird value=true
 We had to set `NB_DISABLE_CUSTOM_ROUTING` and `NB_USE_LEGACY_ROUTING` because RouterOS containers don't allow access to netfilter kernel module.
 We also set `NB_NAME` and `NB_HOSTNAME` to match our router's identity as seen in `/system/identity/print`
 because RouterOS won't allow us to set container's hostname to the same value as router's hostname.
-If using a self-hosted Netbird server we'll also want to add the correct URLs to our server:
+If using a self-hosted NetBird server we'll also want to add the correct URLs to our server:
 ```shell
 add key=NB_MANAGEMENT_URL name=netbird value=YOUR_NETBIRD_MANAGEMENT_URL
 add key=NB_ADMIN_URL name=netbird value=YOUR_NETBIRD_ADMIN_URL
@@ -144,13 +144,13 @@ And finally we can start it using the appropriate number from the print command:
 /container start number=0
 ```
 
-At this point we should see the container in our Netbird dashboard and we should be able to create routes through it in Netbird.
-So, hop on to Netbird dashboard and create a route through the container to the router's bridge IP address.
+At this point we should see the container in our NetBird dashboard and we should be able to create routes through it in NetBird.
+So, hop on to NetBird dashboard and create a route through the container to the router's bridge IP address.
 Address will be 172.17.0.1/32 and routing peer will be our container. Don't forget to disable NAT on this route.
 
 
 ## Troubleshooting
-1. Increase Netbird's verbosity by setting `NB_LOG_LEVEL` env var to `trace`.\
+1. Increase NetBird's verbosity by setting `NB_LOG_LEVEL` env var to `trace`.\
 2. Check the logs to see what's going on:
     ```shell
     /log/print without-paging  where topics~"container"
@@ -158,19 +158,19 @@ Address will be 172.17.0.1/32 and routing peer will be our container. Don't forg
 3. In firewall rules, enable logging for any dropp/reject rules to see if packets are being dropped.\
 
 ## Get a shell in the container
-Assuming that our container keeps stopping because Netbird is crashing, we can override the container entrypoint 
+Assuming that our container keeps stopping because NetBird is crashing, we can override the container entrypoint 
 to get a shell in the container and investigate.
 Setting the entrypoint to 600 gets us 10 minutes to investigate before the container stops.
 ```shell
 /container/set entrypoint="sleep 600" numbers=0
 /container/shell number=0
 ```
-When done revert the entrypoint back to Netbird:
+When done revert the entrypoint back to NetBird:
 ```shell
 /container/set entrypoint="" numbers=0
 ```
 
-### Netbird starts and logs into management server but it doesn’t show up as online
+### NetBird starts and logs into management server but it doesn’t show up as online
 Log shows something like this:
 ```
 DEBG client/internal/login.go:93: connecting to the Management service https://api.netbird.io:443
@@ -202,3 +202,8 @@ Solution: double-check environment variables:
 NB_DISABLE_CUSTOM_ROUTING=true
 NB_USE_LEGACY_ROUTING=true
 ```
+
+
+
+[Environment]::SetEnvironmentVariable("NB_DISABLE_CUSTOM_ROUTING", "true", "Machine")
+[Environment]::SetEnvironmentVariable("NB_USE_LEGACY_ROUTING", "true", "Machine")
