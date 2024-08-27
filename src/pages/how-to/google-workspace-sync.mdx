@@ -1,83 +1,250 @@
 # Provision Users and Groups From Google Workspace
 
-[Google Workspace Identity](https://cloud.google.com/architecture/identity/overview-google-authentication)
-is the system within Google Workspace that manages user authentication and access,
-ensuring secure login and integration with other identity providers for Single Sign-On (SSO) and multi-factor authentication.
+[Google Workspace](https://workspace.google.com/) provides a comprehensive suite of cloud-based productivity tools that enhance team collaboration and
+communication. Notably, its [identity management](https://cloud.google.com/architecture/identity/overview-google-authentication) features streamline user authentication and access control,
+ensuring efficiency and security across your organization.
 
-NetBird's Google Workspace integration allows you to synchronize users and groups from Google Workspace to NetBird and
-automate network access management. With this integration, any changes to users and groups in Google Workspace are mirrored in NetBird,
-granting new employees network access while immediately revoking access for former employees.
+NetBird's Google Workspace integration enhances user management capabilities by synchronizing users and groups from
+Google Workspace to NetBird. You can utilize these synchronized groups to configure your network, establish network
+access policies, and automate onboarding and offboarding processes, adding significant value to your organizational
+workflow and security posture.
+
+The integration process involves two complementary services: Google Workspace and Google Cloud Platform (GCP).
+Google Workspace serves as your Identity Provider (IdP), managing user and group identities and providing Single Sign-On (SSO)
+capabilities. GCP is used to create a service account, which NetBird uses to authenticate and access Google Workspace
+data via the Admin SDK API. This service account uses OAuth 2.0 for secure, authorized access to Workspace information.
 
 ## Get Started with NetBird-Google Workspace Integration
 
-To begin, go to [Integrations](https://app.netbird.io/integrations) from the left-hand menu, which will direct you to the `Identity Provider` section.
-Select the `Google Workspace` option. A pop-up window will appear, launching an intuitive wizard that will lead you through the steps to synchronize
-NetBird with Google Workspace.
+Go to the `Integrations` section in the left menu to access the `Identity Provider integration`. Click the `Google Workspace` button. This will open a pop-up window featuring an intuitive wizard to guide you through the synchronization process between NetBird and Google Workspace.
 
-![NetBird Get Started IdP](/docs-static/img/how-to-guides/microsoft-entra-id-sync/FkdC8BV.png)
+![NetBird Connect NetBird with Google Workspace](/docs-static/img/how-to-guides/google-workspace-sync/q1aq98X.png)
 
 ## Prerequisites
 
-Before you start creating and configuring an Google Workspace application, ensure that you have the following:
-- User account with admin permissions: You must have an Google Workspace user account with the admin permissions to create and manage Google Workspace applications. If you don't have the required permissions, ask your workspace administrator to grant them to you.
-- Create new `NetBird` project in Google cloud console https://console.cloud.google.com.
-- Enable `Admin SDK API` for `Netbird` project at https://console.cloud.google.com/apis/library/admin.googleapis.com.
+The NetBird-Google Workspace integration process involves:
 
-## Create a Service Account
-- Navigate to [API Credentials](https://console.cloud.google.com/apis/credentials) page
-- Click `CREATE CREDENTIALS` at the top and select `Service account`
-- Fill in the form with the following values and click `CREATE`
-- Service account name: `NetBird`
-- Service account ID: `netbird`
-- Click `DONE`
-<p>
-    <img src="/docs-static/img/how-to-guides/google-service-account-create.png" alt="service-account-create" className="imagewrapper-big"/>
-</p>
+* Creating a project on the Google Cloud Platform.
+* Setting up a service account within that GCP project.
+* Creating a secret key for the service account.
+* Creating a new role in Google Workspace for the service account.
+* Granting the service account the appropriate role in Google Workspace.
 
-## Create Service Account Keys
-- Navigate to [API Credentials](https://console.cloud.google.com/apis/credentials) page
-- Under  `Service Accounts` click the `NetBird` to edit the service account
-<p>
-    <img src="/docs-static/img/how-to-guides/google-edit-service-account.png" alt="edit-service-account" className="imagewrapper-big"/>
-</p>
+You’ll need a Google Workspace user account with sufficient permissions to create and manage user and group access. User roles that have these permissions include:
 
-- Take note of service account email address, you will use it in next steps
-- Click the `Keys` tab
-- Click the `Add key` drop-down menu, then select `Create new key`
-- Select `JSON` as the Key type and click `Create`
+* Super Admin
+* Groups Admin
+* User Management Admin
 
->When you create a service account key by using the Google Cloud console, most browsers immediately download the new key and save it in a download folder on your computer.
-Read how to manage and secure your service keys [here](https://cloud.google.com/iam/docs/best-practices-for-managing-service-account-keys#temp-locations)
+To [check your user permissions](https://support.google.com/a/answer/7519580?hl=en) within Google Workspace:
 
-## Grant a User Management Admin Role to a Service Account
-- Navigate to [Admin Console](https://admin.google.com/ac/home) page
-- Select `Account` on the left menu and then click `Admin Roles`
-- Click `Create new role`
-- Fill in the form with the following values and click `CREATE`
-- name: `User and Group Management ReadOnly`
-- description: `User and Group Management ReadOnly`
-- Click `CONTINUE`
-<p>
-    <img src="/docs-static/img/how-to-guides/google-new-admin-role.png" alt="new-admin-role" className="imagewrapper-big"/>
-</p>
+* Sign in to your Google Admin console
+* Navigate to `Directory` > `Users`.
+* Select your user account and click on `Admin roles and privileges` to view assigned roles and permissions.
 
-- Scroll down to `Admin API privileges` and add the following privileges
-- Users: `Read`
-- Groups: `Read`
-<p>
-    <img src="/docs-static/img/how-to-guides/google-privileges-review.png" alt="privileges-review" className="imagewrapper-big"/>
-</p>
+Confirm that you have one of the required roles before proceeding with the integration:
 
-- Verify preview of assigned Admin API privileges to ensure that everything is properly configured, and then click `CREATE ROLE`
+![Google Workspaces User Permissions](/docs-static/img/how-to-guides/google-workspace-sync/Ky8bguM.png)
 
-- Click `Assign service accounts`, add service account email address and then click `ADD`
-<p>
-    <img src="/docs-static/img/how-to-guides/google-assign-service-account.png" alt="assign-service-account" className="imagewrapper-big"/>
-</p>
+If you lack the required permissions, please contact your workspace administrator to request them.
 
-- Click `ASSIGN ROLE` to assign service account to `User and Group Management ReadOnly` admin role
-<p>
-    <img src="/docs-static/img/how-to-guides/google-service-account-privileges.png" alt="service-account-privileges" className="imagewrapper-big"/>
-</p>
+Because Google Cloud automatically provision new organizations with [Secure by Default enforcements](https://cloud.google.com/resource-manager/docs/secure-by-default-organizations), you’ll also need a GCP user account with enough permissions to create service account keys. User roles that have these permissions include:
 
-- Navigate to [Account Settings](https://admin.google.com/ac/accountsettings/profile?hl=en_US) page and take note of `Customer ID`
+* Organization Administrator
+* Organization Policy Administrator
+
+To [check your organization-level permissions](https://cloud.google.com/resource-manager/docs/access-control-org) within Google Cloud:
+
+* Sign in to [Google Console](https://console.cloud.google.com)
+* In the top bar, click on the dropdown. Find and select your organization in the list.
+* Once you've selected the organization, go to `IAM & Admin` > `IAM` in the left sidebar. This will show you a list of all users (principals) and service accounts with roles at the organization level.
+* Look for users with roles like `Organization Administrator`, `Organization Policy Administrator`, or other high-level roles.
+
+> NOTE: Verifying your GCP permissions is mandatory before proceeding with the integration since you might need to disable the `iam.disableServiceAccountKeyCreation` constraint temporarily during the process.
+
+![Google Workspace IAM & Admin](/docs-static/img/how-to-guides/google-workspace-sync/9ECRJqC.png)
+
+If you lack the required role, contact your organization's IT department or the person who set up your Google Cloud account.
+
+## Creating the NetBird Project
+
+Once you have the necessary permissions, you can create the NetBird project in GCP.
+
+![NetBird Create NetBird Project](/docs-static/img/how-to-guides/google-workspace-sync/GBbcnt3.png)
+
+Let's go through the required steps:
+
+* Sign in to [Google Console](https://console.cloud.google.com)
+* Click the project dropdown at the top of the page.
+* Click `New Project` in the dropdown menu.
+* Enter `NetBird` as the project name.
+* Ensure the proper organization is selected in the `Organization` field.
+* Click `CREATE`.
+
+![Google Workspace New Project](/docs-static/img/how-to-guides/google-workspace-sync/sGLG0tX.png)
+
+To let `NetBird` authenticate and access Google Workspace, you must enable the `Admin SDK API`. Here’s how to do it:
+
+* Ensure you're in the correct project.
+* Navigate to [https://console.cloud.google.com/apis/library/admin.googleapis.com](https://console.cloud.google.com/apis/library/admin.googleapis.com)
+* Click the `Enable` button.
+
+![Google Workspace Admin SDK API](/docs-static/img/how-to-guides/google-workspace-sync/ij3niha.png)
+
+## Creating the NetBird Service Account
+
+Once you create the project, you can set up the `NetBird` service account. On NetBird, click `Continue →`. That will show you a summary of the required steps.
+
+![NetBird Create Service Account](/docs-static/img/how-to-guides/google-workspace-sync/tRbBQsR.png)
+
+Here are the step-by-step instructions:
+
+Navigate to [https://console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials), click `CREATE CREDENTIALS` at the top menu and select `Service account` from the dropdown list.
+
+![Google Workspace Service Account](/docs-static/img/how-to-guides/google-workspace-sync/rDU0Puv.png)
+
+Complete the form with the supplied values:
+* `NerBird` for the service account name
+* `netbird` for the service account ID
+
+Click `DONE` when ready.
+
+![Google Workspace Service Account Details](/docs-static/img/how-to-guides/google-workspace-sync/WzqMsmW.png)
+
+## Getting Your Service Account Email
+
+On NetBird, click `Continue →`. You’ll need to provide the email of the service account.
+
+![NetBird Get Service Account Email](/docs-static/img/how-to-guides/google-workspace-sync/IBEGQD8.png)
+
+You can copy the email from the `Credentials` page.
+
+![Google Workspace Service Account Email](/docs-static/img/how-to-guides/google-workspace-sync/Z4CQd9O.png)
+
+## Creating a New Service Account Key
+
+Back on NetBird, click `Continue →`. You’ll see a summary of how to create a service account key.
+
+![NetBird Create Service Account Key](/docs-static/img/how-to-guides/google-workspace-sync/MGgCzky.png)
+
+First, click on the service account email to show its details.
+
+![Google Workspace Service Account Details](/docs-static/img/how-to-guides/google-workspace-sync/JWdAg4R.png)
+
+Next, click the `Keys` tab. Open the `ADD KEY` drop-down menu and select `Create new key` from the list.
+
+![Google Workspace Create New Key](/docs-static/img/how-to-guides/google-workspace-sync/gUQ4XAd.png)
+
+A new pop-up window will open, select `JSON` as indicated below:
+
+![Google Workspace New Key Format](/docs-static/img/how-to-guides/google-workspace-sync/WZWFp1Z.png)
+
+The key will automatically download to your local device. The new key will also appear as `active` in the `KEYS` tab.
+
+![Google Workspace Copy New Key](/docs-static/img/how-to-guides/google-workspace-sync/bSakeRS.png)
+
+During service account key creation, you may encounter the following error:
+
+![Google Workspace Key Creation Error](/docs-static/img/how-to-guides/google-workspace-sync/mU2qAwe.png)
+
+If that’s the case, activate Google Cloud Shell on the top menu (shell icon) and enter the following command:
+
+```
+gcloud org-policies delete iam.disableServiceAccountKeyCreation --organization=ORGANIZATION_ID
+```
+
+Remember to replace `ORGANIZATION_ID` with your organization ID.
+
+Now, you can upload the service account key to NetBird. After a successful upload, you'll see the key listed in the NetBird interface.
+
+![NetBird Paste New Key](/docs-static/img/how-to-guides/google-workspace-sync/g8omqCt.png)
+
+## Creating a New Admin Role in Google Workspace
+
+After creating the service account in GCP and uploading its secret key, return to NetBird and click 'Continue →'. The next steps will guide you through creating a role in Google Workspace for this service account
+
+![NetBird Create Admin Role](/docs-static/img/how-to-guides/google-workspace-sync/F80lm4H.png)
+
+Navigate to Google Workspace [Admin Console](https://admin.google.com/ac/home). Select `Account` on the left menu and then click `Admin Roles`
+
+![Google Workspace Admin Roles](/docs-static/img/how-to-guides/google-workspace-sync/X1CYEHq.png)
+
+Click `Create new role`
+
+![Google Workspace Create New Role](/docs-static/img/how-to-guides/google-workspace-sync/pmeCOd4.png)
+
+Fill in the form with the values provided in NetBird:
+* Name: `User and Group Management ReadOnly`
+* Description: `User and Group Management ReadOnly`
+
+When done, click `CONTINUE`
+
+![Google Workspace Create Role](/docs-static/img/how-to-guides/google-workspace-sync/HLddKPh.png)
+
+## Granting Role Privileges
+
+Return to NetBird and click `Continue →`. The next screen shows the privileges needed for the Admin API.
+
+![NetBird Add Role Privileges](/docs-static/img/how-to-guides/google-workspace-sync/IZn8XWY.png)
+
+Back to Google Workspace, enter `admin api` in the search bar and enable the following privileges for the Admin API:
+* Users: `Read`
+* Groups: `Read`
+
+Then, click `CONTINUE`
+
+![Google Workspace Select Privileges](/docs-static/img/how-to-guides/google-workspace-sync/nKLJX2H.png)
+
+Review the Admin API privileges to verify they are correct and click `CREATE ROLE` when ready.
+
+![Google Workspace Review Privileges](/docs-static/img/how-to-guides/google-workspace-sync/METhl2T.png)
+
+## Assigning Admin API Privileges to Google Cloud Service Account
+
+In NetBird, click `Continue →`. For convenience, you can copy the service account Email from this screen and use it to grant it the necessary permissions in Google Workspace.
+
+![NetBird Assign Service Account](/docs-static/img/how-to-guides/google-workspace-sync/jhgTfsk.png)
+
+Then, in Google Workspace, click on `Assign service accounts` as shown below:
+
+![Google Workspace Assign Service Account](/docs-static/img/how-to-guides/google-workspace-sync/HHzmRAL.png)
+
+Paste the service account Email address and click the `ADD` button.
+
+![Google Workspace Add Service Account](/docs-static/img/how-to-guides/google-workspace-sync/ZYSw3KZ.png)
+
+Verify the Email and click `ASSIGN ROLE` to grant the role `User and Group Management ReadOnly` to the `NetBird` service account.
+
+![Google Workspace Assign Role](/docs-static/img/how-to-guides/google-workspace-sync/rPYNLz1.png)
+
+## Entering Customer ID
+
+Go back to NetBird and click `Continue →`. The next screen will prompt you to enter your Google Workspace Customer ID.
+
+![NetBird Enter Customer ID](/docs-static/img/how-to-guides/google-workspace-sync/q6tuStz.png)
+
+To get your customer ID, navigate to [Account Settings](https://admin.google.com/ac/accountsettings/profile?hl=en_US) and copy the corresponding ID.
+
+![Google Workspace Customer ID](/docs-static/img/how-to-guides/google-workspace-sync/443kaDt.png)
+
+## Synchronizing Google Workspace Groups and Users
+
+Return to NetBird. The next two screens allow you to select which Google Workspace groups and users you want to synchronize. By default, NetBird synchronizes all groups and users. If you're okay with syncing everything, click `Continue` on both screens.
+
+![NetBird Groups Sync](/docs-static/img/how-to-guides/google-workspace-sync/gAgKeL0.png)
+
+You can also click on `+ Add group (or user group) filter` to change this settings as you see fit. To finish the integration process, click the `Connect` button.
+
+![NetBird Users Sync](/docs-static/img/how-to-guides/google-workspace-sync/6Huo7vW.png)
+
+The next screen, should be similar the following one, verifying that the integration was succesful:
+
+![NetBird Google Workspace Enabled](/docs-static/img/how-to-guides/google-workspace-sync/EkPJqpJ.png)
+
+To verify the integration is working correctly, you can also navigate to `Team` > `Users`. Here, you should see your synchronized Google Workspace users listed.
+
+![NetBird Users](/docs-static/img/how-to-guides/google-workspace-sync/5AcaIqW.png)
+
+The users should be the same listed in Google Workspace Admin console:
+
+![Google Workspace Users](/docs-static/img/how-to-guides/google-workspace-sync/BPfboem.png)
