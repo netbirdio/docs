@@ -48,6 +48,16 @@ export const docsNavigation = [
                  { title: 'Add Peers', href: '/how-to/add-machines-to-your-network' },
                  { title: 'Approve Peers', href: '/how-to/approve-peers' },
                  { title: 'Setup Keys', href: '/how-to/register-machines-using-setup-keys' },
+                 {
+                     title: 'Access Infrastructure',
+                     isOpen: true,
+                     links: [
+                         {
+                             title: 'Remote Webserver Access',
+                             href: '/how-to/secure-remote-webserver-access'
+                         },
+                     ]
+                 },
              ]
          },
          {
