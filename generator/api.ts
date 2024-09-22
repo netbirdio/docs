@@ -161,6 +161,9 @@ function extractInfo(obj, mode = 'example') {
     if (obj.items.hasOwnProperty('properties')) {
       return [extractInfo(obj.items.properties, mode)];
     } else {
+      if (mode === 'example' && obj.hasOwnProperty('example')) {
+        return obj.example;
+      }
       return [extractInfo(obj.items, mode)];
     }
   }
