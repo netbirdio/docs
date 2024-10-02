@@ -60,6 +60,10 @@ export const docsNavigation = [
                              title: 'Add Servers to the Network',
                              href: '/how-to/setup-keys-add-servers-to-network'
                          },
+                         {
+                             title: 'Migrate Workloads',
+                             href: '/how-to/db-workload-migration'
+                         },
                      ]
                  },
              ]
