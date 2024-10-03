@@ -53,12 +53,22 @@ export const docsNavigation = [
                      isOpen: true,
                      links: [
                          {
-                             title: 'Remote Webserver Access',
+                             title: 'Access Remote Webserver',
                              href: '/how-to/secure-remote-webserver-access'
                          },
                          {
                              title: 'Add Servers to the Network',
                              href: '/how-to/setup-keys-add-servers-to-network'
+                         },
+                     ]
+                 },
+                 {
+                     title: 'Connect Site-to-Site',
+                     isOpen: true,
+                     links: [
+                         {
+                             title: 'Simplify Workload Migrations',
+                             href: '/how-to/db-workload-migration'
                          },
                      ]
                  },
