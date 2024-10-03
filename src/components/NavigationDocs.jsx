@@ -60,6 +60,10 @@ export const docsNavigation = [
                              title: 'Add Servers to the Network',
                              href: '/how-to/setup-keys-add-servers-to-network'
                          },
+                         {
+                            title: 'Access Resources From Kubernetes',
+                            href: '/how-to/setup-keys-access-internal-resources-from-autoscaled-environments'
+                        },
                      ]
                  },
              ]
