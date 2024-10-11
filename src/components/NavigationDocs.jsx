@@ -53,12 +53,22 @@ export const docsNavigation = [
                      isOpen: true,
                      links: [
                          {
-                             title: 'Remote Webserver Access',
+                             title: 'Access Remote Webserver',
                              href: '/how-to/secure-remote-webserver-access'
                          },
                          {
                              title: 'Add Servers to the Network',
                              href: '/how-to/setup-keys-add-servers-to-network'
+                         },
+                     ]
+                 },
+                 {
+                     title: 'Connect Site-to-Site',
+                     isOpen: true,
+                     links: [
+                         {
+                             title: 'Simplify Workload Migrations',
+                             href: '/how-to/db-workload-migration'
                          },
                      ]
                  },
@@ -87,6 +97,7 @@ export const docsNavigation = [
              links: [
                  { title: 'Routing traffic to private networks', href: '/how-to/routing-traffic-to-private-networks' },
                  { title: 'Configuring default routes for Internet traffic', href: '/how-to/configuring-default-routes-for-internet-traffic' },
+                 { title: 'Configuring routes with access control', href: '/how-to/configuring-routes-with-access-control' },
                  { title: 'Resolve overlapping routes', href: '/how-to/resolve-overlapping-routes' },
              ]
          },
