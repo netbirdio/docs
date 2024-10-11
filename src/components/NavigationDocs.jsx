@@ -64,6 +64,10 @@ export const docsNavigation = [
                             title: 'Access from Kubernetes',
                             href: '/how-to/access-internal-resources-from-autoscaled-environments'
                         },
+                         {
+                            title: 'Peer Approval for Remote Access',
+                            href: '/how-to/peer-approval-for-remote-worker-access'
+                        },
                      ]
                  },
                  {
