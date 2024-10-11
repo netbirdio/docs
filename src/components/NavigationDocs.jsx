@@ -62,7 +62,7 @@ export const docsNavigation = [
                          },
                          {
                             title: 'Access from Kubernetes',
-                            href: '/how-to/setup-keys-access-internal-resources-from-autoscaled-environments'
+                            href: '/how-to/access-internal-resources-from-autoscaled-environments'
                         },
                      ]
                  },
