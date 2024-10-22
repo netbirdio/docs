@@ -159,6 +159,7 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  {title: 'Authentication', href: '/how-to/enforce-periodic-user-authentication' },
+                 {title: 'Multi-Factor Authentication', href: '/how-to/multi-factor-authentication' },
                  {title: 'Delete account/danger zone', href: '/how-to/delete-account' },
                  {title: 'Plans and billing', href: '/how-to/plans-and-billing' }
                  
