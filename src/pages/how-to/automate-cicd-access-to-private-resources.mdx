@@ -1,0 +1,295 @@
+# Automate CI/CD Access to Private Resources with NetBird
+
+When it comes to modern software development, Continuous Integration and Continuous Deployment (CI/CD) pipelines are crucial for maintaining rapid, reliable software delivery. However, a significant challenge arises when these pipelines need to access private internal resources for testing, deployment, or other critical operations. This scenario often leads to a complex balancing act between maintaining security and enabling the agility that CI/CD processes demand.
+
+Key challenges in managing CI/CD access to private resources include:
+
+* **Security Risks**: Exposing internal resources to external CI/CD runners can create potential vulnerabilities in your network infrastructure.
+* **Complexity of Access Management**: As teams and projects grow, managing access rights for various CI/CD pipelines becomes increasingly complex and time-consuming.
+* **Scalability Issues**: Traditional VPN solutions often struggle to scale efficiently with the dynamic nature of CI/CD environments, leading to performance bottlenecks.
+* **Compliance and Audit Concerns**: Ensuring that access to sensitive resources is properly logged and compliant with regulations can be challenging in distributed CI/CD setups.
+
+NetBird's innovative point-to-point private network solution addresses those pain points by:
+
+* **Automating Secure Access**: NetBird's highly customizable ephemeral setup keys can provide secure, temporary access for CI/CD pipelines to internal resources.
+* **Simplifying Access Control**: NetBird's group-based permissions system that streamlines access rights management across multiple projects and teams.
+* **Enhancing Scalability**: NetBird's peer-to-peer architecture enables efficient scaling of secure connections, matching the dynamic nature of CI/CD environments.
+* **Improving Auditability**: NetBird's logging and monitoring capabilities that help maintain a clear audit trail of resource access during CI/CD operations.
+
+In this tutorial, you'll learn how to use NetBird to grant your CI/CD pipeline secure access to private internal resources. These resources typically include internal databases, staging environments, private APIs, and other assets shielded by your company's firewall or private network. The tutorial will guide you through:
+
+1. Setting up a Flask API that simulates an internal service, providing a realistic scenario for secure access.
+2. Configuring NetBird to manage and secure the connection between a CI/CD pipeline and the Flask API, demonstrating best practices for protecting internal resources. While we use GitHub Actions, the principles apply to any CI/CD platform.
+3. Implementing a GitHub Actions workflow that automatically triggers with each push to your repository, showcasing real-time integration and testing capabilities.
+
+By following these steps, you'll gain practical experience in maintaining security while enabling efficient CI/CD processes for your internal resources.
+
+## Prerequisites
+
+To successfully complete this tutorial, ensure you have the following:
+
+* A [NetBird account](https://app.netbird.io/).
+* [NetBird installed](https://docs.netbird.io/how-to/installation) in your laptop or local machine.
+* A GitHub repository for your project.
+* A [GitHub Personal Access Token (classic)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) with `repo` and `workflow` scopes enabled.
+* SSH access to a [virtual machine with NetBird installed](https://docs.netbird.io/how-to/setup-keys-add-servers-to-network). For simplicity, we'll call this peer the `api-server`.
+
+Before moving to the next section, locate and note down the NetBird-assigned IP address and the domain name of the `api-server`. You'll find that information in the `Peers` dashboard:
+
+![NerBird Peers Dashboard](/docs-static/img/how-to-guides/automate-cicd-access-to-private-resources/cicd-access-to-private-resources-01.png)
+
+## 1. Setting Up The Flask API Server
+
+You'll create a simple Flask API to simulate an internal service, featuring two endpoints: one for **health** checks and another to **trigger** an action. 
+
+Start by installing `Flask` and the required dependencies in the `api-server` virtual machine:
+
+```bash
+pip install Flask requests
+```
+
+Next, create a file named `app.py` and paste the following code:
+
+```python
+from flask import Flask, jsonify
+import requests
+import os
+
+app = Flask(__name__)
+
+@app.route('/trigger', methods=['GET'])
+def trigger_github_action():
+    github_token = os.environ.get('GITHUB_TOKEN')
+    if not github_token:
+        return jsonify({"error": "GITHUB_TOKEN not set"}), 500
+
+    url = "https://api.github.com/repos/YOUR_USERNAME/YOUR_REPO/dispatches"
+    headers = {
+        "Authorization": f"token {github_token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    data = {
+        "event_type": "trigger_from_internal_resource"
+    }
+
+    response = requests.post(url, json=data, headers=headers)
+    
+    if response.status_code == 204:
+        return jsonify({"message": "GitHub Action triggered successfully"}), 200
+    else:
+        return jsonify({"error": "Failed to trigger GitHub Action"}), 500
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy"}), 200
+
+if __name__ == '__main__':
+    app.run(host='NETBIRD_IP_ADDRESS', port=5000)
+```
+
+Ensure to replace `YOUR_USERNAME` and `YOUR_REPO` with the appropriate values from your GitHub repository. Also, replace `NETBIRD_IP_ADDRESS` with the `api-server` NetBird-assigned IP address, thus ensuring that only authorized peers within the NetBird network can connect to the `api-server`.
+
+Pass the GitHub personal access token as an environment variable:
+
+```bash
+export GITHUB_TOKEN=your_github_token_here
+```
+
+Once ready, run the Flask app:
+
+```bash
+python3 app.py
+```
+
+This is a sample output:
+
+```bash
+ * Serving Flask app 'app'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://NETBIRD_IP_ADDRESS:5000
+```
+
+Keep the terminal window open and the Flask application running to ensure the two endpoints (`/health` and `/trigger`) remain accessible for the duration of the tutorial. 
+
+## 2. Configuring NetBird To Automate Secure CI/CD Access To Private Resources
+
+By default, any NetBird peer can access the `api-server` endpoints at `http://NETBIRD_IP_ADDRESS:5000` using the `Default` access policy. To enhance security, you need to restrict access to only authorized users. NetBird's access control policies provide this capability.
+
+### Setting Up Access Control Policies
+
+Let's walk through the process of setting up appropriate access control policies:
+
+* Navigate to `Access Control > Policies` in the NetBird dashboard.
+* Create a new policy for the `api-server` by clicking on `Add Policy` button.
+* Define the authorized peers or groups. For this example, use `CI/CD Runners` and `Internal Resources` groups. Simply type their names and hit `ENTER`, and the new groups will be created.
+* Specify the allowed protocol and ports (in this case, `TCP`, port `5000`)
+* Once ready, give the policy a descriptive name in the `Name & Description` tab, and click `Add Policy` to create the new access control policy.
+
+![NerBird Access Control Policy](/docs-static/img/how-to-guides/automate-cicd-access-to-private-resources/cicd-access-to-private-resources-02.png)
+
+Optionally, disable the `Default` policy to further enhance security.
+
+![NerBird Access Control Policy List](/docs-static/img/how-to-guides/automate-cicd-access-to-private-resources/cicd-access-to-private-resources-03.png)
+
+Next, assign the `Internal Resources` group to the `api-server` peer. 
+
+![NerBird API Server Peer](/docs-static/img/how-to-guides/automate-cicd-access-to-private-resources/cicd-access-to-private-resources-04.png)
+
+Similarly, assign the `CI/CD Runners` group to your local machine.
+
+![NerBird Local Machine Peer](/docs-static/img/how-to-guides/automate-cicd-access-to-private-resources/cicd-access-to-private-resources-05.png)
+
+By implementing these steps, you'll ensure that only peers from `CI/CD Runners` group can interact with the `api-server`, significantly improving your network's security posture. For more information regarding NetBird access policies and groups, read [Managing Access with NetBird: Groups and Access Policies](https://docs.netbird.io/how-to/manage-network-access#groups).
+
+Now that the access control policy is configured, you must generate a [NetBird Setup Key](https://docs.netbird.io/how-to/register-machines-using-setup-keys). This key will allow GitHub Actions runners to establish a connection with the NetBird network during workflow execution. By generating a Setup Key with appropriate permissions and expiration settings, you ensure that GitHub Actions can temporarily join the network, interact with the `api-server`, and then disconnect, maintaining security throughout the process.
+
+### Generating a NetBird Ephemeral Setup Key For GitHub Actions
+
+NetBird offers versatile setup key options, allowing your team to tailor access for different CI/CD workflows while maintaining robust security:
+
+* Navigate to the `Setup Keys` section.
+* Click `Create Setup Key` button.
+* Give a descriptive name to the key, for example: `GitHub Actions Runners`.
+* Under **Make this key reusable**, set the toggle on to allow multiple peers/runners to use this key or leave it off to create a `one-off` key.
+* Set the `Usage limit`, in case you want to make this key reusable.
+* Set an expiration time appropriate for your CI/CD processes.
+* Under **Ephemeral Peers** set the toggle on to make this key ephemeral, i.e., peers that are offline for over ten minutes will be removed automatically.
+* Under **Auto-assign to groups**, select the `CI/CD Runners` group to assign this group to GitHub Actions runners automatically.
+* Click `Create Setup Key` once ready.
+* Copy the setup key to a save place since you will need it shortly.
+
+Summing up, you can generate setup keys for multiple scenarios:
+
+* **One-time use key**: Grants single access to the `api-server`, becoming invalid after use.
+* **Reusable key with usage limit**: Allows multiple accesses across different CI/CD runners, invalidating after reaching the set limit.
+* **Reusable key with usage limit and expiration**: Provides limited access for a specified time period, requiring renewal after expiration or limit reached.
+* **Ephemeral setting**: Recommended for all options, automatically removing the peer after pipeline completion for enhanced security.
+
+Here's an example of an ephemeral setup key with dual limitations: it remains valid for either 10 runs or 7 days, whichever comes first.
+
+![NerBird Create Ephemeral Setup Key](/docs-static/img/how-to-guides/automate-cicd-access-to-private-resources/cicd-access-to-private-resources-06.png)
+
+Once you generate the ephemeral setup key, you can move on to implementing your GitHub Actions workflows.
+
+## Implementing GitHub Actions Access Using NetBird
+
+With the Flask API operational and NetBird set up to provide secure access for `CI/CD Runners` group members, the final step is to implement GitHub Actions workflows:
+
+[Save NetBird ephemeral setup key as a GitHub Actions secret](https://docs.github.com/en/actions/security-for-github-actions/security-guides/using-secrets-in-github-actions). 
+
+![GitHub Secrets and Variables](/docs-static/img/how-to-guides/automate-cicd-access-to-private-resources/cicd-access-to-private-resources-07.png)
+
+[Save the following GitHub Actions workflow](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions) to the `.github/workflows` directory of your repository:
+
+```yaml
+name: CI/CD Pipeline
+
+on:
+  repository_dispatch:
+    types: [trigger_from_internal_resource]
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    
+    - name: Install NetBird
+      run: curl -fsSL https://pkgs.netbird.io/install.sh | sh
+    
+    - name: Connect to NetBird
+      run: netbird up --setup-key ${{ secrets.NETBIRD_SETUP_KEY }}
+    
+    - name: Test connection to internal resource
+      run: |
+        # Replace 'internal-resource-ip' with the actual IP of your internal Flask app
+        curl http://NETBIRD_IP_ADDRESS:5000/health
+    
+    - name: Trigger internal process
+      run: |
+        # Replace 'internal-resource-ip' with the actual IP of your internal Flask app
+        curl http://NETBIRD_IP_ADDRESS:5000/trigger
+    
+    - name: Disconnect from NetBird
+      run: netbird down
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Deploy to production
+      run: |
+        echo "Deploying to production..."
+        # Add your deployment steps here
+```
+
+This workflow triggers each time you perform code pushes and pull requests to the `main` branch and executes the following jobs:
+
+`build-and-test`: 
+
+* Checks out code
+* Installs NetBird
+* Connects to NetBird using the provided setup key
+* Test the `health` endpoint of the `api-server`
+* Triggers an internal process using the `/trigger` endpoint. 
+* Disconnects from NetBird.
+
+`deploy`: 
+
+* Runs after successful `build-and-test` job.
+* Executes the desired deployment steps.
+
+Let's demonstrate how this workflow enables secure access to internal resources during CI/CD processes using NetBird.
+
+### Testing Internal API Endpoints
+
+At present, your local machine is the sole member of the `CI/CD Runners` group, granting it exclusive authorization to access the `api-server`. Verify the connection by testing the `/health` endpoint using the NetBird-assigned domain (in this example: `api-server.netbird.cloud`).
+
+```bash
+curl api-server.netbird.cloud:5000/health
+```
+
+The expected output is:
+
+```bash
+{"status":"healthy"}
+```
+
+Next, test the `/trigger` endpoint by running:
+
+```bash
+curl api-server.netbird.cloud:5000/trigger
+```
+
+The command will trigger the remote GitHub Actions pipeline.
+
+![GitHub Actions Triggered from Local Machine](/docs-static/img/how-to-guides/automate-cicd-access-to-private-resources/cicd-access-to-private-resources-08.png)
+
+To test the automated pipeline:
+
+* Make a minor change to any file in your repository, for instance, `README.md`
+* Commit the change
+* Push the commit to the `main` branch
+
+After a few seconds, you'll see the pipeline running as expected: 
+
+![GitHub Actions Triggered from Code Push](/docs-static/img/how-to-guides/automate-cicd-access-to-private-resources/cicd-access-to-private-resources-09.png)
+
+## Conclusion: Securing CI/CD Access Using NetBird
+
+This tutorial showcased NetBird's ability to streamline secure access to private internal resources for CI/CD pipelines. Key benefits include:
+
+* Secure connections between CI/CD workflows and internal services
+* Simplified access management through NetBird's group-based permissions.
+* Strict access controls for sensitive resources by using ephemeral setup keys for CI/CD runners.
+* Seamless integration with existing CI/CD pipelines.
+* Elimination of complex VPN setups or public exposure of internal assets.
+
+Overall, NetBird's flexible setup options and seamless integration with CI/CD tools offer an efficient solution for enhancing security and productivity in internal resource development processes.
+
