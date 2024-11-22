@@ -1,0 +1,182 @@
+# NetBird Network Routes and Exit Nodes
+
+NetBird's Network Routes is a feature that enables administrators to [route traffic to external private networks](https://docs.netbird.io/how-to/routing-traffic-to-private-networks) such as VPCs, LANs, or remote branch networks. This feature is essential for organizations looking to create a unified, secure network environment across various infrastructure components, enhancing overall network efficiency and security.
+
+In this guide, you'll explore the powerful networking capabilities of NetBird through a series of practical scenarios:
+
+* Creating a standard network route for accessing external networks
+* Configuring a High Availability (HA) network route for enhanced resilience
+* Setting up exit nodes for expanded network flexibility
+* Using NetBird's network route selection feature to resolve overlapping routes
+
+Each section will provide step-by-step instructions and practical insights, equipping you with the knowledge to implement these features in your own network infrastructure. Let's dive in and unlock the full potential of NetBird's Network Routes.
+
+## Creating a Standard Network Route
+
+This scenario represents the simplest network route configuration: connecting to an external private network using a single [routing peer](https://docs.netbird.io/how-to/configuring-default-routes-for-internet-traffic#routing-peer). Using a standard network route is ideal for non-critical networks or environments where potential downtime is acceptable, as it relies on a single point of connectivity.
+
+To create a network route, navigate to `Network Routes` in the left menu and click `Add Route`.
+
+![NetBird Network Routes screen](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-03.png)
+
+In the `Route` tab, choose between two route types:
+- `Network Range`: Use it to specify your external network's private IPv4 address range.
+- `Domains`: Used to specify domain names for [DNS-based routing](https://docs.netbird.io/how-to/routing-traffic-to-private-networks#dns-routes). This is useful for dynamic IP scenarios.
+
+Next, select an existing peer as the `Routing Peer` for this network route. Keep in mind that only Linux peers can become routing peers in NetBird. Click `Continue` when ready.
+
+![NetBird Network Routes' Route Tab](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-04.png)
+
+In the `Groups` tab, you can use NetBird `Distribution Groups` to advertise the route to specific groups. While optional, under `Access Control Groups` you can leverage NetBird's [access control policies](https://docs.netbird.io/how-to/manage-network-access) to limit which peer groups are allowed to use the route, ensuring proper security and granular access management within your network. In the example below, the route will be a part of the `Servers` group that you can use as a destination when creating access policies. Use `Distribution Groups` as sources of the connection.
+
+![NetBird Network Routes' Groups Tab](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-19.png)
+
+In the `Name & Description` tab, enter a descriptive name for your route under `Network Identifier`.
+
+![NetBird Network Routes' Name Tab](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-06.png)
+
+Next, in the `Additional Settings` tab, you can disable `Masquerade` if you want to preserve the original source IP of the traffic or keep it enabled for NAT-like behavior. Also, you can set the `Metric` setting to adjust route priority. A lower metric indicates higher priority.
+
+![Additional Settings](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-07.png)
+
+Review your settings and click `Add Route` to create the network route.
+
+Since we set up an access control group in the `Groups` tab, a pop-up window will appear after clicking `Add Route`. Please note if you leave the field `Access Control Groups` empty, this window won't pop up. However, as explained, using access control policies is a best practice because allows you to limit access to the route, enhancing your network's security. **Without access policies in place, all peers in the distribution group would gain access to the route.**
+
+![Access Control Policy](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-18a.png)
+
+Clicking on `Create Policy` will take you to the [access control policy](https://docs.netbird.io/how-to/manage-network-access) creation window, where you can allow access to this route to specified Source groups and limit access only to specified ports. In the example below, only `IT Administrators` and `Finance` groups can access resources in the network behind the route on port 443. 
+
+![Create Access Control Policy](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-20.png)
+
+NetBird lets you strike a balance between security and convenience. While it may require additional configuration, the enhanced control over your network access significantly outweighs the minimal extra effort. It empowers you to implement the principle of least privilege, ensuring that only authorized peers can access specific routes.
+
+## Configuring a Highly Available (HA) Network Route
+
+Highly Available(HA) Network Routes provide **enhanced reliability and fault tolerance for critical network connections**. By setting up a network route with multiple routing peers, you ensure continuous connectivity even if one peer fails, making HA routes ideal for production environments, financial systems, mission-critical databases, vital business applications or any scenario where network downtime could significantly impact operations.
+
+To create a HA network route in NetBird, you can either add multiple routing peers during the initial route creation using the `Peer Group` tab or enhance an existing route by adding more peers. Let's implement the latter.
+
+From the `Network Routes` screen, locate your recently created route. Click the `Add Peer` button next to the route to add another peer to the route.
+
+![NetBird Routes Add Peer](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-08.png)
+
+Under `Routing Peer` select a routing peer. Notice that you can also specify `Distribution Groups` and `Access Control Groups`. Click `Add Route` when ready.
+
+![NetBird New Routing Peer](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-09.png)
+
+Once you add another peer to the network route, it becomes **highly-available** as indicated in the `HIGH AVAILABILITY` column. You can repeat the procedure to add as many routing peers as required.
+
+![NetBird HA Route](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-10.png)
+
+This approach adds fault tolerance, as NetBird can automatically switch to an alternative peer if one becomes unavailable. 
+
+Remember that for optimal HA performance, it's recommended to distribute routing peers across different physical or virtual locations to mitigate the risk of simultaneous failures.
+
+## Setting Up NetBird Exit Nodes
+
+By default, NetBird peers use a route specified with the network address `0.0.0.0/0`, which acts as a catch-all for internet-bound traffic from your devices. This default configuration allows peers to access the internet directly through their local connections.
+
+However, you can create a special type of network route to direct all outgoing internet traffic from other peers to a designated peer called [exit node](https://docs.netbird.io/how-to/configuring-default-routes-for-internet-traffic#make-the-peer-an-exit-node-routing-peer). This approach is particularly useful when your organization wants to add a layer of protection to the private network in scenarios where installing NetBird on each machine is not viable.
+
+Exit nodes provide several benefits:
+
+* Centralized internet access point for easier management and monitoring
+* Ability to apply network-wide policies or filtering
+* Enhanced privacy by masking the original source of internet traffic
+
+To designate a peer as an exit node:
+
+Navigate to `Peers` in the left menu and click on the desired peer. Under `Network Routes`, click the `Set Up Exit Node` button.
+
+![Configure Peer as Exit Node](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-11.png)
+
+Then, in the `Groups` tab, configure: 
+
+* `Distribution Groups`: Select the groups for which you want to route all internet traffic through this exit node. This determines which peers in your network will use this exit node for their internet access.
+* `Access Control Groups`: Choose the groups that are allowed to use this exit node. This feature allows you to restrict access to the exit node, enhancing security by controlling which peers can utilize this route
+
+![Configure Peer as Exit Node](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-12.png)
+
+Next, enter a descriptive name for the exit node in the `Name & Description` tab, and in the `Additional Settings` tab, set the `Metric` value (lower values indicate higher priority). Review your settings and click `Create` to finalize the exit node configuration.
+
+Note that a peer in NetBird can serve multiple functions simultaneously, enhancing network flexibility and resource utilization. Specifically, you can configure a peer already being used for a network route to also function as an exit node. 
+
+![Peer Dual Role](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-13.png)
+
+Aside from the peer details view, you can also check the dual role of this peer in the `Network Routes` dashboard.
+
+![Network Routes](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-14.png)
+
+## NetBird's Route Selection Feature
+
+NetBird's [route selection feature](https://docs.netbird.io/how-to/resolve-overlapping-routes) offers a solution for organizations using network routes with overlapping IP ranges. This feature allows users to explicitly choose which routes to apply on the client side, ensuring that peers connect to the correct private network without conflicts. 
+
+For instance, consider a company with different office locations that use identical private IP ranges.
+
+![Overlapping Network Routes](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-15.png)
+
+NetBird's route selection feature enables precise routing, maintaining seamless connectivity across your distributed network infrastructure.
+
+There are two ways to use the route selection in NetBird:
+
+* Using the Command Line Interface (CLI):
+
+You can list available routes using the command `netbird routes list`: 
+
+```bash
+$ netbird routes list
+
+Available Routes:
+
+  - ID: us-ca-lan
+    Network: 10.132.0.0/16
+    Status: Selected
+
+  - ID: us-fl-lan
+    Network: 10.132.0.0/16
+    Status: Selected
+
+  - ID: us-tx-lan
+    Network: 192.168.0.0/16
+    Status: Selected
+```
+
+By default, all routes are selected. To choose a specific route, you can use the command `netbird routes select <route>`: 
+
+```bash
+$ netbird routes select us-ca-lan
+Routes selected successfully.
+```
+
+Verify the changes running `netbird routes list` again:
+
+```bash
+$ netbird routes list            
+
+Available Routes:
+
+  - ID: us-ca-lan
+    Network: 10.132.0.0/16
+    Status: Selected
+
+  - ID: us-fl-lan
+    Network: 10.132.0.0/16
+    Status: Not Selected
+
+  - ID: us-tx-lan
+    Network: 192.168.0.0/16
+    Status: Not Selected
+```
+
+* Using the GUI:
+
+Open the NetBird system tray application and navigate to the `Network Routes` menu. Select or deselect routes using checkboxes.
+
+![GUI Network Routes](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-16.png)
+
+Alternatively, you can click the tab `Overlapping routes` to filter the list:
+
+![GUIOverlapping Network Routes](/docs-static/img/how-to-guides/network-routes-use-cases/network-routes-17.png)
+
+For more information and additional options, read [Resolve overlapping routes with the route selection feature](https://docs.netbird.io/how-to/resolve-overlapping-routes).
