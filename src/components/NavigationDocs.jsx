@@ -87,11 +87,18 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  { title: 'Groups & Policies', href: '/how-to/manage-network-access' },
-                 { title: 'Posture Checks', href: '/how-to/manage-posture-checks' },
+                 { 
+                    title: 'Posture Checks', 
+                    href: '/how-to/manage-posture-checks',
+                    isOpen: false,
+                    links: [
+                        { title: 'Connecting from the office', href: '/how-to/disabling-network-route-when-connecting-from-the-office' },
+                    ]
+                },
                  {
                      title: 'Integrate EDR',
                      href: '/how-to/endpoint-detection-and-response',
-                     isOpen: false,
+                     isOpen: false, 
                      links: [
                          { title: 'CrowdStrike Falcon', href: '/how-to/crowdstrike-edr' },
                      ]
