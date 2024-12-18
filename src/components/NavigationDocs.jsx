@@ -170,6 +170,10 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  {title: 'Enable post quantum cryptography', href: '/how-to/enable-post-quantum-cryptography' },
+                 {title: 'Deploying with Jamf Pro', href: '/how-to/jamf-pro-netbird-integration' },
+                 {title: 'Deploying with Kandji', href: '/how-to/kandji-netbird-integration' },
+
+
              ]
          },
 
