@@ -92,7 +92,7 @@ export const docsNavigation = [
                     href: '/how-to/manage-posture-checks',
                     isOpen: false,
                     links: [
-                        { title: 'Connecting from the office', href: '/how-to/disabling-network-route-when-connecting-from-the-office' },
+                        { title: 'Disable route when in the office', href: '/how-to/disabling-network-route-when-connecting-from-the-office' },
                     ]
                 },
                  {
