@@ -1,9 +1,18 @@
 
 
-# Disabling network route when connecting from the office
-A common scenario our users have is to allow theirs peers to externally access their local office network subnet. Having the hability to easily connect to locally exposed services from anywhere in the world, using NetBird is a trivial task, but you don't want to route your traffic via NetBird when you are in the office. To solve this, you can create a policy that will allow connection to the routing peers group, only if they are outside the office, using **Block Peer Network Range** Posture Check.
+# Connecting from the office
+A typical scenario administrators have is to access their office networks remotely. With [Network routes](https://docs.netbird.io/how-to/routing-traffic-to-private-networks), NetBird makes this an easy task. Still, more often than not, administrators want to avoid routing their user's traffic via NetBird when they are in the office. To solve this, administrators can leverage the power of [Posture Checks](https://docs.netbird.io/how-to/manage-posture-checks) and create policies that allow connection to the routing peers only if they are outside the office by using [Peer Network Range](/how-to/manage-posture-checks#peer-network-range-check) posture check with a block action.
 
-A common scenario our users have is to allow their peers to externally access their local office network subnet. Having the ability to easily connect to locally exposed services from anywhere in the world, using NetBird, is a trivial task. Still, you don't want to route your traffic via NetBird when you are in the office. To solve this, you can create a policy that will allow connection to the routing peers group, only if they are outside the office, using **Block Peer Network Range** Posture Check.
+## Example
+
+In the following scenario, our office network is on the subnet `192.168.1.0/24`.
+Let's assume all users will be part of the group `route-users` and the routing peer for our office will be inside the group `route-nodes`. 
+With this in mind, the goal is to go through the steps of creating a Posture Check, creating a Policy and assign Posture Check to it and finally creating a Network Route that will expose the office subnet.
+
+### Create a Posture Check
+To create a Posture Check, navigate to the `Access Control -> Posture Checks` section in the NetBird dashboard and click on **Add Posture Check**. 
+
+Select `Peer Network Range` and then `Block`. Click `Add Network Range` and input your office subbnet `192.168.1.0/24`. Note that if you have multiple locations that you want to see excluded, you can add multiple network ranges. 
 
 <p>
     <img src="/docs-static/img/how-to-guides/posture-check-new-block-network-range.png" alt="high-level-dia" className="imagewrapper"/>
@@ -11,29 +20,54 @@ A common scenario our users have is to allow their peers to externally access th
 <p>
     <img src="/docs-static/img/how-to-guides/posture-check-block-network-range.png" alt="high-level-dia" className="imagewrapper"/>
 </p>
+Click `Save`, then click `Continue` and fill out `Name of the Posture Check` with "Exclude Office subnet".
 
-After you save and give this **Posture Check** a name, you can assign it to a policy. (let's assume the name you gave was "Exclude Office subnet")
+After we conclude this step, we are ready to create a policy and assign this posture check. 
+### Create a Policy
+We start by creating a simple policy, which will allow access from group `route-users` to group `route-nodes`. Navigate to the `Access Control -> Policies` section in the NetBird dashboard and click on **Add Policy**.
 
-In this example, our office network is on the subnet `192.168.1.0/24`. You will need a policy that allows access to the routing peers; this can be any protocol and port, you just need to be able to connect to your routing peer in some way. Let's assume all users will be part of the group `route-users` and the routing peer for our office will be inside the group `route-nodes`. 
-With this in mind, create a policy that allows access to the routing peer group and assign the posture check `Exclude Office subnet` to it.
+On the `Source` field, select the group `route-users`, and on the `Destination` field, select the group `route-nodes`. Choose `UDP` for the protocol and type `1` on Ports. Click `Continue`.
 <p>
     <img src="/docs-static/img/how-to-guides/policy-office-subnet-with-posturecheck.png" alt="high-level-dia" className="imagewrapper"/>
 </p>
+In this step, we'll click `Browse Checks` and select the posture check we created earlier, `Exclude Office subnet`. Click `Add Posture Checks(1)` and then click `Continue`. 
+<p>
+    <img src="/docs-static/img/how-to-guides/policy-with-network-posturecheck-added.png" alt="high-level-dia" className="imagewrapper"/>
+</p>
+Give your policy the name "Allow users to route-nodes".
+We are now ready for the final step of creating the office route.
 
-Now, let's create a **Network Route** that will expose the local office subnet `192.168.1.0/24`, which gets distributed to all peers inside the group `route-users`.
+### Create a Network Route
+
+Now, let's create a [Network Route](https://docs.netbird.io/how-to/routing-traffic-to-private-networks) that will expose the local office subnet `192.168.1.0/24`, which will be distributed to all peers inside the group `route-users`. In this example we will be using a routing peer named `router-01` which will be part of the group `route-nodes`.
 
 <p>
     <img src="/docs-static/img/how-to-guides/route-office-subnet-posturecheck.png" alt="high-level-dia" className="imagewrapper"/>
 </p>
 
-In this example, our routing peer is called `router-01` and sits inside the `route-nodes` group this way, the policy we just created goes into effect, and all peers inside `route-users` will be able to reach `router-01` only if they are not in the office network, due to our posture check.
+In this example, our routing peer is called `router-01` and sits inside the `route-nodes` group, this way, the policy we just created goes into effect, and all peers inside `route-users` will be able to reach `router-01` only if they are not in the office network, due to our posture check.
+Navigate to `Network Routes` menu on the NetBird dashboard and click on **Add Route**. Fill out the fields as shown in the image bellow, and click `Save`.
+<p>
+    <img src="/docs-static/img/how-to-guides/create-route-with-posturecheck.png" alt="high-level-dia" className="imagewrapper"/>
+</p>
+Click `Continue` and assing `route-users` do `Distribution Groups`. 
+<p>
+    <img src="/docs-static/img/how-to-guides/distribute-to-groups-posturechecks.png" alt="high-level-dia" className="imagewrapper"/>
+</p>
+Click `Continue` and assign the name "Office network access" to `Network Identifier`, click `Continue` and in the final step, finish this process by clicking `Add Route`.
 
-From inside our office:
+### Testing the Posture Check
+Now that we have created the Posture Check, the Policy, and the Network Route, we can test this configuration.
+In the following example, we will be testing this Posture Check from a macOS client named `client-0   
+1`, and like stated earlier, it belongs to the group `route-users`. 
 
+#### While connect from inside our office:
+Our local connection shows that we are connected to local office WiFi and and we are part of that subnet.
 <p>
     <img src="/docs-static/img/how-to-guides/wifi-inside-office-subnet.png" alt="high-level-dia" className="imagewrapper"/>
 </p>
-And on the command line, you can observe: 
+
+When we are connected from inside the office, we can observe that the NetBird route is not available and that the subnet `192.168.1` is using local network interface `en0` to route traffic. 
 <p>
     <img src="/docs-static/img/how-to-guides/netbird-routes-list-local.png" alt="high-level-dia" className="imagewrapper"/>
 </p>
@@ -41,7 +75,7 @@ And on the command line, you can observe:
 <p>
     <img src="/docs-static/img/how-to-guides/netstat-routes-grep-local.png" alt="high-level-dia" className="imagewrapper"/>
 </p>
-When we are connected somewhere outside the office, we can observe: 
+#### When we are connected somewhere outside the office, we can observe: 
 
 <p>
     <img src="/docs-static/img/how-to-guides/netbird-routes-list-external.png" alt="high-level-dia" className="imagewrapper"/>
@@ -53,4 +87,5 @@ When we are connected somewhere outside the office, we can observe:
 
 Notice that the subnet `192.168.1.0/24` is routed through our Wireguard interface (`utun100`).
 
+As you can see, the Posture Check is working as expected, and the traffic is being routed through NetBird only when the client is outside the office network.
 This concludes this Posture Check example.
