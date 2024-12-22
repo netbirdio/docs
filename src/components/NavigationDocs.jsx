@@ -87,11 +87,18 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  { title: 'Groups & Policies', href: '/how-to/manage-network-access' },
-                 { title: 'Posture Checks', href: '/how-to/manage-posture-checks' },
+                 { 
+                    title: 'Posture Checks', 
+                    href: '/how-to/manage-posture-checks',
+                    isOpen: false,
+                    links: [
+                        { title: 'Disable route when in the office', href: '/how-to/disabling-network-route-when-connecting-from-the-office' },
+                    ]
+                },
                  {
                      title: 'Integrate EDR',
                      href: '/how-to/endpoint-detection-and-response',
-                     isOpen: false,
+                     isOpen: false, 
                      links: [
                          { title: 'CrowdStrike Falcon', href: '/how-to/crowdstrike-edr' },
                      ]
@@ -170,6 +177,10 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  {title: 'Enable post quantum cryptography', href: '/how-to/enable-post-quantum-cryptography' },
+                 {title: 'Deploying with Jamf Pro', href: '/how-to/jamf-pro-netbird-integration' },
+                 {title: 'Deploying with Kandji', href: '/how-to/kandji-netbird-integration' },
+
+
              ]
          },
 
@@ -238,7 +249,7 @@ export const docsNavigation = [
           <TopLevelNavItem href="/api">API</TopLevelNavItem>
           <TopLevelNavItem href="https://netbird.io/knowledge-hub/">Learn</TopLevelNavItem>
           <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
-          <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-2p5zwhm4g-8fHollzrQa5y4PZF5AEpvQ">Support</TopLevelNavItem>
+          <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-2utg2ncdz-W7LEB6toRBLE1Jca37dYpg">Support</TopLevelNavItem>
           {docsNavigation.map((group, groupIndex) => (
               <NavigationStateProvider key={group.title} index={groupIndex}>
                   <NavigationGroup
