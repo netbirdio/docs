@@ -107,6 +107,16 @@ export const docsNavigation = [
              ]
          },
          {
+              title: 'Networks (new)',
+              isOpen: false,
+              links: [
+                  { title: 'Concept', href: '/how-to/networks-concept' },
+                  { title: 'Routing traffic to multiple IP resources', href: '/how-to/routing-traffic-to-multiple-resources' },
+                  { title: 'Accessing restricted website domain resources', href: '/how-to/accessing-restricted-websites' },
+                  { title: 'Accessing entire domains within networks', href: '/how-to/accessing-entire-domains-within-networks' },
+              ]
+         },
+         {
              title: 'Network Routes',
              isOpen: false,
              links: [
