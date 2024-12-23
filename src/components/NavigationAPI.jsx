@@ -87,6 +87,7 @@ export function NavLink({ href, tag, active, isAnchorLink = false, children, lin
               href={href ? href : "#"}
               data-nb-link={active ? 1 : 0}
               aria-current={active ? 'page' : undefined}
+              title={children}
               className={clsx(
                   'flex justify-between gap-2 py-1 pr-3 text-sm transition',
                   isAnchorLink ? 'pl-7' : 'pl-4',
