@@ -10,7 +10,7 @@ export const title = '<%- tag %>'
   <Col>
     <%- operation.description %>
     <% if(operation.parameters && operation.parameters.filter((parameter) => parameter.in === 'path').length > 0){ %>
-    #### Path Parameters
+    ### Path Parameters
     <Properties>
         <%  operation.parameters.filter((parameter) => parameter.in === 'path').forEach(function(parameter){ %>
           <Property name="<%- parameter.name %>" type="string" required=\{true\}> 
@@ -20,7 +20,7 @@ export const title = '<%- tag %>'
     </Properties>
     <% }; -%>
     <% if(operation.parameters && operation.parameters.filter((parameter) => parameter.in === 'query').length > 0){ %>
-    #### Query Parameters
+    ### Query Parameters
     <Properties>
         <%  operation.parameters.filter((parameter) => parameter.in === 'query').forEach(function(parameter){ %>
             <Property name="<%- parameter.name %>" type="<%- parameter.schema.type %>" required=\{false\}>
@@ -30,7 +30,7 @@ export const title = '<%- tag %>'
     </Properties>
     <% }; -%>
     <% if(operation.requestBody && operation.requestBody["content"]["application/json"].schema.properties){ %>
-    #### Request-Body Parameters
+    ### Request-Body Parameters
     
     <%
 function renderProperties(properties, required = [], depth = 0) {
