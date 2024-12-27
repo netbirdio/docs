@@ -25,6 +25,11 @@ const nextConfig = {
     redirects: async () => {
         return [
             {
+                source: '/how-to/networks-concept',
+                destination: '/how-to/networks',
+                permanent: true,
+            },
+            {
                 source: '/docs/getting-started/installation',
                 destination: '/how-to/getting-started#installation',
                 permanent: true,
