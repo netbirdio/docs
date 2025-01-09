@@ -1,0 +1,195 @@
+# Routing Traffic to Multiple IP Resources
+
+Routing network traffic to multiple resources in both on-premises and cloud environments is a common challenge for DevOps and Platform teams. This guide will show you how to use NetBird's [Networks](https://docs.netbird.io/how-to/networks) feature to efficiently manage traffic to various [IP resources](https://docs.netbird.io/how-to/networks#resources) in a hybrid setup. We'll also cover how to tailor access policies for different user groups.
+
+## Example Use Case Scenario
+
+Consider a company with both a development environment and two on-premises DNS servers. For production, the company uses a remote Kubernetes cluster. Access to these resources needs to be restricted as follows:
+
+- **All Users**: Can only access the internal DNS servers at `172.17.100.2` and `172.17.100.3`.
+- **Development Group**: Besides the DNS servers, this group can access the development environment at `172.16.50.1`.
+- **DevOps Team**: Has full access to the entire local network and the remote Kubernetes cluster, which has a pod range of `10.108.0.0/16`.
+
+Assume you have installed [NetBird clients](https://docs.netbird.io/how-to/getting-started) on user machines. You've also set up [NetBird routing peers using setup keys](https://docs.netbird.io/how-to/installation) on local VMs and remote [Kubernetes](https://docs.netbird.io/how-to/routing-peers-and-kubernetes). 
+
+In this scenario, using NetBird's Networks and [Access Policies](https://docs.netbird.io/how-to/manage-network-access), you can manage network traffic effectively, ensuring secure and controlled access between the development and production environments and within the DNS infrastructure.
+
+## Creating a Local Network
+
+To create the local network for internal DNS servers and the development environment:
+
+* Go to `Networks` > `Networks` in NetBird's dashboard.
+* Click the `Add Network` button.
+* Name the network, e.g, `Local Network`. Optionally, add a description.
+* Click `Add Network` to proceed.
+
+![Create Local Network](/docs-static/img/how-to-guides/routing-multiple-ip-resources/01-multiple-networks.png)
+
+### Adding Routing Peers
+
+Click `Add Routing Peer` to make the network's resources accessible to other peers.
+
+![Add Routing Peers Window](/docs-static/img/how-to-guides/routing-multiple-ip-resources/02-multiple-networks.png)
+
+In the next window, you will see two tabs: `Routing Peers` and `Peer Group`.
+
+* Choose `Routing Peers` to add a single peer to the network.
+* Choose `Peer Group` to add multiple peers simultaneously for high availability. Click `Continue` once ready.
+
+![Local Routing Peers](/docs-static/img/how-to-guides/routing-multiple-ip-resources/03-multiple-networks.png)
+
+In the `Advanced Settings` tab:
+
+* Enable `Masquerade` to access private networks without configuring local routers or other devices.
+* Set the `Metric` (default is 9999) to prioritize routers. Lower values indicate higher priority.
+* Click `Add Routing Peer` when ready.
+
+![Masquerade and Metric](/docs-static/img/how-to-guides/routing-multiple-ip-resources/04-multiple-networks.png)
+
+### Adding Network Resources
+
+Click `Add Resource` to add the first network resource.
+
+![Add Network Resource](/docs-static/img/how-to-guides/routing-multiple-ip-resources/05-multiple-networks.png)
+
+Since the DevOps team has access to the entire local network, begin by adding the LAN resource:
+
+* Give the network resource a descriptive name, such as `Berlin LAN`
+* Enter the CIDR block for the local network, for instance, `172.16.0.0/15`.
+* Under `Assigned Groups`, select or create a group, like `LAN`. This group will be used to create an access policy to allow the DevOps team full access to the IP range.
+* Once ready, click `Add Resource`.
+
+![Add LAN Resource](/docs-static/img/how-to-guides/routing-multiple-ip-resources/06-multiple-networks.png)
+
+### Creating Access Policies
+
+Click `Create Policy` to create the access policy for the DevOps team.
+
+![Add Policy](/docs-static/img/how-to-guides/routing-multiple-ip-resources/07-multiple-networks.png)
+
+* Under `Protocol`, select `ALL`.
+* Under `Source` choose the group corresponding to the DevOps team, e.g., `DevOps`.
+* The `Destination` is automatically set to the newly created resource, i.g., `LAN`.
+* Click `Continue` to move to the `Posture Checks` tab, where you can optionally create or select posture checks for this policy.
+* Click `Continue` again, and provide a descriptive name for the policy
+* Click `Add Policy` to enable it.
+
+![DevOps Policy](/docs-static/img/how-to-guides/routing-multiple-ip-resources/08-multiple-networks.png)
+
+### Setting Up Additional Network Resources and Policies
+
+Your DevOps team now has full access to the local network. Next, you need to add additional network resources and set up policies.
+
+To set up internal DNS servers:
+
+* In the `Local Network` screen, click `Add Resource`.
+* Name the new network resource, for example, `DNS-1`.
+* Enter the IP address for this DNS server, e.g., `172.17.100.2`.
+* Under `Assigned Groups`, select or create a group like `Internal DNS Servers`. This group will be used to create a policy allowing all users to access the DNS servers.
+
+![Add DNS-1](/docs-static/img/how-to-guides/routing-multiple-ip-resources/09-multiple-networks.png)
+
+Repeat the process to add a second DNS server:
+
+* Click `Add Resource`.
+* Name this resource, for example, `DNS-2`.
+* Enter the IP address, e.g., `172.17.100.3`.
+* Under `Assigned Groups`, select `Internal DNS Servers`.
+
+![Add DNS-2](/docs-static/img/how-to-guides/routing-multiple-ip-resources/10-multiple-networks.png)
+
+Now, set up a resource for the development environment:
+
+* Click `Add Resource`.
+* Name the resource, e.g., `Development Environment`.
+* Enter the IP address of the virtual server, e.g., `172.16.50.1`.
+* Under `Assigned Groups`, select `Dev Server`. This allows you to create a policy for the developers to access this server.
+
+![Add Development Server](/docs-static/img/how-to-guides/routing-multiple-ip-resources/11-multiple-networks.png)
+
+Next, create the remaining access policies for the Local Network. To allow all users access to the DNS servers:
+
+* Click `Add Policy` next to the `DNS-1` resource.
+* Under `Protocol`, select `UDP`.
+* Set `Source` to `All` and `Destination` to `Internal DNS Servers`. This allows all users to access the DNS server.
+* Under `Ports`, enter `53`, the default UDP port for DNS.
+* Click `Continue`.
+
+![Add DNS Policy](/docs-static/img/how-to-guides/routing-multiple-ip-resources/12-multiple-networks.png)
+
+* Optionally, select or create posture checks for this policy. Click `Continue`.
+* Name and describe the policy on the final tab, such as `DNS Policy`. NetBird will propagate this policy to both DNS servers since they are in the same group.
+
+![Name DNS Policy](/docs-static/img/how-to-guides/routing-multiple-ip-resources/13-multiple-networks.png)
+
+Use a similar method to create an access policy for the Development Environment:
+
+* Click `Add Policy` next to `Development Environment`.
+* Leave `Protocol` as `ALL`.
+* In the `Source` field, select the group for developers, such as `Development`.
+* For `Destination`, choose the group your development environment belongs to, like `Dev Server`. This enables developer access to the server.
+* Click `Continue`.
+
+![Dev Server Policy](/docs-static/img/how-to-guides/routing-multiple-ip-resources/14-multiple-networks.png)
+
+* Skip posture checks unless needed by clicking `Continue`.
+* Either use the default name and description or customize them as needed.
+
+![Name Dev Server Policy](/docs-static/img/how-to-guides/routing-multiple-ip-resources/15-multiple-networks.png)
+
+This completes the `Local Network` setup. You have configured four network resources, their access policies, and the routing peers.
+
+![Local Network](/docs-static/img/how-to-guides/routing-multiple-ip-resources/16-multiple-networks.png)
+
+## Creating a Remote Network
+
+To set up the remote network for your Kubernetes cluster, follow these steps:
+
+* Go to `Networks` > `Networks` in NetBird's dashboard.
+* Click `Add Network`.
+* Name the network, e.g., `Remote Network`, and optionally add a description.
+* Click `Add Network` to proceed.
+
+![Create Remote Network](/docs-static/img/how-to-guides/routing-multiple-ip-resources/17-multiple-networks.png)
+
+* Click `Add Routing Peer` to add routing peers.
+* In the `Routing Peers` tab, Select your routers, like `netbird-k8s-router`.
+* Click `Continue`.
+* Use default values for `Masquerade` and `Metric` or adjust if needed.
+* Click `Add Routing Peer` when ready.
+
+![Add Routing Peers](/docs-static/img/how-to-guides/routing-multiple-ip-resources/18-multiple-networks.png)
+
+Next, click `Add Resource`:
+
+* Give the resource a name, such as `Production Environment`.
+* Enter the Kubernetes pod range under `Address`, for example, `10.108.0.0/16`. Use `kubectl get pod -o wide -n <NETBIRD_AGENTS_NAMESPACE>` to find your pod IP range.
+* Select the appropriate group under `Assigned Groups`, such as `NetBird K8s routing peers`.
+* Click `Add Resource`.
+
+![Add NetBird K8s Agents](/docs-static/img/how-to-guides/routing-multiple-ip-resources/19-multiple-networks.png)
+
+Now, set up the access policy for the production environment:
+
+* Click `Create Policy`.
+* Set `DevOps` as the `Source` and keep `NetBird K8s routing peers` as the `Destination`. This grants the DevOps group access to the Kubernetes cluster.
+* Click `Continue`.
+
+![Add NetBird K8s Agents](/docs-static/img/how-to-guides/routing-multiple-ip-resources/20-multiple-networks.png)
+
+* Click `Continue` to bypass posture checks.
+* Accept the default policy name and description or customize them.
+* Click `Add Policy`.
+
+If you have multiple NetBird agent replicas, enable High Availability by adding more routing peers:
+
+* Click `Add Routing Peer` in the `Remote Network`.
+* Select another router in the `Routing Peers` tab.
+
+Alternatively, select a `Peer Group` if configured for your K8s cluster.
+
+Your `Remote Network` should now resemble this setup:
+
+![Remote Network](/docs-static/img/how-to-guides/routing-multiple-ip-resources/21-multiple-networks.png)
+
+By completing these steps, you’ve created resources allowing varied access levels for different user groups within a hybrid organization network.
