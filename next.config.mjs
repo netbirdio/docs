@@ -93,6 +93,11 @@ const nextConfig = {
                 source: '/docs/:path*',
                 destination: '/:path*',
                 permanent: true,
+            },
+            {
+                source: '/ipa/:path*',
+                destination: '/api/:path*',
+                permanent: true
             }
         ]
     },
