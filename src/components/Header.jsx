@@ -73,7 +73,7 @@ export const Header = forwardRef(function Header({ className }, ref) {
             <TopLevelNavItem href="/api">API</TopLevelNavItem>
             <TopLevelNavItem href="https://netbird.io/knowledge-hub/">Learn</TopLevelNavItem>
             <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
-            <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-2utg2ncdz-W7LEB6toRBLE1Jca37dYpg">Support</TopLevelNavItem>
+            <TopLevelNavItem href="https://join.slack.com/t/netbirdio/shared_invite/zt-31rofwmxc-27akKd0Le0vyRpBcwXkP0g">Support</TopLevelNavItem>
           </ul>
         </nav>
         <div className="hidden md:block md:h-5 md:w-px md:bg-zinc-900/10 md:dark:bg-white/15" />

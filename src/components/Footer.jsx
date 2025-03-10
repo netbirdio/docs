@@ -239,7 +239,7 @@ function SmallPrint() {
         <SocialLink href="https://github.com/netbirdio/netbird" icon={GitHubIcon}>
           Follow us on GitHub
         </SocialLink>
-        <SocialLink href="https://join.slack.com/t/netbirdio/shared_invite/zt-2utg2ncdz-W7LEB6toRBLE1Jca37dYpg" icon={SlackIcon}>
+        <SocialLink href="https://join.slack.com/t/netbirdio/shared_invite/zt-31rofwmxc-27akKd0Le0vyRpBcwXkP0g" icon={SlackIcon}>
           Join us on Slack
         </SocialLink>
       </div>
