@@ -143,7 +143,7 @@ sudo netbird service start
 ```
 
 ### On Windows
-You need to run the following commands with an elevated Powershell window.
+You need to run the following commands with an elevated PowerShell or `cmd.exe` window.
 
 ```shell
 netbird service stop
@@ -227,3 +227,119 @@ NB_LOG_LEVEL=debug
 sudo netbird service stop
 sudo bash -c 'PIONS_LOG_DEBUG=all NB_LOG_LEVEL=debug netbird up -F' > /tmp/netbird.log
 ```
+
+## Debugging access to network resources
+
+In this section we will be presenting methodology of troubleshooting access issues involving Netbird.
+
+We will start by presenting a glossary of all machines and services involved.
+Each sub-section will describe a specific use case.
+Each will start with a concise summary of usual troubleshooting steps then expand into more detailed step-by-step
+guides.
+
+### Glossary
+
+We will be using the following names for resources outside the Netbird network:
+
+- `int-net1`: an internal network `10.123.45.0/24`,
+- `srv-c`: an internal HTTP server running at `10.123.45.17`,
+- `int-dns1`: an internal DNS server running at `10.123.45.6`,
+- `int-dns2`: an internal DNS server nunning at `10.7.8.9`,
+- `cf-dns`: an Internet-accessible CloudFlare DNS server at `1.1.1.1`,
+
+and following Netbird network resources:
+
+- `peer-a`: end user's device running Netbird Client,
+- `peer-b`: a linux server inside the internal network running Netbird Client,
+  - it has a direct access to the whole `int-net1` IP range,
+- `users:employees`: a Netbird Group containing `peer-a`,
+- `routers:int-net1`: a Netbird Group containing `peer-b`,
+- `access:int-net1`: a Netbird Groups used as a target of ACL rules,
+- `net-a`: a Netbird Network
+  - `net-a:srv-c`: a Network Resource handling traffic to `10.123.45.17/32` (`srv-c`),
+  - `net-a:int-net1`: a Network Resource handling traffic to `10.123.45.0/24` (`int-net1`),
+- `route:int-net1`: a Netbird Network Route handling traffic to `10.123.45.0/24` (`int-net1`),
+- `route:srv-c`: a Netbird Network Route handling traffic to `10.123.45.17/32` (`srv-c`),
+
+### Access from `peer-a` to `srv-c`
+
+In short:
+
+1. Does `peer-b` have direct access to `srv-c`'s port `80`?
+2. Are Netbird's network routing resources configured?
+3. Do Netbird's Access Control rules allow access from `peer-a` to `peer-b`?
+4. Do Netbird's Access Control rules allow access from `peer-a` to the target's ACL Group?
+
+#### Does `peer-b` have direct access to `srv-c`'s port `80`?
+
+After logging in to `peer-b` you can confirm/troubleshoot the HTTP port `80` connection by issuing any of the following
+commands:
+
+```shell
+curl -v "http://10.123.45.17"
+curl --fail -v --max-time=2 "http://10.123.45.17:80"
+wget -O - --timeout=2 "http://10.123.45.17:80"
+nc -nvz -w 2 10.123.45.17 80
+```
+
+You can also try `ping` (an ICMP packet), but the firewall might have a different configuration for ICMP and TCP ports:
+
+```shell
+ping --numeric --count=1 --timeout=2 10.123.45.17
+```
+
+#### Are Netbird's network routing resources configured?
+
+For Netbird network routing resources configurations you can use either (new) Networks or (old) Network Routes.
+
+A Network `net-a` should have at least:
+
+- Network Resource: `net-a:int-net1` or `net-a:srv-c`
+  - an Address set to:
+    - `10.123.45.17/32` to configure route to `srv-c` exclusively and nothing else,
+    - `10.123.45.0/24` to configure route for the whole `int-net1` subnet,
+  - Assigned Groups set to `access:int-net1`
+- Routing Peer Group assigned to `routers:int-net1`
+
+A Network Route `route:srv-c` or `route:int-net1` should have at least:
+
+- a Network Range set to either:
+  - `10.123.45.17/32` to configure route to `srv-c` exclusively and nothing else,
+  - `10.123.45.0/24` to configure route for the whole `int-net1` subnet,
+- Routing Peer Group assigned to `routers:int-net1`,
+- Distribution Group assigned to `users:employees`,
+
+#### Do Netbird's Access Control rules allow access from `peer-a` to `peer-b`?
+
+There should be an Access Control Policy present allowing traffic from `users:employees` Group to `routers:int-net1`
+Group.
+
+In the most specific setup it should have at:
+
+- have `TCP` protocol selected,
+- a blue arrow should point from left to right and a second right-to-left arrow should be greyed out,
+- a Source group set to `users:employees`,
+- a Destination group set to  `routers:int-net1`,
+- have `80` in the Ports section,
+
+You can deviate from above by:
+
+- allowing `ALL` protocol, Ports will be greyed out because all traffic will be allowed,
+- creating a bi-directional rule (both arrows should be green), always true for the protocol `ALL`,
+- selecting a different source group from the pool assigned to `peer-a`,
+  - it could be built-in `All` group, but it is discouraged,
+- selecting a different destination group from the pool assigned to `peer-b`,
+  - it could be built-in `All` group, but it is discouraged,
+
+#### Do Netbird's Access Control rules allow access from `peer-a` to the target's ACL Group?
+
+TODO: write this
+
+### Internet accessible nameserver
+
+TODO: write this
+
+### Internal nameservers
+
+TODO: write this
+
