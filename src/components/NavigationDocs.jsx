@@ -211,8 +211,17 @@ export const docsNavigation = [
      links: [
          { title: 'Serverless and NetBird', href: '/how-to/netbird-on-faas' },
          { title: 'Routing peers and Kubernetes', href: '/how-to/routing-peers-and-kubernetes'},
-         { title: 'NetBird Client on AWS ECS', href: '/how-to/examples'},
          { title: 'Netbird on Mikrotik Router', href: '/how-to/client-on-mikrotik-router' },
+         {
+            title: 'Connecting to AWS resources',
+            isOpen: false,
+            links: [
+                { title: 'Connecting to AWS VPC', href: '/how-to/connecting-to-aws-vpc' },
+                { title: 'Connecting to AWS VPC with High-Availability', href: '/how-to/connecting-to-aws-vpc-ha' },
+                { title: 'Connecting to AWS ECS Cluster', href: '/how-to/connecting-to-aws-ecs' },
+                { title: 'NetBird Client on AWS ECS', href: '/how-to/examples'},
+            ]
+        },
      ],
  
  
