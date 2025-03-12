@@ -307,6 +307,7 @@ In short:
 2. Are Netbird's network routing resources configured?
 3. Do Netbird's Access Control rules allow access from `peer-a` to `peer-b`?
 4. Do Netbird's Access Control rules allow access from `peer-a` to the target's ACL Group?
+5. Is `peer-a`'s operating system configured to use the route?
 
 #### Does `peer-b` have direct access to `srv-c`'s port `80`?
 
@@ -411,6 +412,104 @@ Just like with the previous section you can loosen the above example by:
     - it could be built-in `All` group, but it is discouraged,
 - selecting a different destination group from the pool assigned to `peer-b`,
     - it could be built-in `All` group, but it is discouraged,
+
+#### Is `peer-a`'s operating system configured to use the route?
+
+After all resources are configured in the Netbird management you should check whether they are
+properly registered with your operating system.
+
+You can start by checking Netbird client's configuration with `netbird status -d` command:
+
+```shell
+% netbird status -d                                                                                                                    
+Peers detail:
+ brys-vm-nbt-ubuntu-isolated-01.netbird.cloud:
+...
+  Status: Connected
+  -- detail --
+  Connection type: P2P
+...
+  Networks: 10.123.45.0/24
+...
+Peers count: 1/1 Connected
+```
+
+You should be primarily looking for _Networks_ section under each _Peers detail_, but you can also check:
+
+- _Peer_'s name,
+- _Peer_'s _Status_: it should be `Connected`,
+- _Peer_'s _Connection type_: it can be either `P2P` (direct) or `Relayed` (over the Internet),
+- _Peers count_ near the end of the output,
+
+##### Verifying routing configuration on the Windows operating system
+
+Below commands assume running a PowerShell prompt with administrator's privileges.
+
+The easiest way is to read output of `Get-NetRoute` command:
+
+```shell
+PS C:\Users\user> Get-NetRoute
+
+ifIndex DestinationPrefix                              NextHop                                  RouteMetric ifMetric PolicyStore
+------- -----------------                              -------                                  ----------- -------- -----------
+...
+17      10.123.45.255/32                             0.0.0.0                                          256 5        ActiveStore
+17      10.123.45.0/24                               0.0.0.0                                            1 5        ActiveStore
+...
+17      100.83.255.255/32                              0.0.0.0                                          256 5        ActiveStore
+17      100.83.183.133/32                              0.0.0.0                                          256 5        ActiveStore
+17      100.83.0.0/16                                  0.0.0.0                                          256 5        ActiveStore
+...
+```
+
+You should be looking for your specific subnet's IP ranges (`10.123.45.0/24` in case of `int-net1`) and anything from
+`100.*.0.0/16` range.
+
+Some other alternatives are `route print` & `Get-NetIPConfiguration`.
+
+##### Verifying routing configuration on the MacOS operating system
+
+The easiest way to verify system configuration is `netstat -nr` command:
+
+```shell
+% netstat -nr
+
+Routing tables
+
+Internet:
+Destination        Gateway            Flags               Netif Expire
+...    
+100.83/16          utun100            USc               utun100       
+100.83.19.63       100.83.19.63       UH                utun100       
+...
+10.123.45          utun100            USc               utun100       
+...
+
+Internet6:
+Destination                             Gateway                                 Flags               Netif Expire
+...
+```
+
+You should be looking for `utun*` interface in 4th column and searching the rows for
+your specific subnet's clamped IP ranges (`10.123.45` in case of `int-net1`) and anything from `100.*/16` range.
+
+##### Verifying routing configuration on the Linux operating system
+
+Depending on specifics of your Linux distribution (or even your configuration of it) you should be able to use either
+`iproute2` or `net-tools` family of network commands.
+
+Netbird client stores it's custom routes in the routing table `7120` (or `0x1BD0`) when it's available (through
+`iproute2` interface).
+
+For `iproute2`  (`ip`, `ss` tools):
+
+- `ip route` to find built-in `100.*.0.0/16` route,
+- `ip route show table 7120` or `ip route show table all` to find the specific routed networks,
+
+For `net-tools` (`ifconfig`, `route`, `netstat` tools):
+
+- `route -n` to find built-in `100.*.0.0/16` route,
+- neither `route` nor `netstat` support viewing content of custom routing tables,
 
 ### Public nameservers
 
