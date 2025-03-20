@@ -51,11 +51,13 @@ but it ensures compatibility across all environments.
 
 # Flow Log Retention
 
-Network Flow Logs on NetBird clients are not kept indefinitely – they have a retention policy to manage storage use and privacy. By default, flow log data is retained for 1 day on the management.
-This means the NetBird cloud will store roughly the last 1 days of flow records;
-older records roll off and are deleted automatically.
-The 1-day default provides a reasonable window for administrators to review recent network activity and investigate issues or incidents.
-It also prevents unlimited growth of log files on the client.
+NetBird clients do not store Network Flow Logs indefinitely; instead, they follow a retention policy to
+balance storage use and privacy. By default, flow log data is retained for 24 hours on the management system,
+after which older records are automatically deleted.
+
+However, while in experimental mode, logs are retained for 48 hours, providing an extended window for reviewing recent
+network activity and troubleshooting issues. This retention policy helps administrators monitor network behavior
+while preventing excessive log growth on the client.
 
 # Scenarios and Use Cases
 
@@ -77,13 +79,52 @@ Initiator peer would log the flow it as an outgoing connection.\
 
 #### 1.2. Example of a flow log entry for an UDP connection between two peers.
 
+In the case of UDP traffic between peers (for example, a UDP-based service), the flow log will similarly record the source/dest IPs and ports and label the protocol as UDP.
+UDP flows might not have a clear “end” (since UDP is connectionless), so they may be reported with a duration corresponding to the period of activity or on a rolling interval.\
+**[CHECK] Add screenshot**
+
+
 #### 1.3. Example of a flow log entry for an ICMP connection between two peers.
+
+ICMP flows (like a ping) will appear with protocol ICMP in the logs. For a ping, you’d see the two peers’ IPs and the fact it was ICMP;
+if packet/byte counting is on, you might see a couple of packets (an echo request and reply) recorded.\
+**[CHECK] Add screenshot**
+
+
+Peer-to-peer log entries help answer questions like:
+Did peer A communicate with peer B? Over which protocol and port? How much data was exchanged?
+For instance, if a developer says they couldn’t reach a service on another machine,
+an admin can check the flow logs on the source peer to see if a TCP flow to the destination was attempted or established.
+If the log shows the connection and bytes flowing, the network was fine and the issue might be elsewhere; if no flow is logged,
+the traffic never left the source peer (perhaps due to ACL blocking or a local issue).
+In summary, peer-to-peer flow logs give you a timestamped record of direct interactions between NetBird-connected machines,
+whether it’s successful SSH sessions, failed ping attempts, or any other IP traffic between peers​
 
 ## 2. Peer-to-Resource Connections
 
 When a NetBird peer connects to a resource outside the NetBird network (e.g. a private server, a cloud service, or a remote subnet), ...
 
 #### 2.1. Peer-To-Host Connection
+
+This scenario involves a NetBird peer accessing a specific host resource on an internal network, via a routing peer.
+In NetBird, you can define resources (in Access Control) that are single hosts (single IP addresses) which a peer should be allowed to reach.
+For example, you might have an on-premises database server at IP < a.b.c.d > that is not itself running NetBird,
+but one of your NetBird peers (say, Peer B) is in that network and can route traffic to it.
+Another peer (Peer A) somewhere else is granted access to that host through NetBird.
+When Peer A tries to connect (e.g. HTTP on port 80) to the host resource < a.b.c.d > the traffic will go through Peer B
+(which acts as a routing peer for that resource).
+
+Flow logs are extremely useful here to understand each step:
+
+* On Peer A’s log, you would see an outgoing flow with destination < a.b.c.d >:80 (for example) over TCP.
+The source would be Peer A’s NetBird IP and source port, destination the host’s IP and port 80.
+This confirms that Peer A attempted to reach the server.
+* **[CHECK]** On Peer B’s log, you would likely see two related flows: one coming from Peer A
+(source Peer A’s NB IP to Peer B’s NB IP) and one going out to the server
+(source Peer B’s LAN IP to < a.b.c.d > on port 80). Peer B essentially bridges the two networks,
+so it sees an incoming encrypted flow and forwards the traffic internally.
+NetBird’s flow logging on Peer B can capture the incoming portion (the NetBird tunnel from Peer A)
+and the forwarded portion (the LAN traffic to the host).
 
 #### 2.2. Peer-To-Subnet Connection
 
