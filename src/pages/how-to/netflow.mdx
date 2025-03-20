@@ -134,6 +134,8 @@ no flow out to < a.b.c.d >, that might indicate a routing issue on Peer B
 On the other hand, if Peer B’s log shows it forwarded to < a.b.c.d >, then the issue might be at the server itself.
 Flow logs thus help pinpoint where a breakdown occurs in peer-to-resource scenarios.
 
+**[CHECK] Add screenshot**
+
 Another example: imagine DNS is disabled on a printer, and a user’s laptop (Peer A) tries to ping the printer’s IP
 via a NetBird routing peer. The logs on Peer A would show an ICMP flow to the printer’s IP;
 the routing peer’s logs would show the traffic coming from the laptop and going to the printer.
@@ -154,13 +156,65 @@ In a peer-to-subnet case, the flow logs will show when a peer communicates with 
 * On the client (peer) side, an outgoing flow entry will appear whenever it sends traffic to an IP within the allowed subnet. For instance, if Peer A (remote laptop) connects to 10.0.5.100 (an internal server in the subnet), Peer A’s logs will list a flow with destination 10.0.5.100 (and whatever port/protocol).
 * **[CHECK]** On the routing peer’s side (the peer that has access to that subnet), you’ll again see flows coming from Peer A’s NetBird IP to the routing peer (NetBird IP) and flows from the routing peer out to the 10.0.5.x address.
 
+One thing to note is that when a subnet is allowed, a peer might generate many flow log entries if it scans 
+or communicates with multiple hosts in that subnet. Each distinct connection (to each IP and port)
+is a separate flow record. The logs can thus help you map out which internal hosts a remote peer is talking to.
+For example, you might see peer-a accessing 10.0.5.25 (file server) on TCP 445, and also 10.0.5.100 on TCP 3389 (RDP).
+This tells you which services are being used.
+
+Flow logs in this scenario can highlight if any unexpected access is happening.
+Perhaps a peer is only supposed to use a database, but you see flows to a domain controller’s IP – that could be a red flag to investigate.
+Conversely, if a user complains they can’t access anything in the subnet, you could check the logs:
+if absolutely no flows to that subnet appear in their peer log, maybe the ACL isn’t applied or their client isn’t attempting the connection at all.
+
+**[CHECK] Add screenshot**
 
 #### 2.3. Peer-To-Domain Connection
 
+NetBird also supports defining resources by domain name – for example,
+an access policy might allow a peer to reach example.com or *.corp.internal.
+In these cases, the NetBird client will handle domain name resolution (often through NetBird’s DNS features)
+and then allow traffic to the resulting IP addresses if they match the domain policy.
+Flow logs will capture the actual IP connections made, but it’s important to understand how domain-based rules reflect in the logs.
+
+When a peer initiates a connection to an allowed domain (say, intranet.corp.internal), the following happens:
+
+* **[CHECK]** The peer resolves the domain to an IP (using either the NetBird embedded DNS or system DNS, depending on setup).
+* **[CHECK]** The connection proceeds to that IP over the tunnel. The flow log on the peer will show a connection to that IP address (since that’s what ultimately happens on the network layer).
+
+By default, the Network Flow Log records only the resolved IP address, not the original domain name.
+This approach aligns with NetBird’s default behavior of not logging DNS queries to maintain privacy.
+As a result, an administrator analyzing the logs may see a connection to an IP address, such as 10.8.0.5 on TCP 443,
+with an explicit reference to the domain it was resolved from. 
+
+The flow log for peer-to-domain scenarios will look just like any other peer-to-host flow:
+peer’s NB IP -> some destination IP, protocol, port, bytes.
+The difference is that the allowed destination IP might not be static – it could change
+if the DNS name resolves differently. NetBird, however, will log whatever actual addresses were contacted.
+For example, consider a rule allowing access to pool.ntp.org (which resolves to various IPs).
+If a peer (Peer A) uses that, on Peer A’s log over time you might see flows to multiple different IP addresses
+on UDP port 123 (NTP). Each of those flows corresponds to the domain resource. 
+
 ## 3. Site-to-Site Connections
 
-When two NetBird networks are connected via a site-to-site tunnel, flow logs can help administrators monitor traffic between the two networks.
-...
+In a site-to-site setup, NetBird connects two or more networks (sites) each with a routing peer.
+For example, an AWS VPC network and an on-prem network could be linked via their respective NetBird peers,
+so that machines in each site can talk to each other through the NetBird tunnel
+(often without each machine running NetBird – the routing peers relay traffic).
+Network Flow Logs become a powerful tool to monitor and troubleshoot this inter-site traffic.
+
+Consider two sites: Site A (with subnet 10.1.0.0/16, routing peer = Peer-A) and Site B (with subnet 192.168.1.0/24, routing peer = Peer-B).
+NetBird is configured so that each site’s subnet is accessible to the other via the respective routing peers.
+Now suppose a host in Site A (10.1.0.50) is trying to reach a host in Site B (192.168.1.75) on some service.
+
+Here’s how the flow logs play out:
+
+* Peer-A’s logs (routing peer at Site A): Peer-A will log an incoming flow from 10.1.0.50 (a host on its LAN)
+going to 192.168.1.75 via the NetBird tunnel. Actually, since 10.1.0.50 isn’t a NetBird peer,
+Peer-A might log the flow as unknown but destined to 192.168.1.75 through Peer-B.
+* Peer-B’s logs (routing peer at Site B): Correspondingly, Peer-B will log an incoming flow from Peer-A (over NetBird)
+destined to 192.168.1.75, and then an outgoing flow to 192.168.1.75 on its local network.
+If the Site B host responds, Peer-B logs the return traffic coming from 192.168.1.75 going back to Peer-A over NetBird.
 
 # Enabling and Disabling Flow Logs
 
