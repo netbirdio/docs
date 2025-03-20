@@ -158,7 +158,8 @@ export const docsNavigation = [
          {
              title: 'Activity',
              links: [
-                 { title: 'Audit Activity Logging', href: '/how-to/audit-activity-logging' },
+                 { title: 'Audit Events Logging', href: '/how-to/audit-events-logging' },
+                 { title: 'Traffic Events Logging', href: '/how-to/traffic-events-logging' },
                  {
                      title: 'Stream Activity Events',
                      href: '/how-to/activity-event-streaming',
