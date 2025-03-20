@@ -113,8 +113,6 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
         responseList: toArrayWithKey(operation.responses!, 'responseCode') || [],
         request: request,
         response: response,
-        // cloud: operation["x-cloud-only"],
-        // experimental: operation["x-experimental"],
       }
 
       let tag = operation.tags.pop()
