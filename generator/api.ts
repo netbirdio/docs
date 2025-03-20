@@ -49,6 +49,7 @@ export default async function gen(inputFileName: string, outputDir: string) {
 
 type v3OperationWithPath = OpenAPIV3.OperationObject & {
   path: string
+
 }
 
 export type objectRepresentation = {
@@ -104,22 +105,18 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
         }
       }
 
-      // if(operation.summary == "List all Tokens") {
-      //   console.log(response.example)
-      //   console.log(operation.responses["200"]["content"]["application/json"].schema.items.properties)
-      // }
-
-
       const enriched = {
         ...operation,
         path: key,
         fullPath,
         operationId: slugify(operation.summary!),
-
         responseList: toArrayWithKey(operation.responses!, 'responseCode') || [],
         request: request,
         response: response,
+        // cloud: operation["x-cloud-only"],
+        // experimental: operation["x-experimental"],
       }
+
       let tag = operation.tags.pop()
       let tagOperations = tagGroups.get(tag) ?? []
       tagGroups.set(tag, tagOperations.concat(enriched))
