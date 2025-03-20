@@ -9,6 +9,10 @@ export function Badge({ status, text }) {
             case 'error':
                 // Never tested colors
                 return 'bg-red-300/30 text-red-400 dark:bg-red-400/10 dark:text-red-400';
+            case 'cloud-only':
+                return 'bg-orange-200/50 text-orange-400 dark:bg-orange-600/20 dark:text-orange-400';
+            case 'experimental':
+                return 'bg-teal-200/50 text-teal-400 dark:bg-teal-500/15 dark:text-teal-400';
             default:
                 return 'bg-gray-500/30 text-gray-600 dark:bg-gray-400/10 dark:text-gray-400';
         }
