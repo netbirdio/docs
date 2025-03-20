@@ -158,7 +158,7 @@ export const docsNavigation = [
          {
              title: 'Activity',
              links: [
-                 { title: 'Network Activity Logging', href: '/how-to/monitor-system-and-network-activity' },
+                 { title: 'Audit Activity Logging', href: '/how-to/audit-activity-logging' },
                  {
                      title: 'Stream Activity Events',
                      href: '/how-to/activity-event-streaming',
