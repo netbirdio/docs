@@ -111,6 +111,8 @@ whether it’s successful SSH sessions, failed ping attempts, or any other IP tr
 
 #### 2.1. Peer-To-Host Connection
 
+![NetBird Local Peer](/docs-static/img/how-to-guides/traffic-events/peer_to_host.png)
+
 This scenario involves a NetBird peer accessing a specific host resource on an internal network, via a routing peer.
 In NetBird, you can define resources (in Access Control) that are single hosts (single IP addresses) which a peer should be allowed to reach.
 For example, you might have an on-premises service at IP `192.168.0.201` that is not itself running NetBird,
@@ -121,30 +123,23 @@ When `Peer A` tries to connect (e.g. HTTPS on port 443) to the host resource `19
 
 Traffic Events are extremely useful here to understand each step:
 
-* On Peer A’s log, you would see an outgoing flow with destination `192.168.0.201`:443 (for example) over TCP.
-The source would be Peer A’s NetBird IP and source port, destination the host’s IP and port 443.
+* On `Peer A`’s log, you would see an outgoing flow with destination `192.168.0.201`:443 (for example) over TCP.
+The source would be `Peer A`’s NetBird IP and source port, destination the host’s IP and port 443.
 This confirms that Peer A attempted to reach the server.
-* **[CHECK]** On Routing Peer A’s log, you would likely see two related flows: one coming from Peer A
-(source Peer A’s NB IP to Routing Peer A’s NB IP) and one going out to the server
-(source Routing Peer A’s LAN IP to `192.168.0.201` on port 443). Routing Peer A essentially bridges the two networks,
+* On `Routing Peer A`’s log, you will see the related flow: coming from `Peer A`
+(`Peer A`’s NB IP to `192.168.0.201` on port 443). Routing `Peer A` essentially bridges the two networks,
 so it sees an incoming encrypted flow and forwards the traffic internally.
-NetBird’s flow logging on Routing Peer A can capture the incoming portion (the NetBird tunnel from Peer A)
-and the forwarded portion (the LAN traffic to the host).
 
 Using these logs, an admin can verify that the traffic is indeed passing through:
-For instance, if Peer A reports a flow to `192.168.0.201` but the server isn’t responding,
-you could check Routing Peer A’s logs to ensure it forwarded the traffic. If Routing Peer A’s log shows the flow from Peer A but
+For instance, if `Peer A` reports a flow to `192.168.0.201` but the server isn’t responding,
+you could check `Routing Peer A`’s logs to ensure it forwarded the traffic. If `Routing Peer A`’s log shows
 no flow out to `192.168.0.201`, that might indicate a routing issue on Routing Peer A
 (maybe IP forwarding is disabled or firewall on Routing Peer A blocked it).
-On the other hand, if Routing Peer A’s log shows it forwarded to `192.168.0.201`, then the issue might be at the server itself.
+On the other hand, if `Routing Peer A`’s log shows it forwarded to `192.168.0.201`, then the issue might be at the server itself.
 Traffic Events thus help pinpoint where a breakdown occurs in peer-to-resource scenarios.
 
-![NetBird Local Peer](/docs-static/img/how-to-guides/traffic-events/peer_to_host.png)
-
-**[CHECK] Add screenshot**
-
-Another example: imagine DNS is disabled on a printer, and a user’s laptop (Peer A) tries to ping the printer’s IP
-via a NetBird routing peer. The logs on Peer A would show an ICMP flow to the printer’s IP;
+**Another Example**: Imagine DNS is disabled on a printer, and a user’s laptop `Peer A` tries to ping the printer’s IP
+via a NetBird routing peer. The logs on `Peer A` would show an ICMP flow to the printer’s IP;
 the routing peer’s logs would show the traffic coming from the laptop and going to the printer.
 If the ping fails, you could see whether the flow reached the printer or not.
 All of this without capturing packets – the flow records give a concise summary of what happened.
@@ -155,18 +150,21 @@ These flows confirm that NetBird is correctly carrying traffic to specific singl
 #### 2.2. Peer-To-Subnet Connection
 
 Similar to the above, this scenario deals with a peer accessing an entire subnet (range of IPs) via a routing peer.
-NetBird allows administrators to define network routes (or the newer “Networks” feature) where a Linux peer acts as a gateway to a subnet (for example, an office LAN 10.0.5.0/24).
+NetBird allows administrators to define network routes (or the newer “Networks” feature) where a Linux peer acts as a gateway to a subnet (for example, an office `LAN 10.0.5.0/24`).
 A common use case is site-to-site connectivity or allowing remote peers to access a whole VLAN or VPC through one NetBird node.
 
 In a peer-to-subnet case, the Traffic Events will show when a peer communicates with any IP in the target subnet:
 
-* On the client (peer) side, an outgoing flow entry will appear whenever it sends traffic to an IP within the allowed subnet. For instance, if Peer A (remote laptop) connects to 10.0.5.100 (an internal server in the subnet), Peer A’s logs will list a flow with destination 10.0.5.100 (and whatever port/protocol).
-* **[CHECK]** On the routing peer’s side (the peer that has access to that subnet), you’ll again see flows coming from Peer A’s NetBird IP to the routing peer (NetBird IP) and flows from the routing peer out to the 10.0.5.x address.
+* On the client (peer) side, an outgoing flow entry will appear whenever it sends traffic to an IP within the allowed subnet. For instance,
+if `Peer A` (remote laptop) connects to `10.0.5.100` (an internal server in the subnet),
+`Peer A`’s logs will list a flow with destination `10.0.5.100` (and whatever port/protocol).
+* On the routing peer’s side (the peer that has access to that subnet),
+you’ll again see the flow coming from `Peer A`’s NetBird IP out to the `10.0.5.x` address.
 
 One thing to note is that when a subnet is allowed, a peer might generate many flow log entries if it scans 
 or communicates with multiple hosts in that subnet. Each distinct connection (to each IP and port)
 is a separate flow record. The logs can thus help you map out which internal hosts a remote peer is talking to.
-For example, you might see peer-a accessing 10.0.5.25 (file server) on TCP 445, and also 10.0.5.100 on TCP 3389 (RDP).
+For example, you might see peer-a accessing `10.0.5.25 (file server)` on `TCP 445`, and also `10.0.5.100` on `TCP 3389 (RDP)`.
 This tells you which services are being used.
 
 Traffic Events in this scenario can highlight if any unexpected access is happening.
@@ -175,6 +173,10 @@ Conversely, if a user complains they can’t access anything in the subnet, you 
 if absolutely no flows to that subnet appear in their peer log, maybe the ACL isn’t applied or their client isn’t attempting the connection at all.
 
 #### 2.3. Peer-To-Domain Connection
+
+![NetBird Local Peer](/docs-static/img/how-to-guides/traffic-events/domain.png)
+![NetBird Local Peer](/docs-static/img/how-to-guides/traffic-events/domain_resource.png)
+
 
 NetBird also supports defining resources by domain name – for example,
 an access policy might allow a peer to reach example.com or *.corp.internal.
