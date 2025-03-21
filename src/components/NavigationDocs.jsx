@@ -134,6 +134,13 @@ export const docsNavigation = [
              ]
          },
          {
+            title: 'Network Flow Logs',
+            isOpen: false,
+            links: [
+                { title: 'Network Flow Logs', href: '/how-to/netflow' },
+            ]
+        },
+         {
              title: 'Team',
              isOpen: false,
              links: [
