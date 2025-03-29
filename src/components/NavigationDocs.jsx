@@ -107,7 +107,7 @@ export const docsNavigation = [
              ]
          },
          {
-              title: 'Networks (new)',
+              title: 'Networks',
               isOpen: false,
               links: [
                   { title: 'Concept', href: '/how-to/networks' },
