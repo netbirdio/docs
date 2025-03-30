@@ -4,7 +4,7 @@ export const title = '<%- tag %>'
 
 <% operations.forEach(function(operation){ %>
 
-## <%- operation.summary %> <% if(operation.deprecated) { %> <Badge status="warning" text="Deprecated" /> <% } %><% if(operation["x-cloud-only"]) { %> <Badge status="cloud-only" text="Cloud-Only" hoverText="This feature is only available in the cloud version of NetBird." /> <% } %><% if(operation["x-experimental"]) { %> <Badge status="experimental" text="Experimental" hoverText="This feature is experimental. The endpoint will likely change and does not guarantee backwards compatibility." /> <% } %> {{ tag: '<%- operation.operation.toUpperCase() %>' , label: '<%- operation.path %>' }}
+## <%- operation.summary %> <% if(operation.deprecated) { %> <Badge status="warning" text="deprecated" /> <% } %><% if(operation["x-cloud-only"]) { %> <Badge status="cloud-only" text="cloud-only" hoverText="This feature is only available in the cloud version of NetBird." /> <% } %><% if(operation["x-experimental"]) { %> <Badge status="experimental" text="experimental" hoverText="This feature is experimental. The endpoint will likely change and we do not guarantee backwards compatibility." /> <% } %> {{ tag: '<%- operation.operation.toUpperCase() %>' , label: '<%- operation.path %>' }}
 
 <Row>
   <Col>
