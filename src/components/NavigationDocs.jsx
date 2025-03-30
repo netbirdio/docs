@@ -203,6 +203,15 @@ export const docsNavigation = [
 
                 ]
             },
+
+            {
+                title: 'For Partners',
+                isOpen: false,
+                links: [
+                    { title: 'Managed Service Providers', href: '/how-to/msp-portal' },
+
+                ]
+            },
         ],
         
     },
@@ -214,9 +223,7 @@ export const docsNavigation = [
          { title: 'Routing peers and Kubernetes', href: '/how-to/routing-peers-and-kubernetes'},
          { title: 'NetBird Client on AWS ECS', href: '/how-to/examples'},
          { title: 'NetBird on Mikrotik Router', href: '/how-to/client-on-mikrotik-router' },
-         { title: 'MSP Portal', href: '/how-to/msp-portal' },
      ],
- 
  
  },
  {
