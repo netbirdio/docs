@@ -200,8 +200,7 @@ export const docsNavigation = [
                      title: 'Kubernetes',
                      isOpen: true,
                      links: [
-                         {title: 'Deploying with Jamf Pro', href: '/how-to/jamf-pro-netbird-integration' },
-                         {title: 'Deploying with Kandji', href: '/how-to/kandji-netbird-integration' },
+                         {title: 'Operator', href: '/how-to/kubernetes-operator' },
                      ]
                  },
              ]

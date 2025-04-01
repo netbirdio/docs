@@ -1,0 +1,314 @@
+# Kubernetes operator
+
+Accessing private Kubernetes clusters can be challenging, especially when connecting from remote locations or
+having multiple clusters to manage. NetBird Kubernetes operator simplifies this process by enabling secure access
+to your Kubernetes clusters using custom resource configurations and annotations to expose your cluster and services in your NetBird network.
+
+## Deployment
+
+### Prerequisites
+
+- (Recommended) helm version 3+
+- kubectl version v1.11.3+.
+- Access to a Kubernetes v1.11.3+ cluster.
+- (Recommended) Cert Manager.
+
+### Installation
+You have two methods of installing the NetBird Kubernetes operator: using Helm or the install.yaml file.
+
+#### Using Helm
+1. Add helm repository.
+```shell
+helm repo add netbirdio https://netbirdio.github.io/kubernetes-operator
+```
+2. (Recommended) Install [cert-manager](https://cert-manager.io/docs/installation/#default-static-install) for k8s API to communicate with the NetBird operator.
+```shell
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml
+```
+3. Add NetBird API token. You can create a PAT by following the steps [here](/how-to/access-netbird-public-api#creating-a-service-user).
+```shell
+kubectl create namespace netbird
+kubectl -n netbird create secret generic netbird-mgmt-api-key --from-literal=NB_API_KEY=$(cat ~/nb-pat.secret)
+```
+<Note>
+  Replace `~/nb-pat.secret` with your NetBird API key.
+</Note>
+
+4. (Recommended) Create a [`values.yaml`](https://github.com/netbirdio/kubernetes-operator/blob/main/examples/ingress/values.yaml) file, check `helm show values netbirdio/kubernetes-operator` for more info.
+```yaml
+ingress:
+  enabled: true
+  router:
+    enabled: true
+
+netbirdAPI:
+  keyFromSecret: "netbird-mgmt-api-key"
+
+# by default the managementURL points to the NetBird cloud service: https://api.netbird.io:443
+# managementURL: "https://netbird.example.io:443"
+```
+5. Install using help install:
+```shell
+helm install --create-namespace -f values.yaml -n netbird netbird-operator netbirdio/kubernetes-operator
+```
+6. Check installation
+```shell
+kubectl -n netbird get pods
+```
+Output should be similar to:
+```
+NAME                                                    READY   STATUS    RESTARTS   AGE
+netbird-operator-kubernetes-operator-67769f77db-tmnfn   1/1     Running   0          42m
+```
+```shell
+kubectl -n netbird get services
+```
+Output should be similar to:
+```shell
+NAME                                                   TYPE        CLUSTER-IP        EXTERNAL-IP   PORT(S)    AGE
+netbird-operator-kubernetes-operator-metrics           ClusterIP   192.168.194.165   <none>        8080/TCP   47m
+netbird-operator-kubernetes-operator-webhook-service   ClusterIP   192.168.194.222   <none>        443/TCP    47m
+```
+##### Updating or modifying the operator configuration
+The configuration or version update of the operator can be done with `helm upgrade`:
+```shell
+helm upgrade --create-namespace -f values.yaml -n netbird netbird-operator ./helm/kubernetes-operator
+ ```
+
+#### Using install.yaml
+<Note>
+install.yaml only includes a very basic template for deploying a stripped-down version of Kubernetes-operator.
+This option does not include any configurations for ingress capabilities and requires the cert-manager to be installed.
+</Note>
+
+```shell
+kubectl create namespace netbird
+kubectl apply -n netbird -f https://raw.githubusercontent.com/netbirdio/kubernetes-operator/refs/heads/main/manifests/install.yaml
+```
+## Expose the Kubernetes control plane API as a resource
+You can expose your Kubernetes control plane by enabling the following option in the operator values:
+```yaml
+ingres:
+  enabled: true
+  kubernetesAPI:
+    enabled: true
+```
+That will expose your Kubernetes control plane API as a Network resource. See an example of the resource below:
+<p>
+    <img src="/docs-static/img/how-to-guides/kubernetes/kubernetes-api.png" alt="API" className="imagewrapper-big"/>
+</p>
+
+## Expose Kubernetes services as resources
+Kubernetes services are common way to route traffic your application pods. With the NetBird operator `ingress` you can expose services to your
+NetBird network as resources by using annotations in your services. The operator will create networks, resources and add routing peers to your NetBird configuration.
+
+
+
+By default, the ingress configuration is disabled. You can enable it with the following values for your operator setup using Helm:
+```yaml
+ingress:
+  enabled: true
+  router:
+    enabled: true
+```
+
+You can expose services using the annotations `netbird.io/expose: "true"` and `netbird.io/groups: "resource-group"`; see an example below:
+```shell
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+  annotations:
+    netbird.io/expose: "true"
+    netbird.io/groups: "app-access"
+spec:
+  selector:
+    app: app
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 80
+  type: ClusterIP
+```
+
+This will create a Network and resource similar to the example below:
+<p>
+    <img src="/docs-static/img/how-to-guides/kubernetes/resources-1.png" alt="resources" className="imagewrapper-big"/>
+</p>
+
+<Note>
+ Ingress DNS Resolution requires DNS Wildcard Routing to be enabled and at least one DNS Nameserver configured for clients. Learn more about Networks [here](/how-to/networks#enable-dns-wildcard-routing).
+</Note>
+
+Other annotations can be used to configure your resources further:
+
+|Annotation|Description|Default|Valid Values|
+|:---:|:---:|:---:|:---:|
+|`netbird.io/expose`| Expose service using NetBird Network Resource ||(`null`, `true`)|
+|`netbird.io/groups`| Comma-separated list of group names to assign to Network Resource. If non-existing, the operator will create them for you. |`{ClusterName}-{Namespace}-{Service}`|Any comma-separated list of strings.|
+|`netbird.io/resource-name`| Network Resource name |`{Namespace}-{Service}`|Any valid network resource name, make sure they're unique!|
+|`netbird.io/policy`| Name(s) of NBPolicy to propagate service ports as destination. ||Comma-separated list of names of any NBPolicy resource|
+|`netbird.io/policy-ports`| Narrow down exposed ports in a policy. Leave empty for all ports. ||Comma-separated integer list, integers must be between 0-65535|
+|`netbird.io/policy-protocol`| Narrow down protocol for use in a policy. Leave empty for all protocols. ||(`tcp`,`udp`)|
+
+## Control access to your resources with policy bases
+By default, the resources the operator creates won't have any access control policy assigned to them. You can allow the operator to manage your
+access control policies by configuring policy bases in your values.yaml file, where you define source groups and name suffixes among other settings
+for access control policies and then tag them in your services annotations with the annotation `netbird.io/policy: "policy-base"`. See examples below:
+values.yaml:
+```yaml
+ingress:
+  enabled: true
+  router:
+    enabled: true
+  policies:
+    app-users:
+      name: App users # Required, name of policy in NetBird console
+      description: Policy for app users access # Optional
+      sourceGroups: # Required, name of groups to assign as source in Policy.
+        - app-users
+      protocols: # Optional, restricts protocols allowed to resources, defaults to ['tcp', 'udp'].
+        - tcp
+      bidirectional: false
+    k8s-admins:
+      name: App admins
+      sourceGroups:
+        - app-admins
+```
+After adding the policy base and [applying the configuration](#updating-or-modifying-the-operator-configuration), you can use the `app-users` and `k8s-admins` bases for your services
+and Kubernetes API configurations.
+
+### Linking policy bases to the Kubernetes API service
+To link a policy base to the Kubernetes API, we need to update the operator configuration by adding the policy and groups to the `kubernetesAPI` key as follows:
+```yaml
+  kubernetesAPI:
+    enabled: false
+    groups:
+      - k8s-access
+    policies:
+      - k8s-admins
+```
+After updating and [applying the configuration](#updating-or-modifying-the-operator-configuration), you should see a policy similar to the one below:
+<p>
+    <img src="/docs-static/img/how-to-guides/kubernetes/kubernetes-api-policy.png" alt="resources policy" className="imagewrapper-big"/>
+</p>
+
+### Linking policy bases to Kubernetes services
+You can link policy bases with the annotation `netbird.io/policy:` where you can simply add one or more bases to the service,
+see the example below where we link the base "app-users"` to our app service:
+
+
+```shell
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+  annotations:
+    netbird.io/expose: "true"
+    netbird.io/groups: "app-access"
+    netbird.io/policy: "app-users"
+spec:
+  selector:
+    app: app
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 80
+  type: ClusterIP
+```
+The operator will create a policy in your management account similar to the one below:
+<p>
+    <img src="/docs-static/img/how-to-guides/kubernetes/resources-policy.png" alt="resources policy" className="imagewrapper-big"/>
+</p>
+You can reference multiple policy bases using a comma separated list of policy bases: `netbird.io/policy: "app-users,app-admins"`
+
+## Accessing remote services using side-cars
+You can access services running on different locations from your Kubernetes clusters by using NetBird sidecars, which are additional
+containers that run alongside your application containers. With a NetBird sidecar, your applications will have the same peers, routes, and DNS configuration as any other peer in your NetBird network.
+This allows egress-like traffic to be routed through your NetBird network, enabling secure access to remote services running on different locations or cloud providers.
+
+To enable a sidecar for your deployments, first, you need to generate a setup key as in the image below or follow [this](/how-to/register-machines-using-setup-keys) guide for more information.
+<p>
+    <img src="/docs-static/img/how-to-guides/kubernetes/side-cars-setup-key.png" alt="Setup Keys" className="imagewrapper"/>
+</p>
+
+Then, you will create a secret in Kubernetes and
+add a new resource called NBSetupKey. The NBSetupKey name can then be used in your deployments or daemon sets to indicate which setup key to use when injecting a sidecar into your application pods. See an example of a secret and a NBSetupKey resource below:
+
+Secret:
+```yaml
+apiVersion: v1
+stringData:
+  setupkey: EEEEEEEE-EEEE-EEEE-EEEE-EEEEEEEEEEEE
+kind: Secret
+metadata:
+  name: app-setup-key
+```
+NBSetupKey:
+```yaml
+apiVersion: netbird.io/v1
+kind: NBSetupKey
+metadata:
+  name: app-setup-key
+spec:
+  # Optional, overrides management URL for this setupkey only
+  # defaults to https://api.netbird.io
+  # managementURL: https://netbird.example.com
+  secretKeyRef:
+    name: app-setup-key # Required
+    key: setupkey # Required
+```
+
+After adding the resource, you can reference the NBSetupKey in your deployments or daemon-sets as shown below:
+```yaml
+kind: Deployment
+...
+spec:
+...
+  template:
+    metadata:
+      annotations:
+        netbird.io/setup-key: app-setup-key # Must match the name of an NBSetupKey object in the same namespace
+...
+    spec:
+      containers:
+...
+```
+
+### Using extra labels to access multiple pods using the same name
+Since v0.27.0, NetBird supports extra DNS labels, which extends the DNS names that you can link to
+peers by grouping them and load balancing access using DNS round-robin.
+
+To enable this feature, you need to create a setup key with `Allow Extra DNS labels` enabled; see the example below:
+<p>
+    <img src="/docs-static/img/how-to-guides/kubernetes/side-cars-setup-key-with-extra-labels.png" alt="Setup keys with extra labels" className="imagewrapper"/>
+</p>
+
+And add the annotation `netbird.io/extra-dns-labels` to your pod; see the example below:
+```yaml
+kind: Deployment
+...
+spec:
+...
+  template:
+    metadata:
+      annotations:
+        netbird.io/setup-key: app-setup-key # Must match the name of an NBSetupKey object in the same namespace
+        netbird.io/extra-dns-labels: "app"
+...
+    spec:
+      containers:
+...
+```
+With this setup, other peers in your NetBird network can reach these pods using the domain `app.<NETBIRD_DOMAIN>`
+(e.g., for NetBird cloud, app.netbird.cloud). The access will be made using a DNS round-robin fashion for multiple pods.
+
+## Get started
+<p float="center" >
+    <Button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</Button>
+</p>
+
+- Make sure to [star us on GitHub](https://github.com/netbirdio/netbird)
+- Follow us [on Twitter](https://twitter.com/netbird)
+- Join our [Slack Channel](https://join.slack.com/t/netbirdio/shared_invite/zt-31rofwmxc-27akKd0Le0vyRpBcwXkP0g)
+- NetBird [latest release](https://github.com/netbirdio/netbird/releases) on GitHub
