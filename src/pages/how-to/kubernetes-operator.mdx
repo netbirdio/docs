@@ -16,13 +16,10 @@ seamlessly access your Kubernetes services and control plane from your NetBird n
 - Access to a Kubernetes v1.11.3+ cluster.
 - (Recommended) Cert Manager.
 
-### Installation
-You have two methods of installing the NetBird Kubernetes operator: using Helm or the install.yaml file.
-
 #### Using Helm
 1. Add helm repository.
 ```shell
-helm repo add netbirdio https://netbirdio.github.io/kubernetes-operator
+helm repo add netbirdio https://netbirdio.github.io/helms
 ```
 2. (Recommended) Install [cert-manager](https://cert-manager.io/docs/installation/#default-static-install) for k8s API to communicate with the NetBird operator.
 ```shell
@@ -77,16 +74,6 @@ The configuration or version update of the operator can be done with `helm upgra
 helm upgrade --create-namespace -f values.yaml -n netbird netbird-operator netbirdio/kubernetes-operator
  ```
 
-#### Using install.yaml
-<Note>
-install.yaml only includes a very basic template for deploying a stripped-down version of Kubernetes-operator.
-This option does not include any configurations for ingress capabilities and requires the cert-manager to be installed.
-</Note>
-
-```shell
-kubectl create namespace netbird
-kubectl apply -n netbird -f https://raw.githubusercontent.com/netbirdio/kubernetes-operator/refs/heads/main/manifests/install.yaml
-```
 ## Expose Kubernetes Control Plane to your NetBird Network
 To access your Kubernetes control plane from a NetBird network, you can expose your Kubernetes control plane as a
 [NetBird resource](/how-to/networks#resources) by enabling the following option in the operator values:
@@ -230,6 +217,38 @@ The operator will create a policy in your management account similar to the one 
 </p>
 
 You can reference multiple policy bases using a comma separated list of policy bases: `netbird.io/policy: "app-users,app-admins"`
+
+### Policy auto-creation
+
+1. Ensure `ingress.allowAutomaticPolicyCreation` is set to true in the Helm chart and apply.
+2. Annotate a service with `netbird.io/policy` with the name of the policy as a kubernetes object, for example `netbird.io/policy: default`. This will create an NBPolicy with the name `default-<Service Namespace>-<Service Name>`.
+3. Annotate the same service with `netbird.io/policy-source-groups` with a comma-separated list of group names to allow as a source, for example `netbird.io/policy-source-groups: dev`.
+4. (Optional) Annotate the service with `netbird.io/policy-name` for a human-friendly name, for example `netbird.io/policy-name: "default:Default policy for kubernetes cluster"`.
+Example:
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+  annotations:
+    netbird.io/expose: "true"
+    netbird.io/groups: "app-access"
+    netbird.io/policy: "app-users"
+    netbird.io/policy-source-groups: "dev"
+    netbird.io/policy-name: "dev:Developers to app"
+spec:
+  selector:
+    app: app
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 80
+  type: ClusterIP
+```
+
+<Note>
+ If a policy already exists with the name specified in `netbird.io/policy`, the other settings will be ignored in favor of the existing policy.
+</Note>
 
 ## Accessing Remote Services Using Sidecars
 To access services running in different locations from your Kubernetes clusters, you can deploy NetBird sidecars—additional
