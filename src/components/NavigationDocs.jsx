@@ -194,6 +194,7 @@ export const docsNavigation = [
                      links: [
                          {title: 'Deploying with Jamf Pro', href: '/how-to/jamf-pro-netbird-integration' },
                          {title: 'Deploying with Kandji', href: '/how-to/kandji-netbird-integration' },
+                         {title: 'Deploying with Intune', href: '/how-to/intune-netbird-integration' },
                      ]
                  },
                  {
