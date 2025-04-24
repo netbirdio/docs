@@ -107,7 +107,7 @@ export const docsNavigation = [
              ]
          },
          {
-              title: 'Networks (new)',
+              title: 'Networks',
               isOpen: false,
               links: [
                   { title: 'Concept', href: '/how-to/networks' },
@@ -158,7 +158,8 @@ export const docsNavigation = [
          {
              title: 'Activity',
              links: [
-                 { title: 'Network Activity Logging', href: '/how-to/monitor-system-and-network-activity' },
+                 { title: 'Audit Events Logging', href: '/how-to/audit-events-logging' },
+                 { title: 'Traffic Events Logging', href: '/how-to/traffic-events-logging' },
                  {
                      title: 'Stream Activity Events',
                      href: '/how-to/activity-event-streaming',
@@ -187,10 +188,22 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  {title: 'Enable post quantum cryptography', href: '/how-to/enable-post-quantum-cryptography' },
-                 {title: 'Deploying with Jamf Pro', href: '/how-to/jamf-pro-netbird-integration' },
-                 {title: 'Deploying with Kandji', href: '/how-to/kandji-netbird-integration' },
-
-
+                 {
+                     title: 'MDM',
+                     isOpen: true,
+                     links: [
+                         {title: 'Deploying with Jamf Pro', href: '/how-to/jamf-pro-netbird-integration' },
+                         {title: 'Deploying with Kandji', href: '/how-to/kandji-netbird-integration' },
+                         {title: 'Deploying with Intune', href: '/how-to/intune-netbird-integration' },
+                     ]
+                 },
+                 {
+                     title: 'Kubernetes',
+                     isOpen: true,
+                     links: [
+                         {title: 'Operator', href: '/how-to/kubernetes-operator' },
+                     ]
+                 },
              ]
          },
 
@@ -199,6 +212,15 @@ export const docsNavigation = [
                 isOpen: false,
                 links: [
                     { title: 'Access public API', href: '/how-to/access-netbird-public-api' },
+
+                ]
+            },
+
+            {
+                title: 'For Partners',
+                isOpen: false,
+                links: [
+                    { title: 'Managed Service Providers', href: '/how-to/msp-portal' },
 
                 ]
             },
@@ -212,9 +234,8 @@ export const docsNavigation = [
          { title: 'Serverless and NetBird', href: '/how-to/netbird-on-faas' },
          { title: 'Routing peers and Kubernetes', href: '/how-to/routing-peers-and-kubernetes'},
          { title: 'NetBird Client on AWS ECS', href: '/how-to/examples'},
-         { title: 'Netbird on Mikrotik Router', href: '/how-to/client-on-mikrotik-router' },
+         { title: 'NetBird on Mikrotik Router', href: '/how-to/client-on-mikrotik-router' },
      ],
- 
  
  },
  {

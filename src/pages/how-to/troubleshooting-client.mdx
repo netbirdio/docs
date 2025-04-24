@@ -265,6 +265,32 @@ sudo netbird service stop
 sudo bash -c 'PIONS_LOG_DEBUG=all NB_LOG_LEVEL=debug netbird up -F' > /tmp/netbird.log
 ```
 
+## Client login failures
+
+A single machine can only connect to one NetBird account as the same user/login method throughout the lifetime of
+the `config.json` file:
+
+- `/etc/netbird/config.json` for Linux/MacOS
+- `C:\ProgramData\netbird\config.json` for Windows
+
+You will need to remove the file manually to use the machine as a different user/Setup Key.
+
+You might get errors like below when trying to use Setup Key/different SSO user account during login:
+
+```
+2025-04-08T15:03:04+01:00 ERRO management/client/grpc.go:351: failed to login to Management Service: rpc error: code = PermissionDenied desc = peer login has expired, please log in once more
+2025-04-08T15:03:04+01:00 ERRO management/client/grpc.go:351: failed to login to Management Service: rpc error: code = PermissionDenied desc = invalid user
+2025-04-08T15:03:04+01:00 ERRO client/internal/login.go:145: failed registering peer rpc error: code = PermissionDenied desc = invalid user,00000000-0000-0000-0000-000000000000
+2025-04-08T15:03:04+01:00 WARN client/server/server.go:267: failed login: rpc error: code = PermissionDenied desc = invalid user
+```
+
+The most notable examples of encountering the issue are:
+
+- shared machines,
+- a machine that was previously logged in using Setup Key, but now attempts SSO login,
+- a machine's Peer got removed from the Dashboard without clearing the file,
+- the user uses different browser/profile or selects the wrong account during SSO login at the start of the workday,
+
 ## Debugging access to network resources
 
 In this section we will be presenting methodology of troubleshooting access issues involving Netbird.
@@ -306,9 +332,10 @@ In short:
 1. Does `peer-b` have direct access to `srv-c`'s port `80`?
 2. Can a routing peer `peer-b` forward traffic to `srv-c`?
 3. Are Netbird's network routing resources configured?
-4. Do Netbird's Access Control rules allow access from `peer-a` to `peer-b`?
-5. Do Netbird's Access Control rules allow access from `peer-a` to the target's ACL Group?
-6. Is `peer-a`'s operating system configured to use the route?
+4. Do Netbird's Access Control rules allow access from `peer-a` to the target's ACL Group?
+5. Is `peer-a`'s operating system configured to use the route?
+
+Access Control rule is not required for connectivity from `peer-a` to `peer-b`
 
 #### Does `peer-b` have direct access to `srv-c`'s port `80`?
 
@@ -330,10 +357,6 @@ ping --numeric --count=1 --timeout=2 10.123.45.17
 
 #### Can a routing peer `peer-b` forward traffic to `srv-c`?
 
-<Note>
-    Only Linux OS machines can be assigned as routing peers.
-</Note>
-
 This is more complicated to test, but usually boils down to confirming `net.ipv4.ip_forward` is set to `1` on `peer-b`'s
 Linux operating system:
 
@@ -341,6 +364,9 @@ Linux operating system:
 > sysctl net.ipv4.ip_forward
 net.ipv4.ip_forward = 1
 ```
+
+It should be set up automatically by the Netbird client unless it runs inside a container (which would not be able
+to modify `sysctl`), then it requires manual setup.
 
 For setting up the value persistently (across reboots) please consult your operating system's documentation.
 It is often handled by either `/etc/sysctl.conf` or `/etc/sysctl.d/*.conf` files.
@@ -373,34 +399,6 @@ You can loosen the rules and replace following to grant access to the whole `int
 
 - _Address_: `10.123.45.17/32` -> `10.123.45.0/24`,
 - _Assigned Groups_ / _Access Control Groups_: `access:srv-c` -> `access:int-net1`
-
-#### Do Netbird's Access Control rules allow access from `peer-a` to `peer-b`?
-
-There should be an _Access Control Policy_ present allowing traffic from `users:employees` Group to `routers:int-net1`
-Group.
-
-You can confirm the _Policy_ is working by:
-
-1. logging in to `peer-a`,
-2. issuing `netbird status -d` command,
-3. finding `peer-b.netbird.cloud` under `Peers detail`,
-
-In the most specific setup it should have at:
-
-- have `TCP` protocol selected,
-- a blue arrow should point from left to right and a second right-to-left arrow should be greyed out,
-- a _Source group_ set to `users:employees`,
-- a _Destination group_ set to `routers:int-net1`,
-- have `80` in the Ports section,
-
-You can loosen above example by:
-
-- allowing `ALL` protocol, _Ports_ will become greyed out because all traffic will be allowed,
-- creating a bidirectional rule (both arrows should be green), always true for the protocol `ALL`,
-- selecting a different source group from the pool assigned to `peer-a`,
-    - it could be built-in `All` group, but it is discouraged,
-- selecting a different destination group from the pool assigned to `peer-b`,
-    - it could be built-in `All` group, but it is discouraged,
 
 #### Do Netbird's Access Control rules allow access from `peer-a` to the target's ACL Group?
 
@@ -464,6 +462,21 @@ You should be primarily looking for _Networks_ section under each _Peers detail_
 - _Peer_'s _Status_: it should be `Connected`,
 - _Peer_'s _Connection type_: it can be either `P2P` (direct) or `Relayed` (over the Internet),
 - _Peers count_ near the end of the output,
+
+If it's missing you can search for clues with `netbird networks ls` command:
+
+```shell
+% netbird networks ls
+Available Networks:
+...
+  - ID: net-a:int-net1
+    Network: 10.123.45.0/24
+    Status: Selected
+...
+```
+
+The _Status_ could be `Not Selected`, which you can fix with `netbird networks select <ID>` or
+`netbird networks select all`
 
 ##### Verifying routing configuration on the Windows operating system
 
@@ -582,7 +595,7 @@ resolvectl query name.at.example.com.
 To confirm the nameservers are properly registered in Windows operating system using PowerShell:
 
 ```shell
-PS C:\Users\user> Get-DnsClientNrptRule
+PS C:\Users\kdn> Get-DnsClientNrptRule
 Name                             : NetBird-Match
 Version                          : 2
 Namespace                        : {.netbird.cloud, .83.100.in-addr.arpa}
@@ -600,6 +613,18 @@ NameServers                      : 100.83.255.254
 Namespace                        : .netbird.cloud
 ...
 NameServers                      : 100.83.255.254
+...
+
+PS C:\Users\kdn> ipconfig /all
+...
+Unknown adapter wt0:
+
+   Connection-specific DNS Suffix  . : netbird.cloud
+   Description . . . . . . . . . . . : WireGuard Tunnel
+...
+   Connection-specific DNS Suffix Search List :
+                                       netbird.cloud
+                                       83.100.in-addr.arpa
 ...
 ```
 
@@ -640,6 +665,24 @@ You should be searching for following in the outputs of above commands:
 - `netbird.cloud` and `.XXX.100.in-addr.arpa` under matching _domain_ for built-in entries,
 - `.your.custom.domain.example.com` under matching _domain_ for your custom domains,
 - `Reachable` under `reach` field,
+
+##### MacOS DNS caching issues
+
+MacOS might have cached the result from a previous attempt (since it's a public record) and keep serving those.
+You can try flushing the cache to fix it using following commands:
+
+```shell
+sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder
+```
+
+You can validate whether this is the issue in your setup by performing following steps:
+
+1. `netbird down` / `Disconnect`
+2. flush cache (see above)
+3. resolve the domain, eg: `dscacheutil -q host -a name <domain>`
+4. `netbird up` / `Connect`
+5. check whether `dscacheutil -q host -a name  <domain>` works
+    - if it doesn't flush the cache and retry
 
 #### Verifying the nameservers are properly registered in Linux operating system
 

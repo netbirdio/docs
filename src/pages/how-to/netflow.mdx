@@ -1,0 +1,213 @@
+# Introduction
+
+NetBird’s **Traffic Events** feature provides a high-level view of traffic flows between network peers and resources.
+It captures connection events on the client (peer) side – for example, when `Peer A` connects to `Peer B` –
+allowing administrators to observe how devices communicate across the NetBird network​.
+The primary purpose of traffic events is to help network admins monitor network activity,
+detect unusual or unauthorized connections, and troubleshoot connectivity issues in their NetBird mesh VPN​.
+Unlike packet capture, **Traffic Events** record metadata about the traffic (addresses, ports, timestamps, etc.) rather than the contents,
+preserving privacy while still giving useful insight​.
+
+By focusing on client-side events, NetBird’s **Traffic Events** show what each peer is doing on the network.
+This includes which peers or services it is contacting, over which protocols, and when.
+Traffic Events are especially useful for verifying that access control policies are working as expected (e.g. confirming that a peer could reach an allowed resource,
+or that blocked traffic wasn’t forwarded).
+In essence, they provide an audit trail of network connections in your NetBird environment,
+helping administrators ensure the network is being used according to policy and to quickly identify
+any anomalies or needed configuration changes.
+
+# Data Collected on Peers
+
+When enabled, a NetBird peer will record metadata for each network flow that it participates in. The data collected typically includes:
+
+* **Timestamp**: When the flow started and ended.
+* **Source and Destination IP Addresses**: The IP of the peer (source) and the IP of the remote endpoint (destination). For peer-to-peer traffic, these will be the NetBird network IPs (e.g. 100.x.x.x addresses of each peer). For traffic to an external resource (like a private server or subnet), the destination might be an IP in that remote network​.
+* **Source and Destination Ports**: The network ports used by the connection (for TCP/UDP flows). ICMP flows will be identified by ICMP type rather than ports​.
+* **Protocol**: The protocol of the traffic, such as TCP, UDP, or ICMP​.
+* **Direction**: Whether the flow was incoming or outgoing​.
+* **Volume of Data**: The amount of data transferred, measured in number of packets and bytes sent/received for the duration of the flow​.
+
+# Kernel Mode vs Userspace Mode
+
+NetBird leverages WireGuard for its tunneling, and it can operate in two modes on client devices: kernel mode or userspace mode.
+In kernel mode, NetBird utilizes the operating system’s WireGuard kernel module (when available) for handling encryption and routing.
+This offers very efficient performance with low overhead, as the heavy lifting is done inside the OS kernel.
+NetBird is designed to take advantage of kernel-mode WireGuard whenever possible for direct peer-to-peer connections​.
+If the kernel module isn’t available or if the platform doesn’t support it (for example, Windows, or certain BSD-based systems),
+NetBird falls back to a userspace implementation of WireGuard (running in the NetBird agent process).
+Userspace mode may introduce slightly higher CPU usage or latency since packets are handled in the application layer rather than the kernel,
+but it ensures compatibility across all environments.
+
+# Log Retention
+
+NetBird does not store Traffic Events indefinitely; instead, we follow a retention policy to
+balance storage use and privacy. By default, traffic event data is retained for 24 hours on the management system,
+after which older records are automatically deleted.
+
+However, while in experimental mode, logs are retained for **48 hours**.
+Additionally, please note that the current API returns a maximum of **50,000 events**.
+We are actively working on expanding this limit in the coming days to support larger datasets and increased usage.
+
+# Log Shipping
+
+To enhance monitoring and centralized analysis, we support shipping Traffic Events to external logging solutions.
+This integration allows you to seamlessly forward Traffic Events from NetBird to DataDog, Amazon S3 or Amazon DataFirehose,
+where you can leverage advanced dashboards, alerting, and analytics to gain deeper insights into your network activity.
+
+# Use Cases
+
+This section outlines common scenarios in which Traffic Events are useful, explaining what administrators can glean in each case.
+We’ll also illustrate some scenarios with examples and screenshots of log data where applicable.
+
+## 1. Peer-to-Peer Connections
+
+When two NetBird peers communicate directly, a traffic event is generated on the peer that initiated the connection.
+This covers basic peer-to-peer traffic such as one workstation pinging another, an SSH session from one server to another,
+or any application data exchanged between two peers over NetBird.
+The log will show the source peer’s NetBird IP and the destination peer’s NetBird IP, along with the protocol and ports used.
+
+#### **1.1. Example of a traffic event for a TCP connection between two peers.**
+![NetBird Local Peer](/docs-static/img/how-to-guides/traffic-events/tcp.png)
+In the above example, a peer named `Nevada Windows` opened a TCP connection from source port `52480` to another peer named `acltest` on destination port `80`.
+Each peer would log the event from its perspective – typically, the initiator peer `Peer A` logs it as an outgoing connection and
+the responder peer `acltest` logs it as an incoming connection.
+
+
+#### **1.2. Example of a traffic event for an UDP connection between two peers.**
+
+![NetBird Local Peer](/docs-static/img/how-to-guides/traffic-events/udp.png)
+In the case of UDP traffic between peers, the event will similarly record the source/dest IPs and ports and label the protocol as UDP.
+
+#### 1.3. Example of a traffic event for an ICMP connection between two peers.
+
+![NetBird Local Peer](/docs-static/img/how-to-guides/traffic-events/icmp.png)
+ICMP flows (like a ping) will appear with protocol ICMP in the logs. For a ping, you’d see the two peers’ IPs and the fact it was ICMP;
+if packet/byte counting is on, you might see a couple of packets (an echo request and reply) recorded.
+
+## 2. Peer-to-Resource Connections
+
+#### 2.1. Peer-To-Host Connection
+
+![NetBird Local Peer](/docs-static/img/how-to-guides/traffic-events/peer_to_host.png)
+
+This scenario involves a NetBird peer accessing a specific host resource on an internal network, via a routing peer.
+In NetBird, you can define resources (in Access Control) that are single hosts (single IP addresses) which a peer should be allowed to reach.
+For example, you might have an on-premises service at IP `192.168.0.201` that is not itself running NetBird,
+but one of your NetBird peers `Routing Peer A` is in that network and can route traffic to it.
+Another peer `Peer A` somewhere else is granted access to that host through NetBird.
+When `Peer A` tries to connect (e.g. HTTPS on port 443) to the host resource `192.168.0.201` the traffic will go through `Routing Peer A`
+(which acts as a routing peer for that resource).
+
+Traffic Events are extremely useful here to understand each step:
+
+* On `Peer A`’s log, you would see an outgoing event with destination `192.168.0.201`:443 (for example) over TCP.
+The source would be `Peer A`’s NetBird IP and source port, destination the host’s IP and port 443.
+This confirms that Peer A attempted to reach the server.
+* On `Routing Peer A`’s log, you will see the related event: coming from `Peer A`
+(`Peer A`’s NB IP to `192.168.0.201` on port 443). Routing `Peer A` essentially bridges the two networks,
+so it sees an incoming event and forwards the traffic internally.
+
+**Another Example**: Imagine DNS is disabled on a printer, and a user’s laptop `Peer A` tries to ping the printer’s IP
+via a NetBird routing peer. The logs on `Peer A` would show an ICMP flow to the printer’s IP;
+the routing peer’s logs would show the traffic coming from the laptop and going to the printer.
+If the ping fails, you could see whether the flow reached the printer or not.
+All of this without capturing packets – the flow records give a concise summary of what happened.
+In summary, for peer-to-host resource events, look at the initiating peer’s log for an outbound flow to the host’s IP,
+and the routing peer’s log for the corresponding transit.
+These flows confirm that NetBird is correctly carrying traffic to specific network resources in your network.
+
+#### 2.2. Peer-To-Subnet Connection
+
+Similar to the above, this scenario deals with a peer accessing an entire subnet (range of IPs) via a routing peer.
+NetBird allows administrators to define network routes (or the newer “Networks” feature) where a peer acts as a gateway to a subnet (for example, an office `LAN 10.0.5.0/24`).
+A common use case is site-to-site connectivity or allowing remote peers to access a whole VLAN or VPC through one NetBird node.
+
+In a peer-to-subnet case, the Traffic Events will show when a peer communicates with any IP in the target subnet:
+
+* On the client (peer) side, an outgoing traffic event will appear whenever it sends traffic to an IP within the allowed subnet. For instance,
+if `Peer A` (remote laptop) connects to `10.0.5.100` (an internal server in the subnet),
+`Peer A`’s logs will list a flow with destination `10.0.5.100` (and whatever port/protocol).
+* On the routing peer’s side (the peer that has access to that subnet),
+you’ll again see the flow coming from `Peer A`’s NetBird IP out to the `10.0.5.x` address.
+
+One thing to note is that when a subnet is allowed, a peer might generate many traffic events if it scans 
+or communicates with multiple hosts in that subnet. Each distinct connection (to each IP and port)
+is a separate traffic event. The logs can thus help you map out which internal hosts a remote peer is talking to.
+For example, you might see peer-a accessing `10.0.5.25 (file server)` on `TCP 445`, and also `10.0.5.100` on `TCP 3389 (RDP)`.
+This tells you which services are being used.
+
+Traffic Events in this scenario can highlight if any unexpected access is happening.
+Perhaps a peer is only supposed to use a database, but you see events to a domain controller’s IP – that could be a red flag to investigate.
+Conversely, if a user complains they can’t access anything in the subnet, you could check the traffic events
+if absolutely no traffic events to that subnet appear in their peer log, maybe their client isn’t attempting the connection.
+
+#### 2.3. Peer-To-Domain Connection
+
+![NetBird Local Peer](/docs-static/img/how-to-guides/traffic-events/domain.png)
+![NetBird Local Peer](/docs-static/img/how-to-guides/traffic-events/domain_resource.png)
+
+
+NetBird also supports defining resources by domain name – for example,
+an access policy might allow a peer to reach example.com or *.corp.internal.
+In these cases, the NetBird client will handle domain name resolution (often through NetBird’s DNS features)
+and then allow traffic to the resulting IP addresses if they match the domain policy.
+Traffic Events will capture the actual IP connections made, but it’s important to understand how domain-based rules reflect in the logs.
+
+When a peer initiates a connection to an allowed domain (say, intranet.corp.internal), the following happens:
+
+The peer resolves the domain to an IP using the routing peer's embedded resolver.
+The connection proceeds to that IP over the tunnel. The event on the peer will show a connection to that IP address (since that’s what ultimately happens on the network layer).
+
+As a result, an administrator analyzing the logs may see a connection to an IP address, such as 10.8.0.5 on TCP 443,
+with an explicit reference to the domain it was resolved from. 
+
+The event for peer-to-domain scenarios will look just like any other peer-to-host event:
+peer’s NB IP -> some destination IP, protocol, port, bytes.
+The difference is that the allowed destination IP might not be static – it could change
+if the DNS name resolves differently. NetBird, however, will log whatever actual addresses were contacted.
+For example, consider a rule allowing access to pool.ntp.org (which resolves to various IPs).
+If a peer (Peer A) uses that, on Peer A’s log over time you might see events to multiple different IP addresses
+on UDP port 123 (NTP). Each of those events corresponds to the domain resource. 
+
+## 3. Site-to-Site Connections
+
+In a site-to-site setup, NetBird connects two or more networks (sites) each with a routing peer.
+For example, an AWS VPC network and an on-prem network could be linked via their respective NetBird peers,
+so that machines in each site can talk to each other through the NetBird tunnel
+(often without each machine running NetBird – the routing peers relay traffic).
+Traffic Events become a powerful tool to monitor and troubleshoot this inter-site traffic.
+
+Consider two sites: Site A (with subnet 10.1.0.0/16, routing peer = Peer-A) and Site B (with subnet 192.168.1.0/24, routing peer = Peer-B).
+NetBird is configured so that each site’s subnet is accessible to the other via the respective routing peers.
+Now suppose a host in Site A (10.1.0.50) is trying to reach a host in Site B (192.168.1.75) on some service.
+
+Here’s how the Traffic Events play out:
+
+* Peer-A’s logs (routing peer at Site A): Peer-A will log an incoming event from 10.1.0.50 (a host on its LAN)
+going to 192.168.1.75 via the NetBird tunnel.
+* Peer-B’s logs (routing peer at Site B): Correspondingly, Peer-B will log an incoming event from Peer-A (over NetBird)
+destined to 192.168.1.75 on its local network.
+
+Using these logs, you can trace end-to-end connectivity between sites.
+If Site A can’t talk to Site B, check Peer-A’s logs: do we see events attempting to go out?
+If not, the issue might be that the Site A host isn’t routing to Peer-A.
+If yes, then check Peer-B’s logs: did it receive anything?
+If Peer-B’s log is empty for that traffic, then maybe the tunnel is down or ACL is missing.
+If Peer-B got it and forwarded to 192.168.1.75, but no reply came, then the problem is likely on the Site B host or network.
+Essentially, the Traffic Events allow you to break the problem into segments (A -> tunnel, tunnel -> B, B -> host, etc.).
+
+Even in normal operation, site-to-site Traffic Events give visibility into the volume and types of traffic flowing between locations.
+This can be useful for capacity planning or security monitoring.
+For example, if one site suddenly starts sending a lot of data to another at odd hours, the logs on the routing peers will reflect that in bytes and packets counts.
+Administrators might set up external log analysis to alert on unusual site-to-site flow patterns (e.g., a spike in ICMP traffic or large data transfers).
+
+# Privacy and Security Considerations
+**[CHECK] Add this section if needed**
+
+# Conclusion
+
+Traffic Events in NetBird provide network administrators with valuable visibility into the traffic within their secure network, all while operating at a high level that avoids delving into packet contents.
+In this documentation, we covered what Traffic Events are and how they function on NetBird clients:
+they record who is talking to whom, over what, and when, giving you an overview of network activity that is essential for both troubleshooting and security auditing.
+We outlined the data points collected (IPs, ports, timestamps, etc.) and noted that by default NetBird is careful not to log sensitive payload or DNS information, aligning the feature with privacy best practices​.
+

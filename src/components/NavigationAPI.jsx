@@ -25,6 +25,7 @@ export const apiNavigation = [
       { title: 'Users', href: '/api/resources/users' },
       { title: 'Tokens', href: '/api/resources/tokens' },
       { title: 'Peers', href: '/api/resources/peers' },
+      { title: 'Ingress Ports', href: '/api/resources/ingress-ports' },
       { title: 'Setup Keys', href: '/api/resources/setup-keys' },
       { title: 'Groups', href: '/api/resources/groups' },
       { title: 'Policies', href: '/api/resources/policies' },
