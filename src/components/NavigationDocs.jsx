@@ -48,7 +48,7 @@ export const docsNavigation = [
                  { title: 'Add Peers', href: '/how-to/add-machines-to-your-network' },
                  { title: 'Approve Peers', href: '/how-to/approve-peers' },
                  { title: 'Setup Keys', href: '/how-to/register-machines-using-setup-keys' },
-                 { title: 'Lazy connections concept', href: '/how-to/lazy-connection'},
+                 { title: 'Lazy Connections', href: '/how-to/lazy-connection'},
                  {
                      title: 'Access Infrastructure',
                      isOpen: true,
