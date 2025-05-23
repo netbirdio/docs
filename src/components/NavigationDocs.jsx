@@ -154,6 +154,11 @@ export const docsNavigation = [
                      href: '/how-to/auto-offboard-users',
                      isOpen: false,
                  },
+                 {
+                     title: 'Single Sign-On',
+                     href: '/how-to/single-sign-on',
+                     isOpen: false,
+                 },
              ]
          },
          {
