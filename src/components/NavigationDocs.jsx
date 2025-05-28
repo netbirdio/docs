@@ -30,7 +30,7 @@ export const docsNavigation = [
         title: 'GET STARTED',
         links: [
             { title: 'Quickstart Guide', href: '/how-to/getting-started' },
-            {title: 'Install NetBird (Client)', href: '/how-to/installation' },
+            {title: 'Install NetBird', href: '/how-to/installation' },
             { title: 'CLI', href: '/how-to/cli' },
            
            /* { title: 'Update NetBird', href: '/how-to/enforce-periodic-user-authentication' },*/
