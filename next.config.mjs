@@ -25,6 +25,11 @@ const nextConfig = {
     redirects: async () => {
         return [
             {
+                source: '/slack-url',
+                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-36ckpgzva-_V4OFhWhDA8e2v_Fy6zR3w',
+                permanent: false,
+            },
+            {
                 source: '/how-to/networks-concept',
                 destination: '/how-to/networks',
                 permanent: true,
