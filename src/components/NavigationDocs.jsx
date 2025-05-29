@@ -241,6 +241,7 @@ export const docsNavigation = [
          { title: 'Routing peers and Kubernetes', href: '/how-to/routing-peers-and-kubernetes'},
          { title: 'NetBird Client on AWS ECS', href: '/how-to/examples'},
          { title: 'NetBird on Mikrotik Router', href: '/how-to/client-on-mikrotik-router' },
+         { title: 'Self-hosted vs. Cloud-hosted NetBird', href: '/selfhosted/self-hosted-vs-cloud-netbird' },
      ],
  
  },
@@ -254,7 +255,6 @@ export const docsNavigation = [
       { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
       { title: 'Management geolocation', href: '/selfhosted/geo-support' },
       { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
-      { title: 'Self-hosted vs. Cloud-hosted NetBird', href: '/selfhosted/self-hosted-vs-cloud-netbird' },
   ],
   
   
