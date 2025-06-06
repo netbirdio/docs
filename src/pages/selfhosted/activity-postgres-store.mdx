@@ -1,0 +1,100 @@
+# Activity Events Postgresql store
+
+## Using Postgres for fresh installations
+
+The default configuration for fresh installations is SQLite storage. However users have the option to leverage the benefits
+of Postgres for new instances beginning from version `0.46.0`.
+
+To enable Postgres add to your management service the following environmental variable:
+```bash
+NB_ACTIVITY_EVENT_STORE_ENGINE=postgres
+NB_ACTIVITY_EVENT_POSTGRES_DSN=host=localhost port=5432 user=<user> password=<password> dbname=<db_name>
+```
+
+You can switch back to sqlite storage by setting the `NB_ACTIVITY_EVENT_STORE_ENGINE` variable to `sqlite`.
+<Note>
+    Switching between storage options requires migration steps to prevent data loss.
+</Note>
+
+
+## Migrating from SQLite store to Postgres store
+This migration process allows users to seamlessly transition between storage options while maintaining data integrity.
+
+<Note>
+    The following commands assume you use the latest docker version with the compose plugin. If you have docker-compose installed as a standalone, please use docker-compose as a command.
+</Note>
+
+1. Backup your data store (`events.db` in `datadir` - default `/var/lib/netbird/`)
+```bash
+mkdir backup
+docker compose cp -a management:/var/lib/netbird/. backup/
+```
+
+2. Import Sqlite data to Postgres
+
+For migrating the Sqlite data we rely on the [pgloader](https://github.com/dimitri/pgloader) tool. You can install it by running
+`sudo apt-get install pgloader` on debian or `brew install pgloader` on MacOS.
+
+```bash
+pgloader --type sqlite backup/events.db "postgresql://<PG_USER>:<PG_PASSWORD>@<PG_HOST>:<PG_PORT>/<PG_DB_NAME>"
+```
+
+3. Create `.env` file with the following content:
+```bash
+NB_ACTIVITY_EVENT_STORE_ENGINE=postgres
+NB_ACTIVITY_EVENT_POSTGRES_DSN="host=<PG_HOST> user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB_NAME> port=<PG_PORT>"
+```
+
+4. Update `docker-compose.yml` file to  pass the postgres configuration to the `management` container
+```yaml
+environment:
+  - NB_ACTIVITY_EVENT_STORE_ENGINE=${NB_ACTIVITY_EVENT_STORE_ENGINE}
+  - NB_ACTIVITY_EVENT_POSTGRES_DSN=${NB_ACTIVITY_EVENT_POSTGRES_DSN}
+env_file:
+  - .env
+```
+
+5. Restart the management service
+```bash
+docker compose restart management
+```
+
+6. Check logs to confirm the store switch:
+```bash
+docker compose logs management
+```
+You should see an entry similar to:
+```
+2025-06-06T18:23:17+03:00 INFO [context: SYSTEM] management/server/activity/store/sql_store.go:260: using postgres as activity event store engine
+```
+
+## Rollback to Sqlite store
+To rollback to the Sqlite  store, follow these steps:
+<Note>
+    The following commands assume you use the latest docker version with the compose plugin. If you have docker-compose installed as a standalone, please use docker-compose as a command.
+</Note>
+
+1. Restore `events.db` backup
+```bash
+docker compose cp backup/events.db management:/var/lib/netbird/events.db
+```
+
+2. Enable SQLite by setting the `NB_ACTIVITY_EVENT_STORE_ENGINE` environment variable to `sqlite`:
+```bash
+NB_ACTIVITY_EVENT_STORE_ENGINE=sqlite
+```
+
+3. Restart the Management service.
+```bash
+docker compose restart management
+```
+
+4. Check logs to confirm the store switch:
+```bash
+docker compose logs management
+```
+
+You should see an entry similar to:
+```
+2025-06-06T18:24:19+03:00 INFO [context: SYSTEM] management/server/activity/store/sql_store.go:260: using sqlite as activity event store engine
+```
