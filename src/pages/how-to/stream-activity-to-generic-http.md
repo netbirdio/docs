@@ -80,7 +80,7 @@ After configuring all settings, click **Save Changes**.
 
 Once you save the integration, NetBird sends a test event to your endpoint to confirm that the connection and authentication are successful.
 
-Check the logs of your receiving service for a new POST request. You should find a JSON payload similar to this:
+Check the logs of your receiving service for a new POST request. You should find a JSON payload similar to this (if custom template wasn't set up):
 
 ```json
 {
