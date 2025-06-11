@@ -1,6 +1,6 @@
 # Deploying NetBird with Intune
 
-Microsoft Intune is a cloud-based endpoint management solution that manages user access to organizational resources and simplifies app and device management across multiple platforms, including Android, iOS/iPadOS, Linux, macOS, and Windows client devices. Working alongside Microsoft Entra ID (formerly Azure Active Directory), Intune forms a powerful identity and access management framework organizations rely on to secure digital assets.
+Microsoft Intune is a cloud-based endpoint management solution that manages user access to organizational resources and simplifies app and device management across multiple platforms, including Android, iOS/iPadOS, Linux, macOS, and Windows client devices. Working alongside Microsoft Entra ID (formerly Azure Active Directory), Intune forms a powerful identity and access management framework that organizations rely on to secure digital assets.
 
 When combined, Intune and Microsoft Entra ID ensure that only managed and compliant devices can access email, Microsoft 365 services, Software as a service (SaaS) apps, and on-premises applications. This integration combines multiple security signals, such as user identity, device health, and location, to enforce organizational policies using Conditional Access capabilities.
 
@@ -37,11 +37,11 @@ Let's create a policy that enables the `Development` team to access the `Servers
 - Set the source group to `Development` (or the appropriate team group synchronized from Entra ID) and the destination group to `Servers`
 - Configure the protocol and port settings based on required access patterns (e.g., TCP 22 for SSH access to servers)
 
-![Create Access Control Policy](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-01.png)
+![Create Access Control Policy](/docs-static/img/how-to-guides/intune-netbird-integration/intune-01.png)
 
 Provide a descriptive name for the policy, such as "Dev Team Server Access" that indicates its purpose, and click `Save` to create and activate the policy.
 
-![New control access policy](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-02.png)
+![New control access policy](/docs-static/img/how-to-guides/intune-netbird-integration/intune-02.png)
 
 This access policy will automatically apply to all devices enrolled in Intune that belong to users in the `Development` group (as synchronized from **Entra ID**), providing them secure access to designated resources while preventing lateral movement to unauthorized systems.
 
@@ -51,29 +51,129 @@ Moreover, users will only gain this network access when using compliant devices 
 
 With these access policies in place, we can now proceed to configure the automated deployment of NetBird through Intune, ensuring that all team members have the required secure connectivity client installed on their devices.
 
-## Adding NetBird Windows App to Intune
+## Deploying NetBird as a Win32 App
 
-Microsoft Intune provides a straightforward way to deploy NetBird to your organization's devices. Here's how:
+Opt for Win32 app deployment over the Line-of-Business (LOB) method (described in the next section) when requiring advanced features such as specific detection rules, prerequisites, dependencies, or update supersedence.
 
-### Adding NetBird as a Windows App
+### Preparing the `.intunewin` File
+
+Using the Win32 method requires you to convert either NetBird's `.exe` or `.msi` installer to the `.intunewin` format. Here's an overview of the procedure using the `.exe` installer:
+
+- Download the Microsoft Win32 Content Prep Tool from [GitHub](https://github.com/Microsoft/Microsoft-Win32-Content-Prep-Tool)
+- Download your preferred NetBird Windows installer from the [NetBird installation documentation](https://docs.netbird.io/how-to/installation#windows)
+- Run the Content Prep Tool and follow the instructions to convert the NetBird installer to `.intunewin` format. You'll be asked about the source folder (usually where you downloaded the installer), the NetBird setup file you will use, and the output folder (where you want the `.intunewin` file to be saved).
+- For detailed information on using the Win32 Content Prep Tool, refer to [Microsoft's documentation](https://learn.microsoft.com/en-us/intune/intune-service/apps/apps-win32-prepare).
+
+### Adding NetBird Win32 App to Intune Catalog
+
+- Sign in to the [Microsoft Intune admin center](https://intune.microsoft.com), navigate to `Apps`, and click the `Windows` button.
+
+![Adding Windows App](/docs-static/img/how-to-guides/intune-netbird-integration/intune-03.png)
+
+- Click the `+ Create` button to add a new Windows application
+
+![Create Windows App](/docs-static/img/how-to-guides/intune-netbird-integration/intune-04.png)
+
+- In the `App type` dropdown, select `Windows app (Win32)` and click `Select`
+
+![Win32 app](/docs-static/img/how-to-guides/intune-netbird-integration/intune-14.png)
+
+- On the `Add App` screen, click `Select app package file` and browse to the location of the NetBird `.intunewin` file you created earlier
+
+- Select the `.intunewin` file and click `OK`
+
+![Upload NetBird Intunewin](/docs-static/img/how-to-guides/intune-netbird-integration/intune-15.png)
+
+- On the `App information` tab, configure NetBird with the following values:
+
+- **Name**: Leave the default file name
+- **Description**: Leave the default file name
+- **Publisher**: NetBird
+- **App Version**: Enter the current app version (optional)
+- **Category**: Select any category that fits your needs (optional)
+- **Show this as a featured app in the Company Portal**: Yes
+- **Information URL**: https://docs.netbird.io/
+- **Developer**: NetBird (optional)
+
+You can leave the rest of the fields empty.
+
+![NetBird Configuration](/docs-static/img/how-to-guides/intune-netbird-integration/intune-16.png)
+
+- Click `Next` to advance to the `Program` tab. Use the following commands in the install and uninstall fields:
+
+- **Install command:** `netbird_installer_0.43.0_windows_amd64.exe /S`
+- **Uninstall command:** `"%ProgramFiles%\Netbird\netbird_uninstall.exe" /S`
+
+>**Note:** The commands above assume a standard installation using the `/S` flag to specify "silent mode". Change them accordingly if you require NetBird installed on a different path.
+
+For this example, leave the rest of the configuration unchanged. Note that you can change the install behavior and users' ability to uninstall NetBird if required.
+
+![Program tab](/docs-static/img/how-to-guides/intune-netbird-integration/intune-17.png)
+
+- Click `Next` to advance to the `Requirements` tab. Here you can specify the architecture and minimum OS version required for installing NetBird. For instance:
+
+- **Operating system architecture:** 64-bit
+- **Minimum operating system:** Windows 10 22H2
+
+![Requirements tab](/docs-static/img/how-to-guides/intune-netbird-integration/intune-18.png)
+
+- Click `Next` to advance to the `Detection rules` tab. Intune lets you choose between **using a custom detection script** or **manually configuring detection rules**. Select the latter and configure it as follows:
+
+- **Rule type:** File
+- **Path:** `%ProgramFiles%\Netbird`
+- **File or folder:** `netbird.exe`
+- **Detection method:** File or folder exists
+- **Associated with a 32-bit app on 64-bit clients:** No
+
+Click `OK` when ready.
+
+![Detection Rules tab](/docs-static/img/how-to-guides/intune-netbird-integration/intune-19.png)
+
+For examples on registry-based detection rules, refer to [Intune documentation](https://learn.microsoft.com/en-us/intune/intune-service/apps/apps-win32-add#step-4-detection-rules)
+
+- Click `Next` to continue to the `Dependencies` tab. In this tab, you can add any applications that must be installed before NetBird. For this demonstration, click `Next` to continue.
+
+- Intune's `Supersedence` tab lets you choose between updating or entirely replacing any other specific application listed. Click `Next` without adding any apps to skip the supersedence configuration for this deployment.
+
+- On the `Assignments` tab, under `Required`, click `+ Add group`
+
+![Add Groups to NetBird App](/docs-static/img/how-to-guides/intune-netbird-integration/intune-20.png)
+
+- Select the appropriate group that contains your users (like the `Development` group synchronized from Entra ID) and click `Select`
+
+![Assign Groups](/docs-static/img/how-to-guides/intune-netbird-integration/intune-09.png)
+
+- To continue, click `Next`. Review your configuration in the `Review + create` tab, then click `Create` to add NetBird to your Intune app catalog.
+
+![Review Configuration](/docs-static/img/how-to-guides/intune-netbird-integration/intune-21.png)
+
+- To verify that NetBird was added to Intune, navigate to `Apps > All Apps` to see your Windows applications:
+
+![Windows App Catalog](/docs-static/img/how-to-guides/intune-netbird-integration/intune-22.png)
+
+## Deploying NetBird as a Line-of-business (LOB) App
+
+As a simpler alternative to the Win32 method described previously, you can deploy the NetBird MSI installer directly as a Line-of-Business (LOB) app. This approach is ideal for basic deployment scenarios that don't necessitate the advanced management features offered by Win32.
+
+### Adding NetBird MSI Installer to Intune
 
 - Download the NetBird Windows MSI installer from the [NetBird installation documentation](https://docs.netbird.io/how-to/installation#windows)
 - Sign in to the [Microsoft Intune admin center](https://intune.microsoft.com), navigate to `Apps`, and click the `Windows` button.
 
-![Adding Windows App](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-03.png)
+![Adding Windows App](/docs-static/img/how-to-guides/intune-netbird-integration/intune-03.png)
 
 - Click the `+ Create` button to add a new Windows application
 
-![Create Windows App](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-04.png)
+![Create Windows App](/docs-static/img/how-to-guides/intune-netbird-integration/intune-04.png)
 
 - In the `App type` dropdown, select `Line-of-business app` and click `Select`
 
-![LOB app](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-05.png)
+![LOB app](/docs-static/img/how-to-guides/intune-netbird-integration/intune-05.png)
 
 - On the `Add App` screen, click `Select app package file` and browse to the location of the NetBird MSI file you downloaded earlier
 - Select the NetBird MSI installer and click `OK`
 
-![Upload NetBird MSI](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-06.png)
+![Upload NetBird MSI](/docs-static/img/how-to-guides/intune-netbird-integration/intune-06.png)
 
 Click `Next` to configure NetBird with the following details:
 
@@ -89,27 +189,27 @@ Click `Next` to configure NetBird with the following details:
 
 You can leave the rest of the fields empty.
 
-![NetBird Configuration](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-07.png)
+![NetBird Configuration](/docs-static/img/how-to-guides/intune-netbird-integration/intune-07.png)
 
 When ready, click `Next` to proceed to the `Assignments` tab. Under `Required`, click `+ Add group`
 
-![Add Groups to NetBird App](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-08.png)
+![Add Groups to NetBird App](/docs-static/img/how-to-guides/intune-netbird-integration/intune-08.png)
 
 - Select the appropriate group that contains your users (like the `Development` group synchronized from Entra ID) and click `Select`
 
-![Assign Groups](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-09.png)
+![Assign Groups](/docs-static/img/how-to-guides/intune-netbird-integration/intune-09.png)
 
 - To continue, click `Next`. Review your configuration in the `Review + create` tab, then click `Create` to add NetBird to your Intune app catalog.
 
-![Review Configuration](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-11.png)
+![Review Configuration](/docs-static/img/how-to-guides/intune-netbird-integration/intune-11.png)
 
 After adding NetBird, you'll see an overview screen for the NetBird app, showing deployment status and management options.
 
-![NetBird App Overview](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-12.png)
+![NetBird App Overview](/docs-static/img/how-to-guides/intune-netbird-integration/intune-12.png)
 
 To verify that NetBird was added to Intune, navigate to `Home > Apps | Windows` to see all your Windows applications:
 
-![Windows App Catalog](/docs-static/img/how-to-guides/deploying-netbird-with-intune/intune-13.png)
+![Windows App Catalog](/docs-static/img/how-to-guides/intune-netbird-integration/intune-13.png)
 
 ### Deploying NetBird to Other Platforms
 
