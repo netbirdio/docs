@@ -252,6 +252,7 @@ export const docsNavigation = [
       { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
       { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store'},
       { title: 'Management Postgres Store', href: '/selfhosted/postgres-store'},
+      { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store'},
       { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
       { title: 'Management geolocation', href: '/selfhosted/geo-support' },
       { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
