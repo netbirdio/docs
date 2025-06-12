@@ -88,10 +88,10 @@ const resources = [
     },
   },
   {
-    href: '/api/resources/rules',
-    name: 'Rules',
+    href: '/api/resources/networks',
+    name: 'Networks',
     description:
-      'Learn how to create, retrieve, update, delete, and list rules.',
+      'Learn how to create, retrieve, update, delete, and list networks.',
     icon: UsersIcon,
     pattern: {
       y: 22,
