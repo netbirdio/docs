@@ -23,10 +23,10 @@ to internal networks like VPCs, office networks, and internal services without r
 The way you use NetBird influences the way traffic events are captured and logged. Below are the two main scenarios for traffic events logging
 that describe how NetBird logs traffic events for different types of connections.
 
-### Peer-to-Peer (P2P) Connections Logging
+### Peer-to-Peer Connections
 
 When two peers are connected directly (p2p), NetBird captures and logs the traffic events for that connection on both peers.
-For example, if a user accessed an internal CRM from their laptop via a browser and port 443, NetBird would log the traffic events for that
+For example, if a user accessed an internal CRM server from their laptop via a browser and port 443, NetBird would log the traffic events for that
 connection on both the user's machine and the CRM server. If the connection was blocked, such as when there is a
 [policy](/how-to/manage-network-access#managing-policies) that restricts access to the CRM server,
 NetBird would log the blocked event on the peer that refused the connection.
@@ -35,25 +35,75 @@ NetBird would log the blocked event on the peer that refused the connection.
     <img src="/docs-static/img/how-to-guides/traffic-events/p2p-traffic-events.png" alt="traffic-events-p2p-diagram" className="imagewrapper-big"/>
 </p>
 
-### Peer-to-Network Resource Connections Logging
+#### Successful P2P Connection Events Correlation
+
+NetBird helps you better understand connection flows by correlating related events and presenting them in a clear, organized manner.
+
+For example, in a successful peer-to-peer connection scenario, a user initiates a connection from the peer `Alice` to the peer `server`.
+This is illustrated in the screenshot below.
+
+<p>
+    <img src="/docs-static/img/how-to-guides/traffic-events/p2p-successful-connection.png" alt="traffic-events-p2p-successful-connection" className="imagewrapper-big"/>
+</p>
+
+You'll see two grouped sets of events, one from each peer (source and destination). The source peer `Alice` initiates the
+connection and then terminates it after a few seconds.
+
+On the other side, the destination peer `server` receives the connection request and also terminates it shortly afterward,
+following the disconnection from `Alice`. Since `server` allows the connection, the log includes the policy `IT Admins to Servers`
+that authorized the connection over the `ICMP` protocol.
+
+#### Blocked P2P Connections Events Correlation
+
+If a connection is refused, NetBird logs the blocked event on the peer that denies the connection, in this case, `server`.
+The initiating peer `Alice` will still report the connection attempt but won't be aware that it was blocked.
+
+In this scenario, the `IT Admins to Servers` policy is configured to allow only ping requests (`ICMP`),
+meaning all `HTTP` requests are intentionally not allowed. The screenshot below illustrates this behavior.
+<p>
+    <img src="/docs-static/img/how-to-guides/traffic-events/p2p-blocked-connection.png" alt="traffic-events-p2p-blocked-connection" className="imagewrapper-big"/>
+</p>
+
+### Peer-to-Network Resource Connections
 
 When a peer connects to a [network resource](/how-to/networks#resources), NetBird captures and logs the traffic
 events for that connection on the peer that initiated the connection, and on the routing peer that connects the peer to
 the internal network resource.
 
-A slightly modified example of the CRM connection scenario would be if instead of running the NetBird client on the CRM server,
-you used the NetBird Networks feature. In this case, if a user accessed an internal CRM from their laptop via a browser
-and port 443, NetBird would log the traffic events for that connection on the user's machine and the routing peer that
+A slightly modified example of the CRM server connection scenario would be if instead of running the NetBird client on the CRM server,
+you used the [NetBird Networks feature](/how-to/networks) and created a network resource for the CRM server. In this case, if a user accessed an internal CRM from their laptop via a browser
+and port `5432`, NetBird would log the traffic events for that connection on the user's machine and the routing peer that
 routed the connection to the CRM server. If the connection was blocked, NetBird would log the blocked event on the routing peer.
 
 <p>
     <img src="/docs-static/img/how-to-guides/traffic-events/routed-traffic-events.png" alt="traffic-events-routed-diagram" className="imagewrapper-big"/>
 </p>
 
+#### Successful Peer-to-Network Resource Events Correlation
+
+The screenshot below illustrates a successful connection from `Alice` to the network resource `CRM` running in the AWS VPC.
+The traffic is routed through a routing peer, which logs the connection event and reports it to the NetBird servers.
+The access is permitted by the policy `IT Admins to AWS Servers`, which allows connections over the `TCP` protocol on port `5432`.
+Note the `ROUTER` column in the table, which identifies the routing peer responsible for routing to the internal network resource.
+You can filter such events by using the `Routed` filter in the table.
+
+<p>
+    <img src="/docs-static/img/how-to-guides/traffic-events/network-resource-succesful-connection.png" alt="network-resource-succesful-connection" className="imagewrapper-big"/>
+</p>
+
+#### Blocked Peer-to-Network Resource Events Correlation
+
+In the event of a blocked connection, the initiating peer logs the connection attempt, while the routing peer records the blocked event.
+The screenshot below demonstrates this behavior: the routing peer blocks a connection to the network resource `CRM` because
+the policy `IT Admins to AWS Servers` does not permit connections over the `HTTP` protocol on port `6432`.
+
+<p>
+    <img src="/docs-static/img/how-to-guides/traffic-events/network-resource-blocked-connection.png" alt="network-resource-succesful-connection" className="imagewrapper-big"/>
+</p>
 
 ## Enabling Traffic Events Logging
 
-Traffic events logging is disabled by default. To enable it on the NetBird dashboard, navigate to `Settings > Networks`.
+Traffic events logging feature is disabled by default. To enable it on the NetBird dashboard, navigate to `Settings > Networks`.
 Under the Experimental section, you'll find the `Enable Traffic Events` option. Toggle the switch to enable traffic event logging.
 
 By default, traffic reporting in userspace is always enabled, providing basic logging of network interactions.
@@ -71,7 +121,7 @@ at the kernel level. Be aware that enabling this option may lead to higher CPU u
 
 ## Log Retention
 
-While in experimental mode, logs are retained for **48 hours**.
+While in experimental mode, logs are retained for **7 days**.
 Additionally, please note that the current API returns a maximum of **50,000 events**.
 We are actively working on expanding this limit in the coming days to support larger datasets and increased usage.
 
