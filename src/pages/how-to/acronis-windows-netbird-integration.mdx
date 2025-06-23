@@ -147,6 +147,422 @@ After configuring the plan parameters, click `Create` to save the plan for futur
 
 The advantage of deployment plans is that they enable scheduled, repeatable installations across multiple client environments, allowing MSPs to standardize NetBird deployments during designated maintenance windows while maintaining consistent configuration management across all managed endpoints.
 
+## Deploying NetBird in Windows as a PowerShell Script
+
+In addition to packages, Acronis Cyber Protect Cloud allows you to install NetBird using PowerShell scripts. This method is handy to automate NetBird installation on Windows Servers, especially if you plan to use [setup keys](https://docs.netbird.io/how-to/register-machines-using-setup-keys). 
+
+### Adding NetBird PowerShell Scripts to Windows Endpoints
+
+To add a new PowerShell script, navigate to `MANAGEMENT > Script repository` and click the `Create script by using AI` button.
+
+Paste the following script into the IDE:
+
+```PowerShell
+# NetBird Windows Installation Script
+# Requires Administrator privileges
+
+param(
+    [string]$SetupKey = "",
+    [string]$ManagementUrl = "",
+    [switch]$Silent = $true
+)
+
+# Check if running as Administrator
+if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Error "This script requires Administrator privileges. Please run as Administrator."
+    exit 1
+}
+
+try {
+    # Define variables
+    $TempDir = $env:TEMP
+    $NetBirdInstaller = "$TempDir\netbird-installer.exe"
+    
+    # Get the latest release URL from GitHub API
+    Write-Host "Fetching latest NetBird release information..."
+    $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/netbirdio/netbird/releases/latest"
+    
+    # Find Windows installer (look for .exe file)
+    $WindowsAsset = $ReleaseInfo.assets | Where-Object { $_.name -like "*windows*" -and $_.name -like "*.exe" }
+    
+    if (-not $WindowsAsset) {
+        Write-Error "Could not find Windows installer in latest release"
+        exit 1
+    }
+    
+    $DownloadUrl = $WindowsAsset.browser_download_url
+    Write-Host "Found installer: $($WindowsAsset.name)"
+    
+    # Download the installer
+    Write-Host "Downloading NetBird installer..."
+    Invoke-WebRequest -Uri $DownloadUrl -OutFile $NetBirdInstaller
+    
+    # Install NetBird
+    Write-Host "Installing NetBird..."
+    if ($Silent) {
+        $InstallArgs = "/S"  # Silent installation flag for NSIS-based installers
+        Start-Process -FilePath $NetBirdInstaller -ArgumentList $InstallArgs -Wait -NoNewWindow
+    } else {
+        Start-Process -FilePath $NetBirdInstaller -Wait
+    }
+    
+    # Verify installation
+    $NetBirdPath = "C:\Program Files\NetBird\netbird.exe"
+    if (Test-Path $NetBirdPath) {
+        Write-Host "NetBird installed successfully at: $NetBirdPath" -ForegroundColor Green
+        
+        # Start NetBird service if it exists
+        $Service = Get-Service -Name "NetBird*" -ErrorAction SilentlyContinue
+        if ($Service) {
+            Write-Host "Starting NetBird service..."
+            Start-Service $Service.Name
+        }
+        
+        # Connect with setup key if provided
+        if ($SetupKey) {
+            Write-Host "Connecting NetBird with setup key..."
+            $ConnectArgs = @("up", "--setup-key", $SetupKey)
+            if ($ManagementUrl) {
+                $ConnectArgs += @("--management-url", $ManagementUrl)
+            }
+            & $NetBirdPath $ConnectArgs
+        }
+        
+    } else {
+        Write-Error "Installation verification failed. NetBird not found at expected location."
+        exit 1
+    }
+    
+} catch {
+    Write-Error "Installation failed: $($_.Exception.Message)"
+    exit 1
+} finally {
+    # Cleanup
+    if (Test-Path $NetBirdInstaller) {
+        Remove-Item $NetBirdInstaller -Force
+    }
+}
+
+Write-Host "NetBird installation completed successfully!" -ForegroundColor Green
+```
+
+The script automatically downloads the latest `.exe` installer from the official releases page and installs it using the silent flag.
+
+Next, on the right sidebar:
+
+- Enter a descriptive name for the script (e.g., NetBird EXE Script)
+- Ensure the `Language` is set to `PowerShell` and the `Operating system` is `Windows`. 
+- If needed, Acronis lets you pass `Arguments` to the installer, such as setup keys and the management URL.
+- Once done, set the script's status to `Approved` and click `Save`. 
+
+![Add NetBird EXE PowerShell script](/docs-static/img/how-to-guides/acronis-windows-netbird-integration/acronis-windows-22.png)
+
+Using a similar procedure, you can add the following script to use the MSI installer instead of the EXE installer:
+
+```PowerShell
+# NetBird MSI Installation Script
+# Requires Administrator privileges
+
+param(
+    [string]$SetupKey = "",
+    [string]$ManagementUrl = "",
+    [switch]$UseLatestRelease = $true
+)
+
+# Check if running as Administrator
+if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Error "This script requires Administrator privileges. Please run as Administrator."
+    exit 1
+}
+
+try {
+    # Define variables
+    $TempDir = $env:TEMP
+    $NetBirdMSI = "$TempDir\netbird-installer.msi"
+    
+    if ($UseLatestRelease) {
+        # Get the latest release from GitHub API
+        Write-Host "Fetching latest NetBird release information..."
+        $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/netbirdio/netbird/releases/latest"
+        
+        # Find MSI installer
+        $MSIAsset = $ReleaseInfo.assets | Where-Object { $_.name -like "*windows*" -and $_.name -like "*.msi" }
+        
+        if (-not $MSIAsset) {
+            Write-Error "Could not find Windows MSI installer in latest release"
+            exit 1
+        }
+        
+        $DownloadUrl = $MSIAsset.browser_download_url
+        Write-Host "Found MSI installer: $($MSIAsset.name)"
+    } else {
+        # Use the direct package repository URL
+        $DownloadUrl = "https://pkgs.netbird.io/windows/msi/x64/netbird_installer_windows_amd64.msi"
+        Write-Host "Using direct package repository URL"
+    }
+    
+    # Download the MSI installer
+    Write-Host "Downloading NetBird MSI installer from: $DownloadUrl"
+    try {
+        Invoke-WebRequest -Uri $DownloadUrl -OutFile $NetBirdMSI -UseBasicParsing
+        Write-Host "Download completed successfully"
+    } catch {
+        Write-Error "Failed to download MSI installer: $($_.Exception.Message)"
+        exit 1
+    }
+    
+    # Verify MSI file was downloaded
+    if (-not (Test-Path $NetBirdMSI)) {
+        Write-Error "MSI installer file not found after download"
+        exit 1
+    }
+    
+    # Install NetBird using msiexec
+    Write-Host "Installing NetBird via MSI..."
+    $LogFile = "$TempDir\netbird-install.log"
+    
+    # Build MSI installation arguments
+    $MsiArgs = @(
+        "/i", $NetBirdMSI,
+        "/qn",           # Quiet mode, no user interface
+        "/norestart",    # Do not restart automatically
+        "/L*v", $LogFile # Verbose logging
+    )
+    
+    # Add setup key if provided
+    if ($SetupKey) {
+        $MsiArgs += "SETUP_KEY=$SetupKey"
+    }
+    
+    # Add management URL if provided
+    if ($ManagementUrl) {
+        $MsiArgs += "MANAGEMENT_URL=$ManagementUrl"
+    }
+    
+    Write-Host "Running: msiexec $($MsiArgs -join ' ')"
+    $Process = Start-Process -FilePath "msiexec.exe" -ArgumentList $MsiArgs -Wait -PassThru -NoNewWindow
+    
+    # Check installation result
+    if ($Process.ExitCode -eq 0) {
+        Write-Host "NetBird MSI installation completed successfully" -ForegroundColor Green
+        
+        # Verify installation
+        $NetBirdPath = "C:\Program Files\NetBird\netbird.exe"
+        if (Test-Path $NetBirdPath) {
+            Write-Host "NetBird installed successfully at: $NetBirdPath" -ForegroundColor Green
+            
+            # Start NetBird service
+            $Service = Get-Service -Name "*NetBird*" -ErrorAction SilentlyContinue
+            if ($Service) {
+                Write-Host "Starting NetBird service..."
+                Start-Service $Service.Name -ErrorAction SilentlyContinue
+            }
+            
+            # Connect with setup key if provided and not already configured via MSI properties
+            if ($SetupKey -and -not $MsiArgs.Contains("SETUP_KEY")) {
+                Write-Host "Connecting NetBird with setup key..."
+                $ConnectArgs = @("up", "--setup-key", $SetupKey)
+                if ($ManagementUrl) {
+                    $ConnectArgs += @("--management-url", $ManagementUrl)
+                }
+                & $NetBirdPath $ConnectArgs
+            }
+            
+        } else {
+            Write-Error "Installation verification failed. NetBird not found at expected location."
+            if (Test-Path $LogFile) {
+                Write-Host "Installation log content:"
+                Get-Content $LogFile | Select-Object -Last 20
+            }
+            exit 1
+        }
+        
+    } else {
+        Write-Error "MSI installation failed with exit code: $($Process.ExitCode)"
+        if (Test-Path $LogFile) {
+            Write-Host "Installation log content:"
+            Get-Content $LogFile | Select-Object -Last 20
+        }
+        exit 1
+    }
+    
+} catch {
+    Write-Error "Installation failed: $($_.Exception.Message)"
+    exit 1
+} finally {
+    # Cleanup
+    if (Test-Path $NetBirdMSI) {
+        Remove-Item $NetBirdMSI -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Host "NetBird MSI installation completed successfully!" -ForegroundColor Green
+```
+
+The script downloads the official `.msi` installer and uses the silent flag to install NetBird on Windows machines, just as the `.exe` installer.
+
+![Add NetBird MSI PowerShell script](/docs-static/img/how-to-guides/acronis-windows-netbird-integration/acronis-windows-23.png)
+
+Likewise, you can add an **Uninstall NetBird** script:
+
+```PowerShell
+# NetBird Windows Uninstall Script
+# Requires Administrator privileges
+
+param(
+    [switch]$Silent = $true,
+    [switch]$Force = $false
+)
+
+# Check if running as Administrator
+if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
+    Write-Error "This script requires Administrator privileges. Please run as Administrator."
+    exit 1
+}
+
+try {
+    Write-Host "Starting NetBird uninstallation..." -ForegroundColor Yellow
+    
+    # Define paths
+    $NetBirdPath = "C:\Program Files\NetBird"
+    $NetBirdUninstaller = "$NetBirdPath\netbird_uninstall.exe"
+    $NetBirdExe = "$NetBirdPath\netbird.exe"
+    
+    # Stop NetBird service first
+    Write-Host "Stopping NetBird services..."
+    try {
+        $NetBirdServices = Get-Service -Name "*NetBird*" -ErrorAction SilentlyContinue
+        foreach ($Service in $NetBirdServices) {
+            if ($Service.Status -eq 'Running') {
+                Write-Host "Stopping service: $($Service.Name)"
+                Stop-Service $Service.Name -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } catch {
+        Write-Warning "Could not stop NetBird services: $($_.Exception.Message)"
+    }
+    
+    # Use NetBird CLI to uninstall service if available
+    if (Test-Path $NetBirdExe) {
+        try {
+            Write-Host "Uninstalling NetBird service via CLI..."
+            & $NetBirdExe service uninstall
+        } catch {
+            Write-Warning "CLI service uninstall failed: $($_.Exception.Message)"
+        }
+    }
+    
+    # Stop all NetBird processes
+    Write-Host "Stopping NetBird processes..."
+    try {
+        Get-Process | Where-Object { $_.Name -like "*netbird*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    } catch {
+        Write-Warning "Could not stop all NetBird processes: $($_.Exception.Message)"
+    }
+    
+    # Run the uninstaller
+    if (Test-Path $NetBirdUninstaller) {
+        Write-Host "Running NetBird uninstaller: $NetBirdUninstaller"
+        
+        if ($Silent) {
+            $UninstallArgs = "/S"  # Silent uninstall flag
+            $Process = Start-Process -FilePath $NetBirdUninstaller -ArgumentList $UninstallArgs -Wait -PassThru -NoNewWindow
+        } else {
+            $Process = Start-Process -FilePath $NetBirdUninstaller -Wait -PassThru
+        }
+        
+        if ($Process.ExitCode -eq 0) {
+            Write-Host "NetBird uninstaller completed successfully" -ForegroundColor Green
+        } else {
+            Write-Warning "Uninstaller exit code: $($Process.ExitCode)"
+        }
+        
+    } else {
+        Write-Warning "NetBird uninstaller not found at: $NetBirdUninstaller"
+        
+        # Alternative: Try using Windows Uninstall via registry/WMI
+        Write-Host "Attempting alternative uninstall method..."
+        try {
+            $UninstallEntry = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -like "*NetBird*" }
+            if ($UninstallEntry) {
+                Write-Host "Found NetBird in installed programs, removing..."
+                $UninstallEntry.Uninstall()
+            }
+        } catch {
+            Write-Warning "Alternative uninstall method failed: $($_.Exception.Message)"
+        }
+    }
+    
+    # Verify uninstallation
+    Start-Sleep -Seconds 3
+    
+    if (Test-Path $NetBirdPath) {
+        if ($Force) {
+            Write-Host "Force removing remaining NetBird directory..."
+            Remove-Item $NetBirdPath -Recurse -Force -ErrorAction SilentlyContinue
+        } else {
+            Write-Warning "NetBird directory still exists at: $NetBirdPath"
+            Write-Host "Use -Force parameter to remove remaining files"
+        }
+    } else {
+        Write-Host "NetBird directory removed successfully" -ForegroundColor Green
+    }
+    
+    # Check for remaining services
+    $RemainingServices = Get-Service -Name "*NetBird*" -ErrorAction SilentlyContinue
+    if ($RemainingServices) {
+        Write-Warning "Some NetBird services may still be present:"
+        $RemainingServices | ForEach-Object { Write-Host "  - $($_.Name) ($($_.Status))" }
+    } else {
+        Write-Host "All NetBird services removed successfully" -ForegroundColor Green
+    }
+    
+} catch {
+    Write-Error "Uninstallation failed: $($_.Exception.Message)"
+    exit 1
+}
+
+Write-Host "NetBird uninstallation process completed!" -ForegroundColor Green
+```
+
+The script executes `netbird_uninstall.exe` using the silent flag to remove NetBird from Windows endpoints. 
+
+![Add NetBird Uninstaller PowerShell script](/docs-static/img/how-to-guides/acronis-windows-netbird-integration/acronis-windows-24.png)
+
+If you need to edit or delete any script, you can do it by navigating to `MANAGEMENT > Script repository > My scripts`
+
+### Deploying NetBird Scripts to Windows Endpoints 
+
+As with packages, you can use different methods to deploy NetBird scripts to Windows endpoints:
+
+**Method 1: Quick Run from My scripts**
+
+Navigate to `MANAGEMENT > Script repository > My scripts`, click the three-dot menu on the script you want to install, and select `Script quick run`:
+
+![Script quick run](/docs-static/img/how-to-guides/acronis-windows-netbird-integration/acronis-windows-25.png)
+
+Next, you can select the workloads where you want to run the script and click the `Run now` button.
+
+![Run Script](/docs-static/img/how-to-guides/acronis-windows-netbird-integration/acronis-windows-26.png)
+
+As before, you can follow the installation progress by navigating to `MONITORING > Activities`.
+
+**Method 2: Scheduled Scripting Plans**
+
+Navigate to `MANAGEMENT > Scripting plans` and click on `Create plan`. Next:
+
+- Click on the little “pencil” icon to provide a name to the plan.
+- Choose the script to run, the schedule to run it, and the maximum duration
+- Add the desired workloads
+- Once ready, click the `Create` button.
+
+![Create Scripting Plan](/docs-static/img/how-to-guides/acronis-windows-netbird-integration/acronis-windows-27.png)
+
+From `MANAGEMENT > Scripting plans`, you can click on the three-dot menu of any plan to view its details, edit it, or manually run it.
+
+![Manually Running a Scripting Plan](/docs-static/img/how-to-guides/acronis-windows-netbird-integration/acronis-windows-28.png)
+
 ## Confirming Windows Endpoint Registration in NetBird
 
 While Acronis Cyber Protect handles the automated deployment of NetBird clients to your Windows endpoints, client authentication operates independently through NetBird's identity provider integration system. NetBird [supports major Identity Providers (IdP)](https://docs.netbird.io/how-to/add-users-to-your-network#identity-provider-id-p-sync), including Microsoft Entra ID, Google Workspace, Okta, and others, allowing organizations to maintain their existing authentication infrastructure.
