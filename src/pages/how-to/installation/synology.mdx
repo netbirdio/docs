@@ -1,0 +1,105 @@
+import {Note} from "@/components/mdx";
+
+# Synology Installation
+
+The NetBird client (agent) allows a peer to join a pre-existing NetBird deployment. If a NetBird deployment is not yet available, there are both managed and [self-hosted](https://docs.netbird.io/selfhosted/selfhosted-quickstart) options available.
+
+## Installation Steps
+
+Installing a NetBird Peer on Synology will require a few additional steps compared to a typical Linux install despite using the same single line command to get everything going.
+
+1. Ensure your user has administrative privileges. _Control Panel > User & Group > User > Click User and Edit > User Groups > Ensure “administrators” is checked._
+2. Enable SSH Connectivity. _Control Panel > Terminal & SNMP > Terminal > Check the box next to “Enable SSH Service” > Click Apply_
+3. Login to your user using SSH. If you’re unsure if your Synology IP address it can be found under _Control Panel > Info Center > Network > DNS_ or using the [Synology Find Tool](https://finds.synology.com/). Open a terminal and run the command to connecting replacing the user and IP address with your own.
+
+```bash
+ssh user@192.168.0.53
+```
+
+4. Install with one command.
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+```
+
+5. Add your Synology NAS as a Peer using the steps from [Add peers to your NetBird network](https://docs.netbird.io/how-to/add-machines-to-your-network) in the documentation.
+
+## Reboot Script
+
+In some cases on Synology, the NetBird service wont have the correct modules loaded on a reboot. In this case you’ll need to run a script every time you reboot your NAS. To automate this process, you can create a scheduled task in the Synology DSM.
+
+1. _Control Panel > Task Scheduler > Create > Triggered Task > User defined script_.
+2. Now you’ll have a _Create Task_ dialog box. Give a task name such as “Netbird Reboot”. Set the _User > Root_ and the _Event > Boot-up_. Make sure the Enable Box is checked.
+3. Next, click on _Task Settings_ and copy/paste the script in the text field under _Run command > User-defined script_.
+
+```sh
+#!/bin/sh
+
+# Create the necessary file structure for /dev/net/tun
+if [ ! -c /dev/net/tun ]; then
+  if [ ! -d /dev/net ]; then
+    mkdir -m 755 /dev/net
+  fi
+  mknod /dev/net/tun c 10 200
+  chmod 0755 /dev/net/tun
+fi
+
+# Load the tun module if not already loaded
+if !(lsmod | grep -q "^tun\s"); then
+  insmod /lib/modules/tun.ko
+fi
+```
+4. If you’d like to see the logs for this task, select the task you create and click on Settings. Check the box that says Save output results, select a save location, and click OK. Now, if you select the task and **Action > View Result**, you’ll see any error logs and status.
+
+## Running NetBird with SSO Login
+### Desktop UI Application
+If you installed the Desktop UI client, you can launch it and click on Connect.
+> It will open your browser, and you will be prompt for email and password. Follow the instructions.
+
+<p>
+    <img src="/docs-static/img/getting-started/netbird-sso-login-ui.gif" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+### CLI
+Alternatively, you could use command line. Simply run
+   ```bash
+  netbird up
+   ```
+> It will open your browser, and you will be prompt for email and password. Follow the instructions.
+
+<p>
+    <img src="/docs-static/img/getting-started/netbird-sso-login-cmd.gif" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+Check connection status:
+```bash
+  netbird status
+```
+
+## Running NetBird with a Setup Key
+In case you are activating a server peer, you can use a [setup key](/how-to/register-machines-using-setup-keys) as described in the steps below.
+> This is especially helpful when you are running multiple server instances with infrastructure-as-code tools like ansible and terraform.
+
+1. Login to the Management Service. You need to have a `setup key` in hand (see [setup keys](/how-to/register-machines-using-setup-keys)).
+
+```bash
+  netbird up --setup-key <SETUP KEY>
+```
+
+Alternatively, if you are hosting your own Management Service provide `--management-url` property pointing to your Management Service:
+```bash
+  netbird up --setup-key <SETUP KEY> --management-url http://localhost:33073
+```
+
+> You could also omit the `--setup-key` property. In this case, the tool will prompt for the key.
+
+2. Check connection status:
+```bash
+  netbird status
+```
+
+3. Check your IP:
+
+```bash
+  ip addr show wt0
+```
