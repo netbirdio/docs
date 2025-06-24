@@ -29,15 +29,21 @@ export const docsNavigation = [
     {
         title: 'GET STARTED',
         links: [
-            { title: 'Quickstart Guide', href: '/how-to/getting-started' },
-            {title: 'Install NetBird', href: '/how-to/installation' },
-            { title: 'CLI', href: '/how-to/cli' },
-           
-           /* { title: 'Update NetBird', href: '/how-to/enforce-periodic-user-authentication' },*/
- 
- 
-        ],
-    },
+          { title: 'Quickstart Guide', href: '/how-to/getting-started' },
+          {
+            title: 'Install NetBird', isOpen: true, href: '/how-to/install',
+            links: [
+              { title: 'Linux', href: '/how-to/install/linux' },
+              { title: 'Windows', href: '/how-to/install/windows' },
+              { title: 'MacOS', href: '/how-to/install/macos' },
+              { title: 'Docker', href: '/how-to/install/docker' },
+              { title: 'Synology', href: '/how-to/install/synology' },
+              { title: 'Android/iOS', href: '/how-to/install/mobile' },
+            ],
+      },
+      { title: 'CLI', href: '/how-to/cli' },
+    ],
+  },
     {
         title: 'MANAGE NETBIRD',
         links: [
