@@ -31,14 +31,14 @@ export const docsNavigation = [
         links: [
           { title: 'Quickstart Guide', href: '/how-to/getting-started' },
           {
-            title: 'Install NetBird', isOpen: true, href: '/how-to/install',
+            title: 'Install NetBird', isOpen: true, href: '/how-to/installation',
             links: [
-              { title: 'Linux', href: '/how-to/install/linux' },
-              { title: 'Windows', href: '/how-to/install/windows' },
-              { title: 'MacOS', href: '/how-to/install/macos' },
-              { title: 'Docker', href: '/how-to/install/docker' },
-              { title: 'Synology', href: '/how-to/install/synology' },
-              { title: 'Android/iOS', href: '/how-to/install/mobile' },
+              { title: 'Linux', href: '/how-to/installation/linux' },
+              { title: 'Windows', href: '/how-to/installation/windows' },
+              { title: 'MacOS', href: '/how-to/installation/macos' },
+              { title: 'Docker', href: '/how-to/installation/docker' },
+              { title: 'Synology', href: '/how-to/installation/synology' },
+              { title: 'Android/iOS', href: '/how-to/installation/mobile' },
             ],
       },
       { title: 'CLI', href: '/how-to/cli' },
