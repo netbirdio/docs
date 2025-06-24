@@ -228,6 +228,7 @@ export const docsNavigation = [
                 isOpen: false,
                 links: [
                     { title: 'Managed Service Providers', href: '/how-to/msp-portal' },
+                    { title: 'Acronis NetBird integration', href: '/how-to/acronis-netbird-integration' },
 
                 ]
             },
