@@ -211,6 +211,11 @@ export const docsNavigation = [
                          {title: 'Operator', href: '/how-to/kubernetes-operator' },
                      ]
                  },
+                 {
+                     title: 'pfSense',
+                     isOpen: true,
+                     href: '/how-to/pfsense',
+                 },
              ]
          },
 
