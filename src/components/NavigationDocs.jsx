@@ -39,6 +39,7 @@ export const docsNavigation = [
               { title: 'Docker', href: '/how-to/installation/docker' },
               { title: 'Synology', href: '/how-to/installation/synology' },
               { title: 'Android/iOS', href: '/how-to/installation/mobile' },
+              { title: 'pfSense', href: '/how-to/installation/pfsense' },
             ],
       },
       { title: 'CLI', href: '/how-to/cli' },
@@ -216,11 +217,6 @@ export const docsNavigation = [
                      links: [
                          {title: 'Operator', href: '/how-to/kubernetes-operator' },
                      ]
-                 },
-                 {
-                     title: 'pfSense',
-                     isOpen: true,
-                     href: '/how-to/pfsense',
                  },
              ]
          },
