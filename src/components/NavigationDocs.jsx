@@ -109,6 +109,7 @@ export const docsNavigation = [
                      isOpen: false, 
                      links: [
                          { title: 'CrowdStrike Falcon', href: '/how-to/crowdstrike-edr' },
+                         { title: 'Microsoft Intune', href: '/how-to/intune-edr' },
                      ]
                  },
 
