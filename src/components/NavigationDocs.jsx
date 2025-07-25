@@ -104,11 +104,12 @@ export const docsNavigation = [
                     ]
                 },
                  {
-                     title: 'Integrate EDR',
+                     title: 'Integrate MDM & EDR',
                      href: '/how-to/endpoint-detection-and-response',
                      isOpen: false, 
                      links: [
                          { title: 'CrowdStrike Falcon', href: '/how-to/crowdstrike-edr' },
+                         { title: 'Microsoft Intune', href: '/how-to/intune-mdm' },
                      ]
                  },
 
