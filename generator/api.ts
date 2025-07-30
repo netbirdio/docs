@@ -3,28 +3,12 @@ import { slugify, toArrayWithKey, toTitle, writeToDisk } from './helpers'
 import {OpenAPIV3, OpenAPIV3_1} from 'openapi-types'
 import * as fs from 'fs'
 import * as ejs from 'ejs'
-import { spawn } from 'child_process';
 import * as yaml from 'js-yaml';
 import { merge } from 'allof-merge'
 import RequestBodyObject = OpenAPIV3_1.RequestBodyObject;
 
-const goExecutable = './generator/expandOpenAPIRef'
-
 export default async function gen(inputFileName: string, outputDir: string) {
-  // const args = [inputFileName];
-  // const process = spawn(goExecutable, args);
-  // process.stdout.on('data', (data) => {
-  //   console.log(`Output: ${data}`);
-  // });
-  // process.stderr.on('data', (data) => {
-  //   console.error(`Error: ${data}`);
-  // });
-  // process.on('close', (code) => {
-  //   console.log(`Process exited with code ${code}`);
-  // });
-  // const specRaw = fs.readFileSync("generator/openapi/expanded.yml", 'utf8')
   const specRaw = fs.readFileSync(inputFileName, 'utf8')
-  // const spec = JSON.parse(specRaw) as any
   const specYaml = yaml.load(specRaw);
   const onMergeError = (msg) => {
     throw new Error(msg)
@@ -32,6 +16,8 @@ export default async function gen(inputFileName: string, outputDir: string) {
   const merged = merge(specYaml, { onMergeError })
 
   const spec = merged as OpenAPIV3.Document
+
+  await fs.promises.mkdir(outputDir, { recursive: true });
 
   switch (spec.openapi) {
     case '3.0.0':
