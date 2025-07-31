@@ -17,8 +17,8 @@ export const docsNavigation = [
     {
         title: 'ABOUT',
         links: [
-            { title: 'How NetBird works', href: '/about-netbird/how-netbird-works'},
-            { title: 'NetBird vs. traditional VPN', href: '/about-netbird/netbird-vs-traditional-vpn' },
+            { title: 'How NetBird Works', href: '/about-netbird/how-netbird-works'},
+            { title: 'NetBird vs. Traditional VPN', href: '/about-netbird/netbird-vs-traditional-vpn' },
             { title: 'Why WireGuard with NetBird', href: '/about-netbird/why-wireguard-with-netbird' },
             { title: 'FAQ', href: '/about-netbird/faq' },
             /*{ title: 'Whats new in version xx', href: '/welcome/how-netbird-works' },
@@ -120,34 +120,40 @@ export const docsNavigation = [
               isOpen: false,
               links: [
                   { title: 'Concept', href: '/how-to/networks' },
-                  { title: 'Routing traffic to multiple IP resources', href: '/how-to/routing-traffic-to-multiple-resources' },
-                  { title: 'Accessing restricted website domain resources', href: '/how-to/accessing-restricted-domain-resources' },
-                  { title: 'Accessing entire domains within networks', href: '/how-to/accessing-entire-domains-within-networks' },
-                  { title: 'Accessing your home network', href: '/how-to/access-home-network' },
+                  { title: 'Route Traffic to Multiple IP resources', href: '/how-to/routing-traffic-to-multiple-resources' },
+                  { title: 'Access Restricted Website Domain Resources', href: '/how-to/accessing-restricted-domain-resources' },
+                  { title: 'Access Entire Domains Within Networks', href: '/how-to/accessing-entire-domains-within-networks' },
+                  {
+                      title: 'Homelab',
+                      isOpen: true,
+                      links: [
+                          { title: 'Access Home Network', href: '/how-to/access-home-network' },
+                      ]
+                  },
               ]
          },
          {
              title: 'Network Routes',
              isOpen: false,
              links: [
-                 { title: 'Routing traffic to private networks', href: '/how-to/routing-traffic-to-private-networks' },
-                 { title: 'Configuring default routes for Internet traffic', href: '/how-to/configuring-default-routes-for-internet-traffic' },
-                 { title: 'Configuring routes with access control', href: '/how-to/configuring-routes-with-access-control' },
-                 { title: 'Resolve overlapping routes', href: '/how-to/resolve-overlapping-routes' },
+                 { title: 'Route Traffic to Private Networks', href: '/how-to/routing-traffic-to-private-networks' },
+                 { title: 'Configure Default Routes for Internet Traffic', href: '/how-to/configuring-default-routes-for-internet-traffic' },
+                 { title: 'Configure Routes with Access control', href: '/how-to/configuring-routes-with-access-control' },
+                 { title: 'Resolve Overlapping Routes', href: '/how-to/resolve-overlapping-routes' },
              ]
          },
          {
              title: 'DNS',
              isOpen: false,
              links: [
-                 { title: 'Manage DNS in your network', href: '/how-to/manage-dns-in-your-network' },
+                 { title: 'Manage DNS in Your Network', href: '/how-to/manage-dns-in-your-network' },
              ]
          },
          {
              title: 'Team',
              isOpen: false,
              links: [
-                 { title: 'Add users to your network', href: '/how-to/add-users-to-your-network' },
+                 { title: 'Add Users to Your Network', href: '/how-to/add-users-to-your-network' },
                  {
                      title: 'Provision Users & Groups',
                      href: '/how-to/idp-sync',
@@ -194,8 +200,8 @@ export const docsNavigation = [
              links: [
                  {title: 'Authentication', href: '/how-to/enforce-periodic-user-authentication' },
                  {title: 'Multi-Factor Authentication', href: '/how-to/multi-factor-authentication' },
-                 {title: 'Delete account/danger zone', href: '/how-to/delete-account' },
-                 {title: 'Plans and billing', href: '/how-to/plans-and-billing' }
+                 {title: 'Delete Account', href: '/how-to/delete-account' },
+                 {title: 'Plans and Billing', href: '/how-to/plans-and-billing' }
                  
              ]
          },
@@ -203,14 +209,14 @@ export const docsNavigation = [
              title: 'Integrations',
              isOpen: false,
              links: [
-                 {title: 'Enable post quantum cryptography', href: '/how-to/enable-post-quantum-cryptography' },
+                 {title: 'Enable Post Quantum Cryptography', href: '/how-to/enable-post-quantum-cryptography' },
                  {
-                     title: 'MDM',
+                     title: 'MDM for Deployment',
                      isOpen: true,
                      links: [
-                         {title: 'Deploying with Jamf Pro', href: '/how-to/jamf-pro-netbird-integration' },
-                         {title: 'Deploying with Kandji', href: '/how-to/kandji-netbird-integration' },
-                         {title: 'Deploying with Intune', href: '/how-to/intune-netbird-integration' },
+                         {title: 'Deploy with Jamf Pro', href: '/how-to/jamf-pro-netbird-integration' },
+                         {title: 'Deploy with Kandji', href: '/how-to/kandji-netbird-integration' },
+                         {title: 'Deploy with Intune', href: '/how-to/intune-netbird-integration' },
                      ]
                  },
                  {
@@ -227,7 +233,7 @@ export const docsNavigation = [
                 title: 'Public API',
                 isOpen: false,
                 links: [
-                    { title: 'Access public API', href: '/how-to/access-netbird-public-api' },
+                    { title: 'Access Public API', href: '/how-to/access-netbird-public-api' },
 
                 ]
             },
