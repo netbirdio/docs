@@ -40,6 +40,7 @@ export const docsNavigation = [
               { title: 'Synology', href: '/how-to/installation/synology' },
               { title: 'Android/iOS', href: '/how-to/installation/mobile' },
               { title: 'pfSense', href: '/how-to/installation/pfsense' },
+              { title: 'OPNsense', href: '/how-to/installation/opnsense' },
             ],
       },
       { title: 'CLI', href: '/how-to/cli' },
