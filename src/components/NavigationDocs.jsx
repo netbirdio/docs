@@ -250,7 +250,13 @@ export const docsNavigation = [
         ],
         
     },
-    
+        {
+     title: 'CLIENT',
+     links: [
+         { title: 'Profiles', href: '/how-to/profiles' },
+     ],
+ 
+ },
     {
      title: 'USE CASES',
      links: [
