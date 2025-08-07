@@ -46,45 +46,16 @@ jobs:
       - name: Npm install
         run: npm install
 
-      - name: Display expanded OpenAPI YAML
-        run: |
-          echo "Expanded OpenAPI YAML:"
-          cat generator/openapi/expanded.yml
+      - name: Generate api pages for netbird main openapi definition
+        run: npx ts-node generator/index.ts gen --input generator/openapi/expanded.yml --output src/pages/ipa/resources
 
-      - name: Run OpenAPI generator and capture output
-        run: |
-          set -x
-          export TS_NODE_TRANSPILE_ONLY=true
-          export NODE_OPTIONS="--trace-warnings"
-          
-          echo "--- Running generator script ---"
-          npx --yes ts-node generator/index.ts gen \
-            --input generator/openapi/expanded.yml \
-            --output src/pages/ipa/resources \
-            > generator.log 2>&1 || true
-          
-          echo "--- Script Output ---"
-          cat generator.log
-
-      - name: Show generated files and their contents
-        run: |
-          echo "--- Listing generated files ---"
-          find src/pages/ipa/resources -type f
-          
-          echo "--- Showing contents of generated files ---"
-          for file in src/pages/ipa/resources/*; do
-            echo "===== $file ====="
-            cat "$file"
-            echo ""
-          done
-
-      - name: Check git diff and send to output
+      - name: Check git diff and untracked files
         id: git_diff
         run: |
-          if git --no-pager diff --exit-code; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
+          if [ -n "$(git status --porcelain)" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Commit and push changes
