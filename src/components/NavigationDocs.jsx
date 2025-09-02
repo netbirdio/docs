@@ -155,6 +155,7 @@ export const docsNavigation = [
              isOpen: false,
              links: [
                  { title: 'Add Users to Your Network', href: '/how-to/add-users-to-your-network' },
+                 { title: 'Approve Users', href: '/how-to/approve-users' },
                  {
                      title: 'Provision Users & Groups',
                      href: '/how-to/idp-sync',
