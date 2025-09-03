@@ -191,6 +191,7 @@ export const docsNavigation = [
                          { title: 'Datadog', href: '/how-to/stream-activity-to-datadog' },
                          { title: 'Amazon S3', href: '/how-to/stream-activity-to-amazon-s3' },
                          { title: 'Amazon Firehose', href: '/how-to/stream-activity-to-amazon-firehose'},
+                         { title: 'SentinelOne Data Lake', href: '/how-to/stream-activity-to-sentinelone-data-lake'},
                          { title: 'Generic HTTP', href: '/how-to/stream-activity-to-generic-http'},
                      ]
                  },
