@@ -111,6 +111,7 @@ export const docsNavigation = [
                      links: [
                          { title: 'CrowdStrike Falcon', href: '/how-to/crowdstrike-edr' },
                          { title: 'Microsoft Intune', href: '/how-to/intune-mdm' },
+                         { title: 'SentinelOne Singularity', href: '/how-to/sentinelone-edr' },
                      ]
                  },
 
