@@ -142,6 +142,17 @@ const resources = [
       squares: [[0, 1]],
     },
   },
+    {
+    href: '/api/resources/jobs',
+    name: 'Jobs',
+    description:
+      'Learn about how to list jobs.',
+    icon: UsersIcon,
+    pattern: {
+      y: 22,
+      squares: [[0, 1]],
+    },
+  },
 ]
 
 function ResourceIcon({ icon: Icon }) {

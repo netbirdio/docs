@@ -35,6 +35,7 @@ export const apiNavigation = [
       { title: 'Networks', href: '/api/resources/networks' },
       { title: 'DNS', href: '/api/resources/dns' },
       { title: 'Events', href: '/api/resources/events' },
+      { title: 'Jobs', href: '/api/resources/jobs' },
     ],
   },
 ]
