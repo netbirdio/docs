@@ -18,10 +18,11 @@ export type Request = {
   type: string
   required: boolean
   description?: string
-  minLen?: number
-  maxLen?: number
+  minLength?: number,
+  maxLength?: number,
   minimum?: number
   maximum?: number
+  example?: string
   enumList?: any[]
   bodyObj?: Request[]
 }
@@ -34,9 +35,126 @@ export type Endpoint = {
   parameters?: Parameter[]
   responses: Record<string, Extracted | null>
   request?: Request[] | null
-  tag: string
+  tag: string,
+  flags: string[]
 }
 
+/* ----------------- main extraction: extractSpec ----------------- */
+
+/**
+ * Walks all paths & methods and extracts:
+ * - parameters (path/query)
+ * - request body (application/json) -> Request[]
+ * - responses -> Extracted { schema, example } (application/json)
+ */
+export function extractSpec(doc: OpenAPIV3_1.Document): Endpoint[] {
+  const endpoints: Endpoint[] = []
+  const methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']
+
+  for (const [p, pathItem] of Object.entries(doc.paths || {})) {
+    for (const method of methods) {
+      const op: any = (pathItem as any)[method]
+      if (!op) continue
+      const flags = []
+      for (let o in op) {
+        if (o.startsWith("x-")) {
+          flags.push(o)
+        }
+      }
+
+      const parameters: Parameter[] = (op.parameters || []).map((param: any) => ({
+        name: param.name,
+        required: !!param.required,
+        type: param.schema?.type,
+        description: param.description,
+        in: param.in,
+      }))
+
+      const endpoint: Endpoint = {
+        path: p,
+        method: method.toUpperCase(),
+        summary: op.summary,
+        description: op.description,
+        parameters,
+        responses: {},
+        request: null,
+        tag: Array.isArray(op.tags) ? op.tags[0] ?? '' : (op.tags ?? '') as any,
+        flags: flags
+      }
+
+      // ---------- Request body ----------
+      if (op.requestBody) {
+        let rb: any = op.requestBody
+        if (rb.$ref) {
+          const resolved = resolveRef(rb.$ref, doc)
+          if (resolved) rb = resolved
+        }
+        const reqSchema = rb?.content?.['application/json']?.schema
+        if (reqSchema) {
+          const topReqs = schemaNodeToRequests(reqSchema, doc, 'body', reqSchema.required || [], new Set<string>())
+          endpoint.request = topReqs.length ? topReqs : null
+        } else if (rb?.content?.['application/json']?.example !== undefined) {
+          endpoint.request = [{
+            name: 'body',
+            type: Array.isArray(rb.content['application/json'].example) ? 'array' : typeof rb.content['application/json'].example,
+            required: true,
+            description: rb.description || undefined
+          }]
+        } else {
+          endpoint.request = null
+        }
+      }
+
+      // ---------- Responses ----------
+      for (const [statusCode, resp] of Object.entries(op.responses || {})) {
+        let respObj: any = resp
+
+        // If response is a $ref to components.responses, resolve it
+        if (respObj && respObj.$ref) {
+          const resolvedResp = resolveRef(respObj.$ref, doc)
+          if (resolvedResp) respObj = resolvedResp
+        }
+
+        // content['application/json'].schema is the expected place
+        const contentSchema = respObj?.content?.['application/json']?.schema
+        if (contentSchema) {
+          endpoint.responses[statusCode] = extractFromSchema(contentSchema, doc)
+          continue
+        }
+
+        // content example fallback (no schema)
+        const contentExample = respObj?.content?.['application/json']?.example
+        if (contentExample !== undefined) {
+          const example = contentExample
+          const schemaRep = buildSchemaRepresentationFromExample(example)
+          endpoint.responses[statusCode] = { schema: schemaRep, example }
+          continue
+        }
+
+        // Maybe the response object directly references a schema ($ref inside response 'schema' rare)
+        if (respObj && respObj.schema && respObj.schema.$ref) {
+          endpoint.responses[statusCode] = extractFromSchema(respObj.schema, doc)
+          continue
+        }
+
+        // Another fallback: if respObj has a top-level example
+        if (respObj && respObj.example !== undefined) {
+          const example = respObj.example
+          const schemaRep = buildSchemaRepresentationFromExample(example)
+          endpoint.responses[statusCode] = { schema: schemaRep, example }
+          continue
+        }
+
+        // No useful info
+        endpoint.responses[statusCode] = null
+      }
+
+      endpoints.push(endpoint)
+    }
+  }
+
+  return endpoints
+}
 
 /**
  * Resolve a local JSON Pointer reference (e.g. "#/components/schemas/Foo")
@@ -132,12 +250,9 @@ function dereferenceNode(node: any, doc: OpenAPIV3_1.Document, seenRefs = new Se
     return mergeAllOfParts(node.allOf, doc, seenRefs)
   }
 
-  // anyOf/oneOf: return array of resolved options (keep as oneOf/anyOf structure)
+  // anyOf: return array of resolved options (keep as oneOf structure)
   if (Array.isArray(node.oneOf)) {
     return { oneOf: node.oneOf.map((opt: any) => dereferenceNode(opt, doc, new Set(seenRefs))) }
-  }
-  if (Array.isArray(node.anyOf)) {
-    return { anyOf: node.anyOf.map((opt: any) => dereferenceNode(opt, doc, new Set(seenRefs))) }
   }
 
   // arrays: dereference items
@@ -146,8 +261,8 @@ function dereferenceNode(node: any, doc: OpenAPIV3_1.Document, seenRefs = new Se
     const derefItems = dereferenceNode(items, doc, new Set(seenRefs))
     // return normalized array node
     const arr: any = { type: 'array', items: derefItems }
-    if (node.minItems !== undefined) arr.minItems = node.minItems
-    if (node.maxItems !== undefined) arr.maxItems = node.maxItems
+    if (node.minLength !== undefined) arr.minLength = node.minLength
+    if (node.maxLength !== undefined) arr.maxLength = node.maxLength
     if (node.description) arr.description = node.description
     if (node.example !== undefined) arr.example = node.example
     return arr
@@ -345,20 +460,9 @@ function extractFromSchema(node: any, doc: OpenAPIV3_1.Document, seenRefs = new 
   return { schema: null, example: null }
 }
 
-
-
-/* ----------------- helpers ----------------- */
-
-function defaultForPrimitive(t: string) {
-  switch (t) {
-    case 'string': return 'string'
-    case 'integer': return 0
-    case 'number': return 0
-    case 'boolean': return false
-    default: return null
-  }
-}
-
+/**
+ * Helper: produce a default for a whole schema if examples aren't present
+ */
 function defaultForSchema(schemaRep: any) {
   if (schemaRep == null) return null
   if (Array.isArray(schemaRep)) {
@@ -377,6 +481,23 @@ function defaultForSchema(schemaRep: any) {
   return null
 }
 
+/**
+ * Helper: produce a default example for a primitive schema type
+ */
+function defaultForPrimitive(t: string) {
+  switch (t) {
+    case 'string': return 'string'
+    case 'integer': return 0
+    case 'number': return 0
+    case 'boolean': return false
+    default: return null
+  }
+}
+
+/**
+ * Small best-effort function to build a schema representation from a concrete example.
+ * This is only used as a fallback when a schema is missing but an example exists.
+ */
 function buildSchemaRepresentationFromExample(example: any): any {
   if (example === null || example === undefined) return null
   if (Array.isArray(example)) {
@@ -396,6 +517,12 @@ function buildSchemaRepresentationFromExample(example: any): any {
   return null
 }
 
+/**
+ * Convert a schema node into an array of Request entries.
+ * - node: the schema object (can be ReferenceObject, SchemaObject)
+ * - nameForRoot: name to use when the node isn't an object with properties (eg 'body')
+ * - requiredNames: array of required property names (only used when node.properties exists)
+ */
 function schemaNodeToRequests(
   node: any,
   doc: OpenAPIV3_1.Document,
@@ -405,136 +532,75 @@ function schemaNodeToRequests(
 ): Request[] {
   if (!node) return []
 
-  // If node is a string ref like '#/components/...' -> resolve and recurse
-  if (typeof node === 'string' && node.startsWith('#/')) {
-    const resolved = resolveRef(node, doc)
+  // Normalize & dereference first (this resolves $ref, merges allOf, derefs children)
+  const normalized = dereferenceNode(node, doc, seenRefs) ?? node
+
+  // If normalized ended up being a reference string (unlikely after deref), resolve
+  if (typeof normalized === 'string' && normalized.startsWith('#/')) {
+    const resolved = resolveRef(normalized, doc)
     return schemaNodeToRequests(resolved, doc, nameForRoot, requiredNames, seenRefs)
   }
 
-  // If it's a $ref object, resolve (avoid infinite loop)
-  if (node.$ref) {
-    const ref = node.$ref as string
-    if (seenRefs.has(ref)) {
-      // circular: return a placeholder
-      return [{ name: nameForRoot, type: ref, required: requiredNames.includes(nameForRoot) }]
-    }
-    seenRefs.add(ref)
-    const resolved = resolveRef(ref, doc)
-    if (!resolved) return [{ name: nameForRoot, type: ref, required: requiredNames.includes(nameForRoot) }]
-    return schemaNodeToRequests(resolved, doc, nameForRoot, requiredNames, seenRefs)
-  }
+  // Object handling (properties or additionalProperties)
+  if ((normalized as any).type === 'object' || (normalized as any).properties || (normalized as any).additionalProperties) {
+    const n = normalized as any
 
-  // If oneOf -> produce one Request entry with type 'oneOf' and bodyObj containing options
-  if (Array.isArray(node.oneOf)) {
-    const options: Request[] = node.oneOf.map((opt: any, idx: number) => {
-      const optReqs = schemaNodeToRequests(opt, doc, `option_${idx+1}`, [], new Set(seenRefs))
-      if (optReqs.length === 1 && optReqs[0].type === 'object' && optReqs[0].bodyObj) {
-        return {
-          name: `Option ${idx+1}`,
-          type: 'object',
-          required: true,
-          description: opt.description || undefined,
-          bodyObj: optReqs[0].bodyObj
-        }
-      }
-      return {
-        name: `Option ${idx+1}`,
-        type: 'object',
-        required: true,
-        bodyObj: optReqs
-      }
-    })
-    return [{
-      name: nameForRoot,
-      type: 'oneOf',
-      required: true,
-      description: node.description || undefined,
-      bodyObj: options
-    }]
-  }
-
-  // If array -> create a single Request describing the array
-  if (node.type === 'array' || node.items) {
-    const items = node.items ?? {}
-    // object[] case
-    if ((items.type === 'object') || items.properties || items.$ref || items.oneOf) {
-      const nested = schemaNodeToRequests(items, doc, 'item', items.required || [], new Set(seenRefs))
-      return [{
-        name: nameForRoot,
-        type: 'object[]',
-        required: requiredNames.includes(nameForRoot),
-        description: node.description || undefined,
-        bodyObj: nested
-      }]
-    } else {
-      const itemType = items.type || 'any'
-      return [{
-        name: nameForRoot,
-        type: `${itemType}[]`,
-        required: requiredNames.includes(nameForRoot),
-        description: node.description || undefined,
-        minLen: node.minItems,
-        maxLen: node.maxItems,
-      }]
-    }
-  }
-
-  // If object with properties -> map each property to Request
-  if (node.type === 'object' || node.properties || node.additionalProperties) {
-    if (node.properties && typeof node.properties === 'object') {
+    // If we have explicit properties -> enumerate them
+    if (n.properties && typeof n.properties === 'object') {
       const out: Request[] = []
-      const reqArr: string[] = Array.isArray(node.required) ? node.required : requiredNames || []
-      for (const [propName, propSchema] of Object.entries(node.properties)) {
-        const prop = propSchema as any
-
-        // $ref property
-        if (prop.$ref) {
-          const resolved = resolveRef(prop.$ref, doc)
-          const nestedReqs = schemaNodeToRequests(resolved, doc, propName, resolved?.required || [], new Set(seenRefs))
-          if (nestedReqs.length === 1 && nestedReqs[0].type === 'object' && nestedReqs[0].bodyObj) {
-            out.push({
-              name: propName,
+      const reqArr: string[] = Array.isArray(n.required) ? n.required : requiredNames || []
+      for (const [propName, propSchema] of Object.entries(n.properties)) {
+        // ensure property is normalized
+        const prop = dereferenceNode(propSchema, doc, new Set(seenRefs)) ?? propSchema
+        if (Array.isArray((prop as any).oneOf)) {
+          const options: Request[] = (prop.oneOf as any[]).map((opt, idx) => {
+            const optReqs = schemaNodeToRequests(opt, doc, `option_${idx + 1}`, [], new Set(seenRefs))
+            return {
+              name: `Option ${idx + 1}`,
               type: 'object',
-              required: reqArr.includes(propName),
-              description: prop.description || undefined,
-              bodyObj: nestedReqs[0].bodyObj
-            })
-            continue
-          } else {
-            out.push({
-              name: propName,
-              type: 'object',
-              required: reqArr.includes(propName),
-              description: prop.description || undefined,
-              bodyObj: nestedReqs
-            })
-            continue
-          }
+              required: true,
+              example: opt.example,
+              bodyObj: optReqs
+            }
+          })
+          out.push({
+            name: propName,
+            type: 'object[]',
+            required: true,
+            description: prop.description,
+            bodyObj: options
+          })
         }
-
         // array property
         if (prop.type === 'array' || prop.items) {
           const items = prop.items ?? {}
-          if ((items.type === 'object') || items.properties || items.$ref || items.oneOf) {
-            const nested = schemaNodeToRequests(items, doc, propName, items.required || [], new Set(seenRefs))
+          const itemsNorm = dereferenceNode(items, doc, new Set(seenRefs)) ?? items
+          if (itemsNorm.type === 'object' || itemsNorm.properties) {
+            const nested = schemaNodeToRequests(itemsNorm, doc, propName, itemsNorm.required || [], new Set(seenRefs))
             out.push({
               name: propName,
               type: 'object[]',
+              example: prop.example ?? (nested.length
+                ? [Object.fromEntries(
+                  nested.map(nr => [nr.name, nr.example ?? defaultForSchema(nr.type ?? nr)])
+                )]
+                : undefined),
               required: reqArr.includes(propName),
+              maxLength: prop.maxLength,
+              minLength: prop.minLength,
               description: prop.description || undefined,
-              minLen: prop.minItems,
-              maxLen: prop.maxItems,
               bodyObj: nested
             })
           } else {
             out.push({
               name: propName,
-              type: `${items.type || 'any'}[]`,
+              type: `${itemsNorm.type || 'any'}[]`,
+              example: prop.example ?? (itemsNorm.example !== undefined ? [itemsNorm.example] : undefined),
               required: reqArr.includes(propName),
               description: prop.description || undefined,
-              minLen: prop.minItems,
-              maxLen: prop.maxItems,
-              enumList: items.enum
+              maxLength: prop.maxLength,
+              minLength: prop.minLength,
+              enumList: itemsNorm.enum
             })
           }
           continue
@@ -546,6 +612,10 @@ function schemaNodeToRequests(
           out.push({
             name: propName,
             type: 'object',
+            example: prop.example ?? (nested.length ? nested.reduce((acc, it) => {
+              if (it.name) acc[it.name] = it.example ?? defaultForSchema(it.type ?? it)
+              return acc
+            }, {} as any) : undefined),
             required: reqArr.includes(propName),
             description: prop.description || undefined,
             bodyObj: nested
@@ -553,32 +623,37 @@ function schemaNodeToRequests(
           continue
         }
 
-        // primitive property
+        // primitive property (string/number/boolean/enum)
+        const primType = prop.type || (prop.enum ? 'string' : 'any')
         const r: Request = {
           name: propName,
-          type: prop.type || (prop.enum ? 'string' : 'any'),
+          type: primType,
           required: reqArr.includes(propName),
+          example: prop.example !== undefined ? prop.example : defaultForPrimitive(primType),
           description: prop.description || undefined
         }
-        if (prop.minLength !== undefined) r.minLen = prop.minLength
-        if (prop.maxLength !== undefined) r.maxLen = prop.maxLength
         if (prop.minimum !== undefined) r.minimum = prop.minimum
         if (prop.maximum !== undefined) r.maximum = prop.maximum
+        if (prop.minLength !== undefined) r.minLength = prop.minLength
+        if (prop.maxLength !== undefined) r.maxLength = prop.maxLength
         if (prop.enum) r.enumList = Array.isArray(prop.enum) ? prop.enum : undefined
         out.push(r)
       }
+
       return out
     }
 
-    // additionalProperties (map)
-    if (node.additionalProperties) {
-      const add = node.additionalProperties === true ? { type: 'any' } : node.additionalProperties
-      const nested = schemaNodeToRequests(add, doc, 'value', add?.required || [], new Set(seenRefs))
+    // additionalProperties (map-like object)
+    if ((n as any).additionalProperties) {
+      const add = (n as any).additionalProperties === true ? { type: 'any' } : (n as any).additionalProperties
+      const addNorm = dereferenceNode(add, doc, new Set(seenRefs)) ?? add
+      const nested = schemaNodeToRequests(addNorm, doc, 'value', addNorm.required || [], new Set(seenRefs))
       return [{
         name: nameForRoot,
         type: 'object',
+        example: n.example ?? (nested.length ? nested[0].example : undefined),
         required: requiredNames.includes(nameForRoot),
-        description: node.description || undefined,
+        description: n.description || undefined,
         bodyObj: nested.length ? nested : undefined
       }]
     }
@@ -587,154 +662,49 @@ function schemaNodeToRequests(
     return [{
       name: nameForRoot,
       type: 'object',
+      example: (normalized as any).example ?? undefined,
       required: requiredNames.includes(nameForRoot),
-      description: node.description || undefined
+      description: (normalized as any).description || undefined
     }]
   }
 
-  // primitive at root
-  if (typeof node.type === 'string') {
+  // Primitive at root (string/number/boolean/etc)
+  if (typeof (normalized as any).type === 'string') {
+    const t = (normalized as any).type
     const r: Request = {
       name: nameForRoot,
-      type: node.type,
+      type: t,
+      example: (normalized as any).example !== undefined ? (normalized as any).example : defaultForPrimitive(t),
       required: requiredNames.includes(nameForRoot),
-      description: node.description || undefined
+      description: (normalized as any).description || undefined
     }
-    if (node.minLength !== undefined) r.minLen = node.minLength
-    if (node.maxLength !== undefined) r.maxLen = node.maxLength
-    if (node.minimum !== undefined) r.minimum = node.minimum
-    if (node.maximum !== undefined) r.maximum = node.maximum
-    if (node.enum) r.enumList = node.enum
+    if ((normalized as any).minLength !== undefined) r.minLength = (normalized as any).minLength
+    if ((normalized as any).maxLength !== undefined) r.maxLength = (normalized as any).maxLength
+    if ((normalized as any).minimum !== undefined) r.minimum = (normalized as any).minimum
+    if ((normalized as any).maximum !== undefined) r.maximum = (normalized as any).maximum
+
+    if ((normalized as any).enum) r.enumList = (normalized as any).enum
     return [r]
   }
 
   // enum fallback
-  if (node.enum) {
+  if ((normalized as any).enum) {
     return [{
       name: nameForRoot,
       type: 'string',
+      example: (normalized as any).example !== undefined ? (normalized as any).example : ((normalized as any).enum ? (normalized as any).enum[0] : undefined),
       required: requiredNames.includes(nameForRoot),
-      enumList: Array.isArray(node.enum) ? node.enum : undefined,
-      description: node.description || undefined
+      enumList: Array.isArray((normalized as any).enum) ? (normalized as any).enum : undefined,
+      description: (normalized as any).description || undefined
     }]
   }
 
-  // fallback
+  // fallback generic
   return [{
     name: nameForRoot,
-    type: typeof node === 'object' ? 'object' : 'any',
+    example: (normalized as any).example,
+    type: typeof normalized === 'object' ? 'object' : 'any',
     required: requiredNames.includes(nameForRoot),
-    description: node?.description || undefined
+    description: (normalized as any)?.description || undefined
   }]
 }
-
-/* ----------------- main extraction: extractSpec ----------------- */
-
-/**
- * Walks all paths & methods and extracts:
- * - parameters (path/query)
- * - request body (application/json) -> Request[]
- * - responses -> Extracted { schema, example } (application/json)
- */
-export function extractSpec(doc: OpenAPIV3_1.Document): { endpoints: Endpoint[] } {
-  const endpoints: Endpoint[] = []
-  const methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head']
-
-  for (const [p, pathItem] of Object.entries(doc.paths || {})) {
-    for (const method of methods) {
-      const op: any = (pathItem as any)[method]
-      if (!op) continue
-
-      const parameters: Parameter[] = (op.parameters || []).map((param: any) => ({
-        name: param.name,
-        required: !!param.required,
-        type: param.schema?.type,
-        description: param.description,
-        in: param.in,
-      }))
-
-      const endpoint: Endpoint = {
-        path: p,
-        method: method.toUpperCase(),
-        summary: op.summary,
-        description: op.description,
-        parameters,
-        responses: {},
-        request: null,
-        tag: Array.isArray(op.tags) ? op.tags[0] ?? '' : (op.tags ?? '') as any,
-      }
-
-      // ---------- Request body ----------
-      if (op.requestBody) {
-        let rb: any = op.requestBody
-        if (rb.$ref) {
-          const resolved = resolveRef(rb.$ref, doc)
-          if (resolved) rb = resolved
-        }
-        const reqSchema = rb?.content?.['application/json']?.schema
-        if (reqSchema) {
-          const topReqs = schemaNodeToRequests(reqSchema, doc, 'body', reqSchema.required || [], new Set<string>())
-          endpoint.request = topReqs.length ? topReqs : null
-        } else if (rb?.content?.['application/json']?.example !== undefined) {
-          endpoint.request = [{
-            name: 'body',
-            type: Array.isArray(rb.content['application/json'].example) ? 'array' : typeof rb.content['application/json'].example,
-            required: true,
-            description: rb.description || undefined
-          }]
-        } else {
-          endpoint.request = null
-        }
-      }
-
-      // ---------- Responses ----------
-      for (const [statusCode, resp] of Object.entries(op.responses || {})) {
-        let respObj: any = resp
-
-        // If response is a $ref to components.responses, resolve it
-        if (respObj && respObj.$ref) {
-          const resolvedResp = resolveRef(respObj.$ref, doc)
-          if (resolvedResp) respObj = resolvedResp
-        }
-
-        // content['application/json'].schema is the expected place
-        const contentSchema = respObj?.content?.['application/json']?.schema
-        if (contentSchema) {
-          endpoint.responses[statusCode] = extractFromSchema(contentSchema, doc)
-          continue
-        }
-
-        // content example fallback (no schema)
-        const contentExample = respObj?.content?.['application/json']?.example
-        if (contentExample !== undefined) {
-          const example = contentExample
-          const schemaRep = buildSchemaRepresentationFromExample(example)
-          endpoint.responses[statusCode] = { schema: schemaRep, example }
-          continue
-        }
-
-        // Maybe the response object directly references a schema ($ref inside response 'schema' rare)
-        if (respObj && respObj.schema && respObj.schema.$ref) {
-          endpoint.responses[statusCode] = extractFromSchema(respObj.schema, doc)
-          continue
-        }
-
-        // Another fallback: if respObj has a top-level example
-        if (respObj && respObj.example !== undefined) {
-          const example = respObj.example
-          const schemaRep = buildSchemaRepresentationFromExample(example)
-          endpoint.responses[statusCode] = { schema: schemaRep, example }
-          continue
-        }
-
-        // No useful info
-        endpoint.responses[statusCode] = null
-      }
-
-      endpoints.push(endpoint)
-    }
-  }
-
-  return { endpoints }
-}
-

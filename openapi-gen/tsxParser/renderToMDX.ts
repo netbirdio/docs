@@ -19,16 +19,6 @@ type ElementShape = {
   $$typeof?: symbol;
 };
 
-/** Detect a React element object (the $$typeof check) */
-function isReactElementObject(obj: unknown): obj is React.ReactElement {
-  return (
-    typeof obj === "object" &&
-    obj !== null &&
-    // Symbol.for('react.element') is the canonical marker
-    (obj as any).$$typeof === Symbol.for("react.element")
-  );
-}
-
 /** Main renderer: accepts any React node (element, string, number, array, fragment) */
 export function renderToMDX(node: React.ReactNode): string {
   function renderNode(n: React.ReactNode): string {
@@ -102,3 +92,12 @@ export function renderToMDX(node: React.ReactNode): string {
   return renderNode(node);
 }
 
+/** Detect a React element object (the $$typeof check) */
+function isReactElementObject(obj: unknown): obj is React.ReactElement {
+  return (
+    typeof obj === "object" &&
+    obj !== null &&
+    // Symbol.for('react.element') is the canonical marker
+    (obj as any).$$typeof === Symbol.for("react.element")
+  );
+}

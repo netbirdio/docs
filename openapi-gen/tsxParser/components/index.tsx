@@ -24,8 +24,6 @@ export const Summary = ({ children }: { children: React.ReactNode }) => <>
 
 </>
 
-
-
 export const Col = ({ children, sticky }: { children: React.ReactNode, sticky?: boolean }) => <>
   {"\n<"}Col{sticky ? ' sticky' : ""}{">\n"}
   {children}
@@ -38,17 +36,41 @@ export const Properties = ({ children }) => <>
   {"\n</"}Properties{">\n"}
 </>
 
+export const Badge = ({ customFlag }: { customFlag: string }) => {
+  let component = "  <Badge "
+  if (customFlag === "x-cloud-only") {
+    component += ` status="cloud-only"`
+    component += ` text="cloud-only"`
+    component += ` hoverText="This feature is only available in the cloud version of NetBird."`
+  }
+
+  if (customFlag === "x-experimental") {
+    component += ` status="experimental"`
+    component += ` text="experimental"`
+    component += ` hoverText="This feature is experimental. The endpoint will likely change and we do not guarantee backwards compatibility."`
+  }
+
+
+  component += " />"
+
+  return <>
+    {component}
+  </>
+}
 type PropertyProps = {
   name?: string,
   type?: string,
   required?: boolean,
+  min?: number,
+  max?: number,
   minLen?: number,
-  maxLen?: number,
+  maxLen?: number
   enumList?: string[]
+
   children: React.ReactNode,
 }
 
-export const Property = ({ name, type, required, minLen, maxLen, enumList, children }: PropertyProps) => {
+export const Property = ({ name, type, required, min, max, minLen, maxLen, enumList, children }: PropertyProps) => {
   const childNodes = React.Children.toArray(children).map((child) =>
     typeof child === "string" ? child.trim() : ""
   );
@@ -56,8 +78,10 @@ export const Property = ({ name, type, required, minLen, maxLen, enumList, child
   if (name) header += `name="${name}"`
   if (type) header += ` type="${type}"`
   if (required) header += ` required={${required}}`
-  if (minLen) header += ` minLen={${minLen}}`
-  if (maxLen) header += ` maxLen={${maxLen}}`
+  if (min != undefined) header += ` min={${min}}`
+  if (max != undefined) header += ` max={${max}}`
+  if (minLen != undefined) header += ` minLen={${minLen}}`
+  if (maxLen != undefined) header += ` maxLen={${maxLen}}`
   if (enumList && enumList.length === 0) header += `enumList={[${enumList.join(",")}]}`
 
   header += " >\n"
@@ -88,12 +112,12 @@ export const CodeGroup = ({ title, endPoint }: CodeGroupProps) => {
   const schemaJson = obj?.schema ? JSON.stringify(obj.schema, null, 2) : ""
 
   let langCode = []
-  if (title === "Request") langCode = requestCode(tag, label, exampleJson)
-  if (title === "Response") langCode = responseCode(schemaJson, schemaJson)
+  if (title === "Request") langCode = requestCode(endPoint)
+  if (title === "Response") langCode = responseCode(schemaJson, exampleJson)
   let header = "<CodeGroup "
   if (title) header += `title="${title}"`
-  if (tag) header += ` tag="${tag}"`
-  if (label) header += ` label="${label}"`
+  if (tag && title === "Request") header += ` tag="${tag}"`
+  if (label && title === "Request") header += ` label="${label}"`
 
   header += " >\n"
   const footer = `\n</CodeGroup>\n`;
