@@ -421,7 +421,7 @@ func main() {
   url := "https://api.netbird.io${url}"
   method := "POST"
   
-  payload := strings.NewReader(\`${body}\`)
+  payload := strings.NewReader('${body}')
   client := &http.Client{}
   req, err := http.NewRequest(method, url, payload)
 
@@ -476,7 +476,7 @@ puts response.read_body
 OkHttpClient client = new OkHttpClient().newBuilder()
   .build();
 MediaType mediaType = MediaType.parse("application/json");
-RequestBody body = RequestBody.create(mediaType, "${body.replace(/"/g, '\\"')}");
+RequestBody body = RequestBody.create(mediaType, '${body}';
 Request request = new Request.Builder()
   .url("https://api.netbird.io${url}")
   .method("POST", body)  
