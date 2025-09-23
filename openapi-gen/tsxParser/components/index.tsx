@@ -6,34 +6,47 @@ import { Endpoint } from "../openapi-extractor";
 export const Stringify = ({ str }: { str: string }) => <>{str}</>
 
 export const Row = ({ children }) => <>
-  {"\n<"}Row{">\n"}
+  {"\n<Row>\n"}
   {children}
-  {"\n</"}Row{">"}
+  {"\n</Row>\n"}
 </>
 
-export const Details = ({ children, className, open }: { children: React.ReactNode, className: string, open?: boolean }) => <>
-  {"\n<"}details{className ? ` class="${className}" ` : ""}{open ? "open " : ""}{">\n"}
-  {children}
-  {"\n</"}details{">"}
-</>
+export const Details = ({ children, className, open }: { children: React.ReactNode, className: string, open?: boolean }) => {
+  let header = ` <details`
+  if (className) header += ` class="${className}"`
+  if (open != undefined) header += ` open`
+  header += `>\n`
+  const footer = "\n</details>\n"
+
+  return <>
+    {header}
+    {children}
+    {footer}
+  </>
+}
 
 export const Summary = ({ children }: { children: React.ReactNode }) => <>
-  {"\n<"}summary{">"}
+  {"\n<summary>"}
   {children}
-  {"</"}summary{">"}
-
+  {"</summary>"}
 </>
 
-export const Col = ({ children, sticky }: { children: React.ReactNode, sticky?: boolean }) => <>
-  {"\n<"}Col{sticky ? ' sticky' : ""}{">\n"}
-  {children}
-  {"\n</"}Col{">\n"}
-</>
+export const Col = ({ children, sticky }: { children: React.ReactNode, sticky?: boolean }) => {
+  let header = " <Col"
+  if (sticky != undefined) header += ` sticky`
+  header += `>\n`
+  const footer = "\n</Col>\n"
+  return <>
+    {header}
+    {children}
+    {footer}
+  </>
+}
 
 export const Properties = ({ children }) => <>
-  {"\n<"}Properties{">\n"}
+  {"\n<Properties>\n"}
   {children}
-  {"\n</"}Properties{">\n"}
+  {"\n</Properties>\n"}
 </>
 
 export const Badge = ({ customFlag }: { customFlag: string }) => {
@@ -50,7 +63,6 @@ export const Badge = ({ customFlag }: { customFlag: string }) => {
     component += ` hoverText="This feature is experimental. The endpoint will likely change and we do not guarantee backwards compatibility."`
   }
 
-
   component += " />"
 
   return <>
@@ -66,7 +78,6 @@ type PropertyProps = {
   minLen?: number,
   maxLen?: number
   enumList?: string[]
-
   children: React.ReactNode,
 }
 

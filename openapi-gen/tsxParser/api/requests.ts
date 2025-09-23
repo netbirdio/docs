@@ -2,26 +2,39 @@ import { Endpoint } from "../../tsxParser/openapi-extractor"
 
 
 export const requestCode = (endPoint: Endpoint) => {
-  const body = {};
-  endPoint?.request?.map(req => {
-    if (req.example !== undefined) {
-      body[req.name] = req.example
-    }
-  })
-
-  const bodyJson = JSON.stringify(body, null, 2)
-
+  const body = getRequestBody(endPoint)
   switch (endPoint.method) {
     case 'GET':
       return getRequestCode(endPoint.path)
     case "POST":
-      return postRequestCode(endPoint.path, bodyJson)
+      return postRequestCode(endPoint.path, body)
     case "PUT":
-      return putRequestCode(endPoint.path, bodyJson)
+      return putRequestCode(endPoint.path, body)
     case "DELETE":
       return deleteRequestCode(endPoint.path)
   }
 }
+
+export const getRequestBody = (endPoint: Endpoint) => {
+  const body: Record<string, any> = {};
+
+  if (!endPoint?.request) return "{}";
+
+  for (const req of endPoint.request) {
+    if (req.isOneOf && req.bodyObj?.[0]?.bodyObj) {
+      body[req.name] = Object.fromEntries(
+        req.bodyObj[0].bodyObj.map(({ name, example }) => [name, example])
+      );
+      continue;
+    }
+
+    if (req.example !== undefined) {
+      body[req.name] = req.example;
+    }
+  }
+
+  return JSON.stringify(body, null, 2);
+};
 
 const deleteRequestCode = (url: string) => {
   const langCode = []

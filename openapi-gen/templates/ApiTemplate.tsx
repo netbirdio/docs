@@ -13,7 +13,9 @@ export const ApiTemplate = ({ tag, endpoints, customFlags }: ApiTemplateProps) =
       <Stringify str={`export const title = '${tag}'`} />
 
       {endpoints.map((end, index) => {
-        const flags = customFlags ? [...customFlags, ...end.flags] : end.flags
+        const flags = customFlags
+          ? [...new Set([...customFlags, ...end.flags])]
+          : [...new Set(end.flags)];
         return (
           <div key={`${end.method}-${end.path}-${index}`}>
             <h2>

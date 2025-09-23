@@ -33,10 +33,14 @@ import { mkdir, writeFile } from "fs/promises"
 
       mdxFile[endpoint.tag].push(endpoint)
       const ymlTag = yml.tags.find(tag => tag.name == endpoint.tag)
+
       if (!ymlTag) return;
+      if (!customFlags[endpoint.tag]) {
+        customFlags[endpoint.tag] = []
+      }
       for (let flag in ymlTag) {
-        if (flag.startsWith('x-') && ymlTag[flag]) {
-          customFlags.push(flag)
+        if (flag.startsWith('x-') && ymlTag[flag] && !customFlags[endpoint.tag].includes(flag)) {
+          customFlags[endpoint.tag].push(flag)
         }
       }
     })

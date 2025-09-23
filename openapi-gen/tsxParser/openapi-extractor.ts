@@ -24,6 +24,7 @@ export type Request = {
   maximum?: number
   example?: string
   enumList?: any[]
+  isOneOf?: boolean,
   bodyObj?: Request[]
 }
 
@@ -331,12 +332,9 @@ function buildSchemaRepresentation(node: any, doc: OpenAPIV3_1.Document, seenRef
     return buildSchemaRepresentation(dereferenceNode(resolved, doc, seenRefs), doc, seenRefs)
   }
 
-  // oneOf/anyOf (already dereferenced to actual nodes)
+  // oneOf (already dereferenced to actual nodes)
   if (node.oneOf) {
     return { oneOf: node.oneOf.map((o: any) => buildSchemaRepresentation(o, doc, new Set(seenRefs))) }
-  }
-  if (node.anyOf) {
-    return { anyOf: node.anyOf.map((o: any) => buildSchemaRepresentation(o, doc, new Set(seenRefs))) }
   }
 
   // array
@@ -392,11 +390,6 @@ function extractFromSchema(node: any, doc: OpenAPIV3_1.Document, seenRefs = new 
     const options = deref.oneOf.map((opt: any) => extractFromSchema(opt, doc, new Set(seenRefs)))
     const firstExample = options.find(o => o.example !== undefined && o.example !== null)?.example ?? null
     return { schema: { oneOf: options.map(o => o.schema) }, example: firstExample }
-  }
-  if (deref.anyOf) {
-    const options = deref.anyOf.map((opt: any) => extractFromSchema(opt, doc, new Set(seenRefs)))
-    const firstExample = options.find(o => o.example !== undefined && o.example !== null)?.example ?? null
-    return { schema: { anyOf: options.map(o => o.schema) }, example: firstExample }
   }
 
   // Arrays
@@ -553,23 +546,29 @@ function schemaNodeToRequests(
         // ensure property is normalized
         const prop = dereferenceNode(propSchema, doc, new Set(seenRefs)) ?? propSchema
         if (Array.isArray((prop as any).oneOf)) {
+
+
           const options: Request[] = (prop.oneOf as any[]).map((opt, idx) => {
-            const optReqs = schemaNodeToRequests(opt, doc, `option_${idx + 1}`, [], new Set(seenRefs))
+            const propNode = dereferenceNode(opt, doc, new Set(seenRefs)) ?? opt
+            const optReqs = schemaNodeToRequests(propNode, doc, `option_${idx + 1}`, [], new Set(seenRefs))
             return {
               name: `Option ${idx + 1}`,
               type: 'object',
-              required: true,
+              required: false,
               example: opt.example,
               bodyObj: optReqs
+
             }
           })
           out.push({
             name: propName,
-            type: 'object[]',
+            type: 'object',
             required: true,
-            description: prop.description,
-            bodyObj: options
+            description: "One of",
+            bodyObj: options,
+            isOneOf: true,
           })
+          continue
         }
         // array property
         if (prop.type === 'array' || prop.items) {
