@@ -20,6 +20,7 @@ export const docsNavigation = [
             { title: 'How NetBird Works', href: '/about-netbird/how-netbird-works'},
             { title: 'NetBird vs. Traditional VPN', href: '/about-netbird/netbird-vs-traditional-vpn' },
             { title: 'Why WireGuard with NetBird', href: '/about-netbird/why-wireguard-with-netbird' },
+            { title: 'Browser Client Architecture', href: '/about-netbird/browser-client-architecture' },
             { title: 'FAQ', href: '/about-netbird/faq' },
             /*{ title: 'Whats new in version xx', href: '/welcome/how-netbird-works' },
             { title: 'Release notes', href: '/about-netbird/netbird-vs-traditional-vpn' },*/
@@ -56,6 +57,7 @@ export const docsNavigation = [
                  { title: 'Add Peers', href: '/how-to/add-machines-to-your-network' },
                  { title: 'Approve Peers', href: '/how-to/approve-peers' },
                  { title: 'Setup Keys', href: '/how-to/register-machines-using-setup-keys' },
+                 { title: 'Browser Client', href: '/how-to/browser-client' },
                  { title: 'Lazy Connections', href: '/how-to/lazy-connection'},
                  {
                      title: 'Access Infrastructure',
