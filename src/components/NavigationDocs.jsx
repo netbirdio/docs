@@ -91,6 +91,10 @@ export const docsNavigation = [
                          },
                      ]
                  },
+                 {
+                     title: 'Auto Update',
+                     href: '/how-to/auto-update'
+                 },
              ]
          },
          {
