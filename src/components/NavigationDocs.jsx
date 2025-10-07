@@ -58,6 +58,7 @@ export const docsNavigation = [
                  { title: 'Approve Peers', href: '/how-to/approve-peers' },
                  { title: 'Setup Keys', href: '/how-to/register-machines-using-setup-keys' },
                  { title: 'Browser Client', href: '/how-to/browser-client' },
+                 { title: 'SSH', href: '/how-to/ssh' },
                  { title: 'Lazy Connections', href: '/how-to/lazy-connection'},
                  {
                      title: 'Access Infrastructure',
