@@ -50,6 +50,7 @@ export const docsNavigation = [
     {
         title: 'MANAGE NETBIRD',
         links: [
+            { title: 'Control Center', href: '/how-to/control-center' },
             {
              title: 'Peers',
              isOpen: false,
