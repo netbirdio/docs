@@ -286,6 +286,7 @@ export const docsNavigation = [
       { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store'},
       { title: 'Supported IdPs', href: '/selfhosted/identity-providers' },
       { title: 'Management geolocation', href: '/selfhosted/geo-support' },
+      { title: 'AmneziaWG support', href: '/selfhosted/amneziawg' },
       { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
   ],
   
