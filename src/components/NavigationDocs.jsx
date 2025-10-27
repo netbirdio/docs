@@ -169,6 +169,7 @@ export const docsNavigation = [
                          { title: 'Microsoft Entra ID', href: '/how-to/microsoft-entra-id-sync' },
                          { title: 'Okta', href: '/how-to/okta-sync' },
                          { title: 'Google Workspace', href: '/how-to/google-workspace-sync'},
+                         { title: 'JumpCloud', href: '/how-to/jumpcloud-sync'},
                      ]
                  },
                  {
