@@ -6,7 +6,24 @@
     externally to the **currently selected** Routing Peer.
 
     Inactive Routing Peers in High Availability setup are also considered external resources!
+
 </Note>
+
+This document aims to explain how to correctly grant access to resources running outside the NetBird network and
+why you might encounter hard to comprehend behaviours when accessing them.
+We have seen various flavors of following issues:
+
+1. I have only granted ICMP access to the Network, but I can access HTTPS services running on one of the IP addresses.
+2. I have granted full access to the Network, but I cannot access anything on one of the IP addresses,
+3. I did not grant any access to the Network, but for some reason this one IP is fully accessible.
+   Hint: sometimes you don't consider ICMP/DNS "granting an access" and it flies under the radar.
+4. Right now I cannot access `IP.1`, other times it's `IP.2` or `IP.3` having issues,
+5. I had coworkers reporting trouble accessing `IP.123`, while others cannot access `IP.45`.
+   Hint: different Routing Peer might be closest to different set of users.
+6. I am giving access to a domain name with a Network Resource. I have confirmed the DNS query resolves, but there is
+   no access to the resulting IP address.
+
+## The primary mechanism involved in policing Networks traffic
 
 To manage access to and through the Routing Peers in Networks it is essential to understand that in the
 standard operating system networking model IP addresses assigned directly to the device are handled differently and
@@ -45,24 +62,39 @@ Here are some general rules resulting from above mechanism:
 
 ## Visualising access
 
-Following diagram explains the differences visually, it depicts:
+In this example we are granting access:
 
-- 1 User's laptop running NetBird client,
-- 3 Routing Peers running NetBird client,
-- a single LAN server, which does not run NetBird,
-- Network Resource routing the `192.168.1.0/24` network,
-- set of green dashed lines representing connections governed by the Access Policy
-  granting access to the Resource,
-- set of orange solid lines representing connections governed by the Access Policy
-  granting access directly to the Routing Peer,
+1. from the User's laptop (belonging to **User's Group**,
+2. to the `192.168.1.0/24` Network Resource assigned to the **Resource's Group**
+   (there is a **Server** running in this network)
+3. through 2 Routing Peer's belonging to **Routing Peer's Group** placed directly inside the same routed network
 
+Such access is governed by 2 separate Access Policies:
+
+1. a **Router Policy** from **User's Group** to **Routing Peer's Group** represented by a solid orange arrows
+2. a **Resource Policy** from **User's Group** to **Resource's Group** represented by a green dashed arrows
+
+When the `router-1` is acting as the Routing Peer:
 <p>
-    <img src="/docs-static/img/how-to-guides/routing-peer-policies.drawio.png" alt="routing-peer-policies" className="imagewrapper-big"/>
+    <img src="/docs-static/img/how-to-guides/network-resource-policies-router-1.drawio.svg" alt="routing-peer-policies" className="imagewrapper-big"/>
 </p>
 
+When the `router-2` is acting as the Routing Peer:
+<p>
+    <img src="/docs-static/img/how-to-guides/network-resource-policies-router-2.drawio.svg" alt="routing-peer-policies" className="imagewrapper-big"/>
+</p>
 
-In practice, you might observe seemingly "random" results depending on which Peer is
-currently handling your requests.
+### The **Router Policy**
+
+- always governs access to both of the Routing Peer's NetBird IP addresses,
+- only governs access to the currently active Routing Peer's local IP (external to NetBird),
+  - there can only ever be one active at a time,
+
+### The **Resource Policy**
+
+- always governs access to the **Server**,
+- governs access to the inactive Routing Peer's local IP,
+  - there can be any number of inactive Routing Peers,
 
 ### Example: access granted only to the Resource
 
@@ -71,7 +103,6 @@ Having a single policy allowing access to Resources, but not to the Routing Peer
 - connecting through `router-1` you will be able to access the`192.168.1.0/24` subnet
   except for a single IP `192.168.1.1`(Routing Peer's local address),
 - connecting through `router-2` you won't be able to access `192.168.1.2`,
-- connecting through `router-3` you won't be able to access `192.168.1.3`,
 
 ### Example: restrictive Resource access combined with permissive Routing Peer access
 
