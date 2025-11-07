@@ -51,6 +51,48 @@ IP addresses, IP ranges, domain names, or wildcard domains (e.g., *.company.inte
   Support to exit nodes and site-2-site VPNs may become available in future releases. In the meantime you can use [Network routes](/how-to/routing-traffic-to-private-networks) add your exit-node routes and site-2-site routes.
 </Note>
 
+### Domain Resources
+
+In addition to routing IP addresses, NetBird also supports routing domain names. In the Dashboard you can just pass
+a domain name (eg: `example.com`) or a wildcard domain (eg: `*.example.com`) in place where you would normally
+put an IP address range. Then NetBird clients will start responding to and routing the given domain.
+
+<Note>
+  Due to a mix of a bug and initial design choice clients running `0.59.0` & `0.59.1` might not be able to resolve
+  domain Resources served by Routing Peers running versions `0.59.0` to `0.59.9` in case when all the Peers in the
+  NetBird organization are running versions `0.59.0` or newer.
+
+  Installing client in versions `<= 0.58.2` or `>= 0.59.2` or upgrading a Routing Peer to version `0.59.10+` will
+  resolve this issue.
+</Note>
+
+On a technical level the feature works as follows:
+
+1. Initially (when NetBird connects) the operating system is instructed to use NetBird to resolve the requested
+   domain(s).  No routing rules are configured yet.
+2. An Application (could be a web browser) requests a domain `example.com` from the Operating System
+   1. the Operating System requests a name from NetBird's Local Resolver, by default running on port `53` of:
+      - for MacOS & Windows: the highest available IP address in your NetBird range, usually `100.xxx.255.254:53`
+      - for other systems: local NetBird client's IP address, eg: `100.xxx.123.45`
+   2. the Local Resolver forwards the query to Routing Peer's IP address and the following port:
+      - `22054` for version `0.59.0` and newer
+      - `5353` for versions below `0.58.x` and older
+   3. the Routing Peer resolves the domain name using it's local configuration (often independent of NetBird) and returns
+     the result.
+   4. the Local Resolver sets up routing rules for IP addresses returned from the query, before returning them to the Application
+3. the Application receives the result "as usual", except for a slight delay before all of the above takes place the
+  first time a domain name is requested,
+4. all subsequent requests to `example.com` will be served instantly from the Local Resolver's cache
+
+<Note>
+  NetBird tries its best to automatically open up DNS forwarder ports on Routing Peer's firewalls, but might fail on
+  some system configurations and you might need to open up above 2 ports manually.
+
+  You can verify that firewall allows the DNS request in using following command issued from the clients device
+  `nslookup -port=22054 <routed-domain> <routing-peer-ip>`, eg: `nslookup -port=22054 example.com 100.123.45.67`.
+
+  This is by far the most common cause of issues with domain Resources.
+</Note>
 
 ## Manage access to resources
 
