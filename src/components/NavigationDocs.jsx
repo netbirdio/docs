@@ -273,6 +273,7 @@ export const docsNavigation = [
          { title: 'Routing peers and Kubernetes', href: '/how-to/routing-peers-and-kubernetes'},
          { title: 'NetBird Client on AWS ECS', href: '/how-to/examples'},
          { title: 'NetBird on Mikrotik Router', href: '/how-to/client-on-mikrotik-router' },
+         { title: 'Distributed AI on Kubernetes', href: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm' },
          { title: 'Self-hosted vs. Cloud-hosted NetBird', href: '/selfhosted/self-hosted-vs-cloud-netbird' },
      ],
  
