@@ -1,0 +1,81 @@
+name: deploy-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      docker-tag:
+        description: 'docker image tag to deploy'
+        required: false
+        default: 'main'
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  SERVER: sites.netbird.selfhosted
+  CONNECT_HOSTNAME: cicd-wwwnetbirdio-prod
+  CONNECT_MANAGEMENT_URL: https://netbird.npeer.io
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Netbird Connect
+        id: netbird
+        uses: Alemiz112/netbird-connect@v1
+        with:
+          setup-key: ${{ secrets.NB_SETUP_KEY_PROD }}
+          hostname: ${{ env.CONNECT_HOSTNAME }}
+          management-url: ${{ env.CONNECT_MANAGEMENT_URL }}
+
+      - name: print netbird logs
+        run: sudo cat /var/log/netbird/client.log
+
+      - name: Wait for Netbird to connect to dashboard
+        shell: bash
+        timeout-minutes: 1
+        run: |
+          while [ -z "$(ping -c 1 ${{ env.SERVER }} | grep '64 bytes from')" ]; do
+          echo "Waiting for Netbird to connect..."
+          netbird status --filter-by-names ${{ env.SERVER }}
+          sleep 1
+          done
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: install drone ssh
+        run: go install github.com/appleboy/drone-ssh@v1.7.4
+
+      - name: add go bin to path
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: create ssh key file
+        run: |
+          set -x
+          echo "$SSH_KEY" > ssh_key
+          chmod 600 ssh_key
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY_PROD }}
+
+      - name: run docker compose ps
+        run: drone-ssh -H ${{ env.SERVER }} -u root -i ssh_key -s "cd /opt/app; docker compose ps"
+
+      - name: update tag version from input
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: drone-ssh -H ${{ env.SERVER }} -u root -i ssh_key -s "echo 'TAG=${{ github.event.inputs.docker-tag }}' | tee /opt/app/.env"
+
+      - name: update tag version log entry
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: drone-ssh -H ${{ env.SERVER }} -u root -i ssh_key -s "echo 'https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }} by ${{ github.actor }} - tag ${{ github.event.inputs.docker-tag }}' | tee -a /opt/app/tag.env.update.log"
+
+      - name: run docker compose up
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: drone-ssh -H ${{ env.SERVER }} -u root -i ssh_key -s "cd /opt/app; docker compose up -d --pull always docs.netbird.io.1; docker system prune -a -f"
+
+      - run: |
+          echo '### Deployed tag' >> $GITHUB_STEP_SUMMARY
+          echo '${{ github.event.inputs.docker-tag }}' >> $GITHUB_STEP_SUMMARY
