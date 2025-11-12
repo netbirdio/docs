@@ -170,6 +170,7 @@ export const docsNavigation = [
                          { title: 'Okta', href: '/how-to/okta-sync' },
                          { title: 'Google Workspace', href: '/how-to/google-workspace-sync'},
                          { title: 'JumpCloud', href: '/how-to/jumpcloud-sync'},
+                         { title: 'Keycloak', href: '/how-to/keycloak-sync'},
                      ]
                  },
                  {
