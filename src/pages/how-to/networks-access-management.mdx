@@ -1,0 +1,105 @@
+# Networks access management
+
+<Note>
+    TLDR; Access to Network Resources is managed differently for services running directly
+    on the Routing Peer's machine/VM/container than for services running 
+    externally to the **currently selected** Routing Peer.
+
+    Inactive Routing Peers in High Availability setup are also considered external resources!
+</Note>
+
+To manage access to and through the Routing Peers in Networks it is essential to understand that in the
+standard operating system networking model IP addresses assigned directly to the device are handled differently and
+independently of addresses behind it (aka routed/forwarded addresses).
+This currently also holds true in context of NetBird's Networks and Routing Peers access management:
+
+- IP address attached directly to any of the client's local interfaces is NOT considered being routed/forwarded
+  and is policed by the device's rules. In context of NetBird those are the Access Policies naming any of
+  the Routing Peer's Groups as the destination:
+  - this holds true especially when the address overlaps with the routed network's range,
+- all the other IP addresses from the network range are considered being routed/forwarded and are governed by a separate
+  set of rules. In NetBird context they are governed by Access Policies naming Resources (or their Groups) as the
+  destination.
+
+## General rules
+
+Here are some general rules resulting from above mechanism:
+
+- access to **Resources** does not require access to the **Routing Peer** itself,
+  - the Resource's Group needs to be mentioned in Access Policy's destination explicitly:
+    - `All` Group does not cover Resources, unless it is explicitly assigned to those,
+    - it is generally advised not to use the `All` group in the context of Networks,
+- access to the **Routing Peer**'s local IP address needs to be explicitly allowed:
+  - granting access to Resource will establish connectivity to the Routing Peer (eg: in `netbird status -d`), but
+    traffic destined to any of the Routing Peer's local IP addresses will be rejected,
+- the Resource policy can have completely different scope than the Routing Peer policy,
+  - access to the Routing Peer is not limited by the Resource policies in any way,
+  - it is possible to grant broader or more restricted access to the Routing Peer's IP address
+    than to the rest of the routed network,
+- you can access _inactive_ Routing Peers on the same Network by their "local" IP addresses, because they are now
+  effectively remote Resource,
+- domain-based (as opposed to subnet-based) Resources still resolve to and create routes for a set of one or
+  more IP addresses (`/32` subnets), which in turn conform to the same rules and need to be planned accordingly:
+  - if it happens to resolve to the IP address of the Routing Peer it will need to be allowed by a policy mentioning
+    Routing Peers as destination,
+
+## Visualising access
+
+Following diagram explains the differences visually, it depicts:
+
+- 1 User's laptop running NetBird client,
+- 3 Routing Peers running NetBird client,
+- a single LAN server, which does not run NetBird,
+- Network Resource routing the `192.168.1.0/24` network,
+- set of green dashed lines representing connections governed by the Access Policy
+  granting access to the Resource,
+- set of orange solid lines representing connections governed by the Access Policy
+  granting access directly to the Routing Peer,
+
+<p>
+    <img src="/docs-static/img/how-to-guides/routing-peer-policies.drawio.png" alt="routing-peer-policies" className="imagewrapper-big"/>
+</p>
+
+
+In practice, you might observe seemingly "random" results depending on which Peer is
+currently handling your requests.
+
+### Example: access granted only to the Resource
+
+Having a single policy allowing access to Resources, but not to the Routing Peer would result in following behaviors:
+
+- connecting through `router-1` you will be able to access the`192.168.1.0/24` subnet
+  except for a single IP `192.168.1.1`(Routing Peer's local address),
+- connecting through `router-2` you won't be able to access `192.168.1.2`,
+- connecting through `router-3` you won't be able to access `192.168.1.3`,
+
+### Example: restrictive Resource access combined with permissive Routing Peer access
+
+Having a Resource policy scoped to ICMP and a Routing Peer policy scoped to TCP 443 (HTTPS) would result in following
+behaviors:
+
+- connecting through `router-1` you will be able to ping (and nothing else) the `192.168.1.0/24` subnet
+  except for a single IP `192.168.1.1`. You will not be able to ping it, but instead you will be able to
+  access all of HTTPS services running on this specific Routing Peer,
+- connecting through `router-2` you won't be able to ping `192.168.1.2`, but will be able to access HTTPS services,
+- connecting through `router-3` you won't be able to ping `192.168.1.3`, but will be able to access HTTPS services,
+
+### Security caveats
+
+Combining very restrictive Resource policies with broad Routing Peer policies might result in what some users
+would at the first glance consider security vulnerabilities.
+
+This can be particularly unexpected when the Routing Peer is handling multiple subnets with different Groups or
+permission levels assigned. Granting access to the Routing Peer will grant access to all the services running
+on the Routing Peer itself for all the routed subnets, even if one (or all) of the subnets have very
+restrictive/harmless Resource policies in place:
+
+- a potentially harmless Resource policy will make it advertised to the clients, without granting any meaningful access,
+- a permissive Routing Peer policy can grant _full_ access to the IP address from the routed network,
+
+By combining above two policies seemingly unrelated and harmless policies,
+you can unexpectedly grant complete access to the Routing Peer's local IP address:
+
+- if you omitted the Resource policy, the route would not be advertised and therefore never be allowed to pass through
+  the WireGuard connection,
+- if you omitted the Routing Peer policy, you would not be able to access that single IP address at all,
