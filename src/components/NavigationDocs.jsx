@@ -99,23 +99,23 @@ export const docsNavigation = [
              title: 'Access Control',
              isOpen: false,
              links: [
-                 { title: 'Groups & Policies', href: '/how-to/manage-network-access' },
+                 { title: 'Groups & Policies', href: '/access-control' },
                  { 
                     title: 'Posture Checks', 
-                    href: '/how-to/manage-posture-checks',
+                    href: '/access-control/posture-checks',
                     isOpen: false,
                     links: [
-                        { title: 'Disable route when in the office', href: '/how-to/disabling-network-route-when-connecting-from-the-office' },
+                        { title: 'Disable route when in the office', href: '/access-control/posture-checks/connecting-from-the-office' },
                     ]
                 },
                  {
                      title: 'Integrate MDM & EDR',
-                     href: '/how-to/endpoint-detection-and-response',
+                     href: '/access-control/endpoint-detection-and-response',
                      isOpen: false, 
                      links: [
-                         { title: 'CrowdStrike Falcon', href: '/how-to/crowdstrike-edr' },
-                         { title: 'Microsoft Intune', href: '/how-to/intune-mdm' },
-                         { title: 'SentinelOne Singularity', href: '/how-to/sentinelone-edr' },
+                         { title: 'CrowdStrike Falcon', href: '/access-control/endpoint-detection-and-response/crowdstrike-edr' },
+                         { title: 'Microsoft Intune', href: '/access-control/endpoint-detection-and-response/intune-mdm' },
+                         { title: 'SentinelOne Singularity', href: '/access-control/endpoint-detection-and-response/sentinelone-edr' },
                      ]
                  },
 
