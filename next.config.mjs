@@ -103,7 +103,43 @@ const nextConfig = {
                 source: '/ipa/:path*',
                 destination: '/api/:path*',
                 permanent: true
-            }
+            },
+            // documentation redirects for access control
+            {
+                source: '/how-to/manage-network-access',
+                destination: '/manage/access-control/manage-network-access',
+                permanent: true,
+            },
+            {
+                source: '/how-to/manage-posture-checks',
+                destination: '/manage/access-control/posture-checks',
+                permanent: true,
+            },
+            {
+                source: '/how-to/disabling-network-route-when-connecting-from-the-office',
+                destination: '/manage/access-control/posture-checks/connecting-from-the-office',
+                permanent: true,
+            },
+            {
+                source: '/how-to/endpoint-detection-and-response',
+                destination: '/manage/access-control/endpoint-detection-and-response',
+                permanent: true,
+            },
+            {
+                source: '/how-to/crowdstrike-edr',
+                destination: '/manage/access-control/endpoint-detection-and-response/crowdstrike-edr',
+                permanent: true,
+            },
+            {
+                source: '/how-to/sentinelone-edr',
+                destination: '/manage/access-control/endpoint-detection-and-response/sentinelone-edr',
+                permanent: true,
+            },
+            {
+                source: '/how-to/intune-mdm',
+                destination: '/manage/access-control/endpoint-detection-and-response/intune-mdm',
+                permanent: true,
+            },
         ]
     },
     rewrites: async () => {

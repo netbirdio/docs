@@ -8,7 +8,7 @@ const howToGuides = [
     description: 'Start using NetBird in under 5 minutes.',
   },
   {
-    href: '/how-to/manage-network-access',
+    href: '/manage/access-control/manage-network-access',
     name: 'Manage network access',
     description:
         'Learn how to use access controls to manage access to your machines.',

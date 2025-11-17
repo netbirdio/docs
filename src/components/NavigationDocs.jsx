@@ -99,23 +99,24 @@ export const docsNavigation = [
              title: 'Access Control',
              isOpen: false,
              links: [
-                 { title: 'Groups & Policies', href: '/access-control' },
+                 { title: 'Groups & Policies', href: '/manage/access-control' },
+                 { title: 'Manage Access', href: '/manage/access-control/manage-network-access' },
                  { 
                     title: 'Posture Checks', 
-                    href: '/access-control/posture-checks',
+                    href: '/manage/access-control/posture-checks',
                     isOpen: false,
                     links: [
-                        { title: 'Disable route when in the office', href: '/access-control/posture-checks/connecting-from-the-office' },
+                        { title: 'Disable route when in the office', href: '/manage/access-control/posture-checks/connecting-from-the-office' },
                     ]
                 },
                  {
                      title: 'Integrate MDM & EDR',
-                     href: '/access-control/endpoint-detection-and-response',
+                     href: '/manage/access-control/endpoint-detection-and-response',
                      isOpen: false, 
                      links: [
-                         { title: 'CrowdStrike Falcon', href: '/access-control/endpoint-detection-and-response/crowdstrike-edr' },
-                         { title: 'Microsoft Intune', href: '/access-control/endpoint-detection-and-response/intune-mdm' },
-                         { title: 'SentinelOne Singularity', href: '/access-control/endpoint-detection-and-response/sentinelone-edr' },
+                         { title: 'CrowdStrike Falcon', href: '/manage/access-control/endpoint-detection-and-response/crowdstrike-edr' },
+                         { title: 'Microsoft Intune', href: '/manage/access-control/endpoint-detection-and-response/intune-mdm' },
+                         { title: 'SentinelOne Singularity', href: '/manage/access-control/endpoint-detection-and-response/sentinelone-edr' },
                      ]
                  },
 
