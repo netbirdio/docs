@@ -111,9 +111,10 @@ export const docsNavigation = [
                  {
                      title: 'Integrate MDM & EDR',
                      href: '/how-to/endpoint-detection-and-response',
-                     isOpen: false, 
+                     isOpen: false,
                      links: [
                          { title: 'CrowdStrike Falcon', href: '/how-to/crowdstrike-edr' },
+                         { title: 'Huntress', href: '/how-to/huntress-edr' },
                          { title: 'Microsoft Intune', href: '/how-to/intune-mdm' },
                          { title: 'SentinelOne Singularity', href: '/how-to/sentinelone-edr' },
                      ]
