@@ -6,6 +6,14 @@
 </div>
 <br/><br/>
 
+
+<Note>
+    WARNING: `Network Routes` will allow any traffic to pass through to the routed networks without regard for
+    the Access Control rules, unless you [configure those explicitly](./configuring-routes-with-access-control).
+
+    See [Caveats](#caveats) below for more detailed explanation.
+</Note>
+
 NetBird provides fast and reliable end-to-end encryption between peers in your network. You can install the agent on every desktop, VM, container, or physical server and have a fast, secure peer-to-peer mesh network. That is the desired configuration, but some cases do not allow for agent installation or can slow down migration from legacy systems:
 
 - Side-by-side migrations where part of your network is already using NetBird but needs to access services that are not.
@@ -25,6 +33,7 @@ In these cases, you can configure network routes assigning routing peers to conn
 </Note>
 
 ## Concepts
+
 ### Network routes
 A network route describes the network you want to connect with your NetBird peers. It has an identifier, a network range or list of domains, a routing peer, and some parameters available for managing priority and masquerading.
 
@@ -34,6 +43,7 @@ A network route describes the network you want to connect with your NetBird peer
 
 #### Network identifiers and ranges
 Network identifiers are names for each network you want to route traffic from your peers, and ranges are IP ranges declared in CIDR notation which refers to an external network. The combination of identifiers and these ranges makes a single network.
+
 #### Routing peer
 A routing peer is a peer that routes packets between your routed network and the other NetBird peers.
 
@@ -43,6 +53,7 @@ A routing group is a set of routing peers. Each will route packets between your 
 #### High availability routes
 A highly available route is a combination of multiple routes with the same network identifier and ranges. They have different routing peers or routing peer groups offering highly available paths for communication between your peers and external networks. 
 Nodes connected to routing peers will choose one of them to route packets to external networks based on connection type and defined metrics.
+
 #### Masquerade
 Masquerade hides other NetBird network IPs behind the routing peer local address when accessing the target Network range. This option allows access to your private networks without configuring routes on your local routers or other devices.
 
@@ -209,6 +220,148 @@ This way, devices that don't have the agent installed can communicate with your 
     <img src="/docs-static/img/how-to-guides/netbird-network-routes-masquerading.png" alt="high-level-dia" className="imagewrapper-big"/>
 </p>
 
+## Network Routes caveats
+
+Unless [configured explicitly](./configuring-routes-with-access-control), the **Network Routes** feature will not take into
+consideration any of the Access Control rules. Which might lead to surprising outcomes, appearing to be security bugs
+at the first glance.
+
+This has lead us to creating another, more intuitive, design of **Networks** with their **Resources**, **Routers** and
+mandatory **Groups** used for both access control and advertisement: your client will not "see" the resource
+until it has access to its **Group**.
+
+### Innocently looking Network Route
+
+Let's assume a **Network Route** is distributed through `Group R` (Routing Peer) to `Group A` (intended client):
+
+<p>
+    <img src="/docs-static/img/how-to-guides/routing-traffic-to-private-networks/route-ip-address.png" alt="route-ip-address" className="imagewrapper-big"/>
+</p>
+
+After creating an **Access Policy** granting `ICMP` access from `Group A` to `Group R`:
+
+<p>
+    <img src="/docs-static/img/how-to-guides/routing-traffic-to-private-networks/policy-icmp-group-r.png" alt="ICMP policy from group A to R" className="imagewrapper-big"/>
+</p>
+
+you will be able to access everything on it without any restrictions.
+This is because **Network Route** requires access to the **Routing Peer** to activate at all, adding to the confusion.
+
+```shell
+root@brys-vm-nbt-ubuntu-01:~# netbird networks ls
+Available Networks:
+
+  - ID: network-route-srvs-site
+    Network: 192.168.100.0/24
+    Status: Selected
+root@brys-vm-nbt-ubuntu-01:~# ping -c1 192.168.100.10
+PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
+64 bytes from 192.168.100.10: icmp_seq=1 ttl=63 time=0.521 ms
+
+--- 192.168.100.10 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.521/0.521/0.521/0.000 ms
+root@brys-vm-nbt-ubuntu-01:~# curl 192.168.100.10/health && echo
+OK
+```
+
+### Setting up a Network Resource secured by HTTP policy
+
+Unknowingly from above we are setting up a **Network Resource** for a `*.nb.test` wildcard domain
+using ACL group `manual:srvs`:
+
+<p>
+    <img src="/docs-static/img/how-to-guides/routing-traffic-to-private-networks/resource-domain.png" alt="*.nb.test domain Resource" className="imagewrapper-big"/>
+</p>
+
+Granting HTTP-only access to that resource from group `manual:client`:
+
+<p>
+    <img src="/docs-static/img/how-to-guides/routing-traffic-to-private-networks/policy-http.png" alt="a HTTP-only policy from manual:client group" className="imagewrapper-big"/>
+</p>
+
+Everything seems to be set up correctly, we have the HTTP access and we can confirm the domain was resolved:
+
+```shell
+root@brys-vm-nbt-ubuntu-02:~# netbird networks ls
+Available Networks:
+
+  - ID: *.nb.test
+    Domains: *.nb.test
+    Status: Selected
+    Resolved IPs: -
+root@brys-vm-nbt-ubuntu-02:~# curl srv.nb.test/health; echo
+OK
+root@brys-vm-nbt-ubuntu-02:~# netbird networks ls
+Available Networks:
+
+  - ID: *.nb.test
+    Domains: *.nb.test
+    Status: Selected
+    Resolved IPs:
+      [srv.nb.test.]: 192.168.100.10
+```
+
+Before finishing, let's confirm it's just the HTTP access:
+
+```shell
+root@brys-vm-nbt-ubuntu-02:~# ping -c1 srv.nb.test
+PING srv.nb.test (192.168.100.10) 56(84) bytes of data.
+64 bytes from 192.168.100.10: icmp_seq=1 ttl=63 time=0.242 ms
+
+--- srv.nb.test ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.242/0.242/0.242/0.000 ms
+```
+
+Wait... what?
+
+```shell
+root@brys-vm-nbt-ubuntu-02:~# ssh srv.nb.test
+root@srv.nb.test: Permission denied (publickey).
+```
+
+Did we grant ourselves access to the **Network Route** by mistake?
+
+```shell
+root@brys-vm-nbt-ubuntu-02:~# netbird networks ls
+Available Networks:
+
+  - ID: *.nb.test
+    Domains: *.nb.test
+    Status: Selected
+    Resolved IPs:
+      [srv.nb.test.]: 192.168.100.10
+```
+
+Doesn't look like it...
+
+### Why did we get ping and ssh access for the domain?
+
+Unrestricted access to the `srv.nb.test` domain was granted, because we have used the same **Routing Peer**
+for both **Network Route** and the newly created **Network**:
+
+<p>
+    <img src="/docs-static/img/how-to-guides/routing-traffic-to-private-networks/network-routers.png" alt="Network's `manual:router:srvs` router" className="imagewrapper-big"/>
+</p>
+
+Here are this specific **Routing Peer**'s details:
+
+<p>
+    <img src="/docs-static/img/how-to-guides/routing-traffic-to-private-networks/routing-peer-groups.png" alt="Routing Peer's detail page with Network Route handling" className="imagewrapper-big"/>
+</p>
+
+As you can see, it is a member of both routing groups:
+1. `m:group-r` to advertise the **Network Route**,
+2. `manual:router:srvs` to advertise the **Network** and it's domain **Resource**,
+
+<Note>
+  You can still address the "overflowing permissions" issue, by setting up a dedicated set **Routing Peers**
+  to handle the **Network Routes** and never using those for anything else (especially **Networks**).
+
+  As you can see this is doable, but extremely easy to miss.
+</Note>
+  
 ## Get started
 <p float="center" >
     <Button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</Button>
