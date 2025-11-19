@@ -1,0 +1,413 @@
+import {Note} from "@/components/mdx";
+
+# Setting up Site-to-Site/VPN access over NetBird
+
+On this page you will learn the characteristics of Site-to-Site, Site-to-VPN and VPN-to-Site setups and how to achieve
+them with NetBird. We will start by establishing some terminology and provide overview of the setup options before
+jumping into a concrete implementation examples.
+
+## TODO: edit out and replace the names before merging!
+
+## Overview
+
+A **Site** in the context of this guide can be any single network/subnet that is usually neither exposed to the
+Internet, nor directly accessible from other **Sites**, but nothing prevents it from being accessible to other
+Sites or the Internet. To give some examples a **Site** could be:
+
+- your home or office network,
+- a private network at the cloud provider,
+- a remote datacenter's network,
+- a restricted VLAN,
+- an internal container or VM networking range,
+- an independent VPN networking range,
+- and many more...
+
+A **device** in the context of this guide can be any kind of physical
+(a PC, laptop, phone, a server in the datacenter etc.) or virtual computing device
+(a VM, container, load balancer etc.).
+
+A **Peer** in the context of this guide matches the general NetBird definition of a **device** running NetBird client
+directly on it:
+
+- a laptop running NetBird client directly on the system is a **Peer**,
+- a laptop running NetBird client in a container in a default (internal) networking mode is not a **Peer**.
+  The container itself is the **Peer** in this case.
+- a laptop running NetBird client in a container in host-networking mode could be considered a **Peer**,
+
+A **clientless** devices are all **devices**, which is are not **Peers** themselves: they don't run a NetBird client
+themselves.
+
+### Site-to-Site
+
+We are talking about a **Site-to-Site** setup when **clientless** devices from 2 or more **Sites** can reach each other.
+A set of at least one **Peer** per **Site** is required to route the traffic over the VPN, but other on-site devices
+do not need to run (or be aware of) a VPN software themselves.
+
+The **clientless** devices still need to be told to route the remote **Site**'s IP addressing range through the local *
+*Peer**. It can be automated (eg: with DHCP advertisements or device management software) or configured manually with
+commands and persisted using the specific Operating System's facilities.
+
+The **remote** **Peer** needs to know how to route the answers back to the local **Site**.
+You will usually need to set up a pair of routes to access each site:
+
+1. a route from local **Peer** to remote **Site** to call out to it,
+2. a reverse route from remote **Site** to the local **Peer** to receive the answers,
+
+### Site-to-VPN
+
+We are talking about a **Site-to-VPN** setup when a **clientless** device can reach **Peers** in the VPN network.
+
+You can think of it as the local half of the **Site-to-Site** setup. The **clientless** devices still need to be told
+how to reach the VPN network, but usually no additional setup is required to route the answers back from the VPN.
+
+### VPN-to-Site
+
+We are talking about a **VPN-to-Site** setup when a **Peer** can reach out to **clientless** devices on a network
+external to the VPN itself.
+This is often the default mode of operation of most VPNs, but is still worth mentioning for completeness' sake.
+In NetBird this scenario is achieved with any usage of **Networks** or (older) **Network Routes**.
+
+## NetBird implementations overview
+
+While NetBird does not _explicitly_ support a Site-to-VPN or Site-to-Site yet, it is possible to achieve those scenarios
+with some caveats in following ways depending on your requirements:
+
+1. Using a **Network Route** for each Site **with** Masquerading,
+2. Using a **Network Route** for each site **without** Masquerading nor **ACL Groups**,
+3. Using a **Network** **Resource** **with** Masquerading,
+
+All of the above options require that:
+
+- you need to tell the **clientless** devices how to route the traffic yourself,
+  - it is easiest done using device management software or additional DHCP route advertisements on the local router,
+- you can have only one routing **Peer** within each **Site**,
+  - it is very complex, if not outright impossible task to correctly and reliably route the traffic using multiple
+    routing devices and therefore is not covered in this guide,
+
+As the primary caveat you will need to either:
+
+1. forfeit the Source IP addressing information by using Masquerading to preserve rudimentary form of Access Control,
+  - Masqueraded traffic can only be policed by the Access Policies attached to the Routing Peer with no way to restrict
+    access of any specific **clientless** device,
+2. forfeit Access Control altogether (any traffic will be allowed) to preserve te Source IP addressing,
+  - this might be mandatory in some specific networking setups,
+
+## Prerequisites and initial assumptions
+
+For this guide I will be running a set of 5 Ubuntu Virtual Machines backed by `libvirt` split into 2 separate networks
+as follows (I've stripped down unnecessary pieces of information):
+```shell
+root@brys ~# virsh net-dhcp-leases default
+... IP address           Hostname              ...
+... -------------------------------------------...
+... 192.168.122.251/24   brys-vm-nbt-ubuntu-02 ...
+... 192.168.122.144/24   brys-vm-nbt-ubuntu-01 ...
+... 192.168.122.65/24    brys-vm-ubuntu-01     ...
+
+root@brys ~# virsh net-dhcp-leases net2
+... IP address           Hostname                       ...
+...-----------------------------------------------------...
+... 192.168.100.189/24   brys-vm-nbt-ubuntu-isolated-02 ...
+... 192.168.100.215/24   brys-vm-nbt-ubuntu-isolated-01 ...
+```
+
+All VMs can be reached from the host `brys`:
+```shell
+kdn@oams ~> ssh brys.lan.etra.net.int.kdn.im. ping -c1 192.168.100.189
+PING 192.168.100.189 (192.168.100.189) 56(84) bytes of data.
+64 bytes from 192.168.100.189: icmp_seq=1 ttl=64 time=0.154 ms
+
+--- 192.168.100.189 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.154/0.154/0.154/0.000 ms
+kdn@oams ~> ssh brys.lan.etra.net.int.kdn.im. ping -c1 192.168.122.251
+PING 192.168.122.251 (192.168.122.251) 56(84) bytes of data.
+64 bytes from 192.168.122.251: icmp_seq=1 ttl=64 time=0.162 ms
+
+--- 192.168.122.251 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.162/0.162/0.162/0.000 ms
+```
+
+Both networks can reach the Internet and talk to each other within their respective network, but cannot call each other.
+The `default` network VMs are also directly attached to my LAN:
+
+```shell
+kdn@oams ~> ssh 192.168.100.189 -J brys.lan.etra.net.int.kdn.im. ping -c1 192.168.122.251
+PING 192.168.122.251 (192.168.122.251) 56(84) bytes of data.
+From 192.168.100.1 icmp_seq=1 Destination Port Unreachable
+
+--- 192.168.122.251 ping statistics ---
+1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
+
+kdn@oams ~ [1]> ssh brys-vm-nbt-ubuntu-02.lan.etra.net.int.kdn.im. ping -c1 192.168.100.189
+PING 192.168.100.189 (192.168.100.189) 56(84) bytes of data.
+From 192.168.122.1 icmp_seq=1 Destination Port Unreachable
+
+--- 192.168.100.189 ping statistics ---
+1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
+kdn@oams ~ [1]>
+```
+
+Devices `brys-vm-ubuntu-01` and `brys-vm-nbt-ubuntu-isolated-01` are **clientless** for purposes of this guide,
+additionally `brys-vm-nbt-ubuntu-isolated-02` runs an internal CoreDNS on the IP address `192.168.100.10` responding
+to some DNS queries and a HTTP health check.
+
+The **Peers** look as follows:
+
+| dns_label                        | netbird_ip       | groups                      |
+|----------------------------------|------------------|-----------------------------|
+| `brys-vm-nbt-ubuntu-01`          | `100.83.73.97`   | `manual:client` `m:group-a` |
+| `brys-vm-nbt-ubuntu-02`          | `100.83.241.31`  | `manual:client`             |
+| `brys-vm-nbt-ubuntu-isolated-02` | `100.83.136.209` | `m:group-r`                 |
+
+We will be granting access between:
+- `brys-vm-ubuntu-01` running at a `default` Site through a Routing Peer group `m:group-a`,
+- `brys-vm-nbt-ubuntu-isolated-02` running at `net1` Site through a Routing Peer group `m:group-r`,
+
+<Note>
+  This guide assumes working with Linux devices, but the commands used are relatively simple/cross-platform
+  and should be possible to translate to other Operating System's facilities.
+</Note>
+
+## Site-to-Site with Masquerading
+
+A **Masquerading** option means that packets forwarded by a Routing Peer will have their source IP address:
+
+- overridden by the Routing Peer's NetBird IP when leaving the **Site**,
+- translated back to the **device**'s local IP address when arriving back into the local **Site**,
+
+This is conceptually the easiest way to configure routing, because it utilizes already existing **Peer** forwarding
+and policying facilities.
+
+The main downsides of this approach are:
+
+- losing the source addressing information,
+- very coarse-grained policing limited to the Routing Peer's access controls,
+
+### Site-to-Site using Network Routes with Masquerading and without Access Control
+
+In this section we will set up Network Routes Site-to-Site with Masquerading, but without any Access Control.
+
+#### Setting up a simple VPN-to-Site access
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/routes-noacl-vpn-to-site.png" alt="routes-noacl-vpn-to-site"
+         className="imagewrapper-big"/>
+</p>
+
+and Access Policy simply establishing connectivity between the (future) Routing Peers:
+<p id="unidirectional-routing-peer-policy">
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/acl-group-r-to-a-only.png" alt="acl-group-r-to-a-only"
+         className="imagewrapper-big"/>
+</p>
+
+<Note>
+  It doesn't matter that it's unidirection ICMP rule in the wrong direction as **Network Routes** get activated
+  as soon as any kind of **Access Policy** initiates a connectivity to the Routing Peer as explained in
+  [Network Routes caveats](/how-to/routing-traffic-to-private-networks#network-routes-caveats).
+</Note>
+
+We can confirm that we can reach the `net1` site with both `ping` and `curl`:
+```shell
+kdn@oams ~> ssh brys-vm-nbt-ubuntu-01.lan.etra.net.int.kdn.im. "netbird networks ls"
+Available Networks:
+
+  - ID: network-route-srvs-site
+    Network: 192.168.100.0/24
+    Status: Selected
+    
+kdn@oams ~> ssh brys-vm-nbt-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
+PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
+64 bytes from 192.168.100.10: icmp_seq=1 ttl=63 time=0.475 ms
+
+--- 192.168.100.10 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.475/0.475/0.475/0.000 ms
+
+kdn@oams ~> ssh brys-vm-nbt-ubuntu-01.lan.etra.net.int.kdn.im. "curl 192.168.100.10/health; echo"
+OK
+```
+
+Let's also confirm `brys-vm-nbt-ubuntu-02` does not have access to the same routes:
+```shell
+kdn@oams ~> ssh brys-vm-nbt-ubuntu-02.lan.etra.net.int.kdn.im. "netbird networks ls"
+No networks available.
+```
+
+#### Setting up the clientless device
+
+Let's instruct a **clientless** `brys-vm-ubuntu-01` to consume the `net1` site
+through `brys-vm-nbt-ubuntu-01`'s local IP address `192.168.122.144`:
+```shell
+kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ip route | grep 192.168.100"
+kdn@oams ~ [1]> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "sudo ip route add 192.168.100.0/24 via 192.168.122.144"
+kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ip route | grep 192.168.100"
+192.168.100.0/24 via 192.168.122.144 dev enp7s0 
+```
+
+<Note>
+  This step makes sense to be done via a DHCP server's additional route advertisement, but DHCP setup
+  is not in scope of this guide.
+</Note>
+
+This will not work just yet, because we are missing the other end of the setups to route back the answers:
+
+```shell
+kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
+PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
+
+--- 192.168.100.10 ping statistics ---
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+
+kdn@oams ~ [1]>
+```
+
+#### Closing the loop with reverse Network Route
+
+Now we can complete the setup by enabling the reverse (from the remote `net1` to the local `default` Site) 
+**Network Route**:
+
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/routes-noacl-site-to-site.png" alt="routes-noacl-site-to-site"
+         className="imagewrapper-big"/>
+</p>
+
+And confirm it's working:
+
+```shell
+kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
+PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
+64 bytes from 192.168.100.10: icmp_seq=1 ttl=62 time=0.867 ms
+
+--- 192.168.100.10 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.867/0.867/0.867/0.000 ms
+kdn@oams ~>
+```
+
+#### Confirming remote Site access to the local Site
+
+Let's fetch `brys-vm-ubuntu-01` local Site IP, perform the same setup on `brys-vm-nbt-ubuntu-isolated-01` and test the
+access back from the remote `net1` site:
+```shell
+kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ip a | grep 192.168.122"
+    inet 192.168.122.65/24 metric 100 brd 192.168.122.255 scope global dynamic enp7s0
+kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ip route | grep 192.168.122"
+kdn@oams ~ [1]>  ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "sudo ip route add 192.168.122.0/24 via 192.168.100.189"
+kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ip route | grep 192.168.122"
+192.168.122.0/24 via 192.168.100.189 dev enp7s0
+kdn@oams ~> ssh 192.168.100.189 -J brys.lan.etra.net.int.kdn.im. "ping -c1 192.168.122.65"
+PING 192.168.122.65 (192.168.122.65) 56(84) bytes of data.
+64 bytes from 192.168.122.65: icmp_seq=1 ttl=63 time=0.523 ms
+
+--- 192.168.122.65 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.523/0.523/0.523/0.000 ms
+kdn@oams ~>
+```
+
+### Site-to-Site using Network Routes with Masquerading and Access Control
+
+Picking up where we have finished the previous example [Site-to-Site using Network Routes with Masquerading and without Access Control](#site-to-site-using-network-routes-with-masquerading-and-without-access-control).
+We can now  limit the access to the remote Site's resources to ICMP-only and confirm the access control is enforced.
+We will start by setting up and verifying unidirectional access before making it work both ways.
+
+First let's add a dedicated `*-resources` Access Control Groups to the Network Routes:
+
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/routes-with-acl-site-to-site.png" alt="routes-with-acl-site-to-site"
+         className="imagewrapper-big"/>
+</p>
+
+Take a note of using a different Group to grant access to the Network Route from one used for Routing Peers.
+Using Routing Peer's Group in ACL Groups would also work and be slightly simpler.
+
+<Note>
+  Granting access just to the Network Route's ACL Groups will still require a separate Access Policy to the Routing Peer
+  to make the Route known to the client.
+
+  This is in a stark contrast to Network Resources, where:
+  - Resource's Groups are tied to both access and discovery in a single step,
+  - Routing Peer access is not required,
+</Note>
+    
+Secondly let's set up Access Policies for one-way access from the local `default` Site to them remote `net1` Site:
+
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/acl-unidirectional-site-to-site.png" alt="acl-unidirectional-site-to-site"
+         className="imagewrapper-big"/>
+</p>
+
+Now we can confirm that `ping` (ICMP) is allowed, while `curl` (HTTP) is not in local-to-remote direction:
+
+```shell
+kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ip route | grep 192.168.100"
+192.168.100.0/24 via 192.168.122.144 dev enp7s0
+kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
+PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
+64 bytes from 192.168.100.10: icmp_seq=1 ttl=62 time=0.738 ms
+
+--- 192.168.100.10 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.738/0.738/0.738/0.000 ms
+kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "curl -sv -m 2 192.168.100.10/health; echo"
+*   Trying 192.168.100.10:80...
+
+* Connection timed out after 2002 milliseconds
+* closing connection #0
+```
+
+Let's also confirm that the "backwards" access is not possible yet:
+
+```shell
+kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ip route | grep 192.168.122"
+192.168.122.0/24 via 192.168.100.189 dev enp7s0
+kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ping -c1 192.168.122.65"
+PING 192.168.122.65 (192.168.122.65) 56(84) bytes of data.
+
+--- 192.168.122.65 ping statistics ---
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+
+kdn@oams ~ [1]>
+```
+
+Finally, we can enable the remote-to-local Access Policy:
+
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/acl-bidirectional-site-to-site-minus-routing-peer.png" alt="acl-bidirectional-site-to-site-minus-routing-peer"
+         className="imagewrapper-big"/>
+</p>
+
+<Note>
+  We do not need to enable the reverse ICMP policy to the Routing Peer
+  as explained [previously](#unidirectional-routing-peer-policy).
+</Note>
+
+And verify the remote-to-local access started working:
+
+
+### Site-to-Site using Network Resources with Masquerading
+
+## TODO: write this
+
+## Site-to-Site without Masquerading
+
+This approach allows you to preserve the source addressing information, but the traffic
+will be instantly rejected by the remote **Routing Peer** as soon as you try to apply any kind of Access Control such as
+**Network Resources** or adding **ACL Groups** to **Network Routes**.
+
+This happens because as of writing this guide all policing in NetBird is based on the Peer's IP addressing,
+therefore packets arriving from different addressing spaces (without Masquerading) are unknown to NetBird
+and therefore instantly rejected.
+
+<Note>
+  We aim to address current shortcomings in the future by implementing a dedicated set of facilities to set up and
+  granularly policy Site-to-Site and Site-to-VPN scenarios.
+
+  In the meantime you can still manually restrict the forwarded traffic using your operating system's firewall,
+  for example by implementing a set of `FORWARD` policies in case of Linux.
+</Note>
+
+### Site-to-Site using Network Routes without Masquerading
+
+## TODO: write this
