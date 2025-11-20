@@ -12,6 +12,7 @@ import {
 import { useMobileNavigationStore } from '@/components/MobileNavigation'
 import { ModeToggle } from '@/components/ModeToggle'
 import { MobileSearch, Search } from '@/components/Search'
+import { useAnnouncements } from '@/components/announcement-banner/AnnouncementBannerProvider'
 
 function TopLevelNavItem({ href, children }) {
   return (
@@ -29,6 +30,7 @@ function TopLevelNavItem({ href, children }) {
 export const Header = forwardRef(function Header({ className }, ref) {
   let { isOpen: mobileNavIsOpen } = useMobileNavigationStore()
   let isInsideMobileNavigation = useIsInsideMobileNavigation()
+  let { bannerHeight } = useAnnouncements()
 
   let { scrollY } = useScroll()
   let bgOpacityLight = useTransform(scrollY, [0, 72], [0.5, 0.9])
@@ -39,7 +41,7 @@ export const Header = forwardRef(function Header({ className }, ref) {
       ref={ref}
       className={clsx(
         className,
-        'fixed inset-x-0 top-0 z-50 flex h-14 items-center justify-between gap-12 px-4 transition sm:px-6 lg:left-72 lg:z-30 lg:px-8 xl:left-80',
+        'fixed inset-x-0 top-0 z-40 flex h-14 items-center justify-between gap-12 px-4 transition sm:px-6 lg:left-72 lg:z-30 lg:px-8 xl:left-80',
         !isInsideMobileNavigation &&
           'backdrop-blur-sm dark:backdrop-blur lg:left-72 xl:left-80',
         isInsideMobileNavigation
@@ -49,6 +51,7 @@ export const Header = forwardRef(function Header({ className }, ref) {
       style={{
         '--bg-opacity-light': bgOpacityLight,
         '--bg-opacity-dark': bgOpacityDark,
+        top: bannerHeight,
       }}
     >
       <div
