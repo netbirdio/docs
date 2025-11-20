@@ -12,27 +12,47 @@ NetBird provides SSH access to peers through its built-in SSH server. Unlike tra
 ## Concepts
 
 ### SSH Server
-Each NetBird peer can run an SSH server by enabling `--allow-server-ssh`. The server listens on TCP port 22022 internally but automatically redirects traffic from port 22 (from NetBird network only) for seamless integration with standard SSH workflows.
+
+Each NetBird peer can run an embedded SSH server by enabling `--allow-server-ssh`. From the peer's perspective the session arrives on its normal port (TCP 22); internally it's re-routed to the NetBird client on port 22022. 
+
+Management may automatically ensure the mesh access policy permits 22022 for a peer when the policy explicitly allows port 22 (or a range containing 22) and the peer advertises native SSH support (NetBird v0.60.0+). That access policy is distributed by the management plane; enforcement and forwarding are performed by the NetBird client on the peer.
 
 ### Authentication Methods
-- **JWT Authentication (default)**: Connects SSH sessions to user identities via your configured Identity Provider. Requires OIDC flow on first connection.
-- **Machine Identity (`--disable-ssh-auth`)**: Allows SSH access based on network-level ACL policies without user authentication.
+
+- **JWT Authentication (default)**: Maps SSH sessions to user identities via your configured Identity Provider (OIDC). Each new session will require completing the OIDC flow to mint the JWT used for SSH authentication (unless JWT caching is enabled, in which case JWT tokens are cached for a configurable duration).
+- **Machine Identity (`--disable-ssh-auth`)**: When SSH auth is disabled, SSH access is governed by NetBird network ACLs (machine-level access) rather than per-user JWT identity.
 
 ### OpenSSH Integration
-For OpenSSH clients, NetBird installs a configuration file (`/etc/ssh/ssh_config.d/99-netbird.conf`) that automatically detects NetBird SSH servers and handles JWT authentication transparently.
+
+NetBird can provide configuration so the remote peer's OpenSSH clients behave transparently. The remote peer's NetBird client performs interception and JWT handling; NetBird may install OpenSSH configuration snippets on the client to simplify usage. The interception and forwarding logic lives in the remote peer's NetBird client, not the management server.
 
 ### Port 22 Redirection
-When the SSH server is enabled, NetBird redirects inbound TCP port 22 traffic (from the NetBird network only) to port 22022. This allows standard SSH clients to connect to port 22 without configuration changes while keeping your system's existing SSH server (if any) accessible from outside the NetBird network.
+
+The management server does not edit your host OS firewall or perform OS-level port redirects. The model is:
+
+- **22** - the standard SSH port used by SSH clients and the local SSH daemon.
+- **22022** - the NetBird-native endpoint used by the NetBird client on remote peers. When NetBird SSH is enabled for a peer, standard SSH traffic is redirected here. 
+
+**Behavior:**
+
+- A modern NetBird client can intercept an `ssh user@remote` (which targets remote:22) and redirect the SSH stream to the NetBird client on port 22022. 
+- Management will auto-add a NetBird access-policy rule for 22022 when a policy allows 22 (or a range containing 22) and the peer supports native SSH (v0.60.0+) and SSH is enabled on the peer in the NetBird dashboard.
 
 ## Requirements
 
 To use SSH access through NetBird, you need:
 
-1. **NetBird v0.60.0 or later** installed on both client and server
-2. **SSH enabled on target peer** - The peer must run with `--allow-server-ssh`
-3. **SSH enabled in Dashboard** - SSH access must be enabled for the peer
-4. **Access Control Policy** - An ACL rule allowing TCP port 22022 access
-5. **(Optional)** For JWT authentication: An Identity Provider configured in NetBird
+1. **NetBird v0.60.0 or later** on peers that should support native SSH (dev/development versions are treated as supporting native SSH).
+2. **SSH enabled on target peer** - the peer must run with `--allow-server-ssh`.
+3. **SSH enabled in Dashboard** - SSH access must be enabled for the peer and ServerSSHAllowed set in the peer meta.
+4. **Access Control Policy** - an ACL rule allowing TCP port 22 for the peer (management will auto-add 22022 behind the scenes for modern peers).
+5. **(Optional)** For JWT authentication: an Identity Provider configured in NetBird.
+
+<Note>
+    Management distributes NetBird access-policy objects (FirewallRule) - it does
+    not directly open host OS ports or edit host-level firewalls. Enforcement and
+    forwarding are handled by the NetBird client running on each peer.
+</Note>
 
 ## Enabling SSH
 
@@ -45,6 +65,11 @@ On the machine you want to access via SSH, enable the NetBird SSH server.
 1. Click on the NetBird tray icon
 2. Navigate to Settings
 3. Click on **Allow SSH** to enable the SSH server
+
+<p>
+    <img src="/docs-static/img/ssh/ssh-client.png" alt="netbird ssh client"
+         className="imagewrapper"/>
+</p>
 
 **Using the CLI:**
 
@@ -73,11 +98,6 @@ netbird up --allow-server-ssh \
 - `--disable-ssh-auth`: Disable JWT authentication (allows any peer with network access)
 - `--ssh-jwt-cache-ttl <seconds>`: Enable JWT token caching with specified TTL in seconds (default: 0, disabled)
 
-<p>
-    <img src="/docs-static/img/ssh/ssh-client.png" alt="netbird ssh client"
-         className="imagewrapper"/>
-</p>
-
 ### Step 2: Create Access Control Policy
 
 Create an ACL policy to allow SSH access:
@@ -88,7 +108,7 @@ Create an ACL policy to allow SSH access:
 - **Source**: Select the peers or groups that will connect via SSH
 - **Destination**: Select the peers or groups running the SSH server
 - **Protocol**: TCP
-- **Ports**: 22022
+- **Ports**: 22
 - **Action**: Accept
 4. Save the policy
 
@@ -400,7 +420,7 @@ Some features require specific flags to be enabled on the SSH server:
 
 SSH access is controlled by multiple layers:
 
-1. **Network ACL policies**: Control which peers can access port 22022
+1. **Network ACL policies**: Control which peers can access SSH over the mesh. Management will auto-add the mesh-native endpoint (22022) for a peer when the policy explicitly allows port 22 (or a range containing 22) and the peer advertises native SSH support (NetBird v0.60.0+). 
 2. **SSH enabled in dashboard**: Per-peer SSH access toggle
 3. **JWT authentication** (if enabled): User identity verification via IdP
 
@@ -424,7 +444,7 @@ SSH access is controlled by multiple layers:
 
 **"Connection timeout"**
 
-- Verify ACL policy allows TCP port 22022
+- Verify ACL policy allows TCP port 22
 - Check if peers are connected to each other: `netbird status -d`
 - Test basic connectivity: `ping <peer-ip>`
 
@@ -476,10 +496,10 @@ Version 0.60.0 is a complete rewrite with breaking changes:
 - Configurable JWT token caching
 
 **Breaking changes:**
-- Server port changed from 44338 to 22022
+- Server port changed from 44338 to 22 (22022 internally)
 - Authentication changed from machine public keys to JWT tokens (user identity)
 - Port 22 automatically redirects to 22022 for NetBird traffic
-- Old implicit firewall rule removed - explicit ACL policy required for port 22022
+- Old implicit firewall rule removed - explicit ACL policy required for port 22
 - Client no longer requires `sudo` for authentication
 - **Not backward compatible**: v0.60.0+ clients cannot connect to older servers and vice versa
 
@@ -505,12 +525,12 @@ Version 0.60.0 is a complete rewrite with breaking changes:
 - Only needed if you use the browser-based SSH client
 - Maintains browser SSH access during peer migration
 
-3. **Create ACL policy** for port 22022:
+3. **Create ACL policy** for port 22:
 ```
 Source: [SSH Client Group/Peers]
 Destination: [SSH Server Group/Peers]
 Protocol: TCP
-Port: 22022
+Port: 22
 Action: Accept
    ```
 
