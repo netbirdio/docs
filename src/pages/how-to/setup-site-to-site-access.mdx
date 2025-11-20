@@ -89,7 +89,7 @@ As the primary caveat you will need to either:
 1. forfeit the Source IP addressing information by using Masquerading to preserve rudimentary form of Access Control,
   - Masqueraded traffic can only be policed by the Access Policies attached to the Routing Peer with no way to restrict
     access of any specific **clientless** device,
-2. forfeit Access Control altogether (any traffic will be allowed) to preserve te Source IP addressing,
+2. forfeit Access Control altogether (any traffic will be allowed) to preserve the Source IP addressing,
   - this might be mandatory in some specific networking setups,
 
 ## Prerequisites and initial assumptions
@@ -320,7 +320,7 @@ First let's add a dedicated `*-resources` Access Control Groups to the Network R
 </p>
 
 Take a note of using a different Group to grant access to the Network Route from one used for Routing Peers.
-Using Routing Peer's Group in ACL Groups would also work and be slightly simpler.
+Using Routing Peer's Group in ACL Groups would also work and be slightly simpler to manage.
 
 <Note>
   Granting access just to the Network Route's ACL Groups will still require a separate Access Policy to the Routing Peer
@@ -385,10 +385,106 @@ Finally, we can enable the remote-to-local Access Policy:
 
 And verify the remote-to-local access started working:
 
+```shell
+kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ip route | grep 192.168.122"
+192.168.122.0/24 via 192.168.100.189 dev enp7s0
+kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ping -c1 192.168.122.65"
+PING 192.168.122.65 (192.168.122.65) 56(84) bytes of data.
+64 bytes from 192.168.122.65: icmp_seq=1 ttl=62 time=0.755 ms
+
+--- 192.168.122.65 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.755/0.755/0.755/0.000 ms
+kdn@oams ~>
+```
 
 ### Site-to-Site using Network Resources with Masquerading
 
-## TODO: write this
+In this section we will replicate the previous 
+[Site-to-Site using Network Routes with Masquerading and Access Control](#site-to-site-using-network-routes-with-masquerading-and-access-control) 
+configuration and verify that it's working. We will start by setting up a Network for each site, enable the minimal 
+set of (already existing) Access Policies required to make the setup work and finally verify it is usable.
+
+Let's start by creating 2 new Networks, one for each site:
+
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/network-local-noacl.png" alt="network-local-noacl"
+         className="imagewrapper-big"/>
+</p>
+
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/network-remote-noacl.png" alt="network-remote-noacl"
+         className="imagewrapper-big"/>
+</p>
+
+and enable the 2 required Access Policies:
+
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/acl-networks-bidirectional.png" alt="acl-networks-bidirectional"
+         className="imagewrapper-big"/>
+</p>
+
+<Note>
+  Unlike **Network Routes**, you don't need policies granting access to the Routing Peers, but a reverse access policy
+  is mandatory, otherwise the reverse route will not be advertised on the remote end and the answers will not be routed
+  back.
+</Note>
+
+Let's confirm it's working:
+
+```shell
+kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
+PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
+64 bytes from 192.168.100.10: icmp_seq=1 ttl=62 time=0.783 ms
+
+--- 192.168.100.10 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.783/0.783/0.783/0.000 ms
+kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ping -c1 192.168.122.65"
+PING 192.168.122.65 (192.168.122.65) 56(84) bytes of data.
+64 bytes from 192.168.122.65: icmp_seq=1 ttl=62 time=0.925 ms
+
+--- 192.168.122.65 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.925/0.925/0.925/0.000 ms
+```
+
+and that no additional traffic is allowed to pass through:
+
+```shell
+kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "curl -m 2 192.168.100.10/health; echo"
+curl: (28) Connection timed out after 2002 milliseconds
+```
+
+#### Asymmetric Network Resource policies
+
+The reverse Access Policy does not need to match the protocol and access level of the forward policy,
+already established connections will be routed back just fine as long as the reverse route itself is registered
+on the remote end.
+
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/acl-networks-bidirectional-assymetric.png" alt="acl-networks-bidirectional"
+         className="imagewrapper-big"/>
+</p>
+
+```shell
+kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
+PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
+64 bytes from 192.168.100.10: icmp_seq=1 ttl=62 time=0.836 ms
+
+--- 192.168.100.10 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.836/0.836/0.836/0.000 ms
+kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ping -c1 192.168.122.65"
+PING 192.168.122.65 (192.168.122.65) 56(84) bytes of data.
+
+--- 192.168.122.65 ping statistics ---
+1 packets transmitted, 0 received, 100% packet loss, time 0ms
+
+kdn@oams ~ [1]> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "nc -w 2 192.168.122.65 22"
+SSH-2.0-OpenSSH_9.7p1 Ubuntu-7ubuntu4.3
+kdn@oams ~>
+```
 
 ## Site-to-Site without Masquerading
 
