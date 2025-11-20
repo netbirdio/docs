@@ -31,12 +31,17 @@ const nextConfig = {
             },
             {
                 source: '/how-to/networks-concept',
-                destination: '/how-to/networks',
+                destination: '/manage/networks',
+                permanent: true,
+            },
+            {
+                source: '/how-to/networks',
+                destination: '/manage/networks',
                 permanent: true,
             },
             {
                 source: '/docs/getting-started/installation',
-                destination: '/how-to/getting-started#installation',
+                destination: '/getting-started/install',
                 permanent: true,
             },
             {
@@ -51,7 +56,7 @@ const nextConfig = {
             },
             {
                 source: '/docs/overview/acls',
-                destination: '/how-to/manage-network-access',
+                destination: '/manage/access-control/manage-network-access',
                 permanent: true,
             },
             {
@@ -71,22 +76,22 @@ const nextConfig = {
             },
             {
                 source: '/docs/overview/setup-keys',
-                destination: '/how-to/register-machines-using-setup-keys',
+                destination: '/manage/peers/setup-keys',
                 permanent: true,
             },
             {
                 source: '/docs/how-to-guides/activity-monitoring',
-                destination: '/how-to/monitor-system-and-network-activity',
+                destination: '/how-to/activity-event-streaming',
+                permanent: true,
+            },
+            {
+                source: '/how-to/monitor-system-and-network-activity',
+                destination: '/how-to/activity-event-streaming',
                 permanent: true,
             },
             {
                 source: '/docs/how-to-guides/periodic-authentication',
                 destination: '/how-to/enforce-periodic-user-authentication',
-                permanent: true,
-            },
-            {
-                source: '/docs/overview/setup-keys',
-                destination: '/how-to/register-machines-using-setup-keys',
                 permanent: true,
             },
             {
@@ -103,6 +108,68 @@ const nextConfig = {
                 source: '/ipa/:path*',
                 destination: '/api/:path*',
                 permanent: true
+            },
+            // documentation redirects for control center
+            {
+                source: '/how-to/control-center',
+                destination: '/manage/control-center',
+                permanent: true,
+            },
+            // documentation redirects for peers
+            {
+                source: '/how-to/add-machines-to-your-network',
+                destination: '/manage/peers/add-machines-to-your-network',
+                permanent: true,
+            },
+            {
+                source: '/how-to/register-machines-using-setup-keys',
+                destination: '/manage/peers/setup-keys',
+                permanent: true,
+            },
+            {
+                source: '/how-to/browser-client',
+                destination: '/manage/peers/browser-client',
+                permanent: true,
+            },
+            {
+                source: '/how-to/ssh',
+                destination: '/manage/peers/ssh',
+                permanent: true,
+            },
+            {
+                source: '/how-to/lazy-connection',
+                destination: '/manage/peers/lazy-connection',
+                permanent: true,
+            },
+            {
+                source: '/how-to/approve-peers',
+                destination: '/manage/peers/approve-peers',
+                permanent: true,
+            },
+            {
+                source: '/how-to/secure-remote-webserver-access',
+                destination: '/manage/peers/access-infrastructure/secure-remote-webserver-access',
+                permanent: true,
+            },
+            {
+                source: '/how-to/setup-keys-add-servers-to-network',
+                destination: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network',
+                permanent: true,
+            },
+            {
+                source: '/how-to/access-internal-resources-from-autoscaled-environments',
+                destination: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments',
+                permanent: true,
+            },
+            {
+                source: '/how-to/peer-approval-for-remote-worker-access',
+                destination: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access',
+                permanent: true,
+            },
+            {
+                source: '/how-to/db-workload-migration',    
+                destination: '/manage/peers/connect-site-to-site/db-workload-migration',
+                permanent: true,
             },
             // documentation redirects for access control
             {
@@ -138,6 +205,53 @@ const nextConfig = {
             {
                 source: '/how-to/intune-mdm',
                 destination: '/manage/access-control/endpoint-detection-and-response/intune-mdm',
+                permanent: true,
+            },
+            // documentation redirects for networks
+            {
+                source: '/how-to/routing-traffic-to-multiple-resources',
+                destination: '/manage/networks/routing-traffic-to-multiple-resources',
+                permanent: true,
+            },
+            {
+                source: '/how-to/accessing-restricted-domain-resources',
+                destination: '/manage/networks/accessing-restricted-domain-resources',
+                permanent: true,
+            },
+            {
+                source: '/how-to/accessing-entire-domains-within-networks',
+                destination: '/manage/networks/accessing-entire-domains-within-networks',
+                permanent: true,
+            },
+            {
+                source: '/how-to/accessing-home-network',
+                destination: '/manage/networks/homelab/access-home-network',
+                permanent: true,
+            },
+            {
+                source: '/how-to/access-home-network',
+                destination: '/manage/networks/homelab/access-home-network',
+                permanent: true,
+            },
+            // documentation redirects for network routes
+            {
+                source: '/how-to/routing-traffic-to-private-networks',
+                destination: '/manage/network-routes/routing-traffic-to-private-networks',
+                permanent: true,
+            },
+            {
+                source: '/how-to/configuring-default-routes-for-internet-traffic',
+                destination: '/manage/network-routes/configuring-default-routes-for-internet-traffic',
+                permanent: true,
+            },
+            {
+                source: '/how-to/configuring-routes-with-access-control',
+                destination: '/manage/network-routes/configuring-routes-with-access-control',
+                permanent: true,
+            },
+            {
+                source: '/how-to/resolve-overlapping-routes',
+                destination: '/manage/network-routes/resolve-overlapping-routes',
                 permanent: true,
             },
         ]
