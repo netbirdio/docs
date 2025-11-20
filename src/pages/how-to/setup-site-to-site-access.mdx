@@ -6,8 +6,6 @@ On this page you will learn the characteristics of Site-to-Site, Site-to-VPN and
 them with NetBird. We will start by establishing some terminology and provide overview of the setup options before
 jumping into a concrete implementation examples.
 
-## TODO: edit out and replace the names before merging!
-
 ## Overview
 
 A **Site** in the context of this guide can be any single network/subnet that is usually neither exposed to the
@@ -94,33 +92,32 @@ As the primary caveat you will need to either:
 
 ## Prerequisites and initial assumptions
 
-For this guide I will be running a set of 5 Ubuntu Virtual Machines backed by `libvirt` split into 2 separate networks
+For this guide I will be running a set of 4 Ubuntu Virtual Machines backed by `libvirt` split into 2 separate networks
 as follows (I've stripped down unnecessary pieces of information):
 ```shell
-root@brys ~# virsh net-dhcp-leases default
-... IP address           Hostname              ...
-... -------------------------------------------...
-... 192.168.122.251/24   brys-vm-nbt-ubuntu-02 ...
-... 192.168.122.144/24   brys-vm-nbt-ubuntu-01 ...
-... 192.168.122.65/24    brys-vm-ubuntu-01     ...
+root@vm-host ~# virsh net-dhcp-leases default
+... IP address           Hostname  ...
+... -------------------------------...
+... 192.168.122.144/24   nb-01     ...
+... 192.168.122.65/24    ubuntu-01 ...
 
-root@brys ~# virsh net-dhcp-leases net2
-... IP address           Hostname                       ...
-...-----------------------------------------------------...
-... 192.168.100.189/24   brys-vm-nbt-ubuntu-isolated-02 ...
-... 192.168.100.215/24   brys-vm-nbt-ubuntu-isolated-01 ...
+root@vm-host ~# virsh net-dhcp-leases net2
+... IP address      Hostname           ...
+...------------------------------------...
+... 10.0.0.189/24   nb-isolated-01     ...
+... 10.0.0.215/24   ubuntu-isolated-01 ...
 ```
 
-All VMs can be reached from the host `brys`:
+All VMs can be reached from the host `vm-host`:
 ```shell
-kdn@oams ~> ssh brys.lan.etra.net.int.kdn.im. ping -c1 192.168.100.189
-PING 192.168.100.189 (192.168.100.189) 56(84) bytes of data.
-64 bytes from 192.168.100.189: icmp_seq=1 ttl=64 time=0.154 ms
+kdn@my-laptop ~> ssh vm-host.lan ping -c1 10.0.0.189
+PING 10.0.0.189 (10.0.0.189) 56(84) bytes of data.
+64 bytes from 10.0.0.189: icmp_seq=1 ttl=64 time=0.154 ms
 
---- 192.168.100.189 ping statistics ---
+--- 10.0.0.189 ping statistics ---
 1 packets transmitted, 1 received, 0% packet loss, time 0ms
 rtt min/avg/max/mdev = 0.154/0.154/0.154/0.000 ms
-kdn@oams ~> ssh brys.lan.etra.net.int.kdn.im. ping -c1 192.168.122.251
+kdn@my-laptop ~> ssh vm-host.lan ping -c1 192.168.122.251
 PING 192.168.122.251 (192.168.122.251) 56(84) bytes of data.
 64 bytes from 192.168.122.251: icmp_seq=1 ttl=64 time=0.162 ms
 
@@ -133,37 +130,30 @@ Both networks can reach the Internet and talk to each other within their respect
 The `default` network VMs are also directly attached to my LAN:
 
 ```shell
-kdn@oams ~> ssh 192.168.100.189 -J brys.lan.etra.net.int.kdn.im. ping -c1 192.168.122.251
+kdn@my-laptop ~> ssh 10.0.0.189 -J vm-host.lan ping -c1 192.168.122.251
 PING 192.168.122.251 (192.168.122.251) 56(84) bytes of data.
-From 192.168.100.1 icmp_seq=1 Destination Port Unreachable
+From 10.0.0.1 icmp_seq=1 Destination Port Unreachable
 
 --- 192.168.122.251 ping statistics ---
 1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
 
-kdn@oams ~ [1]> ssh brys-vm-nbt-ubuntu-02.lan.etra.net.int.kdn.im. ping -c1 192.168.100.189
-PING 192.168.100.189 (192.168.100.189) 56(84) bytes of data.
-From 192.168.122.1 icmp_seq=1 Destination Port Unreachable
-
---- 192.168.100.189 ping statistics ---
-1 packets transmitted, 0 received, +1 errors, 100% packet loss, time 0ms
-kdn@oams ~ [1]>
+kdn@my-laptop ~ [1]>
 ```
 
-Devices `brys-vm-ubuntu-01` and `brys-vm-nbt-ubuntu-isolated-01` are **clientless** for purposes of this guide,
-additionally `brys-vm-nbt-ubuntu-isolated-02` runs an internal CoreDNS on the IP address `192.168.100.10` responding
-to some DNS queries and a HTTP health check.
+Devices `ubuntu-01` and `ubuntu-isolated-01` are **clientless** for purposes of this guide,
+additionally `ubuntu-isolated-01` runs an internal CoreDNS on the IP address `10.0.0.10` responding with `OK`
+to a HTTP health check at `http://10.0.0.10/health`.
 
 The **Peers** look as follows:
 
-| dns_label                        | netbird_ip       | groups                      |
-|----------------------------------|------------------|-----------------------------|
-| `brys-vm-nbt-ubuntu-01`          | `100.83.73.97`   | `manual:client` `m:group-a` |
-| `brys-vm-nbt-ubuntu-02`          | `100.83.241.31`  | `manual:client`             |
-| `brys-vm-nbt-ubuntu-isolated-02` | `100.83.136.209` | `m:group-r`                 |
+| dns_label        | netbird_ip       | groups      |
+|------------------|------------------|-------------|
+| `nb-01`          | `100.83.73.97`   | `m:group-a` |
+| `nb-isolated-01` | `100.83.136.209` | `m:group-r` |
 
 We will be granting access between:
-- `brys-vm-ubuntu-01` running at a `default` Site through a Routing Peer group `m:group-a`,
-- `brys-vm-nbt-ubuntu-isolated-02` running at `net1` Site through a Routing Peer group `m:group-r`,
+- `ubuntu-01` running at a `default` Site through a Routing Peer group `m:group-a`,
+- `nb-isolated-01` running at `net1` Site through a Routing Peer group `m:group-r`,
 
 <Note>
   This guide assumes working with Linux devices, but the commands used are relatively simple/cross-platform
@@ -188,14 +178,18 @@ The main downsides of this approach are:
 ### Site-to-Site using Network Routes with Masquerading and without Access Control
 
 In this section we will set up Network Routes Site-to-Site with Masquerading, but without any Access Control.
+We will start by setting up the required Network Routes, Access Policies and manually instructing a **clientless**
+device to route traffic through the local **Routing Peer**, then finally confirm everything is working as expected.
 
 #### Setting up a simple VPN-to-Site access
+
 <p>
     <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/routes-noacl-vpn-to-site.png" alt="routes-noacl-vpn-to-site"
          className="imagewrapper-big"/>
 </p>
 
 and Access Policy simply establishing connectivity between the (future) Routing Peers:
+
 <p id="unidirectional-routing-peer-policy">
     <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/acl-group-r-to-a-only.png" alt="acl-group-r-to-a-only"
          className="imagewrapper-big"/>
@@ -209,40 +203,34 @@ and Access Policy simply establishing connectivity between the (future) Routing 
 
 We can confirm that we can reach the `net1` site with both `ping` and `curl`:
 ```shell
-kdn@oams ~> ssh brys-vm-nbt-ubuntu-01.lan.etra.net.int.kdn.im. "netbird networks ls"
+kdn@my-laptop ~> ssh nb-01.lan "netbird networks ls"
 Available Networks:
 
   - ID: network-route-srvs-site
-    Network: 192.168.100.0/24
+    Network: 10.0.0.0/24
     Status: Selected
     
-kdn@oams ~> ssh brys-vm-nbt-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
-PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
-64 bytes from 192.168.100.10: icmp_seq=1 ttl=63 time=0.475 ms
+kdn@my-laptop ~> ssh nb-01.lan "ping -c1 10.0.0.10"
+PING 10.0.0.10 (10.0.0.10) 56(84) bytes of data.
+64 bytes from 10.0.0.10: icmp_seq=1 ttl=63 time=0.475 ms
 
---- 192.168.100.10 ping statistics ---
+--- 10.0.0.10 ping statistics ---
 1 packets transmitted, 1 received, 0% packet loss, time 0ms
 rtt min/avg/max/mdev = 0.475/0.475/0.475/0.000 ms
 
-kdn@oams ~> ssh brys-vm-nbt-ubuntu-01.lan.etra.net.int.kdn.im. "curl 192.168.100.10/health; echo"
+kdn@my-laptop ~> ssh nb-01.lan "curl 10.0.0.10/health; echo"
 OK
-```
-
-Let's also confirm `brys-vm-nbt-ubuntu-02` does not have access to the same routes:
-```shell
-kdn@oams ~> ssh brys-vm-nbt-ubuntu-02.lan.etra.net.int.kdn.im. "netbird networks ls"
-No networks available.
 ```
 
 #### Setting up the clientless device
 
-Let's instruct a **clientless** `brys-vm-ubuntu-01` to consume the `net1` site
-through `brys-vm-nbt-ubuntu-01`'s local IP address `192.168.122.144`:
+Let's instruct a **clientless** `ubuntu-01` to consume the `net1` site
+through `nb-01`'s local IP address `192.168.122.144`:
 ```shell
-kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ip route | grep 192.168.100"
-kdn@oams ~ [1]> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "sudo ip route add 192.168.100.0/24 via 192.168.122.144"
-kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ip route | grep 192.168.100"
-192.168.100.0/24 via 192.168.122.144 dev enp7s0 
+kdn@my-laptop ~> ssh ubuntu-01.lan "ip route | grep 192.168.100"
+kdn@my-laptop ~ [1]> ssh ubuntu-01.lan "sudo ip route add 10.0.0.0/24 via 192.168.122.144"
+kdn@my-laptop ~> ssh ubuntu-01.lan "ip route | grep 192.168.100"
+10.0.0.0/24 via 192.168.122.144 dev enp7s0 
 ```
 
 <Note>
@@ -253,13 +241,13 @@ kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ip route | grep 192.
 This will not work just yet, because we are missing the other end of the setups to route back the answers:
 
 ```shell
-kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
-PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
+kdn@my-laptop ~> ssh ubuntu-01.lan "ping -c1 10.0.0.10"
+PING 10.0.0.10 (10.0.0.10) 56(84) bytes of data.
 
---- 192.168.100.10 ping statistics ---
+--- 10.0.0.10 ping statistics ---
 1 packets transmitted, 0 received, 100% packet loss, time 0ms
 
-kdn@oams ~ [1]>
+kdn@my-laptop ~ [1]>
 ```
 
 #### Closing the loop with reverse Network Route
@@ -267,7 +255,7 @@ kdn@oams ~ [1]>
 Now we can complete the setup by enabling the reverse (from the remote `net1` to the local `default` Site) 
 **Network Route**:
 
-<p>
+<p id="routes-noacl-site-to-site">
     <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/routes-noacl-site-to-site.png" alt="routes-noacl-site-to-site"
          className="imagewrapper-big"/>
 </p>
@@ -275,35 +263,35 @@ Now we can complete the setup by enabling the reverse (from the remote `net1` to
 And confirm it's working:
 
 ```shell
-kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
-PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
-64 bytes from 192.168.100.10: icmp_seq=1 ttl=62 time=0.867 ms
+kdn@my-laptop ~> ssh ubuntu-01.lan "ping -c1 10.0.0.10"
+PING 10.0.0.10 (10.0.0.10) 56(84) bytes of data.
+64 bytes from 10.0.0.10: icmp_seq=1 ttl=62 time=0.867 ms
 
---- 192.168.100.10 ping statistics ---
+--- 10.0.0.10 ping statistics ---
 1 packets transmitted, 1 received, 0% packet loss, time 0ms
 rtt min/avg/max/mdev = 0.867/0.867/0.867/0.000 ms
-kdn@oams ~>
+kdn@my-laptop ~>
 ```
 
 #### Confirming remote Site access to the local Site
 
-Let's fetch `brys-vm-ubuntu-01` local Site IP, perform the same setup on `brys-vm-nbt-ubuntu-isolated-01` and test the
+Let's fetch `ubuntu-01` local Site IP, perform the same setup on `ubuntu-isolated-01` and test the
 access back from the remote `net1` site:
 ```shell
-kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ip a | grep 192.168.122"
+kdn@my-laptop ~> ssh ubuntu-01.lan "ip a | grep 192.168.122"
     inet 192.168.122.65/24 metric 100 brd 192.168.122.255 scope global dynamic enp7s0
-kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ip route | grep 192.168.122"
-kdn@oams ~ [1]>  ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "sudo ip route add 192.168.122.0/24 via 192.168.100.189"
-kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ip route | grep 192.168.122"
-192.168.122.0/24 via 192.168.100.189 dev enp7s0
-kdn@oams ~> ssh 192.168.100.189 -J brys.lan.etra.net.int.kdn.im. "ping -c1 192.168.122.65"
+kdn@my-laptop ~> ssh 10.0.0.215 -J vm-host.lan "ip route | grep 192.168.122"
+kdn@my-laptop ~ [1]>  ssh 10.0.0.215 -J vm-host.lan "sudo ip route add 192.168.122.0/24 via 10.0.0.189"
+kdn@my-laptop ~> ssh 10.0.0.215 -J vm-host.lan "ip route | grep 192.168.122"
+192.168.122.0/24 via 10.0.0.189 dev enp7s0
+kdn@my-laptop ~> ssh 10.0.0.189 -J vm-host.lan "ping -c1 192.168.122.65"
 PING 192.168.122.65 (192.168.122.65) 56(84) bytes of data.
 64 bytes from 192.168.122.65: icmp_seq=1 ttl=63 time=0.523 ms
 
 --- 192.168.122.65 ping statistics ---
 1 packets transmitted, 1 received, 0% packet loss, time 0ms
 rtt min/avg/max/mdev = 0.523/0.523/0.523/0.000 ms
-kdn@oams ~>
+kdn@my-laptop ~>
 ```
 
 ### Site-to-Site using Network Routes with Masquerading and Access Control
@@ -341,17 +329,17 @@ Secondly let's set up Access Policies for one-way access from the local `default
 Now we can confirm that `ping` (ICMP) is allowed, while `curl` (HTTP) is not in local-to-remote direction:
 
 ```shell
-kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ip route | grep 192.168.100"
-192.168.100.0/24 via 192.168.122.144 dev enp7s0
-kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
-PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
-64 bytes from 192.168.100.10: icmp_seq=1 ttl=62 time=0.738 ms
+kdn@my-laptop ~> ssh ubuntu-01.lan "ip route | grep 192.168.100"
+10.0.0.0/24 via 192.168.122.144 dev enp7s0
+kdn@my-laptop ~> ssh ubuntu-01.lan "ping -c1 10.0.0.10"
+PING 10.0.0.10 (10.0.0.10) 56(84) bytes of data.
+64 bytes from 10.0.0.10: icmp_seq=1 ttl=62 time=0.738 ms
 
---- 192.168.100.10 ping statistics ---
+--- 10.0.0.10 ping statistics ---
 1 packets transmitted, 1 received, 0% packet loss, time 0ms
 rtt min/avg/max/mdev = 0.738/0.738/0.738/0.000 ms
-kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "curl -sv -m 2 192.168.100.10/health; echo"
-*   Trying 192.168.100.10:80...
+kdn@my-laptop ~> ssh ubuntu-01.lan "curl -sv -m 2 10.0.0.10/health; echo"
+*   Trying 10.0.0.10:80...
 
 * Connection timed out after 2002 milliseconds
 * closing connection #0
@@ -360,15 +348,15 @@ kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "curl -sv -m 2 192.16
 Let's also confirm that the "backwards" access is not possible yet:
 
 ```shell
-kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ip route | grep 192.168.122"
-192.168.122.0/24 via 192.168.100.189 dev enp7s0
-kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ping -c1 192.168.122.65"
+kdn@my-laptop ~> ssh 10.0.0.215 -J vm-host.lan "ip route | grep 192.168.122"
+192.168.122.0/24 via 10.0.0.189 dev enp7s0
+kdn@my-laptop ~> ssh 10.0.0.215 -J vm-host.lan "ping -c1 192.168.122.65"
 PING 192.168.122.65 (192.168.122.65) 56(84) bytes of data.
 
 --- 192.168.122.65 ping statistics ---
 1 packets transmitted, 0 received, 100% packet loss, time 0ms
 
-kdn@oams ~ [1]>
+kdn@my-laptop ~ [1]>
 ```
 
 Finally, we can enable the remote-to-local Access Policy:
@@ -386,16 +374,16 @@ Finally, we can enable the remote-to-local Access Policy:
 And verify the remote-to-local access started working:
 
 ```shell
-kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ip route | grep 192.168.122"
-192.168.122.0/24 via 192.168.100.189 dev enp7s0
-kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ping -c1 192.168.122.65"
+kdn@my-laptop ~> ssh 10.0.0.215 -J vm-host.lan "ip route | grep 192.168.122"
+192.168.122.0/24 via 10.0.0.189 dev enp7s0
+kdn@my-laptop ~> ssh 10.0.0.215 -J vm-host.lan "ping -c1 192.168.122.65"
 PING 192.168.122.65 (192.168.122.65) 56(84) bytes of data.
 64 bytes from 192.168.122.65: icmp_seq=1 ttl=62 time=0.755 ms
 
 --- 192.168.122.65 ping statistics ---
 1 packets transmitted, 1 received, 0% packet loss, time 0ms
 rtt min/avg/max/mdev = 0.755/0.755/0.755/0.000 ms
-kdn@oams ~>
+kdn@my-laptop ~>
 ```
 
 ### Site-to-Site using Network Resources with Masquerading
@@ -433,14 +421,18 @@ and enable the 2 required Access Policies:
 Let's confirm it's working:
 
 ```shell
-kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
-PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
-64 bytes from 192.168.100.10: icmp_seq=1 ttl=62 time=0.783 ms
+kdn@my-laptop ~> ssh ubuntu-01.lan "ip route | grep 192.168.100"
+10.0.0.0/24 via 192.168.122.144 dev enp7s0
+kdn@my-laptop ~> ssh ubuntu-01.lan "ping -c1 10.0.0.10"
+PING 10.0.0.10 (10.0.0.10) 56(84) bytes of data.
+64 bytes from 10.0.0.10: icmp_seq=1 ttl=62 time=0.783 ms
 
---- 192.168.100.10 ping statistics ---
+--- 10.0.0.10 ping statistics ---
 1 packets transmitted, 1 received, 0% packet loss, time 0ms
 rtt min/avg/max/mdev = 0.783/0.783/0.783/0.000 ms
-kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ping -c1 192.168.122.65"
+kdn@my-laptop ~> ssh 10.0.0.215 -J vm-host.lan "ip route | grep 192.168.122"
+192.168.122.0/24 via 10.0.0.189 dev enp7s0
+kdn@my-laptop ~> ssh 10.0.0.215 -J vm-host.lan "ping -c1 192.168.122.65"
 PING 192.168.122.65 (192.168.122.65) 56(84) bytes of data.
 64 bytes from 192.168.122.65: icmp_seq=1 ttl=62 time=0.925 ms
 
@@ -452,7 +444,7 @@ rtt min/avg/max/mdev = 0.925/0.925/0.925/0.000 ms
 and that no additional traffic is allowed to pass through:
 
 ```shell
-kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "curl -m 2 192.168.100.10/health; echo"
+kdn@my-laptop ~> ssh ubuntu-01.lan "curl -m 2 10.0.0.10/health; echo"
 curl: (28) Connection timed out after 2002 milliseconds
 ```
 
@@ -468,22 +460,24 @@ on the remote end.
 </p>
 
 ```shell
-kdn@oams ~> ssh brys-vm-ubuntu-01.lan.etra.net.int.kdn.im. "ping -c1 192.168.100.10"
-PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
-64 bytes from 192.168.100.10: icmp_seq=1 ttl=62 time=0.836 ms
+kdn@my-laptop ~> ssh ubuntu-01.lan "ping -c1 10.0.0.10"
+PING 10.0.0.10 (10.0.0.10) 56(84) bytes of data.
+64 bytes from 10.0.0.10: icmp_seq=1 ttl=62 time=0.836 ms
 
---- 192.168.100.10 ping statistics ---
+--- 10.0.0.10 ping statistics ---
 1 packets transmitted, 1 received, 0% packet loss, time 0ms
 rtt min/avg/max/mdev = 0.836/0.836/0.836/0.000 ms
-kdn@oams ~> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "ping -c1 192.168.122.65"
+kdn@my-laptop ~> ssh 10.0.0.215 -J vm-host.lan "ip route | grep 192.168.122"
+192.168.122.0/24 via 10.0.0.189 dev enp7s0
+kdn@my-laptop ~> ssh 10.0.0.215 -J vm-host.lan "ping -c1 192.168.122.65"
 PING 192.168.122.65 (192.168.122.65) 56(84) bytes of data.
 
 --- 192.168.122.65 ping statistics ---
 1 packets transmitted, 0 received, 100% packet loss, time 0ms
 
-kdn@oams ~ [1]> ssh 192.168.100.215 -J brys.lan.etra.net.int.kdn.im. "nc -w 2 192.168.122.65 22"
+kdn@my-laptop ~ [1]> ssh 10.0.0.215 -J vm-host.lan "nc -w 2 192.168.122.65 22"
 SSH-2.0-OpenSSH_9.7p1 Ubuntu-7ubuntu4.3
-kdn@oams ~>
+kdn@my-laptop ~>
 ```
 
 ## Site-to-Site without Masquerading
@@ -506,4 +500,60 @@ and therefore instantly rejected.
 
 ### Site-to-Site using Network Routes without Masquerading
 
-## TODO: write this
+In short you should be able to simply switch off Masquerading on each Network Route from
+[the first example](#site-to-site-using-network-routes-with-masquerading-and-without-access-control).
+
+To summarize, we will need to:
+- a pair of local and remote Network Routes,
+- a pair of Access Policies granting Routing Peers access to each other,
+- manually set up **clientless** devices with routes through the respective Routing Peers. 
+
+The Network Routes (just like [above](#routes-noacl-site-to-site)):
+
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/routes-noacl-site-to-site.png" alt="routes-noacl-site-to-site"
+         className="imagewrapper-big"/>
+</p>
+
+Note you will need to turn off Masquerading in the Network Route's details dialog (it is not visible in the list view):
+
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/route-without-masquerading.png" alt="route-without-masquerading"
+         className="imagewrapper-big"/>
+</p>
+
+The Access Policies (just like [above](#unidirectional-routing-peer-policy)):
+
+<p>
+    <img src="/docs-static/img/how-to-guides/setup-site-to-site-access/acl-group-r-to-a-only.png" alt="acl-group-r-to-a-only"
+         className="imagewrapper-big"/>
+</p>
+
+Having above in place we can confirm that the `ping` works:
+
+```shell
+kdn@my-laptop ~> ssh ubuntu-01.lan "ip route | grep 192.168.100"
+10.0.0.0/24 via 192.168.122.144 dev enp7s0 
+kdn@my-laptop ~> ssh ubuntu-01.lan "ping -c1 10.0.0.10"
+PING 10.0.0.10 (10.0.0.10) 56(84) bytes of data.
+64 bytes from 10.0.0.10: icmp_seq=1 ttl=62 time=0.897 ms
+
+--- 10.0.0.10 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.897/0.897/0.897/0.000 ms
+```
+
+and that packets arrive unaltered on the remote end:
+
+```shell
+kdn@my-laptop ~> ssh 10.0.0.10 -J vm-host.lan "sudo tcpdump -nvv -i any --immediate-mode -l icmp"
+tcpdump: WARNING: any: That device doesn't support promiscuous mode
+(Promiscuous mode not supported on the "any" device)
+tcpdump: data link type LINUX_SLL2
+tcpdump: listening on any, link-type LINUX_SLL2 (Linux cooked v2), snapshot length 262144 bytes
+17:32:17.845428 enp7s0 In  IP (tos 0x0, ttl 62, id 56506, offset 0, flags [DF], proto ICMP (1), length 84)
+    192.168.122.65 > 10.0.0.10: ICMP echo request, id 4480, seq 1, length 64
+17:32:17.845468 enp7s0 Out IP (tos 0x0, ttl 64, id 51781, offset 0, flags [none], proto ICMP (1), length 84)
+    10.0.0.10 > 192.168.122.65: ICMP echo reply, id 4480, seq 1, length 64
+^C⏎
+```
