@@ -15,7 +15,7 @@ export const announcement = {
   tag: '',
   text: 'NetBird v0.60 Released - Native SSH Access',
   link: '/how-to/ssh',
-  linkText: 'Read Release Article',
+  linkText: 'Read Release Documentation',
   linkAlt: 'Learn more about the NetBird v0.60 release',
   isExternal: false,
   closeable: true,
