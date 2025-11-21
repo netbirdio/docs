@@ -140,6 +140,62 @@ const nextConfig = {
                 destination: '/manage/access-control/endpoint-detection-and-response/intune-mdm',
                 permanent: true,
             },
+            // documentation redirects for get-started
+            {
+                source: '/how-to/getting-started',
+                destination: '/get-started',
+                permanent: true,
+            },
+            {
+                source: '/how-to/installation',
+                destination: '/get-started/install',
+                permanent: true,
+            },
+            {
+                source: '/how-to/installation/linux',
+                destination: '/get-started/install/linux',
+                permanent: true,
+            },
+            {
+                source: '/how-to/installation/windows',
+                destination: '/get-started/install/windows',
+                permanent: true,
+            },
+            {
+                source: '/how-to/installation/macos',
+                destination: '/get-started/install/macos',
+                permanent: true,
+            },
+            {
+                source: '/how-to/installation/docker',
+                destination: '/get-started/install/docker',
+                permanent: true,
+            },
+            {
+                source: '/how-to/installation/synology',
+                destination: '/get-started/install/synology',
+                permanent: true,
+            },
+            {
+                source: '/how-to/installation/mobile',
+                destination: '/get-started/install/mobile',
+                permanent: true,
+            },
+            {
+                source: '/how-to/installation/pfsense',
+                destination: '/get-started/install/pfsense',
+                permanent: true,
+            },
+            {
+                source: '/how-to/installation/opnsense',
+                destination: '/get-started/install/opnsense',
+                permanent: true,
+            },
+            {
+                source: '/how-to/cli',
+                destination: '/get-started/cli',
+                permanent: true,
+            },
         ]
     },
     rewrites: async () => {
