@@ -14,7 +14,7 @@ const BANNER_ENABLED = true
 export const announcement = {
   tag: '',
   text: 'NetBird v0.60 Released - Native SSH Access',
-  link: 'https://netbird.io/knowledge-hub/native-identity-aware-ssh',
+  link: '/how-to/ssh',
   linkText: 'Read Release Article',
   linkAlt: 'Learn more about the NetBird v0.60 release',
   isExternal: false,
