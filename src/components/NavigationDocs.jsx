@@ -55,31 +55,31 @@ export const docsNavigation = [
              title: 'Peers',
              isOpen: false,
              links: [
-                 { title: 'Add Peers', href: '/how-to/add-machines-to-your-network' },
-                 { title: 'Approve Peers', href: '/how-to/approve-peers' },
-                 { title: 'Setup Keys', href: '/how-to/register-machines-using-setup-keys' },
-                 { title: 'Browser Client', href: '/how-to/browser-client' },
-                 { title: 'SSH', href: '/how-to/ssh' },
-                 { title: 'Lazy Connections', href: '/how-to/lazy-connection'},
+                 { title: 'Add Peers', href: '/manage/peers/add-machines-to-your-network' },
+                 { title: 'Approve Peers', href: '/manage/peers/approve-peers' },
+                 { title: 'Setup Keys', href: '/manage/peers/register-machines-using-setup-keys' },
+                 { title: 'Browser Client', href: '/manage/peers/browser-client' },
+                 { title: 'SSH', href: '/manage/peers/ssh' },
+                 { title: 'Lazy Connections', href: '/manage/peers/lazy-connection'},
                  {
                      title: 'Access Infrastructure',
                      isOpen: true,
                      links: [
                          {
                              title: 'Access Remote Webserver',
-                             href: '/how-to/secure-remote-webserver-access'
+                             href: '/manage/peers/access-infrastructure/secure-remote-webserver-access'
                          },
                          {
                              title: 'Add Servers to the Network',
-                             href: '/how-to/setup-keys-add-servers-to-network'
+                             href: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network'
                          },
                          {
                             title: 'Access from Kubernetes',
-                            href: '/how-to/access-internal-resources-from-autoscaled-environments'
+                            href: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments'
                         },
                          {
                             title: 'Peer Approval for Remote Access',
-                            href: '/how-to/peer-approval-for-remote-worker-access'
+                            href: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access'
                         },
                      ]
                  },
@@ -89,7 +89,7 @@ export const docsNavigation = [
                      links: [
                          {
                              title: 'Simplify Workload Migrations',
-                             href: '/how-to/db-workload-migration'
+                             href: '/manage/peers/site-to-site/db-workload-migration'
                          },
                      ]
                  },

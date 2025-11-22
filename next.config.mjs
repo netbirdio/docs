@@ -71,7 +71,7 @@ const nextConfig = {
             },
             {
                 source: '/docs/overview/setup-keys',
-                destination: '/how-to/register-machines-using-setup-keys',
+                destination: '/manage/peers/register-machines-using-setup-keys',
                 permanent: true,
             },
             {
@@ -86,7 +86,7 @@ const nextConfig = {
             },
             {
                 source: '/docs/overview/setup-keys',
-                destination: '/how-to/register-machines-using-setup-keys',
+                destination: '/manage/peers/register-machines-using-setup-keys',
                 permanent: true,
             },
             {
@@ -194,6 +194,62 @@ const nextConfig = {
             {
                 source: '/how-to/cli',
                 destination: '/get-started/cli',
+                permanent: true,
+            },
+            // documentation redirects for peers
+            {
+                source: '/how-to/add-machines-to-your-network',
+                destination: '/manage/peers/add-machines-to-your-network',
+                permanent: true,
+            },
+            {
+                source: '/how-to/approve-peers',
+                destination: '/manage/peers/approve-peers',
+                permanent: true,
+            },
+            {
+                source: '/how-to/register-machines-using-setup-keys',
+                destination: '/manage/peers/register-machines-using-setup-keys',
+                permanent: true,
+            },
+            {
+                source: '/how-to/browser-client',
+                destination: '/manage/peers/browser-client',
+                permanent: true,
+            },
+            {
+                source: '/how-to/ssh',
+                destination: '/manage/peers/ssh',
+                permanent: true,
+            },
+            {
+                source: '/how-to/lazy-connection',
+                destination: '/manage/peers/lazy-connection',
+                permanent: true,
+            },
+            {
+                source: '/how-to/secure-remote-webserver-access',
+                destination: '/manage/peers/access-infrastructure/secure-remote-webserver-access',
+                permanent: true,
+            },
+            {
+                source: '/how-to/setup-keys-add-servers-to-network',
+                destination: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network',
+                permanent: true,
+            },
+            {
+                source: '/how-to/access-internal-resources-from-autoscaled-environments',
+                destination: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments',
+                permanent: true,
+            },
+            {
+                source: '/how-to/peer-approval-for-remote-worker-access',
+                destination: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access',
+                permanent: true,
+            },
+            {
+                source: '/how-to/db-workload-migration',
+                destination: '/manage/peers/site-to-site/db-workload-migration',
                 permanent: true,
             },
         ]
