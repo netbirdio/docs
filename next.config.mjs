@@ -252,6 +252,32 @@ const nextConfig = {
                 destination: '/manage/peers/site-to-site/db-workload-migration',
                 permanent: true,
             },
+            // documentation redirects for use-cases
+            {
+                source: '/how-to/examples',
+                destination: '/use-cases/examples',
+                permanent: true,
+            },
+            {
+                source: '/how-to/netbird-on-faas',
+                destination: '/use-cases/netbird-on-faas',
+                permanent: true,
+            },
+            {
+                source: '/how-to/routing-peers-and-kubernetes',
+                destination: '/use-cases/routing-peers-and-kubernetes',
+                permanent: true,
+            },
+            {
+                source: '/how-to/client-on-mikrotik-router',
+                destination: '/use-cases/client-on-mikrotik-router',
+                permanent: true,
+            },
+            {
+                source: '/how-to/distributed-multi-cloud-ai-argocd-microk8s-vllm',
+                destination: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm',
+                permanent: true,
+            },
         ]
     },
     rewrites: async () => {
