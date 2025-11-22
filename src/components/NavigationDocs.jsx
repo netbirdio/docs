@@ -127,6 +127,7 @@ export const docsNavigation = [
               isOpen: false,
               links: [
                   { title: 'Concept', href: '/how-to/networks' },
+                  { title: 'Networks access management', href: '/how-to/networks-access-management'},
                   { title: 'Route Traffic to Multiple IP resources', href: '/how-to/routing-traffic-to-multiple-resources' },
                   { title: 'Access Restricted Website Domain Resources', href: '/how-to/accessing-restricted-domain-resources' },
                   { title: 'Access Entire Domains Within Networks', href: '/how-to/accessing-entire-domains-within-networks' },
