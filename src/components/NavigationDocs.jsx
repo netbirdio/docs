@@ -30,21 +30,21 @@ export const docsNavigation = [
     {
         title: 'GET STARTED',
         links: [
-          { title: 'Quickstart Guide', href: '/how-to/getting-started' },
+          { title: 'Quickstart Guide', href: '/get-started' },
           {
-            title: 'Install NetBird', isOpen: true, href: '/how-to/installation',
+            title: 'Install NetBird', isOpen: true, href: '/get-started/install',
             links: [
-              { title: 'Linux', href: '/how-to/installation/linux' },
-              { title: 'Windows', href: '/how-to/installation/windows' },
-              { title: 'MacOS', href: '/how-to/installation/macos' },
-              { title: 'Docker', href: '/how-to/installation/docker' },
-              { title: 'Synology', href: '/how-to/installation/synology' },
-              { title: 'Android/iOS', href: '/how-to/installation/mobile' },
-              { title: 'pfSense', href: '/how-to/installation/pfsense' },
-              { title: 'OPNsense', href: '/how-to/installation/opnsense' },
+              { title: 'Linux', href: '/get-started/install/linux' },
+              { title: 'Windows', href: '/get-started/install/windows' },
+              { title: 'MacOS', href: '/get-started/install/macos' },
+              { title: 'Docker', href: '/get-started/install/docker' },
+              { title: 'Synology', href: '/get-started/install/synology' },
+              { title: 'Android/iOS', href: '/get-started/install/mobile' },
+              { title: 'pfSense', href: '/get-started/install/pfsense' },
+              { title: 'OPNsense', href: '/get-started/install/opnsense' },
             ],
       },
-      { title: 'CLI', href: '/how-to/cli' },
+      { title: 'CLI', href: '/get-started/cli' },
     ],
   },
     {
