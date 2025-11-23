@@ -189,20 +189,20 @@ export const docsNavigation = [
          {
              title: 'Activity',
              links: [
-                 { title: 'Audit Events Logging', href: '/how-to/audit-events-logging' },
-                 { title: 'Traffic Events Logging', href: '/how-to/traffic-events-logging' },
-                 {
-                     title: 'Stream Activity Events',
-                     href: '/how-to/activity-event-streaming',
-                     isOpen: false,
-                     links: [
-                         { title: 'Datadog', href: '/how-to/stream-activity-to-datadog' },
-                         { title: 'Amazon S3', href: '/how-to/stream-activity-to-amazon-s3' },
-                         { title: 'Amazon Firehose', href: '/how-to/stream-activity-to-amazon-firehose'},
-                         { title: 'SentinelOne Data Lake', href: '/how-to/stream-activity-to-sentinelone-data-lake'},
-                         { title: 'Generic HTTP', href: '/how-to/stream-activity-to-generic-http'},
-                     ]
-                 },
+                { title: 'Audit Events Logging', href: '/manage/activity' },
+                { title: 'Traffic Events Logging', href: '/manage/activity/traffic-events-logging' },
+                {
+                    title: 'Stream Activity Events',
+                    href: '/manage/activity/event-streaming',
+                    isOpen: false,
+                    links: [
+                        { title: 'Datadog', href: '/manage/activity/event-streaming/datadog' },
+                        { title: 'Amazon S3', href: '/manage/activity/event-streaming/amazon-s3' },
+                        { title: 'Amazon Firehose', href: '/manage/activity/event-streaming/amazon-firehose'},
+                        { title: 'SentinelOne Data Lake', href: '/manage/activity/event-streaming/sentinelone-data-lake'},
+                        { title: 'Generic HTTP', href: '/manage/activity/event-streaming/generic-http'},
+                    ]
+                },
              ],
          },
          {

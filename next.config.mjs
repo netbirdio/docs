@@ -335,6 +335,52 @@ const nextConfig = {
                 destination: '/manage/control-center',
                 permanent: true,
             },
+            // documentation redirects for activity
+            {
+                source: '/how-to/audit-events-logging',
+                destination: '/manage/activity',
+                permanent: true,
+            },
+            {
+                source: '/how-to/traffic-events-logging',
+                destination: '/manage/activity/traffic-events-logging',
+                permanent: true,
+            },
+            {
+                source: '/how-to/activity-event-streaming',
+                destination: '/manage/activity/event-streaming',
+                permanent: true,
+            },
+            {
+                source: '/how-to/stream-activity-to-datadog',
+                destination: '/manage/activity/event-streaming/datadog',
+                permanent: true,
+            },
+            {
+                source: '/how-to/stream-activity-to-amazon-s3',
+                destination: '/manage/activity/event-streaming/amazon-s3',
+                permanent: true,
+            },
+            {
+                source: '/how-to/stream-activity-to-amazon-firehose',
+                destination: '/manage/activity/event-streaming/amazon-firehose',
+                permanent: true,
+            },
+            {
+                source: '/how-to/stream-activity-to-sentinelone-data-lake',
+                destination: '/manage/activity/event-streaming/sentinelone-data-lake',
+                permanent: true,
+            },
+            {
+                source: '/how-to/stream-activity-to-generic-http',
+                destination: '/manage/activity/event-streaming/generic-http',
+                permanent: true,
+            },
+            {
+                source: '/how-to/monitor-system-and-network-activity',
+                destination: '/manage/activity/traffic-events-logging',
+                permanent: true,
+            },
             // documentation redirects for team
             {
                 source: '/how-to/idp-sync',
