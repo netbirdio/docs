@@ -56,12 +56,17 @@ const nextConfig = {
             },
             {
                 source: '/docs/how-to-guides/nameservers',
-                destination: '/how-to/manage-dns-in-your-network',
+                destination: '/manage/dns',
                 permanent: true,
             },
             {
                 source: '/docs/how-to-guides/nameservers',
-                destination: '/how-to/manage-dns-in-your-network',
+                destination: '/manage/dns',
+                permanent: true,
+            },
+            {
+                source: '/how-to/manage-dns-in-your-network',
+                destination: '/manage/dns',
                 permanent: true,
             },
             {

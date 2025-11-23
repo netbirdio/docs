@@ -153,7 +153,7 @@ export const docsNavigation = [
              title: 'DNS',
              isOpen: false,
              links: [
-                 { title: 'Manage DNS in Your Network', href: '/how-to/manage-dns-in-your-network' },
+                 { title: 'Manage DNS in Your Network', href: '/manage/dns' },
              ]
          },
          {
