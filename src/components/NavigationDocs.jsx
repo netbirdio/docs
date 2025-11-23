@@ -126,15 +126,15 @@ export const docsNavigation = [
               title: 'Networks',
               isOpen: false,
               links: [
-                  { title: 'Concept', href: '/how-to/networks' },
-                  { title: 'Route Traffic to Multiple IP resources', href: '/how-to/routing-traffic-to-multiple-resources' },
-                  { title: 'Access Restricted Website Domain Resources', href: '/how-to/accessing-restricted-domain-resources' },
-                  { title: 'Access Entire Domains Within Networks', href: '/how-to/accessing-entire-domains-within-networks' },
+                  { title: 'Concept', href: '/manage/networks' },
+                  { title: 'Route Traffic to Multiple IP resources', href: '/manage/networks/routing-traffic-to-multiple-resources' },
+                  { title: 'Access Restricted Website Domain Resources', href: '/manage/networks/accessing-restricted-domain-resources' },
+                  { title: 'Access Entire Domains Within Networks', href: '/manage/networks/accessing-entire-domains-within-networks' },
                   {
                       title: 'Homelab',
                       isOpen: true,
                       links: [
-                          { title: 'Access Home Network', href: '/how-to/access-home-network' },
+                          { title: 'Access Home Network', href: '/manage/networks/homelab/access-home-network' },
                       ]
                   },
               ]
@@ -143,10 +143,10 @@ export const docsNavigation = [
              title: 'Network Routes',
              isOpen: false,
              links: [
-                 { title: 'Route Traffic to Private Networks', href: '/how-to/routing-traffic-to-private-networks' },
-                 { title: 'Configure Default Routes for Internet Traffic', href: '/how-to/configuring-default-routes-for-internet-traffic' },
-                 { title: 'Configure Routes with Access control', href: '/how-to/configuring-routes-with-access-control' },
-                 { title: 'Resolve Overlapping Routes', href: '/how-to/resolve-overlapping-routes' },
+                 { title: 'Route Traffic to Private Networks', href: '/manage/network-routes/routing-traffic-to-private-networks' },
+                 { title: 'Configure Default Routes for Internet Traffic', href: '/manage/network-routes/configuring-default-routes-for-internet-traffic' },
+                 { title: 'Configure Routes with Access control', href: '/manage/network-routes/configuring-routes-with-access-control' },
+                 { title: 'Resolve Overlapping Routes', href: '/manage/network-routes/resolve-overlapping-routes' },
              ]
          },
          {

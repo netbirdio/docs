@@ -31,7 +31,7 @@ const nextConfig = {
             },
             {
                 source: '/how-to/networks-concept',
-                destination: '/how-to/networks',
+                destination: '/manage/networks',
                 permanent: true,
             },
             {
@@ -276,6 +276,53 @@ const nextConfig = {
             {
                 source: '/how-to/distributed-multi-cloud-ai-argocd-microk8s-vllm',
                 destination: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm',
+                permanent: true,
+            },
+            // documentation redirects for networks
+            {
+                source: '/how-to/networks',
+                destination: '/manage/networks',
+                permanent: true,
+            },
+            {
+                source: '/how-to/routing-traffic-to-multiple-resources',
+                destination: '/manage/networks/routing-traffic-to-multiple-resources',
+                permanent: true,
+            },
+            {
+                source: '/how-to/accessing-restricted-domain-resources',
+                destination: '/manage/networks/accessing-restricted-domain-resources',
+                permanent: true,
+            },
+            {
+                source: '/how-to/accessing-entire-domains-within-networks',
+                destination: '/manage/networks/accessing-entire-domains-within-networks',
+                permanent: true,
+            },
+            {
+                source: '/how-to/access-home-network',
+                destination: '/manage/networks/homelab/access-home-network',
+                permanent: true,
+            },
+            // documentation redirects for network-routes
+            {
+                source: '/how-to/routing-traffic-to-private-networks',
+                destination: '/manage/network-routes/routing-traffic-to-private-networks',
+                permanent: true,
+            },
+            {
+                source: '/how-to/configuring-default-routes-for-internet-traffic',
+                destination: '/manage/network-routes/configuring-default-routes-for-internet-traffic',
+                permanent: true,
+            },
+            {
+                source: '/how-to/configuring-routes-with-access-control',
+                destination: '/manage/network-routes/configuring-routes-with-access-control',
+                permanent: true,
+            },
+            {
+                source: '/how-to/resolve-overlapping-routes',
+                destination: '/manage/network-routes/resolve-overlapping-routes',
                 permanent: true,
             },
         ]
