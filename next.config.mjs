@@ -66,7 +66,7 @@ const nextConfig = {
             },
             {
                 source: '/docs/how-to-guides/network-routes',
-                destination: '/routing-traffic-to-private-networks',
+                destination: '/manage/network-routes/routing-traffic-to-private-networks',
                 permanent: true,
             },
             {
@@ -323,6 +323,11 @@ const nextConfig = {
             {
                 source: '/how-to/resolve-overlapping-routes',
                 destination: '/manage/network-routes/resolve-overlapping-routes',
+                permanent: true,
+            },
+            {
+                source: '/how-to/control-center',
+                destination: '/manage/control-center',
                 permanent: true,
             },
         ]
