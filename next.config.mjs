@@ -335,6 +335,57 @@ const nextConfig = {
                 destination: '/manage/control-center',
                 permanent: true,
             },
+            // documentation redirects for team
+            {
+                source: '/how-to/idp-sync',
+                destination: '/manage/team/idp-sync',
+                permanent: true,
+            },
+            {
+                source: '/how-to/add-users-to-your-network',
+                destination: '/manage/team/add-users-to-your-network',
+                permanent: true,
+            },
+            {
+                source: '/how-to/approve-users',
+                destination: '/manage/team/approve-users',
+                permanent: true,
+            },
+            {
+                source: '/how-to/auto-offboard-users',
+                destination: '/manage/team/auto-offboard-users',
+                permanent: true,
+            },
+            {
+                source: '/how-to/single-sign-on',
+                destination: '/manage/team/single-sign-on',
+                permanent: true,
+            },
+            {
+                source: '/how-to/microsoft-entra-id-sync',
+                destination: '/manage/team/idp-sync/microsoft-entra-id-sync',
+                permanent: true,
+            },
+            {
+                source: '/how-to/okta-sync',
+                destination: '/manage/team/idp-sync/okta-sync',
+                permanent: true,
+            },
+            {
+                source: '/how-to/google-workspace-sync',
+                destination: '/manage/team/idp-sync/google-workspace-sync',
+                permanent: true,
+            },
+            {
+                source: '/how-to/jumpcloud-sync',
+                destination: '/manage/team/idp-sync/jumpcloud-sync',
+                permanent: true,
+            },
+            {
+                source: '/how-to/keycloak-sync',
+                destination: '/manage/team/idp-sync/keycloak-sync',
+                permanent: true,
+            },
         ]
     },
     rewrites: async () => {

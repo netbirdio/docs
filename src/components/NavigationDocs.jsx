@@ -160,30 +160,30 @@ export const docsNavigation = [
              title: 'Team',
              isOpen: false,
              links: [
-                 { title: 'Add Users to Your Network', href: '/how-to/add-users-to-your-network' },
-                 { title: 'Approve Users', href: '/how-to/approve-users' },
-                 {
-                     title: 'Provision Users & Groups',
-                     href: '/how-to/idp-sync',
-                     isOpen: false,
-                     links: [
-                         { title: 'Microsoft Entra ID', href: '/how-to/microsoft-entra-id-sync' },
-                         { title: 'Okta', href: '/how-to/okta-sync' },
-                         { title: 'Google Workspace', href: '/how-to/google-workspace-sync'},
-                         { title: 'JumpCloud', href: '/how-to/jumpcloud-sync'},
-                         { title: 'Keycloak', href: '/how-to/keycloak-sync'},
-                     ]
-                 },
-                 {
-                     title: 'Auto-Offboard Users',
-                     href: '/how-to/auto-offboard-users',
-                     isOpen: false,
-                 },
-                 {
-                     title: 'Single Sign-On',
-                     href: '/how-to/single-sign-on',
-                     isOpen: false,
-                 },
+                 { title: 'Add Users to Your Network', href: '/manage/team/add-users-to-your-network' },
+                 { title: 'Approve Users', href: '/manage/team/approve-users' },
+                {
+                    title: 'Provision Users & Groups',
+                    href: '/manage/team/idp-sync',
+                    isOpen: false,
+                    links: [
+                        { title: 'Microsoft Entra ID', href: '/manage/team/idp-sync/microsoft-entra-id-sync' },
+                        { title: 'Okta', href: '/manage/team/idp-sync/okta-sync' },
+                        { title: 'Google Workspace', href: '/manage/team/idp-sync/google-workspace-sync'},
+                        { title: 'JumpCloud', href: '/manage/team/idp-sync/jumpcloud-sync'},
+                        { title: 'Keycloak', href: '/manage/team/idp-sync/keycloak-sync'},
+                    ]
+                },
+                {
+                    title: 'Auto-Offboard Users',
+                    href: '/manage/team/auto-offboard-users',
+                    isOpen: false,
+                },
+                {
+                    title: 'Single Sign-On',
+                    href: '/manage/team/single-sign-on',
+                    isOpen: false,
+                },
              ]
          },
          {
