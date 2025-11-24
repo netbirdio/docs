@@ -50,36 +50,36 @@ export const docsNavigation = [
     {
         title: 'MANAGE NETBIRD',
         links: [
-            { title: 'Control Center', href: '/how-to/control-center' },
+            { title: 'Control Center', href: '/manage/control-center' },
             {
              title: 'Peers',
              isOpen: false,
              links: [
-                 { title: 'Add Peers', href: '/how-to/add-machines-to-your-network' },
-                 { title: 'Approve Peers', href: '/how-to/approve-peers' },
-                 { title: 'Setup Keys', href: '/how-to/register-machines-using-setup-keys' },
-                 { title: 'Browser Client', href: '/how-to/browser-client' },
-                 { title: 'SSH', href: '/how-to/ssh' },
-                 { title: 'Lazy Connections', href: '/how-to/lazy-connection'},
+                 { title: 'Add Peers', href: '/manage/peers/add-machines-to-your-network' },
+                 { title: 'Approve Peers', href: '/manage/peers/approve-peers' },
+                 { title: 'Setup Keys', href: '/manage/peers/register-machines-using-setup-keys' },
+                 { title: 'Browser Client', href: '/manage/peers/browser-client' },
+                 { title: 'SSH', href: '/manage/peers/ssh' },
+                 { title: 'Lazy Connections', href: '/manage/peers/lazy-connection'},
                  {
                      title: 'Access Infrastructure',
                      isOpen: true,
                      links: [
                          {
                              title: 'Access Remote Webserver',
-                             href: '/how-to/secure-remote-webserver-access'
+                             href: '/manage/peers/access-infrastructure/secure-remote-webserver-access'
                          },
                          {
                              title: 'Add Servers to the Network',
-                             href: '/how-to/setup-keys-add-servers-to-network'
+                             href: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network'
                          },
                          {
                             title: 'Access from Kubernetes',
-                            href: '/how-to/access-internal-resources-from-autoscaled-environments'
+                            href: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments'
                         },
                          {
                             title: 'Peer Approval for Remote Access',
-                            href: '/how-to/peer-approval-for-remote-worker-access'
+                            href: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access'
                         },
                      ]
                  },
@@ -89,7 +89,7 @@ export const docsNavigation = [
                      links: [
                          {
                              title: 'Simplify Workload Migrations',
-                             href: '/how-to/db-workload-migration'
+                             href: '/manage/peers/site-to-site/db-workload-migration'
                          },
                      ]
                  },
@@ -126,15 +126,15 @@ export const docsNavigation = [
               title: 'Networks',
               isOpen: false,
               links: [
-                  { title: 'Concept', href: '/how-to/networks' },
-                  { title: 'Route Traffic to Multiple IP resources', href: '/how-to/routing-traffic-to-multiple-resources' },
-                  { title: 'Access Restricted Website Domain Resources', href: '/how-to/accessing-restricted-domain-resources' },
-                  { title: 'Access Entire Domains Within Networks', href: '/how-to/accessing-entire-domains-within-networks' },
+                  { title: 'Concept', href: '/manage/networks' },
+                  { title: 'Route Traffic to Multiple IP resources', href: '/manage/networks/routing-traffic-to-multiple-resources' },
+                  { title: 'Access Restricted Website Domain Resources', href: '/manage/networks/accessing-restricted-domain-resources' },
+                  { title: 'Access Entire Domains Within Networks', href: '/manage/networks/accessing-entire-domains-within-networks' },
                   {
                       title: 'Homelab',
                       isOpen: true,
                       links: [
-                          { title: 'Access Home Network', href: '/how-to/access-home-network' },
+                          { title: 'Access Home Network', href: '/manage/networks/homelab/access-home-network' },
                       ]
                   },
               ]
@@ -143,66 +143,66 @@ export const docsNavigation = [
              title: 'Network Routes',
              isOpen: false,
              links: [
-                 { title: 'Route Traffic to Private Networks', href: '/how-to/routing-traffic-to-private-networks' },
-                 { title: 'Configure Default Routes for Internet Traffic', href: '/how-to/configuring-default-routes-for-internet-traffic' },
-                 { title: 'Configure Routes with Access control', href: '/how-to/configuring-routes-with-access-control' },
-                 { title: 'Resolve Overlapping Routes', href: '/how-to/resolve-overlapping-routes' },
+                 { title: 'Route Traffic to Private Networks', href: '/manage/network-routes/routing-traffic-to-private-networks' },
+                 { title: 'Configure Default Routes for Internet Traffic', href: '/manage/network-routes/configuring-default-routes-for-internet-traffic' },
+                 { title: 'Configure Routes with Access control', href: '/manage/network-routes/configuring-routes-with-access-control' },
+                 { title: 'Resolve Overlapping Routes', href: '/manage/network-routes/resolve-overlapping-routes' },
              ]
          },
          {
              title: 'DNS',
              isOpen: false,
              links: [
-                 { title: 'Manage DNS in Your Network', href: '/how-to/manage-dns-in-your-network' },
+                 { title: 'Manage DNS in Your Network', href: '/manage/dns' },
              ]
          },
          {
              title: 'Team',
              isOpen: false,
              links: [
-                 { title: 'Add Users to Your Network', href: '/how-to/add-users-to-your-network' },
-                 { title: 'Approve Users', href: '/how-to/approve-users' },
-                 {
-                     title: 'Provision Users & Groups',
-                     href: '/how-to/idp-sync',
-                     isOpen: false,
-                     links: [
-                         { title: 'Microsoft Entra ID', href: '/how-to/microsoft-entra-id-sync' },
-                         { title: 'Okta', href: '/how-to/okta-sync' },
-                         { title: 'Google Workspace', href: '/how-to/google-workspace-sync'},
-                         { title: 'JumpCloud', href: '/how-to/jumpcloud-sync'},
-                         { title: 'Keycloak', href: '/how-to/keycloak-sync'},
-                     ]
-                 },
-                 {
-                     title: 'Auto-Offboard Users',
-                     href: '/how-to/auto-offboard-users',
-                     isOpen: false,
-                 },
-                 {
-                     title: 'Single Sign-On',
-                     href: '/how-to/single-sign-on',
-                     isOpen: false,
-                 },
+                 { title: 'Add Users to Your Network', href: '/manage/team/add-users-to-your-network' },
+                 { title: 'Approve Users', href: '/manage/team/approve-users' },
+                {
+                    title: 'Provision Users & Groups',
+                    href: '/manage/team/idp-sync',
+                    isOpen: false,
+                    links: [
+                        { title: 'Microsoft Entra ID', href: '/manage/team/idp-sync/microsoft-entra-id-sync' },
+                        { title: 'Okta', href: '/manage/team/idp-sync/okta-sync' },
+                        { title: 'Google Workspace', href: '/manage/team/idp-sync/google-workspace-sync'},
+                        { title: 'JumpCloud', href: '/manage/team/idp-sync/jumpcloud-sync'},
+                        { title: 'Keycloak', href: '/manage/team/idp-sync/keycloak-sync'},
+                    ]
+                },
+                {
+                    title: 'Auto-Offboard Users',
+                    href: '/manage/team/auto-offboard-users',
+                    isOpen: false,
+                },
+                {
+                    title: 'Single Sign-On',
+                    href: '/manage/team/single-sign-on',
+                    isOpen: false,
+                },
              ]
          },
          {
              title: 'Activity',
              links: [
-                 { title: 'Audit Events Logging', href: '/how-to/audit-events-logging' },
-                 { title: 'Traffic Events Logging', href: '/how-to/traffic-events-logging' },
-                 {
-                     title: 'Stream Activity Events',
-                     href: '/how-to/activity-event-streaming',
-                     isOpen: false,
-                     links: [
-                         { title: 'Datadog', href: '/how-to/stream-activity-to-datadog' },
-                         { title: 'Amazon S3', href: '/how-to/stream-activity-to-amazon-s3' },
-                         { title: 'Amazon Firehose', href: '/how-to/stream-activity-to-amazon-firehose'},
-                         { title: 'SentinelOne Data Lake', href: '/how-to/stream-activity-to-sentinelone-data-lake'},
-                         { title: 'Generic HTTP', href: '/how-to/stream-activity-to-generic-http'},
-                     ]
-                 },
+                { title: 'Audit Events Logging', href: '/manage/activity' },
+                { title: 'Traffic Events Logging', href: '/manage/activity/traffic-events-logging' },
+                {
+                    title: 'Stream Activity Events',
+                    href: '/manage/activity/event-streaming',
+                    isOpen: false,
+                    links: [
+                        { title: 'Datadog', href: '/manage/activity/event-streaming/datadog' },
+                        { title: 'Amazon S3', href: '/manage/activity/event-streaming/amazon-s3' },
+                        { title: 'Amazon Firehose', href: '/manage/activity/event-streaming/amazon-firehose'},
+                        { title: 'SentinelOne Data Lake', href: '/manage/activity/event-streaming/sentinelone-data-lake'},
+                        { title: 'Generic HTTP', href: '/manage/activity/event-streaming/generic-http'},
+                    ]
+                },
              ],
          },
          {
@@ -271,10 +271,10 @@ export const docsNavigation = [
     {
      title: 'USE CASES',
      links: [
-         { title: 'Serverless and NetBird', href: '/how-to/netbird-on-faas' },
-         { title: 'Routing peers and Kubernetes', href: '/how-to/routing-peers-and-kubernetes'},
-         { title: 'NetBird Client on AWS ECS', href: '/how-to/examples'},
-         { title: 'NetBird on Mikrotik Router', href: '/how-to/client-on-mikrotik-router' },
+         { title: 'Serverless and NetBird', href: '/use-cases/netbird-on-faas' },
+         { title: 'Routing peers and Kubernetes', href: '/use-cases/routing-peers-and-kubernetes'},
+         { title: 'NetBird Client on AWS ECS', href: '/use-cases/examples'},
+         { title: 'NetBird on Mikrotik Router', href: '/use-cases/client-on-mikrotik-router' },
          { title: 'Distributed AI on Kubernetes', href: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm' },
          { title: 'Self-hosted vs. Cloud-hosted NetBird', href: '/selfhosted/self-hosted-vs-cloud-netbird' },
      ],
