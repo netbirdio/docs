@@ -35,7 +35,6 @@ export function AnnouncementBannerProvider({ children }) {
     undefined
   )
   let announcementId = announcement.text
-  let [isHiddenByScroll, setIsHiddenByScroll] = useState(false)
   let [bannerHeight, setBannerHeight] = useState(0)
 
   let close = () => {
@@ -48,7 +47,7 @@ export function AnnouncementBannerProvider({ children }) {
     return closedAnnouncement !== announcementId
   }, [announcementId, closedAnnouncement, mounted])
 
-  let isVisible = isActive && !isHiddenByScroll
+  let isVisible = isActive // Always visible when active, regardless of scroll
 
   let reportHeight = useCallback((height) => {
     setBannerHeight(height)
@@ -59,19 +58,20 @@ export function AnnouncementBannerProvider({ children }) {
     return () => setMounted(false)
   }, [])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
+  // Removed scroll-based hiding to make banner always sticky
+  // useEffect(() => {
+  //   if (typeof window === 'undefined') {
+  //     return
+  //   }
 
-    function handleScroll() {
-      setIsHiddenByScroll(window.scrollY > 30)
-    }
+  //   function handleScroll() {
+  //     setIsHiddenByScroll(window.scrollY > 30)
+  //   }
 
-    handleScroll()
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+  //   handleScroll()
+  //   window.addEventListener('scroll', handleScroll, { passive: true })
+  //   return () => window.removeEventListener('scroll', handleScroll)
+  // }, [])
 
   useEffect(() => {
     if (!isVisible && bannerHeight !== 0) {

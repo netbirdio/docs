@@ -110,7 +110,7 @@ export function NavLink({ href, tag, active, isAnchorLink = false, children, lin
         {links &&
             <ul role="list">
               {links.map((link,index) => (
-                  <motion.li key={index} layout="position" className="relative">
+                  <motion.li key={index} className="relative">
                     <NavLink href={link.href} active={link.href === router.pathname} isChildren={true}>
                       {link.title}
                     </NavLink>
@@ -146,7 +146,7 @@ export function VisibleSectionHighlight() {
 
     return activeIndex >= 0 && (
         <motion.div
-            layout
+            // layout
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { delay: 0.2 } }}
             exit={{ opacity: 0 }}
@@ -169,7 +169,7 @@ export function ActivePageMarker() {
 
     return activeIndex >= 0 && (
         <motion.div
-            layout
+            // layout
             className="absolute left-2 h-6 w-px bg-orange-500"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: { delay: 0.2 } }}
@@ -187,7 +187,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
   return (
     <li className={clsx('relative mt-6', className)}>
       <motion.h2
-        layout="position"
+        // layout="position"
         data-nb-link={group.title}
         className="text-xs font-semibold text-zinc-900 dark:text-white"
       >
@@ -200,7 +200,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
           )}
         </AnimatePresence>
         <motion.div
-          layout
+          // layout
           className="absolute inset-y-0 left-2 w-px bg-zinc-900/10 dark:bg-white/5"
         />
         <AnimatePresence initial={false}>
@@ -210,7 +210,7 @@ function NavigationGroup({ group, className, tableOfContents }) {
         </AnimatePresence>
         <ul role="list" className="border-l border-transparent">
           {group.links.map((link) => (
-            <motion.li key={link.href} layout="position" className="relative">
+            <motion.li key={link.href} className="relative">
               <NavLink href={link.href} active={link.href === router.pathname.replace("ipa", "api")}>
                 {link.title}
               </NavLink>
