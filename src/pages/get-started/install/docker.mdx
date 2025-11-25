@@ -1,0 +1,82 @@
+import {Note} from "@/components/mdx";
+
+# Docker Installation
+
+The NetBird client (agent) allows a peer to join a pre-existing NetBird deployment. If a NetBird deployment is not yet available, there are both managed and [self-hosted](https://docs.netbird.io/selfhosted/selfhosted-quickstart) options available.
+
+## Docker Run Command
+
+Set the ```NB_SETUP_KEY``` environment variable and run the command.
+
+<Note>
+    You can pass other settings as environment variables. See [Environment variables](/get-started/cli#environment-variables) for details.
+</Note>
+
+NetBird makes use of eBPF and raw sockets, therefore to guarantee the client software functionality, we recommend adding the flags `--cap-add=SYS_ADMIN` and `--cap-add=SYS_RESOURCE` for docker clients.
+The experience may vary depending on the docker daemon, operating system, or kernel version.
+
+```bash
+docker run --rm --name PEER_NAME --hostname PEER_NAME --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --cap-add=SYS_RESOURCE -d -e NB_SETUP_KEY=<SETUP KEY> -v netbird-client:/var/lib/netbird netbirdio/netbird:latest
+```
+
+See [Docker example](/use-cases/examples#net-bird-client-in-docker) for details.
+
+### Troubleshooting
+1. If you are using self-hosted version and haven't specified `--management-url`, the client app will use the default URL
+which is ```https://api.wiretrustee.com:33073```.
+
+2. If you have specified a wrong `--management-url` (e.g., just by mistake when self-hosting)
+to override it you can do the following:
+
+```bash
+netbird down
+netbird up --management-url https://<CORRECT HOST:PORT>/
+```
+
+To override it see the solution #1 above.
+
+## Docker Compose
+If you prefer to run NetBird as a Docker compose stack below is an example. Configure to your specific needs.
+```yaml
+services:
+  netbird:
+      container_name: netbird
+      hostname: <HOSTNAME>
+      cap_add:
+          - NET_ADMIN
+          - SYS_ADMIN
+          - SYS_RESOURCE
+      network_mode: host
+      environment:
+          - NB_SETUP_KEY=<SETUP KEY>
+      volumes:
+          - netbird-client:/var/lib/netbird
+      image: netbirdio/netbird:latest
+volumes:
+  netbird-client:
+      name: netbird-client
+```
+
+## Running NetBird with a Setup Key
+In case you are activating a server peer, you can use a [setup key](/manage/peers/register-machines-using-setup-keys) as described in the steps below.
+> This is especially helpful when you are running multiple server instances with infrastructure-as-code tools like ansible and terraform.
+
+1. Login to the Management Service. You need to have a `setup key` in hand (see [setup keys](/manage/peers/register-machines-using-setup-keys)).
+
+```bash
+docker run --network host --privileged --rm -d -e NB_SETUP_KEY=<SETUP KEY> -v netbird-client:/var/lib/netbird netbirdio/netbird:<TAG>
+```
+> TAG > 0.6.0 version
+
+> You could also omit the `--setup-key` property. In this case, the tool will prompt for the key.
+
+2. Check connection status:
+```bash
+  netbird status
+```
+
+3. Check your IP:
+
+````bash
+  sudo ifconfig utun100
+````

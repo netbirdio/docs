@@ -21,6 +21,9 @@ module.exports = {
     },
     typography: require('./typography'),
     extend: {
+      colors: {
+        netbird: '#f68330',
+      },
       boxShadow: {
         glow: '0 0 4px rgb(0 0 0 / 0.1)',
       },
