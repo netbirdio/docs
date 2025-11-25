@@ -371,7 +371,7 @@ export const docsNavigation = [
     return (
         <li className={clsx('relative', className, hasChildren ? "" : "mt-6")}>
             <motion.h2
-                layout={"size"}
+                // layout={"size"}
                 className={clsx(
                     "flex justify-between items-center gap-2 group",
                     hasChildren ? "text-zinc-700 select-none py-1 pr-3 hover:text-zinc-900 dark:text-zinc-300 font-medium dark:hover:text-white text-sm cursor-pointer" : "text-xs font-semibold text-zinc-900 dark:text-white"
@@ -400,7 +400,7 @@ export const docsNavigation = [
                             )}
                         </AnimatePresence>
                         <motion.div
-                            layout
+                            // layout
                             className="absolute inset-y-0 left-2 w-px bg-zinc-900/10 dark:bg-white/5"
                         />
                         <AnimatePresence initial={false}>
@@ -427,7 +427,7 @@ export const docsNavigation = [
                         className="border-l border-transparent">
                             {group.links.map((link) =>  {
                                 return link.href ?
-                                    <motion.li key={link.href} layout={"position"} className="relative">
+                                    <motion.li key={link.href} className="relative">
                                         <NavLink href={link.href} active={link.href === router.pathname} links={link.links}>
                                             {link.title}
                                         </NavLink>

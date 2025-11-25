@@ -178,8 +178,8 @@ export function Layout({ children, title, tableOfContents }) {
         className="relative mx-auto flex max-w-8xl sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80"
         style={{ paddingTop: bannerHeight }}
       >
-        <motion.header
-            layoutScroll
+        <header
+            // layoutScroll
             className="contents lg:pointer-events-none lg:fixed lg:inset-0 lg:z-40 lg:flex"
             style={{ top: bannerHeight }}
         >
@@ -192,7 +192,7 @@ export function Layout({ children, title, tableOfContents }) {
             <Header />
             {router.route.startsWith("/ipa") ? <NavigationAPI className="hidden lg:mt-10 lg:block" tableOfContents={tableOfContents} /> : <NavigationDocs className="hidden lg:mt-10 lg:block" />}
           </div>
-        </motion.header>
+        </header>
         <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-5">
           <main className="py-16">
             <Prose as="article">{children}</Prose>
