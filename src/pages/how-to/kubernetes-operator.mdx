@@ -34,14 +34,12 @@ kubectl -n netbird create secret generic netbird-mgmt-api-key --from-literal=NB_
   Replace `~/nb-pat.secret` with your NetBird API key.
 </Note>
 
-4. (Recommended) Create a [`values.yaml`](https://github.com/netbirdio/kubernetes-operator/blob/main/examples/ingress/values.yaml) file, check `helm show values netbirdio/kubernetes-operator` for more info.
+4. (Recommended) Create a [`values.yaml`](https://github.com/netbirdio/kubernetes-operator/blob/main/examples/ingress/values-kubernetes-operator.yaml) file, check `helm show values netbirdio/kubernetes-operator` for more info.
 ```yaml
 # by default the managementURL points to the NetBird cloud service: https://api.netbird.io:443
 # managementURL: "https://netbird.example.io:443"
 ingress:
   enabled: true
-  router:
-    enabled: true
 
 netbirdAPI:
   keyFromSecret: 
@@ -70,21 +68,41 @@ NAME                                                   TYPE        CLUSTER-IP   
 netbird-operator-kubernetes-operator-metrics           ClusterIP   192.168.194.165   <none>        8080/TCP   47m
 netbird-operator-kubernetes-operator-webhook-service   ClusterIP   192.168.194.222   <none>        443/TCP    47m
 ```
+7.(Optional) Install Routing Peer and Policies, create a [`values.yaml`](https://github.com/netbirdio/kubernetes-operator/blob/main/examples/ingress/values-netbird-operator-config.yaml) file, check `helm show values netbirdio/netbird-operator-config` for more info.
+```yaml
+router:
+  enabled: true
+policies:
+  default:
+    name: Kubernetes Default Policy
+    sourceGroups:
+      - All
+```
+8. Install using helm install:
+```shell
+helm install -f values.yaml -n netbird netbird-operator-config netbirdio/netbird-operator-config
+```
+
 ### Updating or Modifying the Operator Configuration
 The configuration or version update of the operator can be done with `helm upgrade`:
+
+#### Operator version updates
 ```shell
-helm upgrade --create-namespace -f values.yaml -n netbird netbird-operator netbirdio/kubernetes-operator
+helm upgrade -f values.yaml -n netbird netbird-operator netbirdio/kubernetes-operator
+ ```
+
+ #### Configuration Update 
+```shell
+helm upgrade -f values.yaml -n netbird netbird-operator-config netbirdio/netbird-operator-config
  ```
 
 ## Expose Kubernetes Control Plane to your NetBird Network
 To access your Kubernetes control plane from a NetBird network, you can expose your Kubernetes control plane as a
-[NetBird resource](/manage/networks#resources) by enabling the following option in the operator values:
+[NetBird resource](/how-to/networks#resources) by enabling the following option in the netbird-operator-config values:
 
 ```yaml
-ingres:
+kubernetesAPI:
   enabled: true
-  kubernetesAPI:
-    enabled: true
 ```
 The operator will create a NetBird network resource similar to the example below:
 
@@ -98,12 +116,10 @@ Kubernetes services is a common way to route traffic to your application pods. W
 NetBird network as resources by using annotations in your services. The operator will create networks, resources,
 and add routing peers to your NetBird configuration.
 
-By default, the ingress configuration is disabled. You can enable it with the following values using the helm chart:
+By default, the ingress configuration is disabled. You can enable it with the following values using the `netbird-operator-config` helm chart:
 ```yaml
-ingress:
+router:
   enabled: true
-  router:
-    enabled: true
 ```
 
 You can expose services using the annotations `netbird.io/expose: "true"` and `netbird.io/groups: "resource-group"`; see the example below:
@@ -151,39 +167,37 @@ By default, resources created by the operator will not have any access control p
 To allow the operator to manage your access control policies, configure policy bases in your `values.yaml` file.
 In this file, you can define source groups, name suffixes, and other settings related to access control policies.
 Afterward, you can tag the policies in your service annotations using the annotation `netbird.io/policy: "policy-base"`.
-See the examples `values.yaml` below:
+See the examples `values.yaml` for `netbird-operator-config` below:
 
 ```yaml
-ingress:
+router:
   enabled: true
-  router:
-    enabled: true
-  policies:
-    app-users:
-      name: App users # Required, name of policy in NetBird console
-      description: Policy for app users access # Optional
-      sourceGroups: # Required, name of groups to assign as source in Policy.
-        - app-users
-      protocols: # Optional, restricts protocols allowed to resources, defaults to ['tcp', 'udp'].
-        - tcp
-      bidirectional: false
-    k8s-admins:
-      name: App admins
-      sourceGroups:
-        - app-admins
+policies:
+  app-users:
+    name: App users # Required, name of policy in NetBird console
+    description: Policy for app users access # Optional
+    sourceGroups: # Required, name of groups to assign as source in Policy.
+      - app-users
+    protocols: # Optional, restricts protocols allowed to resources, defaults to ['tcp', 'udp'].
+      - tcp
+    bidirectional: false
+  k8s-admins:
+    name: App admins
+    sourceGroups:
+      - app-admins
 ```
 After adding the policy base and [applying the configuration](#updating-or-modifying-the-operator-configuration),
 you can use the `app-users` and `k8s-admins` bases for your services and Kubernetes API configurations.
 
 ### Linking Policy Bases to the Kubernetes API Service
-To link a policy base to the Kubernetes API, we need to update the operator configuration by adding the policy and groups to the `kubernetesAPI` key as follows:
+To link a policy base to the Kubernetes API, we need to update the operator configuration by adding the policy and groups to the `kubernetesAPI` key in `netbird-operator-config` as follows:
 ```yaml
-  kubernetesAPI:
-    enabled: false
-    groups:
-      - k8s-access
-    policies:
-      - k8s-admins
+kubernetesAPI:
+  enabled: false
+  groups:
+    - k8s-access
+  policies:
+    - k8s-admins
 ```
 After updating and [applying the configuration](#updating-or-modifying-the-operator-configuration), you should see a policy similar to the one below:
 <p>
@@ -339,6 +353,60 @@ spec:
 ```
 With this setup, other peers in your NetBird network can reach these pods using the domain `app.<NETBIRD_DOMAIN>`
 (e.g., for NetBird cloud, app.netbird.cloud). The access will be made using a DNS round-robin fashion for multiple pods.
+
+## Uninstallation
+
+### v0.2.0+
+
+To uninstall the NetBird Kubernetes Operator and its associated resources, you can use the following Helm commands:
+```shell
+helm uninstall -n netbird netbird-operator-config
+helm uninstall -n netbird kubernetes-operator
+```
+
+<Note>
+  Order of uninstallation is important; make sure to uninstall `netbird-operator-config` first to avoid orphaned resources. If you have any routing peers or policies in the cluster, uninstalling `kubernetes-operator` first may lead to issues.
+</Note>
+
+### &lt; v0.2.0
+To uninstall the NetBird Kubernetes Operator and its associated resources, you'll need to manually delete all NBRoutingPeers and NBPolicies created by the operator before uninstalling the Helm chart. You can do this using the following commands:
+```shell
+kubectl -A delete nbroutingpeers --all
+kubectl delete nbpolicies --all
+helm uninstall -n netbird kubernetes-operator-operator
+```
+
+<Note>
+  NBRoutingPeer deletion will be blocked if there are any Services with the annotation `netbird.io/expose: "true"` present in the cluster. Make sure to remove the annotation from those Services or delete the Services themselves before proceeding with the deletion of NBRoutingPeers.
+</Note>
+
+<Note>
+  Make sure to delete all NBRoutingPeers and NBPolicies before uninstalling the Helm chart to avoid orphaned resources.
+</Note>
+
+## Upgrade Notes
+
+### Upgrading from Helm Chart v0.1.0 to v0.2.0 and above
+Starting from version v0.2.0, the NetBird Kubernetes Operator Helm chart has been split into two separate charts:
+- `kubernetes-operator`: This chart contains the core operator functionality.
+- `netbird-operator-config`: This chart is responsible for configuring the NetBird operator, including routing peers and policies.
+
+The configuration files responsible for creating NBRoutingPeers and NBPolicies have been moved to the `netbird-operator-config` chart, allowing for easier uninstallation of the operator without affecting existing routing peers and policies, as well as uninstalling configuration with a proper cleanup.
+
+During Helm versions v0.2.x, `kubernetes-operator` chart will still install NBRoutingPeers and NBPolicies if they are defined in the `values.yaml` file. However, this behavior will be deprecated in future releases. It is recommended to migrate your configuration to the `netbird-operator-config` chart to ensure compatibility with future updates.
+
+You can migrate to the new chart by following these steps:
+1. Create a new `values.yaml` file for the `netbird-operator-config`
+2. Move the routing peer and policy configurations from your existing `values.yaml` file to the new file.
+3. Install or upgrade the `netbird-operator-config` chart using Helm with the new `values.yaml` file using the `--take-ownership` flag.
+```shell
+helm install -f values.yaml -n netbird netbird-operator-config netbirdio/netbird-operator-config --take-ownership
+```
+4. Remove routing peer and policy configurations from the `kubernetes-operator` `values.yaml` file to avoid duplication.
+5. Upgrade the `kubernetes-operator` chart using Helm with the updated `values.yaml` file.
+```shell
+helm upgrade -f values.yaml -n netbird netbird-operator netbirdio/kubernetes-operator
+```
 
 ## Get started
 <p float="center" >
