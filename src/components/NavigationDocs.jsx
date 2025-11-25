@@ -167,7 +167,8 @@ export const docsNavigation = [
                     href: '/manage/team/idp-sync',
                     isOpen: false,
                     links: [
-                        { title: 'Microsoft Entra ID', href: '/manage/team/idp-sync/microsoft-entra-id-sync' },
+                        { title: 'Microsoft Entra ID (API)', href: '/manage/team/idp-sync/microsoft-entra-id-sync' },
+                        { title: 'Microsoft Entra ID (SCIM)', href: '/manage/team/idp-sync/microsoft-entra-id-scim-sync' },
                         { title: 'Okta', href: '/manage/team/idp-sync/okta-sync' },
                         { title: 'Google Workspace', href: '/manage/team/idp-sync/google-workspace-sync'},
                         { title: 'JumpCloud', href: '/manage/team/idp-sync/jumpcloud-sync'},
