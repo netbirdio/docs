@@ -182,6 +182,11 @@ const nextConfig = {
                 permanent: true,
             },
             {
+                source: '/how-to/installation/mobile',
+                destination: '/get-started/install',
+                permanent: true,
+            },
+            {
                 source: '/how-to/installation/pfsense',
                 destination: '/get-started/install/pfsense',
                 permanent: true,
