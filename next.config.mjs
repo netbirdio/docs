@@ -178,7 +178,7 @@ const nextConfig = {
             },
             {
                 source: '/how-to/installation/mobile',
-                destination: '/get-started/install/mobile',
+                destination: '/get-started/install',
                 permanent: true,
             },
             {
