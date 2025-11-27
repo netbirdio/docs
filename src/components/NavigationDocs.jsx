@@ -272,6 +272,7 @@ export const docsNavigation = [
     {
      title: 'USE CASES',
      links: [
+         { title: 'Site-to-Site and Site-to-VPN', href: '/use-cases/setup-site-to-site-access' },
          { title: 'Serverless and NetBird', href: '/use-cases/netbird-on-faas' },
          { title: 'Routing peers and Kubernetes', href: '/use-cases/routing-peers-and-kubernetes'},
          { title: 'NetBird Client on AWS ECS', href: '/use-cases/examples'},
