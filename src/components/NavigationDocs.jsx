@@ -210,10 +210,10 @@ export const docsNavigation = [
              title: 'Settings',
              isOpen: false,
              links: [
-                 {title: 'Authentication', href: '/how-to/enforce-periodic-user-authentication' },
-                 {title: 'Multi-Factor Authentication', href: '/how-to/multi-factor-authentication' },
-                 {title: 'Delete Account', href: '/how-to/delete-account' },
-                 {title: 'Plans and Billing', href: '/how-to/plans-and-billing' }
+                 {title: 'Authentication', href: '/manage/settings/enforce-periodic-user-authentication' },
+                 {title: 'Multi-Factor Authentication', href: '/manage/settings/multi-factor-authentication' },
+                 {title: 'Delete Account', href: '/manage/settings/delete-account' },
+                 {title: 'Plans and Billing', href: '/manage/settings/plans-and-billing' }
                  
              ]
          },
@@ -221,21 +221,21 @@ export const docsNavigation = [
              title: 'Integrations',
              isOpen: false,
              links: [
-                 {title: 'Enable Post Quantum Cryptography', href: '/how-to/enable-post-quantum-cryptography' },
+                 {title: 'Enable Post Quantum Cryptography', href: '/manage/integrations/enable-post-quantum-cryptography' },
                  {
                      title: 'MDM for Deployment',
                      isOpen: true,
                      links: [
-                         {title: 'Deploy with Jamf Pro', href: '/how-to/jamf-pro-netbird-integration' },
-                         {title: 'Deploy with Kandji', href: '/how-to/kandji-netbird-integration' },
-                         {title: 'Deploy with Intune', href: '/how-to/intune-netbird-integration' },
+                         {title: 'Deploy with Jamf Pro', href: '/manage/integrations/mdm-deployment/jamf-pro-netbird-integration' },
+                         {title: 'Deploy with Kandji', href: '/manage/integrations/mdm-deployment/kandji-netbird-integration' },
+                         {title: 'Deploy with Intune', href: '/manage/integrations/mdm-deployment/intune-netbird-integration' },
                      ]
                  },
                  {
                      title: 'Kubernetes',
                      isOpen: true,
                      links: [
-                         {title: 'Operator', href: '/how-to/kubernetes-operator' },
+                         {title: 'Operator', href: '/manage/integrations/kubernetes' },
                      ]
                  },
              ]
@@ -245,7 +245,7 @@ export const docsNavigation = [
                 title: 'Public API',
                 isOpen: false,
                 links: [
-                    { title: 'Access Public API', href: '/how-to/access-netbird-public-api' },
+                    { title: 'Access Public API', href: '/manage/public-api' },
 
                 ]
             },
@@ -254,8 +254,8 @@ export const docsNavigation = [
                 title: 'For Partners',
                 isOpen: false,
                 links: [
-                    { title: 'Managed Service Providers', href: '/how-to/msp-portal' },
-                    { title: 'Acronis NetBird integration', href: '/how-to/acronis-netbird-integration' },
+                    { title: 'Managed Service Providers', href: '/manage/for-partners/msp-portal' },
+                    { title: 'Acronis NetBird integration', href: '/manage/for-partners/acronis-integration' },
 
                 ]
             },
@@ -265,7 +265,7 @@ export const docsNavigation = [
         {
      title: 'CLIENT',
      links: [
-         { title: 'Profiles', href: '/how-to/profiles' },
+         { title: 'Profiles', href: '/client/profiles' },
      ],
  
  },
@@ -301,8 +301,8 @@ export const docsNavigation = [
     {
      title: 'GET MORE HELP',
      links: [
-         { title: 'Troubleshooting client issues', href: '/how-to/troubleshooting-client' },
-         { title: 'Report bugs and issues', href: '/how-to/report-bug-issues' },
+         { title: 'Troubleshooting client issues', href: '/help/troubleshooting-client' },
+         { title: 'Report bugs and issues', href: '/help/report-bug-issues' },
  
      ],
      

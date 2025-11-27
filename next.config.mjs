@@ -36,22 +36,17 @@ const nextConfig = {
             },
             {
                 source: '/docs/getting-started/installation',
-                destination: '/how-to/getting-started#installation',
+                destination: '/get-started/install',
                 permanent: true,
             },
             {
                 source: '/docs/overview/personal-access-tokens',
-                destination: '/how-to/access-netbird-public-api',
-                permanent: true,
-            },
-            {
-                source: '/docs/overview/personal-access-tokens',
-                destination: '/how-to/access-netbird-public-api',
+                destination: '/manage/public-api',
                 permanent: true,
             },
             {
                 source: '/docs/overview/acls',
-                destination: '/how-to/manage-network-access',
+                destination: '/manage/access-control/manage-network-access',
                 permanent: true,
             },
             {
@@ -81,12 +76,12 @@ const nextConfig = {
             },
             {
                 source: '/docs/how-to-guides/activity-monitoring',
-                destination: '/how-to/monitor-system-and-network-activity',
+                destination: '/manage/activity/traffic-events-logging',
                 permanent: true,
             },
             {
                 source: '/docs/how-to-guides/periodic-authentication',
-                destination: '/how-to/enforce-periodic-user-authentication',
+                destination: '/manage/settings/enforce-periodic-user-authentication',
                 permanent: true,
             },
             {
@@ -430,6 +425,87 @@ const nextConfig = {
             {
                 source: '/how-to/keycloak-sync',
                 destination: '/manage/team/idp-sync/keycloak-sync',
+                permanent: true,
+            },
+            // documentation redirects for settings
+            {
+                source: '/how-to/enforce-periodic-user-authentication',
+                destination: '/manage/settings/enforce-periodic-user-authentication',
+                permanent: true,
+            },
+            {
+                source: '/how-to/multi-factor-authentication',
+                destination: '/manage/settings/multi-factor-authentication',
+                permanent: true,
+            },
+            {
+                source: '/how-to/delete-account',
+                destination: '/manage/settings/delete-account',
+                permanent: true,
+            },
+            {
+                source: '/how-to/plans-and-billing',
+                destination: '/manage/settings/plans-and-billing',
+                permanent: true,
+            },
+            // documentation redirects for integrations
+            {
+                source: '/how-to/enable-post-quantum-cryptography',
+                destination: '/manage/integrations/enable-post-quantum-cryptography',
+                permanent: true,
+            },
+            {
+                source: '/how-to/jamf-pro-netbird-integration',
+                destination: '/manage/integrations/mdm-deployment/jamf-pro-netbird-integration',
+                permanent: true,
+            },
+            {
+                source: '/how-to/kandji-netbird-integration',
+                destination: '/manage/integrations/mdm-deployment/kandji-netbird-integration',
+                permanent: true,
+            },
+            {
+                source: '/how-to/intune-netbird-integration',
+                destination: '/manage/integrations/mdm-deployment/intune-netbird-integration',
+                permanent: true,
+            },
+            {
+                source: '/how-to/kubernetes-operator',
+                destination: '/manage/integrations/kubernetes',
+                permanent: true,
+            },
+            // documentation redirects for public-api
+            {
+                source: '/how-to/access-netbird-public-api',
+                destination: '/manage/public-api',
+                permanent: true,
+            },
+            // documentation redirects for for-partners
+            {
+                source: '/how-to/msp-portal',
+                destination: '/manage/for-partners/msp-portal',
+                permanent: true,
+            },
+            {
+                source: '/how-to/acronis-netbird-integration',
+                destination: '/manage/for-partners/acronis-integration',
+                permanent: true,
+            },
+            // documentation redirects for client
+            {
+                source: '/how-to/profiles',
+                destination: '/client/profiles',
+                permanent: true,
+            },
+            // documentation redirects for help
+            {
+                source: '/how-to/troubleshooting-client',
+                destination: '/help/troubleshooting-client',
+                permanent: true,
+            },
+            {
+                source: '/how-to/report-bug-issues',
+                destination: '/help/report-bug-issues',
                 permanent: true,
             },
         ]
