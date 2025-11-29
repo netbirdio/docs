@@ -184,6 +184,12 @@ export const docsNavigation = [
                         title: 'Single Sign-On',
                         href: '/manage/team/single-sign-on',
                         isOpen: false,
+                        links: [
+                            { title: 'Authentik', href: '/manage/team/single-sign-on/authentik' },
+                            { title: 'Keycloak', href: '/manage/team/single-sign-on/keycloak' },
+                            { title: 'Auth0', href: '/manage/team/single-sign-on/auth0' },
+                            { title: 'JumpCloud', href: '/manage/team/single-sign-on/jumpcloud' },
+                        ]
                     },
                 ]
             },
