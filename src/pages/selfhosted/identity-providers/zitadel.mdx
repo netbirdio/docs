@@ -1,0 +1,173 @@
+import {Note} from "@/components/mdx";
+
+# Zitadel with NetBird Self-Hosted
+
+This guide is a part of the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide) and explains how to integrate
+**self-hosted** NetBird with [Zitadel](https://zitadel.com).
+
+<Note>
+    If you prefer not to self-host an Identity and Access Management solution, then you could use the managed alternative
+    [Zitadel Cloud](https://zitadel.com/).
+</Note>
+
+## Step 1. Create and configure Zitadel application
+In this step, we will create and configure NetBird application in zitadel.
+
+Create new zitadel project
+- Navigate to zitadel console
+- Click `Projects` at the top menu, then click `Create New Project` to create a new project
+- Fill in the form with the following values and click `Continue`
+- Name: `NETBIRD`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/zitadel-new-project.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+Create new zitadel application
+- Click `Projects` in the top menu and select `NETBIRD` project from the list
+- Click `New` in `APPLICATIONS` section to create a new application
+- Fill in the form with the following values and click `Continue`
+- Name: `netbird`
+- TYPE OF APPLICATION: `User Agent`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/zitadel-new-application.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Fill in the form with the following values and click `Continue`
+- Authentication Method: `PKCE`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/zitadel-new-application-auth.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Fill in the form with the following values and click `Continue`
+- Redirect URIs: `https://<domain>/auth` and click `+`
+- Redirect URIs: `https://<domain>/silent-auth` and click `+`
+- Redirect URIs: `http://localhost:53000` and click `+`
+- Post Logout URIs: `https://<domain>/` and click `+`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/zitadel-new-application-uri.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Verify applications details and Click `Create` and then click `Close`
+- Under `Grant Types` select `Authorization Code`, `Device Code` and `Refresh Token` and click `save`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/zitadel-new-application-overview.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Copy `Client ID` will be used later in the `setup.env`
+
+## Step 2: Application Token Configuration
+
+To configure `netbird` application token you need to:
+
+- Click `Projects` in the top menu and select `NETBIRD` project from the list
+- Select `netbird` application from `APPLICATIONS` section
+- Click `Token Settings` in the left menu
+- Fill in the form with the following values:
+- Auth Token Type: `JWT`
+- Check `Add user roles to the access token` checkbox
+- Click `Save`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/zitadel-token-settings.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+## Step 3: Application Redirect Configuration
+
+<Note>
+    This step is intended for setup running in development mode with no SSL
+</Note>
+
+To configure `netbird` application redirect you need to:
+
+- Click `Projects` in the top menu and select `NETBIRD` project from the list
+- Select `netbird` application from `APPLICATIONS` section
+- Click `Redirect Settings` in the left menu
+- Fill in the form with the following values:
+- Toggle `Development Mode`
+- Click `Save`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/zitadel-redirect-settings.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+## Step 4: Create a Service User
+
+In this step we will create a `netbird` service user.
+
+- Click `Users` in the top menu
+- Select `Service Users` tab
+- Click `New`
+- Fill in the form with the following values:
+- User Name: `netbird`
+- Name: `netbird`
+- Description: `Netbird Service User`
+- Access Token Type: `JWT`
+- Click `Create`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/zitadel-create-user.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+In this step we will generate `ClientSecret` for the `netbird` service user.
+
+- Click `Actions` in the top right corner and click `Generate Client Secret`
+- Copy `ClientSecret` from the dialog will be used later to set `NETBIRD_IDP_MGMT_CLIENT_SECRET` in the `setup.env`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/zitadel-service-user-secret.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+## Step 5: Grant manage-users role to netbird service user
+
+In this step we will grant `Org User Manager` role to `netbird` service user.
+
+- Click `Organization` in the top menu
+- Click `+` in the top right corner
+- Search for `netbird` service user
+- Check `Org User Manager` checkbox
+- Click `Add`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/zitadel-service-account-role.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+Your authority OIDC configuration will be available under:
+
+```bash
+https://<YOUR_ZITADEL_HOST_AND_PORT>/.well-known/openid-configuration
+```
+
+:::caution
+Double-check if the endpoint returns a JSON response by calling it from your browser.
+:::
+
+- Set properties in the `setup.env` file:
+```json
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<YOUR_ZITADEL_HOST_AND_PORT>/.well-known/openid-configuration"
+NETBIRD_USE_AUTH0=false
+NETBIRD_AUTH_CLIENT_ID="<CLIENT_ID>"
+NETBIRD_AUTH_SUPPORTED_SCOPES="openid profile email offline_access api"
+NETBIRD_AUTH_AUDIENCE="<CLIENT_ID>"
+NETBIRD_AUTH_REDIRECT_URI="/auth"
+NETBIRD_AUTH_SILENT_REDIRECT_URI="/silent-auth"
+
+NETBIRD_AUTH_DEVICE_AUTH_PROVIDER="hosted"
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<CLIENT_ID>"
+NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE="<CLIENT_ID>"
+
+NETBIRD_MGMT_IDP="zitadel"
+NETBIRD_IDP_MGMT_CLIENT_ID="netbird"
+NETBIRD_IDP_MGMT_CLIENT_SECRET="<CLIENT_SECRET>"
+NETBIRD_IDP_MGMT_EXTRA_MANAGEMENT_ENDPOINT="https://<YOUR_ZITADEL_HOST_AND_PORT>/management/v1"
+NETBIRD_MGMT_IDP_SIGNKEY_REFRESH=true
+
+
+```
+
+## Step 6: Continue with the NetBird Self-hosting Guide
+You've configured all required resources in Zitadel. You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).

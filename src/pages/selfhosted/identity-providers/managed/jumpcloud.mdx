@@ -1,0 +1,121 @@
+import {Note} from "@/components/mdx";
+
+# JumpCloud with NetBird Self-Hosted
+
+This guide is a part of the [NetBird Self-hosting Guide](/getting-started/self-hosting) and explains how to integrate 
+**self-hosted** NetBird with [JumpCloud](https://jumpcloud.com/).
+
+Before you start creating and configuring an JumpCloud application, ensure that you have the following:
+- An JumpCloud account: To create application, you must have an JumpCloud account. If you don't have one, sign up at https://jumpcloud.com/.
+- User account with admin permissions: You must have an JumpCloud account with the admin permissions. If you don't have the required permissions, ask your administrator to grant them to you.
+
+
+## Step 1: Create and configure SSO application
+
+- Navigate to to [Admin Portal](https://console.jumpcloud.com/) page
+- Click `SSO Applications` on the left menu under `USER AUTHENTICATION` section
+- Click `Add New Application` and select `Custom Application`
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-new-sso-app.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+- On the `Which application would you like to integrate` screen, confirm that you've selected `Custom application` and click `Next`
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-new-sso-app-confirm-selection.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+- On the `Select the features you would like to enable` screen, select `Manage Single Sign-On (SSO)` and check `Configure SSO with OIDC` and click `Next`
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-new-sso-app-features.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+- On the `Enter General info` screen, add `NetBird` as `Display Label` and click `Next`
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-new-sso-app-general-info.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+- On the confirmation screen, review the information and click on `Configure Application` to proceed
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-new-sso-app-confirmation.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+- On the `New Application` screen, click on the SSO tab and enter the following values:
+    - Under `Endpoint Configuration` section:
+      - Redirect URIs: `https://<domain>/silent-auth`, `https://<domain>/auth` and `http://localhost:53000`
+      - Client Authentication Type: `Public (None PKCE)`
+      - Login URL: `https://<domain>`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-sso-configuration.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+    - Under `Attribute Mapping (optional)` section:
+        - Standard Scopes: `Email`, `Profile`
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-sso-atributes-configuration.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+- Click on the `User Groups` tab and select the user groups that can access this application
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-user-groups.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+- Click `Activate`
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-oidc-app.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+- Take note of `Client ID`, will be used later
+
+## Step 2: Create an account administrator for integration
+The NetBird management system requires an API token to get user information from JumpCloud. This API is bound to an administrator user configured in JumpCloud's admin portal.
+
+The following steps will assume that you are creating a new account. If you already have a user for this purpose, confirm it has the required role described below and skip to Step 3 in this guide.
+- Navigate to to [Admin Portal](https://console.jumpcloud.com/) page
+- Go to account `Settings` and click on the add button (+)
+- On the `Create New Administrator` window, enter the following values:
+    - First Name: `NetBird`
+    - Last Name: `Integration`
+    - Administrator Email: `netbird-user@<yourdomain>` # this email will be used to receive the login instructions
+    - Role: `Read Only`
+    - Click `Save`
+<Note>
+    Optional
+
+    NetBird offers the ability to automatically delete a user from the JumpCloud side when the user is deleted from the associated account.
+    To enable this functionality, simply include the `--user-delete-from-idp` flag in the management startup command within your Docker Compose configuration. If you choose to enable this feature,
+    please ensure that you assign the `Help Desk` role to the `NetBird Integration` user following the steps outlined above.
+</Note>
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-add-admin-user.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+After following the steps above, you will receive the login instructions for the newly created user in the email configured. Please follow the instructions to set a password for the user.
+
+## Step 3: Generate api token
+In this step, we will generate netbird api token in jumpcloud for authorizing calls to user api.
+
+- Navigate to to [Admin Portal](https://console.jumpcloud.com/) page
+- Login with the user created in the previous step or with an existing user
+- Click on the account initials displayed at the top-right and select `My API Key` from the drop-down
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-profile.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+- If there is no API key generated, click on `Generate New API Key` button
+- Take note of your api token displayed 
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-api-key-generation.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Set properties in the `setup.env` file:
+```json
+NETBIRD_DOMAIN="<YOUR_DOMAIN>"
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://oauth.id.jumpcloud.com/.well-known/openid-configuration"
+NETBIRD_USE_AUTH0=false
+NETBIRD_DASH_AUTH_USE_AUDIENCE=false
+NETBIRD_AUTH_AUDIENCE="<CLIENT_ID>"
+NETBIRD_AUTH_SUPPORTED_SCOPES="openid profile email offline_access"
+NETBIRD_AUTH_CLIENT_ID="<CLIENT_ID>"
+NETBIRD_AUTH_REDIRECT_URI="/auth"
+NETBIRD_AUTH_SILENT_REDIRECT_URI="/silent-auth"
+NETBIRD_TOKEN_SOURCE="idToken"
+
+NETBIRD_AUTH_DEVICE_AUTH_PROVIDER="none"
+
+NETBIRD_MGMT_IDP="jumpcloud"
+NETBIRD_IDP_MGMT_EXTRA_API_TOKEN="<API_TOKEN>"
+```
+
+## Step 4: Continue with the NetBird Self-hosting Guide
+You've configured all required resources in JumpCloud. You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-5-run-configuration-script).
