@@ -118,6 +118,7 @@ export const docsNavigation = [
                             { title: 'CrowdStrike Falcon', href: '/manage/access-control/endpoint-detection-and-response/crowdstrike-edr' },
                             { title: 'Microsoft Intune', href: '/manage/access-control/endpoint-detection-and-response/intune-mdm' },
                             { title: 'SentinelOne Singularity', href: '/manage/access-control/endpoint-detection-and-response/sentinelone-edr' },
+                            { title: 'Huntress', href: '/manage/access-control/endpoint-detection-and-response/huntress-edr' },
                         ]
                     },
                 ]
