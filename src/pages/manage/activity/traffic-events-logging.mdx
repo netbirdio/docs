@@ -1,0 +1,361 @@
+# Traffic Events Logging
+
+<Note>
+This feature is available only in the NetBird cloud under the [Business plan](https://www.netbird.io/pricing?utm_source=docs&utm_content=traffic-events).
+This is feature is in Beta and may change over time — including how data is collected and reported.
+To use this feature, make sure you're running NetBird client version 0.39 or higher.
+</Note>
+
+
+The traffic events logging functionality enables comprehensive monitoring and analysis of connections across your infrastructure.
+It captures network activity, including peer-to-peer, site-to-site, peer-to-resource, and other network traffic events.
+
+It provides detailed visibility into connections and network traffic flow, helping to answer key questions such as who initiated
+the connection, what resource was accessed, when it happened, where it originated, and why it was allowed. By enhancing
+network monitoring capabilities, it strengthens security measures and delivers actionable operational insights, empowering
+you to better manage and secure your environment.
+
+## How Traffic Events Logging Works
+
+NetBird offers flexibility as a peer-to-peer (p2p) overlay network and a remote network access solution. You can use NetBird to connect
+machines directly (p2p) when running the NetBird client on each machine. You can also use NetBird to organize remote employee access
+to internal networks like VPCs, office networks, and internal services without running the NetBird client on the remote resources using the [NetBird Networks](/manage/networks) feature.
+The way you use NetBird influences the way traffic events are captured and logged. Below are the two main scenarios for traffic events logging
+that describe how NetBird logs traffic events for different types of connections.
+
+### Peer-to-Peer Connections
+
+When two peers are connected directly (p2p), NetBird captures and logs the traffic events for that connection on both peers.
+For example, if a user accessed an internal CRM server from their laptop via a browser and port 443, NetBird would log the traffic events for that
+connection on both the user's machine and the CRM server. If the connection was blocked, such as when there is a
+[policy](/manage/access-control/manage-network-access#managing-policies) that restricts access to the CRM server,
+NetBird would log the blocked event on the peer that refused the connection.
+
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-traffic-events.png" alt="traffic-events-p2p-diagram" className="imagewrapper-big"/>
+</p>
+
+#### Successful P2P Connection Events
+
+NetBird helps you better understand connection flows by correlating related events and presenting them in a clear, organized manner.
+
+For example, in a successful peer-to-peer connection scenario, a user initiates a connection from the peer `Alice` to the peer `server`.
+This is illustrated in the screenshot below.
+
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-successful-connection.png" alt="traffic-events-p2p-successful-connection" className="imagewrapper-big"/>
+</p>
+
+You'll see two grouped sets of events, one from each peer (source and destination). The source peer `Alice` initiates the
+connection and then terminates it after a few seconds.
+
+On the other side, the destination peer `server` receives the connection request and also terminates it shortly afterward,
+following the disconnection from `Alice`. Since `server` allows the connection, the log includes the policy `IT Admins to Servers`
+that authorized the connection over the `ICMP` protocol.
+
+<Note>
+     Use the `P2P` filter in the table to view only peer-to-peer connection events.
+</Note>
+
+#### Blocked P2P Connections Events
+
+If a connection is refused, NetBird logs the blocked event on the peer that denies the connection, in this case, `server`.
+The initiating peer `Alice` will still report the connection attempt but won't be aware that it was blocked.
+
+In this scenario, the `IT Admins to Servers` policy is configured to allow only ping requests (`ICMP`),
+meaning all `HTTP` requests are intentionally not allowed. The screenshot below illustrates this behavior.
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-blocked-connection.png" alt="traffic-events-p2p-blocked-connection" className="imagewrapper-big"/>
+</p>
+
+### Peer-to-Network Resource Connections
+
+When a peer connects to a [network resource](/manage/networks#resources), NetBird captures and logs the traffic
+events for that connection on the peer that initiated the connection, and on the [routing peer](/manage/networks#routing-peers) that connects the peer to
+the internal network resource.
+
+A slightly modified example of the CRM server connection scenario would be if instead of running the NetBird client on the CRM server,
+you used the [NetBird Networks feature](/manage/networks) and created a network resource for the CRM server. In this case, if a user accessed an internal CRM from their laptop via a browser
+and port 443, NetBird would log the traffic events for that connection on the user's machine and the routing peer that
+routed the connection to the CRM server. If the connection was blocked, NetBird would log the blocked event on the routing peer.
+
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/routed-traffic-events.png" alt="traffic-events-routed-diagram" className="imagewrapper-big"/>
+</p>
+
+#### Successful Peer-to-Network Resource Events
+
+The screenshot below illustrates a successful connection from `Alice` to the network resource `CRM` running in the AWS VPC.
+The traffic is routed through a routing peer, which logs the connection event and reports it to the NetBird servers.
+The access is permitted by the policy `IT Admins to AWS Servers`, which allows connections over the `TCP` protocol on port `443`.
+Note the `ROUTER` column in the table, which identifies the routing peer responsible for routing to the internal network resource.
+
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/network-resource-successful-connection.png" alt="network-resource-succesful-connection" className="imagewrapper-big"/>
+</p>
+
+<Note>
+    Use the `Routed` filter in the table to view only peer-to-network resource connection events.
+</Note>
+
+#### Blocked Peer-to-Network Resource Events
+
+In the event of a blocked connection, the initiating peer logs the connection attempt, while the routing peer records the blocked event.
+The screenshot below demonstrates this behavior: the routing peer blocks a connection to the network resource `CRM` because
+the policy `IT Admins to AWS Servers` does not permit connections over the `HTTP` protocol on port `6432`.
+You can see multiple blocked events reported by the routing peer, which indicates that the initiating peer `Alice` attempted to connect multiple times
+in one TCP session, but the routing peer blocked all attempts.
+
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/network-resource-blocked-connection.png" alt="network-resource-succesful-connection" className="imagewrapper-big"/>
+</p>
+
+<Note>
+    For all the examples above, we used the `nc` command to initiate the connection to the CRM server from the peer `Alice`.
+    E.g., `nc -v crm.netbird.cloud 443`.
+</Note>
+
+## Enabling Traffic Events Logging
+
+Traffic events logging feature is disabled by default. To enable it on the NetBird dashboard, navigate to `Settings > Networks`.
+Under the Experimental section, you'll find the `Enable Traffic Events` option. Toggle the switch to enable traffic event logging.
+
+By default, traffic reporting in userspace is always enabled, providing basic logging of network interactions.
+However, packet size reporting at the kernel level is disabled by default to minimize CPU usage.
+
+<Note>
+You can optionally enable `Traffic Reporting (Kernel)` to capture additional details, such as network packet sizes,
+at the kernel level. Be aware that enabling this option may lead to higher CPU usage on the NetBird client.
+</Note>
+
+
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/traffic-events-logging-settings.png" alt="traffic-events-logging-settings" className="imagewrapper-big"/>
+</p>
+
+### Limiting Traffic Events to Specific Groups
+
+You can scope traffic events logging to only the peers that belong to specific groups.
+
+- When you select one or more groups, only peers that are members of the selected groups will report traffic events.
+- If no group is selected, logging applies to all peers in the account (default behavior).
+
+To configure this setting, navigate to `Settings > Networks` in the Experimental section, open the Group Selector under `Enable Traffic Events`
+choose the groups you want to include, and click `Save Groups`.
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/traffic-events-groups-logging-settings.png" alt="traffic-events-groups-logging-settings" className="imagewrapper-big"/>
+</p>
+
+## Log Retention
+
+While in experimental mode, logs are retained for **seven days**.
+Additionally, please note that the current API returns a maximum of **50,000 events**.
+We are actively working on expanding this limit in the coming days to support larger datasets and increased usage.
+
+## Report rate
+The events might take up to **ten minutes** to become available via API and Dashboard. For some TCP connections, the full event cycle might take longer, depending on OS settings and connection termination.
+
+## Enable Traffic Events Streaming to SIEM Systems
+
+NetBird allows you to stream traffic events directly to your Security Information and Event Management (SIEM) system in real time.
+By enabling this feature, you can seamlessly monitor and analyze NetBird network flow events within your existing SIEM infrastructure,
+enhancing your ability to detect and respond to security events.
+
+For detailed instructions on supported integrations and how to set them up, refer to the [integrations guide](/manage/activity/event-streaming).
+
+## Traffic Events Data
+
+When enabled, a NetBird peer will record metadata for each network flow that it participates in. The data collected by peers includes:
+
+* **Timestamp**: When the flow started and ended.
+* **Flow ID**: A unique identifier for the traffic event flow.
+* **Type**: The type of traffic event, such as Start, End, or Blocked.
+* **Source and Destination IP Addresses**: The IP of the peer (source) and the IP of the remote endpoint (destination). For peer-to-peer traffic,
+these will be the NetBird network IPs (e.g. 100.x.x.x addresses of each peer). For traffic to an external resource (like a private server or subnet), the destination might be an IP in that remote network.
+* **Source and Destination Ports**: The network ports used by the connection (for TCP/UDP flows).
+* **ICMP Code and Type**: For ICMP traffic, the ICMP code and type.
+* **Protocol**: The protocol of the traffic, such as TCP, UDP, or ICMP.
+* **Direction**: Whether the flow was inbound or outbound. This takes into consideration the perspective of the **peer reporting the traffic** and the NetBird interface.
+* **Volume of Data**: The amount of data transferred, measured in number of packets and bytes sent/received for the duration of the flow.
+* **Resource ID**: Network route or Networks resource ID that the flow is associated with. This is useful for identifying the routing configuration that allowed the flow. DNS route information is **available only** on the routing client.
+* **Rule ID**: The ID of the policy that allowed the flow. This is useful for identifying the access control policy that allowed the flow. This information is **available only** on the receiving side of the traffic.
+
+In addition to the data collected by the peers, the NetBird API provides additional context about the peers and resources involved in the traffic event. These details include:
+* **Peer Name**: The name of the peer.
+* **Peer ID**: The unique identifier of the peer.
+* **Resource name**: The name of the resource or network route.
+* **Policy Name**: The name of the policy that allowed the flow.
+* **User ID, name, and email**: The name and email of the user associated with the source peer.
+* **Reporter ID**: The unique identifier of the peer that reported the traffic event.
+* **Received timestamp**: The timestamp when the event was received by the NetBird servers.
+
+<details>
+<summary>API sample response</summary>
+```json
+  {
+    "destination": {
+      "address": "142.250.185.206:443",
+      "dns_label": "*.google.com",
+      "geo_location": {
+        "city_name": "",
+        "country_code": ""
+      },
+      "id": "cvco2st9q2cs73btphmg",
+      "name": "Any google.com domain",
+      "os": "",
+      "type": "DOMAIN_RESOURCE"
+    },
+    "direction": "EGRESS",
+    "flow_id": "9682d060-3b28-4fa3-8b47-98595a51bbda",
+    "icmp_code": 0,
+    "icmp_type": 0,
+    "id": "c94e398c-dbfb-4344-8c47-a731b984d86e",
+    "policy_id": "ndkslcanlksncl",
+    "policy_name": "Allow google access",
+    "protocol": 6,
+    "receive_timestamp": "2025-03-22T20:26:19.491144Z",
+    "reporter_id": "ldkfnwklenfklernl",
+    "rx_bytes": 0,
+    "rx_packets": 0,
+    "source": {
+      "address": "100.89.67.186:50229",
+      "dns_label": "macbook-pro-10-2",
+      "geo_location": {
+        "city_name": "Frankfurt",
+        "country_code": "DE"
+      },
+      "id": "ldkfnwklenfklernl",
+      "name": "MacBook-Pro-10.local",
+      "os": "Darwin",
+      "type": "PEER"
+    },
+    "timestamp": "2025-03-22T20:26:16.937522Z",
+    "tx_bytes": 64,
+    "tx_packets": 1,
+    "type": "TYPE_START",
+    "user_email": "john@example.com",
+    "user_id": "google-oauth2|xyz0123",
+    "user_name": "John Doe"
+  }
+```
+</details>
+
+## Viewing Traffic Events on the Dashboard
+There are two places where you can see the traffic events on the NetBird dashboard:
+1. **Traffic events**: Under Activity, you will find the Traffic events menu. This view shows the traffic events in a table format for all peers in your network.
+2. **Peer details**: When you click on a peer, you will see the traffic events for that peer in the Peer details view.
+
+### Filters
+You can use various filters to search and filter received events. The filters include:
+- **Peer name**: Name of the peer that is the source or destination of the traffic event
+- **Resource name**: Name of the resource or network route
+- **IP address**: Source or destination IP addresses
+- **Ports**: Source or destination ports
+- **User**: User from the peer that initiated the connection
+- **Timestamp**: Time range of the event
+- **Protocol**: ICMP,  TCP, UDP
+- **Type of event**:
+    - **P2P connection started (inbound/outbound)**: Events with started status and initiated by peers to other peers
+    - **P2P connection stopped (inbound/outbound)**: Events with stopped status and initiated by peers to other peers
+    - **P2P connection blocked (inbound/outbound)**: Events with blocked status and initiated by peers to other peers
+    - **Routed connection started (inbound/outbound)**: Events with started status and with a remote resource destination
+    - **Routed connection stopped (inbound/outbound)**: Events with stopped status and with a remote resource destination
+    - **Routed connection blocked (inbound/outbound)**: Events with blocked status and with a remote resource destination
+
+## Correlating events
+Events can be correlated by observing the traffic from both peers involved in a traffic session. Let's say you have two peers, Peer A and Peer B, and Peer A initiates a connection to Peer B. In the traffic events,
+you will see up to 4 events from these peers. If the connection was successful, you will see a started and a stopped event from Peer A and Peer B. But, if one peer blocks the connection, then you will see a started and stopped events from the initiator and
+a blocked event from the responder.
+<Note>
+ The blocked event will be available only if the destination uses the NetBird client in userspace mode.
+ This is the case for Windows and MacOs nodes. For Linux, you can enable userspace mode with the environment variable `NB_WG_KERNEL_DISABLED=true` and `NB_FORCE_USERSPACE_ROUTER=true`
+</Note>
+
+### Viewing TCP and UDP connections
+You can use source ports to correlate TCP and UDP. Below we will analyze a few examples for a connection between a user computer and a Web and FTP servers.
+
+The peer Maycons-MacBook-Pro.local initiates a connection to the Web server. The source port is `51997` and the destination port is TCP/80. The connection is successful, and the event is marked as started and stopped. See screenshot below:
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-tcp-allow.png" alt="P2P TCP Allowed" className="imagewrapper-big"/>
+</p>
+Besides the ports and protocol information, we can review the event description in the screenshot above to understand what happened. For all four events we have the following:
+- **Peer `Maycons-MacBook-Pro-2.local` requested P2P connection to Peer `webserver`**: This is the event from the perspective of the peer that initiated the connection. The sources and destination provide the IPs and ports used in the connection.
+- **Peer `webserver` received P2P connection from Peer `Maycons-MacBook-Pro-2.local`**: This is the event from the perspective of the peer that received the connection.
+- **Peer `Maycons-MacBook-Pro-2.local` stopped P2P connection to Peer `webserver`**: This is the event from the perspective of the peer that initiated the connection when the connection ended on its side.
+- **Peer `webserver` stopped P2P connection from Peer `Maycons-MacBook-Pro-2.local`**: This is the event from the perspective of the peer that received the connection when the connection has ended on its side.
+In case of the peer receiving the connection, the stopped status might arrive several minutes later, due to TCP sessions.
+
+
+The UDP connection is very similar:
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-udp-allow.png" alt="P2P UDP Allowed" className="imagewrapper-big"/>
+</p>
+<Note>
+ The UDP connection is stateless, so the stopped event will be generated right after a certain period of inactivity.
+</Note>
+
+When a connection is blocked, you may see similar entries to the following events but with a few differences:
+
+**TCP**:
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-tcp-blocked.png" alt="P2P TCP Blocked" className="imagewrapper-big"/>
+</p>
+
+**UDP**:
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-udp-blocked.png" alt="P2P UDP Blocked" className="imagewrapper-big"/>
+</p>
+Key differences:
+- There are no events that have started or stopped on the refusing side. The connection is blocked right after the request.
+- Depending on the application making a request in the initiator, you may see multiple blocked events from the receiving side of the connection due to retries:
+<Note>
+ The blocked event will be available only if the destination is using the NetBird client in userspace mode.
+ This is the case for Windows and MacOs nodes. For Linux, you can enable userspace mode with the environment variable `NB_WG_KERNEL_DISABLED=true` and `NB_FORCE_USERSPACE_ROUTER=true`
+</Note>
+
+### Viewing ICMP connections
+ICMP events are similar to TCP and UDP events. The main difference is that ICMP doesn't have ports:
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-icmp-allowed.png" alt="P2P ICMP Allowed" className="imagewrapper-big"/>
+</p>
+<Note>
+ The ICMP connection is stateless, so the stopped event will be generated right after a certain period of inactivity.
+</Note>
+### Routed events
+Routed events follow the same pattern as P2P events. The main difference is that the destination or source can be a resource or network route. Below, we have a few examples of a connection from a peer to a resource:
+
+**ICMP**:
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/routed-icmp-allowed.png" alt="Routed ICMP Allowed" className="imagewrapper-big"/>
+</p>
+**TCP**:
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/routed-tcp-allowed.png" alt="Routed TCP Allowed" className="imagewrapper-big"/>
+</p>
+Key differences:
+- The source or destination is a resource or network route.
+- On the receiver side, we will have an indication of which routing peer reported the event.
+- The source or destination identifier will be unknown on the routing peer side if the route or resource is of a DNS type.
+
+For site-2-site connections, the events will be similar to the above examples, but you will see a routing peer for each event:
+<p>
+    <img src="/docs-static/img/manage/activity/traffic-events-logging/s2s-tcp-allowed.png" alt="S2S TCP Allowed" className="imagewrapper-big"/>
+</p>
+
+## Limitations
+There are a few differences between the different WireGuard modes NetBird supports and the data captured by the NetBird client.
+| Feature | Kernel Mode | Userspace Mode | Netstack Mode |
+|:---------:|:-------------:|:----------------:|:---------------:|
+| Blocked traffic event | No | Yes | Yes |
+| Site-2-Site events | No | Yes | Yes |
+| Rule IDs | No | Yes | Yes |
+| Allowed rule ID for routed events | Yes | No | No |
+| Byte counters for routed events | Yes | No | No |
+
+We are actively working to improve the data captured by the NetBird client in Kernel and userspace modes to align with customers' expectations.
+
+## Conclusion
+Traffic events logging provides a powerful tool for monitoring and analyzing network traffic across your infrastructure.
+Enabling this feature can provide valuable insights into network activity, enhance security measures, and improve operational efficiency.
+The ability to correlate events, view detailed traffic data, and stream events to SIEM systems empowers you to make informed decisions
+and take proactive steps to protect your network environment.

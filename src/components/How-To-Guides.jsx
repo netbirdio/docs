@@ -3,7 +3,7 @@ import { Heading } from '@/components/Heading'
 
 const howToGuides = [
   {
-    href: '/how-to/getting-started',
+    href: '/get-started',
     name: 'Quickstart guide',
     description: 'Start using NetBird in under 5 minutes.',
   },
@@ -14,29 +14,29 @@ const howToGuides = [
         'Learn how to use access controls to manage access to your machines.',
   },
   {
-    href: '/how-to/add-users-to-your-network',
+    href: '/manage/team/add-users-to-your-network',
     name: 'Add users to your network',
-    description: 'learn how to add team members to your NetBird network.',
+    description: 'Learn how to add team members to your NetBird network.',
   },
   {
-    href: '/how-to/routing-traffic-to-private-networks',
+    href: '/manage/network-routes/routing-traffic-to-private-networks',
     name: 'Route traffic to private networks',
     description:
       'Learn how to provide access to LANs, VPS, and corporate private networks.',
   },
   {
-    href: '/how-to/configuring-default-routes-for-internet-traffic',
+    href: '/manage/network-routes/configuring-default-routes-for-internet-traffic',
     name: 'Configure default routes and traffic for the Internet',
     description: 'Understand how to set up your network for accessing the internet through default routes, also known as "exit nodes".',
   },
   {
-    href: '/how-to/monitor-system-and-network-activity',
+    href: '/manage/activity/traffic-events-logging',
     name: 'Log and monitor network activity',
     description:
       'Learn how to keep track of system and network activities in your account.',
   },
   {
-    href: '/how-to/manage-dns-in-your-network',
+    href: '/manage/dns',
     name: 'Manage DNS in your network',
     description:
         'Learn how to configure name servers in your private network.',

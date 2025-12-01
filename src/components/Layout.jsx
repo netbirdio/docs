@@ -15,6 +15,8 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import { faPaperclip } from '@fortawesome/free-solid-svg-icons';
 import { faGithub } from '@fortawesome/free-brands-svg-icons';
 import {toast} from "react-toastify";
+import {AnnouncementBanner} from "@/components/announcement-banner/AnnouncementBanner";
+import {useAnnouncements} from "@/components/announcement-banner/AnnouncementBannerProvider";
 
 const navigation = [
   {
@@ -166,13 +168,20 @@ export function Layout({ children, title, tableOfContents }) {
     return section.children.findIndex(isActive) > -1
   }
 
+  let { bannerHeight } = useAnnouncements()
+
   return (
     <>
+      <AnnouncementBanner />
       <HeroPattern/>
-      <div className="relative mx-auto flex max-w-8xl sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80">
-        <motion.header
-            layoutScroll
+      <div
+        className="relative mx-auto flex max-w-8xl sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80"
+        style={{ paddingTop: bannerHeight }}
+      >
+        <header
+            // layoutScroll
             className="contents lg:pointer-events-none lg:fixed lg:inset-0 lg:z-40 lg:flex"
+            style={{ top: bannerHeight }}
         >
           <div className="contents lg:pointer-events-auto lg:block lg:w-72 lg:overflow-y-auto lg:border-r lg:border-zinc-900/10 lg:px-6 lg:pb-8 lg:pt-4 lg:dark:border-white/10 xl:w-80">
             <div className="hidden lg:flex">
@@ -183,14 +192,17 @@ export function Layout({ children, title, tableOfContents }) {
             <Header />
             {router.route.startsWith("/ipa") ? <NavigationAPI className="hidden lg:mt-10 lg:block" tableOfContents={tableOfContents} /> : <NavigationDocs className="hidden lg:mt-10 lg:block" />}
           </div>
-        </motion.header>
+        </header>
         <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-5">
           <main className="py-16">
             <Prose as="article">{children}</Prose>
           </main>
           <Footer />
         </div>
-        {!router.route.startsWith("/ipa/resources") && <div className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6 pl-12">
+        {!router.route.startsWith("/ipa/resources") && <div
+            className="hidden xl:sticky xl:top-[4.5rem] xl:-mr-6 xl:block xl:h-[calc(100vh-4.5rem)] xl:flex-none xl:overflow-y-auto xl:py-16 xl:pr-6 pl-12"
+            style={{ top: `calc(${bannerHeight}px + 4.5rem)` }}
+        >
           <ol role="list" className="mt-4 space-y-3 text-sm mb-8">
             <li key="copy-link">
               <button

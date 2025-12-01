@@ -13,6 +13,7 @@ import {slugifyWithCounter} from "@sindresorhus/slugify";
 import {ToastContainer} from "react-toastify";
 import 'react-toastify/dist/ReactToastify.css';
 import {dom} from "@fortawesome/fontawesome-svg-core";
+import {AnnouncementBannerProvider} from "@/components/announcement-banner/AnnouncementBannerProvider";
 
 function onRouteChange() {
   useMobileNavigationStore.getState().close()
@@ -33,11 +34,13 @@ export default function App({ Component, pageProps }) {
         }
         <meta name="description" content={pageProps.description} />
       </Head>
-      <MDXProvider components={mdxComponents}>
-          <Layout title={pageProps.title?.toString()} tableOfContents={tableOfContents} {...pageProps}>
-              <Component {...pageProps} />
-          </Layout>
-      </MDXProvider>
+      <AnnouncementBannerProvider>
+          <MDXProvider components={mdxComponents}>
+              <Layout title={pageProps.title?.toString()} tableOfContents={tableOfContents} {...pageProps}>
+                  <Component {...pageProps} />
+              </Layout>
+          </MDXProvider>
+      </AnnouncementBannerProvider>
       <ToastContainer />
     </>
   )
