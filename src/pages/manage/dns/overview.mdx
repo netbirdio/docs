@@ -1,0 +1,301 @@
+export const description = 'Understanding how DNS works in NetBird'
+import {Note} from "@/components/mdx"
+
+
+# DNS in NetBird
+
+NetBird provides intelligent DNS management to help your peers resolve domain names within your private network and control how they access external domains.
+
+## DNS Fundamentals
+
+Before diving into NetBird's DNS features, let's cover the basics you'll need to understand.
+
+### What is DNS?
+
+DNS (Domain Name System) is like a phone book for the internet. When you type `example.com`, DNS translates that human-readable name into an IP address like `93.184.216.34` that computers use to communicate.
+
+### DNS Resolution Flow
+
+Here's what happens when a device looks up a domain:
+
+```
+1. Application requests "internal-app.company.com"
+   ↓
+2. Operating System checks local DNS cache
+   ↓
+3. If not cached, queries configured DNS server
+   ↓
+4. DNS server returns IP address (or forwards query)
+   ↓
+5. Application connects to the IP address
+```
+
+### Key DNS Concepts for NetBird
+
+<Properties>
+  <Property name="Nameserver">
+    A server that answers DNS queries. NetBird lets you configure which nameservers your peers use.
+  </Property>
+  
+  <Property name="DNS Resolver">
+    The component that performs DNS lookups. NetBird runs a local DNS resolver on each peer.
+  </Property>
+  
+  <Property name="Match Domains">
+    Specific domains that should be resolved by a particular nameserver (e.g., `*.company.local`).
+  </Property>
+  
+  <Property name="Primary Nameserver">
+    The default nameserver that handles all domains not matched by specific rules. In the UI, this is configured by leaving the match domains empty.
+  </Property>
+  
+  <Property name="Search Domains">
+    Domain suffixes automatically appended to short hostnames. If you configure `company.local` as a search domain, typing `server1` will try `server1.company.local`. Available in NetBird v0.24.0 or later.
+  </Property>
+</Properties>
+
+### NetBird Automatic Domain Names
+
+Starting with [v0.11.0](https://github.com/netbirdio/netbird/releases), NetBird automatically assigns a domain name to each peer in a private `netbird.cloud` space. This means you can access your machines using friendly names like `my-server.netbird.cloud` instead of remembering IP addresses like `100.128.185.34`.
+
+<Note>
+This feature is available on both NetBird Cloud and self-hosted versions running v0.11.0 or later.
+</Note>
+
+## How NetBird Handles DNS
+
+NetBird gives you centralized control over DNS resolution for all peers in your network, solving common challenges with split-horizon DNS, private networks, and secure name resolution.
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────┐
+│           NetBird Management Service            │
+│                                                 │
+│  • Assigns NetBird IPs (DHCP for WireGuard)     │
+│  • Stores nameserver configurations             │
+│  • Distributes DNS settings to peers            │
+│  • Manages which groups use which nameservers   │
+└─────────────────────────────────────────────────┘
+                        ↓
+          (Configuration Distribution)
+                        ↓
+┌─────────────────────────────────────────────────┐
+│              NetBird Peer (Client)              │
+│                                                 │
+│  • NetBird IP: 100.0.0.x (from management)      │
+│  • LAN IP: 192.168.1.x (from LAN DHCP)          │
+│                                                 │
+│  ┌───────────────────────────────────────────┐  │
+│  │   Local DNS Resolver (100.0.0.x:53)       │  │
+│  │                                           │  │
+│  │  • Receives queries from applications     │  │
+│  │  • Routes based on match domains          │  │
+│  │  • Caches responses                       │  │
+│  └───────────────────────────────────────────┘  │
+│                    ↓        ↓        ↓          │
+│       ┌────────────┴────┬───┴──────┬─┴───────┐  │
+│       │                 │          │         │  │ 
+│   Internal NS      Cloud NS    Primary NS   │   │
+│   (*.local)        (*.aws)     (everything) │   │
+└─────────────────────────────────────────────────┘
+```
+
+#### NetBird's DHCP Role
+
+The NetBird management service acts as a DHCP server **only for the NetBird network**, not your LAN:
+
+- **NetBird IPs**: Management assigns each peer a unique IP from the `100.0.0.0/8` range (e.g., `100.121.255.254`)
+- **LAN IPs remain unchanged**: Your local network DHCP continues to work normally
+- **Two networks, two IPs**: Each peer has both a LAN IP (e.g., `192.168.1.100`) and a NetBird IP (e.g., `100.121.0.5`)
+
+NetBird creates a **parallel overlay network** on top of your existing network infrastructure. Your LAN DHCP server is unaffected.
+
+### Client-Side: How Peers Resolve DNS
+
+When nameservers are configured on the management service and distributed to a peer, NetBird takes control of DNS resolution:
+
+#### 1. **Local DNS Resolver Setup**
+
+Once a peer receives nameserver configuration from management, NetBird configures the operating system to use its built-in DNS resolver:
+
+- **Linux**: NetBird modifies `/etc/resolv.conf` or uses `systemd-resolved`
+- **macOS**: NetBird modifies `/etc/resolv.conf` or uses system APIs to set DNS
+- **Windows**: NetBird sets the network adapter's DNS server to local NetBird resolver's IP
+- **Mobile**: Uses VPN DNS configuration
+
+**This only happens when nameservers are configured.** If no nameservers are set up in the management dashboard, NetBird leaves your DNS settings completely untouched - no local resolver is started.
+
+When active, the local resolver runs on `100.0.0.x:53` (NetBird local resolver IP) and acts as a "smart proxy" for DNS queries.
+
+#### 2. **Query Routing**
+
+When an application makes a DNS query, NetBird's resolver:
+
+1. **Checks match domains**: Does this query match a specific nameserver group?
+   - If yes → Forward to that nameserver group
+   - If no → Forward to primary nameserver
+2. **Performs the query**: Sends request to the appropriate upstream nameserver
+3. **Caches the result**: Stores response to speed up future queries
+4. **Returns to application**: Sends IP address back
+
+#### 3. **Example Flow**
+
+Let's say you have this configuration:
+- **Primary nameserver**: Cloudflare (1.1.1.1) for general internet
+- **Match domains**: `*.company.local` → Internal DNS (10.0.0.1)
+- **Match domains**: `*.ec2.internal` → AWS DNS (VPC resolver)
+
+Here's what happens with different queries:
+
+```
+Query: "google.com"
+→ No match → Primary (1.1.1.1) → Returns public IP
+
+Query: "web.company.local"
+→ Matches *.company.local → Internal DNS (10.0.0.1) → Returns private IP
+
+Query: "ip-10-0-1-50.ec2.internal"
+→ Matches *.ec2.internal → AWS DNS → Returns VPC IP
+
+Query: "server" (with search domain "company.local")
+→ Expanded to "server.company.local"
+→ Matches *.company.local → Internal DNS → Returns private IP
+```
+
+#### 4. **DNS Management Modes**
+
+NetBird supports two modes per peer group:
+
+<Properties>
+  <Property name="Managed Mode (Default)">
+    NetBird fully controls DNS settings. All queries go through NetBird's resolver.
+    
+    **Use when**: You want centralized DNS control
+  </Property>
+  
+  <Property name="Unmanaged Mode">
+    NetBird doesn't modify DNS settings. The peer uses its existing DNS configuration.
+    
+    **Use when**: The peer has custom DNS requirements or conflicts with existing DNS setup
+  </Property>
+</Properties>
+
+You can disable DNS management for specific groups in **DNS Settings** (covered in the configuration guide).
+
+#### 5. **Default Behavior (No Nameservers Configured)**
+
+If you don't configure any nameservers in NetBird:
+
+**Managed Mode (default)**:
+- NetBird **does not modify** DNS settings
+- Peers continue using their existing system DNS
+- No local DNS resolver is started
+- DNS queries go directly to whatever DNS the system was already using
+
+**Result**: NetBird provides the network connectivity but leaves DNS completely unchanged.
+
+<Note>
+You don't need to configure DNS to use NetBird. Peers can communicate over the NetBird network using IP addresses immediately. DNS configuration is optional and can be added later when you need private domain resolution.
+</Note>
+
+**When you add your first nameserver**:
+- NetBird switches to managed DNS mode (for affected peer groups)
+- Starts the local DNS resolver on `100.0.0.x:53` (Local resolver address in the NetBird IP range)
+- Begins routing queries based on your configuration
+
+### Management-Side: How Configuration Works
+
+#### Nameservers
+
+In the NetBird dashboard under **DNS → Nameservers**, you configure DNS servers for your network. Each nameserver entry defines:
+
+- **One or more nameserver IPs**: IP addresses of DNS servers (UDP port 53)
+- **Match domains** (optional): Specific domains this nameserver should handle
+- **Distribution groups**: Which peer groups use this nameserver
+- **Primary mode**: Whether this handles all non-matched domains
+- **Search domains**: Whether match domains are also search domains
+
+<Note>
+The API refers to these as "nameserver groups" because each configuration can contain multiple DNS server IPs for redundancy. The UI simply calls them "Nameservers" for clarity.
+</Note>
+
+**Starting state**: When you first set up NetBird, the nameservers list is empty. Peers will use their existing system DNS until you create and assign nameservers to their distribution groups.
+
+#### Configuration Rules
+
+<Properties>
+  <Property name="Primary Nameserver">
+    - Leave match domains **empty** in the UI
+    - Acts as default/fallback for all queries
+    - Only one primary per peer
+    - Handles everything not matched by other nameservers
+  </Property>
+  
+  <Property name="Match Domain Nameserver">
+    - Specify one or more match domains
+    - Only handles queries matching those domains
+    - You can have multiple match domain nameservers
+    - More specific patterns take precedence
+  </Property>
+</Properties>
+
+<Note>
+**Platform Support for Match Domains**: Only macOS, Windows 10+, and Linux running `systemd-resolved` support nameservers with match domains. For best compatibility, we recommend configuring at least one primary nameserver (without match domains) assigned to all peers.
+</Note>
+
+<Note>
+**Common mistake**: You cannot configure a nameserver as both primary (empty domains) AND specify match domains. Choose one or the other.
+</Note>
+
+#### Distribution Logic
+
+When you assign a nameserver to distribution groups:
+
+1. Any peer in those groups receives the configuration
+2. Peers can have multiple nameservers (one primary + multiple match domain nameservers)
+3. If a peer matches multiple groups, all their nameservers are merged
+4. The most specific match domain wins in case of conflicts
+
+---
+
+## Common Use Cases
+
+### Use Case 1: Split-Horizon DNS
+
+**Scenario**: You have internal services at `*.company.local` and want peers to use your internal DNS, but use public DNS for everything else.
+
+**Configuration**:
+- **Nameserver 1** (Primary): Cloudflare 1.1.1.1 for general internet
+- **Nameserver 2** (Match `*.company.local`): Internal DNS 10.0.0.1
+
+### Use Case 2: Multi-Cloud Setup
+
+**Scenario**: Resources in AWS, GCP, and on-premise, each with their own DNS.
+
+**Configuration**:
+- **Nameserver 1** (Primary): Public DNS
+- **Nameserver 2** (Match `*.ec2.internal, *.compute.internal`): AWS VPC DNS
+- **Nameserver 3** (Match `*.internal.gcp`): GCP Internal DNS  
+- **Nameserver 4** (Match `*.company.local`): On-premise DNS
+
+### Use Case 3: Content Filtering
+
+**Scenario**: Block malware/ads for all mobile devices.
+
+**Configuration**:
+- Create a distribution group for mobile peers
+- Set primary nameserver to filtering DNS (e.g., NextDNS, Quad9)
+
+---
+
+## What's Next?
+
+Now that you understand how NetBird handles DNS:
+
+- **[Configure Nameservers](/manage/dns/nameserver-groups)** - Step-by-step setup guide
+- **[DNS Settings](/manage/dns/dns-settings)** - Control DNS management per group
+- **[Troubleshooting](/manage/dns/troubleshooting)** - Solve common DNS issues
+- **[API Reference](/ipa/resources/dns)** - Automate DNS configuration
+
+

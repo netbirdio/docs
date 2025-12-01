@@ -51,17 +51,17 @@ const nextConfig = {
             },
             {
                 source: '/docs/how-to-guides/nameservers',
-                destination: '/manage/dns',
+                destination: '/manage/dns/overview',
                 permanent: true,
             },
             {
-                source: '/docs/how-to-guides/nameservers',
-                destination: '/manage/dns',
+                source: '/manage/dns',
+                destination: '/manage/dns/overveiw',
                 permanent: true,
             },
             {
                 source: '/how-to/manage-dns-in-your-network',
-                destination: '/manage/dns',
+                destination: '/manage/dns/overview',
                 permanent: true,
             },
             {
