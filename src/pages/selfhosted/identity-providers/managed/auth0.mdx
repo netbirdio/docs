@@ -1,0 +1,151 @@
+import {Note} from "@/components/mdx";
+
+# Auth0 with NetBird Self-Hosted
+
+This guide is a part of the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide) and explains how to integrate **self-hosted** NetBird with [Auth0](https://auth0.com/).
+
+Auth0 is a flexible, drop-in solution to add authentication and authorization services to your applications.
+It is a 3rd party managed service and can't be self-hosted. Auth0 is the right choice if you don't want to manage an Identity Provider (IDP)
+instance on your own.
+
+<Note>
+    If you prefer to have full control over authentication and authorization of your NetBird network, there are good
+    self-hosted alternatives to the managed Auth0 service like [Keycloak](/selfhosted/identity-providers#keycloak).
+</Note>
+
+## Step 1: Create Auth0 account
+To create an Auth0 account, sign up at [https://auth0.com](https://auth0.com/).
+
+There are multiple properties of the **`setup.env`** file that we will configure in this guide:
+- `NETBIRD_AUTH_CLIENT_ID`
+- `NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT`
+- `NETBIRD_USE_AUTH0`
+- `NETBIRD_AUTH_AUDIENCE`
+- `NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID` (Optional)
+- `NETBIRD_MGMT_IDP`
+- `NETBIRD_IDP_MGMT_CLIENT_ID`
+- `NETBIRD_IDP_MGMT_CLIENT_SECRET`
+- `NETBIRD_IDP_MGMT_EXTRA_AUDIENCE`
+
+## Step 2: Create and configure Auth0 application
+
+This Auth0 application will be used to authorize access to NetBird Dashboard (Web UI).
+
+- Follow the steps in the [Auth0 React SDK Guide](https://auth0.com/docs/quickstart/spa/react/01-login#configure-auth0)
+up until "Install the Auth0 React SDK".
+- Use **`https://YOUR DOMAIN`** and **`http://localhost:53000`** as: `Allowed Callback URLs`,
+- Use **`https://YOUR DOMAIN`** and **`http://localhost`** as: `Allowed Logout URLs`, `Allowed Web Origins`, `Allowed Origins (CORS)`
+<Note>
+    Make sure that **`Token Endpoint Authentication Method`** is set to **`None`**.
+</Note>
+
+- Use **`Client ID`** to set  ```NETBIRD_AUTH_CLIENT_ID``` property in the `setup.env` file.
+- Use **`Domain`** to configure   ```NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT``` property in the `setup.env` file like so:
+
+```bash
+ https://<DOMAIN>/.well-known/openid-configuration
+```
+<Note>
+    Double-check if the endpoint returns a JSON response by calling it from your browser.
+</Note>
+
+#### Step 3: Create and configure Auth0 API
+
+This Auth0 API will be used to access NetBird Management Service API.
+
+- Follow the steps in the [Auth0 Create An API](https://auth0.com/docs/quickstart/backend/golang#create-an-api).
+- Use API **`Identifier`** to set  ```NETBIRD_AUTH_AUDIENCE``` property in the `setup.env` file.
+- Set ```NETBIRD_USE_AUTH0``` to `true`in the `setup.env` file.
+
+## Step 4: Enable Interactive SSO Login (Optional)
+
+The [Interactive SSO Login feature](/get-started/install#running-net-bird-with-sso-login) allows for machine
+authorization with your Identity Provider. This feature can be used as an alternative to [setup keys](/manage/peers/register-machines-using-setup-keys)
+and is optional.
+
+You can enable it by following these steps:
+- Log in to your Auth0 account https://manage.auth0.com/
+- Go to `Applications` (left-hand menu)
+- Click `Create Application` button (top right)
+- Fill in the form with the following values:
+  - Name: `Interactive Login`
+  - Application type: `Native`
+- Click `Create`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/auth0/auth0-create-interactive-login-app.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Click `Settings` tab
+- Copy **`Client ID`** to `NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID` in the `setup.env` file
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/auth0/auth0-interactive-login-settings.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Scroll down to the `Advanced Settings` section
+- Enable **`Device Code`**
+- Click `Save Changes`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/auth0/auth0-grant-types.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+## Step 5: Create and configuire Machine to Machine application.
+This application will be used to authorize access to Auth0 Management API.
+
+- Log in to your Auth0 account https://manage.auth0.com/
+- Go to `Applications` (left-hand menu)
+- Click `Create Application` button (top right)
+- Fill in the form with the following values:
+  - Name: `Netbird API`
+  - Application type: `Machine to Machine Applications`
+- Click `Create`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/auth0/auth0-create-machine-app.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Fill the form with the following values:
+  - API: `Auth0 Management API`
+  - Permissions: `read:users`, `update:users`, `create:users`, `read:users_app_metadata`, `update:users_app_metadata`, `create:users_app_metadata`
+  - Click `Authorize`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/auth0/auth0-machine-authorization.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+<Note>
+Optional
+
+NetBird offers the ability to automatically delete a user from the Auth0 side when the user is deleted from the associated account.
+To enable this functionality, include the `--user-delete-from-idp` flag in the management startup command within your Docker Compose configuration. If you choose to enable this feature, please ensure that you assign the `delete:users` permission following the steps outlined above.
+</Note>
+
+- Click `Settings` tab
+- Copy **`Client ID`** to `NETBIRD_IDP_MGMT_CLIENT_ID` in the `setup.env` file
+- Copy **`Client SECRET`** to `NETBIRD_IDP_MGMT_CLIENT_SECRET` in the `setup.env` file
+- Copy **`DOMAIN`** to `NETBIRD_IDP_MGMT_EXTRA_AUDIENCE` in the `setup.env` file
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/auth0/auth0-machine-settings.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Set properties in the `setup.env` file:
+```shell
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<DOMAIN>/.well-known/openid-configuration"
+NETBIRD_USE_AUTH0=true
+NETBIRD_AUTH_CLIENT_ID="<Client_ID>"
+NETBIRD_AUTH_SUPPORTED_SCOPES="openid profile email offline_access api email_verified"
+NETBIRD_AUTH_AUDIENCE="<IDENTIFIER>"
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<INTERACTIVE_CLIENT_ID>"
+
+NETBIRD_MGMT_IDP="auth0"
+NETBIRD_IDP_MGMT_CLIENT_ID="<NETBIRD_API_CLIENT_ID>"
+NETBIRD_IDP_MGMT_CLIENT_SECRET="<NETBIRD_API_CLIENT_SECRET>"
+NETBIRD_IDP_MGMT_EXTRA_AUDIENCE="https://<DOMAIN>/api/v2/"
+```
+
+
+## Step 6: Continue with the NetBird Self-hosting Guide
+You've configured all required resources in Auth0. You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).
