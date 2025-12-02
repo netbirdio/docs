@@ -2,3 +2,89 @@ import {Note} from "@/components/mdx";
 
 # Install NetBird on Proxmox VE
 
+## Installing in an LXC
+
+First, we need to download a template for this LXC container. I like to use a slightly older LTS of Ubuntu for added stability. Go to local storage and click on CT Templates. Click the "Templates" button and you'll see a ton of options, you can pick whatever distro you're familiar with. I chose Ubuntu 22.04 for this demo.
+
+### Container Setup
+
+Once we have a template ready, we can click the "Create CT" button on the top right. Then input all of your settings. If you're only using this container for NetBird, the required specs will be relatively low and you can always change things in the future.
+
+1. **General tab:**
+    - Set CT ID (e.g., 100)
+    - Enter hostname
+    - Set password or upload SSH key
+    - Setup as unprivileged
+2. **Template tab:**
+    - Select the downloaded template
+3. **Disks tab:**
+    - Set disk size to **8 GB** or higher
+    - Choose storage location (SSD/NVME storage is best)
+4. **CPU tab:**
+    - Set cores as needed (1-2 cores)
+5. **Memory tab:**
+    - Set memory to **1024 MB** (1GB)
+    - Set swap as desired (512 MB recommended)
+6. **Network tab:**
+    - Configure network interface (usually bridge vmbr0)
+    - Set IPv4 to DHCP to manage with your router or a static IP.
+7. **DNS tab:**
+    - Configure DNS servers if needed
+8. **Confirm** - Review settings and click "Finish"
+
+The container will be created and ready to start. Head into the options for this LXC and enable the start-on-boot option so this container will automatically run if the Proxmox Node reboots. 
+
+### Enable /dev/tun Passthrough
+
+TUN provides an interface for user applications, such as NetBird, to deal with the raw network traffic. By default, since we set this up as an unprivileged container, there is no access to this interface. To fix this, we will add some lines manually to the configuration for this container. Under your main node, access the shell. Find your container number, for example, mine is 100. Use nano or another text editor to open the configuration.
+
+```bash
+nano /etc/pve/lxc/100.conf 
+```
+
+Now add these lines to the bottom.
+
+```bash
+lxc.cgroup2.devices.allow: c 10:200 rwm
+lxc.mount.entry: /dev/net dev/net none bind,create=dir
+lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file
+```
+
+Now, restart the container and you can check within the shell for the container to see if the interface is available.
+
+```bash
+ls /dev/net
+```
+
+### Installing NetBird
+
+Before we install NetBird, we are going to want to generate a one-off setup key to use with our LXC installation. While [NetBird's documentation offers comprehensive guidance on this process](https://docs.netbird.io/manage/peers/register-machines-using-setup-keys), let's quickly review the essential steps:
+
+- Access your [NetBird dashboard](https://app.netbird.io/)
+- Navigate to the `Setup Keys` section
+- Click the `Create Setup Key` button on the right
+- Name your key (e.g., "ProxmoxLXC")
+- Set an expiration date (recommended for enhanced security)
+- Configure auto-assigned groups if needed (e.g., "Homelab")
+- Click `Create Setup Key` to generate the setup key
+- Copy the generated key and store it securely as you'll need it for the next steps
+
+Access the shell for your container. You can log in as root and use the password from the initial setup wizard. We are going to need to update our system and install curl so the installation script will work. The command below is for Ubuntu/Debian, change this if needed.
+
+```bash
+apt update && apt upgrade -y && apt install curl -y
+```
+
+Now that our system is updated, we can install NetBird with the following command. 
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+```
+
+Now that NetBird is installed, we can connect our peer to our account using the setup key we generated earlier. 
+
+```bash
+  netbird up --setup-key <SETUP KEY>
+```
+
+Now you should see a successful connection message and you're good to go! Now if you want to access your entire network using this LXC with NetBird, check out the docs to learn more about NetBird Networks!
