@@ -43,11 +43,11 @@ export const docsNavigation = [
             {
               title: 'Platforms', isOpen: false,
               links: [
+                { title: 'Proxmox VE', href: '/get-started/install/proxmox-ve' },
                 { title: 'Synology', href: '/get-started/install/synology' },
                 { title: 'pfSense', href: '/get-started/install/pfsense' },
                 { title: 'OPNsense', href: '/get-started/install/opnsense' },
                 { title: 'Raspberry Pi', href: '/get-started/install/raspberrypi' },
-                { title: 'Proxmox VE', href: '/get-started/install/proxmox-ve' },
               ]
             },
             { title: 'CLI', href: '/get-started/cli' },
