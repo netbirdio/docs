@@ -30,20 +30,25 @@ export const docsNavigation = [
         links: [
             { title: 'Quickstart Guide', href: '/get-started' },
             {
-                title: 'Install NetBird',
-                isOpen: true,
-                href: '/get-started/install',
-                links: [
-                    { title: 'Linux', href: '/get-started/install/linux' },
-                    { title: 'Windows', href: '/get-started/install/windows' },
-                    { title: 'MacOS', href: '/get-started/install/macos' },
-                    { title: 'Android', href: '/get-started/install/android' },
-                    { title: 'iOS', href: '/get-started/install/ios' },
-                    { title: 'Docker', href: '/get-started/install/docker' },
-                    { title: 'Synology', href: '/get-started/install/synology' },
-                    { title: 'pfSense', href: '/get-started/install/pfsense' },
-                    { title: 'OPNsense', href: '/get-started/install/opnsense' },
-                ],
+              title: 'Install NetBird', isOpen: true, href: '/get-started/install',
+              links: [
+                { title: 'Linux', href: '/get-started/install/linux' },
+                { title: 'Windows', href: '/get-started/install/windows' },
+                { title: 'MacOS', href: '/get-started/install/macos' },
+                { title: 'Docker', href: '/get-started/install/docker' },
+                { title: 'iOS', href: '/get-started/install/ios' },
+                { title: 'Android', href: '/get-started/install/android' },
+              ],
+            },
+            {
+              title: 'Platforms', isOpen: false,
+              links: [
+                { title: 'Synology', href: '/get-started/install/synology' },
+                { title: 'pfSense', href: '/get-started/install/pfsense' },
+                { title: 'OPNsense', href: '/get-started/install/opnsense' },
+                { title: 'Raspberry Pi', href: '/get-started/install/raspberrypi' },
+                { title: 'Proxmox VE', href: '/get-started/install/proxmox-ve' },
+              ]
             },
             { title: 'CLI', href: '/get-started/cli' },
         ],
