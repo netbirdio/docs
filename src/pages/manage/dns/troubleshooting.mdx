@@ -19,7 +19,7 @@ netbird status | grep Nameserver
 nslookup google.com
 
 # 4. Can you resolve internal domains?
-nslookup internal.company.local
+nslookup internal.company.internal
 
 # 5. What DNS server is being used?
 cat /etc/resolv.conf  # Linux/macOS
@@ -29,13 +29,22 @@ Get-DnsClientServerAddress  # Windows
 
 If any of these fail, continue to the relevant section below.
 
+<Note>
+**Quick isolation test**: To check if an issue is caused by NetBird DNS, temporarily disable DNS management on the peer:
+```bash
+netbird down
+netbird up --disable-dns
+```
+If the problem goes away, the issue is in your NetBird DNS configuration. If it persists, it's unrelated to NetBird DNS.
+</Note>
+
 ## Common Issues and Solutions
 
 ### Issue 1: Can't Resolve Internal Domains
 
 **Symptoms**:
-- `nslookup internal.company.local` fails
-- `ping server.company.local` returns "unknown host"
+- `nslookup internal.company.internal` fails
+- `ping server.company.internal` returns "unknown host"
 - Public domains work fine
 
 **Solutions**:
@@ -50,7 +59,7 @@ The OS isn't configured to use NetBird's resolver.
 cat /etc/resolv.conf
 
 # Should contain:
-# nameserver 100.0.0.0.x 
+# nameserver 100.x.255.254 (where x is from your NetBird /16 block)
 
 # If not, restart NetBird
 sudo systemctl restart netbird
@@ -63,7 +72,7 @@ sudo netbird down && sudo netbird up
 # Check DNS settings
 Get-DnsClientServerAddress -InterfaceAlias "NetBird"
 
-# Should show: 100.0.0.x
+# Should show: 100.x.255.254 (where x is from your NetBird /16 block)
 
 # If not, restart NetBird service
 Restart-Service netbird
@@ -76,7 +85,7 @@ NetBird is routing queries to the wrong DNS server.
 1. **Go to Dashboard → DNS → Nameservers**
 2. **Check match domains**:
    - Does your domain pattern match? 
-   - `company.local` won't match `*.company.local` (need both)
+   - `company.internal` won't match `*.company.internal` (need both)
 3. **Check nameserver IPs**:
    - Are they correct?
    - Are they reachable from peers?
@@ -87,13 +96,13 @@ NetBird is routing queries to the wrong DNS server.
 ```json
 // ❌ Wrong: Wildcard only
 {
-  "domains": ["*.company.local"]
+  "domains": ["*.company.internal"]
 }
-// Doesn't match "company.local" (no subdomain)
+// Doesn't match "company.internal" (no subdomain)
 
 // ✅ Correct: Both patterns
 {
-  "domains": ["company.local", "*.company.local"]
+  "domains": ["company.internal", "*.company.internal"]
 }
 ```
 
@@ -107,7 +116,7 @@ The configured nameserver can't be reached.
 ping 10.0.0.1  # Replace with your nameserver IP
 
 # Test DNS query directly
-dig @10.0.0.1 internal.company.local
+dig @10.0.0.1 internal.company.internal
 
 # If this times out:
 # → Firewall or routing issue
@@ -204,7 +213,7 @@ The peer's group has DNS management disabled.
 # Test multiple times
 for i in {1..10}; do 
   echo "Test $i:"
-  time nslookup internal.company.local
+  time nslookup internal.company.internal
   sleep 1
 done
 
@@ -221,8 +230,8 @@ done
 **Test nameserver directly**:
 ```bash
 # Time direct queries to each nameserver
-time dig @10.0.0.1 internal.company.local
-time dig @10.0.0.2 internal.company.local
+time dig @10.0.0.1 internal.company.internal
+time dig @10.0.0.2 internal.company.internal
 
 # If slow or timeout:
 # → Nameserver is overloaded or having issues
@@ -284,7 +293,7 @@ netbird down && netbird up
 
 **Symptoms**:
 - `ping server` doesn't work
-- `ping server.company.local` does work
+- `ping server.company.internal` does work
 - Short names aren't expanded
 
 **Diagnosis**:
@@ -294,7 +303,7 @@ netbird down && netbird up
 cat /etc/resolv.conf
 
 # Should contain:
-# search company.local
+# search company.internal
 
 # Or on Windows:
 Get-DnsClientGlobalSetting | Select-Object SuffixSearchList
@@ -312,7 +321,7 @@ Get-DnsClientGlobalSetting | Select-Object SuffixSearchList
 **Fix**:
 ```json
 {
-  "domains": ["company.local", "*.company.local"],
+  "domains": ["company.internal", "*.company.internal"],
   "search_domains_enabled": true  // Must be true!
 }
 ```
@@ -330,7 +339,7 @@ If you have multiple nameservers with search domains enabled, they may conflict.
 cat /etc/resolv.conf
 
 # If you see many search entries:
-# search domain1.local domain2.local domain3.local domain4.local
+# search domain1.internal domain2.internal domain3.internal domain4.internal
 # → OS may truncate or ignore some
 ```
 
@@ -352,7 +361,7 @@ netbird down
 # Check DNS
 cat /etc/resolv.conf
 
-# If still shows 100.0.0.x, NetBird didn't restore original DNS
+# If still shows 100.x.255.254, NetBird didn't restore original DNS
 ```
 
 **Solutions**:
@@ -415,7 +424,7 @@ In your router's DNS settings, whitelist your internal domains:
 ```bash
 # Add to /etc/config/dhcp
 config domain
-    option name 'company.local'
+    option name 'company.internal'
     option ip '10.0.0.1'
 ```
 
@@ -431,7 +440,7 @@ Avoid future DNS issues:
 - ✅ Document your DNS architecture
 - ✅ Monitor DNS resolution performance
 - ✅ Keep NetBird client updated
-- ✅ Include both domain.local and *.domain.local patterns
+- ✅ Include both `domain.internal` and `*.domain.internal` patterns
 - ✅ Verify nameservers are reachable before configuring
 - ✅ Use fast, reliable public DNS for primary (Cloudflare, Google)
 - ✅ Set `search_domains_enabled: true` for internal domains
