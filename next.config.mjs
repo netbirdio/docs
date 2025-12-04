@@ -51,12 +51,7 @@ const nextConfig = {
             },
             {
                 source: '/docs/how-to-guides/nameservers',
-                destination: '/manage/dns',
-                permanent: true,
-            },
-            {
-                source: '/docs/how-to-guides/nameservers',
-                destination: '/manage/dns',
+                destination: '/manage/dns/nameserver-groups',
                 permanent: true,
             },
             {

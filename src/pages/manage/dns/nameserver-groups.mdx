@@ -1,0 +1,549 @@
+export const description = 'Configure DNS nameservers for your NetBird network'
+import {Note} from "@/components/mdx"
+
+
+# Configuring Nameservers
+
+Nameservers let you control which DNS servers your peers use and which domains they handle. This guide walks you through common configuration scenarios.
+
+<Note>
+In the NetBird UI, these are called **Nameservers**. In the API documentation, they're referred to as "nameserver groups" because each configuration can contain multiple DNS server IPs for redundancy.
+</Note>
+
+## Before You Start
+
+Make sure you understand:
+- [DNS basics and how NetBird handles DNS](/manage/dns)
+- Which domains you want to resolve privately vs. publicly
+- The IP addresses of your DNS servers
+
+## Creating Your First Nameserver
+
+The nameserver configuration follows a **step-by-step UI flow** with three tabs:
+1. **Nameserver** (required first) - Add DNS server IPs and distribution groups
+2. **Domains** (unlocks after step 1) - Configure primary or match domain mode
+3. **Name & Description** (unlocks after step 1) - Add descriptive information
+
+<Note>
+The Domains and Name & Description tabs remain disabled until you configure at least one nameserver IP and one distribution group in the Nameserver tab.
+</Note>
+
+### Step 1: Choose a DNS Provider
+
+1. Log in to the NetBird dashboard
+2. Navigate to **DNS** > **Nameservers** in the left sidebar  
+3. Click **Add Nameserver**
+4. Select from predefined providers or choose **Custom DNS** to use your own
+
+<img src="/docs-static/img/manage/dns/netbird-nameserver-add-button.png" alt="Add nameserver IPs" className="imagewrapper-big"/>
+
+<img src="/docs-static/img/manage/dns/netbird-nameserver-choose-type.png" alt="Choose nameserver provider" className="imagewrapper-big"/>
+
+If you choose a predefined provider, the addresses are pre-filled for you.
+
+### Step 2: Configure Nameserver IPs and Distribution Groups (Nameserver Tab)
+
+After selecting a provider, you'll be on the **Nameserver** tab. This is the first required step.
+
+<Note>
+**Must complete this tab first**: You must configure at least one nameserver IP and at least one distribution group before you can access the Domains and Name & Description tabs.
+</Note>
+
+
+#### Add Nameserver IPs
+
+Add a nameserver IP (or multiple IPs for redundancy):
+
+<img src="/docs-static/img/manage/dns/netbird-nameserver-custom.png" alt="Custom DNS provider" className="imagewrapper-big"/>
+
+
+<Properties>
+  <Property name="IP" type="string" required>
+    IP address of the DNS server (e.g., `10.0.0.1` or `1.1.1.1`)
+  </Property>
+  
+  <Property name="Port" type="integer" required>
+    DNS port, typically `53`
+  </Property>
+</Properties>
+
+Example configuration:
+```json
+{
+  "nameservers": [
+    {"ip": "1.1.1.1", "port": 53},
+    {"ip": "1.0.0.1", "port": 53}
+  ]
+}
+```
+
+<Note>
+**Best practice**: Configure 2-3 nameservers for redundancy. If the first fails, peers automatically try the next one.
+</Note>
+
+#### Assign Distribution Groups
+
+Select which peer groups will use this nameserver.
+
+<Properties>
+  <Property name="Distribution Groups" type="string[]" required>
+    At least one peer group must be selected. All peers in these groups will receive this DNS configuration.
+  </Property>
+</Properties>
+
+Click **+ Add Distribution Group** and select one or more groups from the dropdown.
+
+#### Enable/Disable Nameserver
+
+Use the **Enable Nameserver** toggle to activate or deactivate this configuration without deleting it.
+
+### Step 3: Configure Domains (Domains Tab - Optional)
+
+Once nameserver IPs and distribution groups are set, click **Continue** or navigate to the **Domains** tab.
+
+<img src="/docs-static/img/manage/dns/netbird-nameserver-add-domain.png" alt="Choose nameserver provider" className="imagewrapper-big"/>
+
+
+Here you choose whether this is a primary nameserver (handles all domains) or a match domain nameserver (handles specific domains only).
+
+#### Option A: Primary Nameserver (Leave Domains Empty)
+
+Leave the **Match Domains** section empty for a primary nameserver that handles all DNS queries not matched by other nameservers.
+
+<Note>
+**Important**: 
+- Each peer should have exactly **ONE** primary nameserver
+- Primary nameserver = empty match domains list
+- Handles all queries not matched by other nameservers
+- If you don't configure a primary, peers use their original DNS settings
+</Note>
+
+#### Option B: Match Domain Nameserver (Add Specific Domains)
+
+Add specific domains that this nameserver should handle:
+
+Click **+ Add Domain** and enter domain patterns:
+
+**Supported patterns**:
+- Exact match: `company.internal`
+- Wildcard subdomain: `*.company.internal` (matches `app.company.internal` but NOT `company.internal` itself)
+- Multiple patterns per nameserver
+
+**Example for internal DNS**:
+```
+company.internal
+*.company.internal
+internal.example.com
+*.internal.example.com
+```
+
+<Note>
+**Tip**: Include both `domain.internal` and `*.domain.internal` to match the apex domain and all subdomains.
+</Note>
+
+#### Search Domains
+
+Toggle **Mark match domains as search domains** to enable domain suffix searching.
+
+When enabled:
+- Typing `server` expands to `server.company.internal`
+- Short names automatically try configured domains
+- Only applies to match domain nameservers (not primary)
+
+### Step 4: Set Name and Description (Name & Description Tab)
+
+Once nameserver IPs and distribution groups are configured, navigate to the **Name & Description** tab.
+
+<img src="/docs-static/img/manage/dns/netbird-nameserver-name-and-desc.png" alt="Choose nameserver provider" className="imagewrapper-big"/>
+
+<Properties>
+  <Property name="DNS Name" type="string" required>
+    A descriptive name for this nameserver (e.g., "Cloudflare DNS" or "Internal DNS")
+  </Property>
+  
+  <Property name="Description" type="string" optional>
+    Optional notes about this nameserver's purpose (e.g., "Cloudflare DNS Servers" or "Berlin office resolver for remote developers")
+  </Property>
+</Properties>
+
+### Step 5: Save and Verify
+
+1. Click **Continue** to move through the tabs, or **Add Nameserver** when you're done configuring
+2. The nameserver will be created and distributed to the selected peer groups
+3. Wait 10-30 seconds for peers to receive the update
+4. Test DNS resolution (see [Troubleshooting](/manage/dns/troubleshooting))
+
+---
+
+## Common Configuration Scenarios
+
+### Scenario 1: Simple Internal DNS
+
+**Goal**: Use Cloudflare for internet, internal DNS for `*.company.internal`
+
+**Configuration**:
+
+<CodeGroup title="Nameservers">
+```json {{ title: 'Primary - Internet' }}
+{
+  "name": "Cloudflare DNS",
+  "description": "Public internet DNS",
+  "nameservers": [
+    {"ip": "1.1.1.1", "ns_type": "udp", "port": 53},
+    {"ip": "1.0.0.1", "ns_type": "udp", "port": 53}
+  ],
+  "enabled": true,
+  "primary": true,
+  "domains": [],
+  "search_domains_enabled": false,
+  "groups": ["All Peers"]
+}
+```
+
+```json {{ title: 'Match - Internal' }}
+{
+  "name": "Internal DNS",
+  "description": "Company internal domains",
+  "nameservers": [
+    {"ip": "10.0.0.1", "ns_type": "udp", "port": 53},
+    {"ip": "10.0.0.2", "ns_type": "udp", "port": 53}
+  ],
+  "enabled": true,
+  "primary": false,
+  "domains": ["company.internal", "*.company.internal"],
+  "search_domains_enabled": true,
+  "groups": ["All Peers"]
+}
+```
+</CodeGroup>
+
+**Result**:
+- `google.com` → Cloudflare (1.1.1.1)
+- `app.company.internal` → Internal DNS (10.0.0.1)
+- `server` → Expanded to `server.company.internal` → Internal DNS
+
+---
+
+### Scenario 2: Multi-Cloud Environment
+
+**Goal**: Different DNS for AWS, GCP, Azure, and on-premise
+
+**Configuration**:
+
+<CodeGroup title="Nameservers">
+```json {{ title: 'Primary' }}
+{
+  "name": "Google Public DNS",
+  "primary": true,
+  "domains": [],
+  "nameservers": [
+    {"ip": "8.8.8.8", "ns_type": "udp", "port": 53}
+  ],
+  "groups": ["All Peers"]
+}
+```
+
+```json {{ title: 'AWS' }}
+{
+  "name": "AWS VPC DNS",
+  "primary": false,
+  "domains": [
+    "ec2.internal",
+    "*.ec2.internal",
+    "compute.internal"
+  ],
+  "nameservers": [
+    {"ip": "169.254.169.253", "ns_type": "udp", "port": 53}
+  ],
+  "groups": ["Engineers", "DevOps"]
+}
+```
+
+```json {{ title: 'GCP' }}
+{
+  "name": "GCP Internal DNS",
+  "primary": false,
+  "domains": [
+    "*.internal.gcp.company.com"
+  ],
+  "nameservers": [
+    {"ip": "169.254.169.254", "ns_type": "udp", "port": 53}
+  ],
+  "groups": ["Engineers", "DevOps"]
+}
+```
+
+```json {{ title: 'On-Premise' }}
+{
+  "name": "Corporate DNS",
+  "primary": false,
+  "domains": [
+    "corp.company.com",
+    "*.corp.company.com"
+  ],
+  "nameservers": [
+    {"ip": "10.1.0.1", "ns_type": "udp", "port": 53},
+    {"ip": "10.1.0.2", "ns_type": "udp", "port": 53}
+  ],
+  "search_domains_enabled": true,
+  "groups": ["All Peers"]
+}
+```
+</CodeGroup>
+
+---
+
+### Scenario 3: Content Filtering for Mobile Devices
+
+**Goal**: Block ads/malware on company phones and tablets
+
+**Configuration**:
+
+```json
+{
+  "name": "NextDNS Filtering",
+  "description": "Content filtering for mobile",
+  "nameservers": [
+    {"ip": "45.90.28.0", "ns_type": "udp", "port": 53}
+  ],
+  "primary": true,
+  "domains": [],
+  "groups": ["Mobile Devices"]
+}
+```
+
+<Note>
+You can use services like:
+- **NextDNS**: Custom filtering policies
+- **Quad9**: Malware blocking (9.9.9.9)
+- **CleanBrowsing**: Family-safe filtering
+- **Pi-hole**: Self-hosted ad blocking
+</Note>
+
+---
+
+### Scenario 4: Different DNS for Different Teams
+
+**Goal**: Developers get internal DNS, guests only get public DNS
+
+**Configuration**:
+
+1. **For Developers**:
+   - Primary: Public DNS (all domains)
+   - Match: Internal DNS (*.company.internal)
+   - Assigned to: "Developers" group
+
+2. **For Guests**:
+   - Primary: Public DNS only
+   - No internal DNS access
+   - Assigned to: "Guests" group
+
+---
+
+## Advanced Configuration
+
+### DNS Failover and Redundancy
+
+Always configure multiple nameservers:
+
+```json
+{
+  "nameservers": [
+    {"ip": "10.0.0.1", "ns_type": "udp", "port": 53},  // Primary
+    {"ip": "10.0.0.2", "ns_type": "udp", "port": 53},  // Secondary
+    {"ip": "8.8.8.8", "ns_type": "udp", "port": 53}    // Fallback to public
+  ]
+}
+```
+
+The client will try servers in order with automatic failover.
+
+### Overlapping Domain Patterns
+
+If multiple nameservers match a query, the **most specific match wins**:
+
+```
+Query: app.us-east.company.internal
+
+Nameservers:
+1. *.company.internal → DNS1
+2. *.us-east.company.internal → DNS2
+
+Result: Uses DNS2 (more specific)
+```
+
+### Disabling DNS Management for Specific Groups
+
+Some peers may need to keep their local DNS configuration (e.g., VPN requirements, corporate policy).
+
+1. Go to **DNS Settings** (not Nameservers)
+2. Add groups to **Disabled Management Groups**
+3. Peers in these groups will ignore all NetBird DNS configuration
+
+See [DNS Settings](/manage/dns/dns-settings) for details.
+
+---
+
+## Updating Nameservers
+
+### Editing an Existing Nameserver
+
+1. Navigate to **DNS** → **Nameservers**
+2. Click the group to edit
+3. Modify settings
+4. Click **Save**
+
+<Note>
+Changes propagate to peers within 10-30 seconds. No peer restart required.
+</Note>
+
+### Temporarily Disabling a Nameserver
+
+Instead of deleting, you can disable:
+
+1. Edit the nameserver
+2. Toggle **Enable Nameserver** to OFF
+3. Save
+
+Peers will stop using this nameserver but the configuration is preserved.
+
+### Deleting a Nameserver
+
+<Note>
+**Before deleting a primary nameserver**: Create a new primary first, or peers will revert to their original DNS settings.
+</Note>
+
+1. Click the nameserver
+2. Click **Delete**
+3. Confirm deletion
+
+---
+
+## Best Practices
+
+### 1. Start Simple
+
+Begin with just two nameservers:
+- One primary (public DNS)
+- One match domain (internal)
+
+Add complexity only as needed.
+
+### 2. Use Descriptive Names
+
+Bad: "DNS1", "Group A"  
+Good: "Internal Corporate DNS", "AWS VPC Resolver"
+
+### 3. Always Have a Primary
+
+Every peer should receive at least one primary nameserver, or they'll use unmanaged DNS.
+
+### 4. Test in Stages
+
+1. Create nameserver
+2. Assign to a test distribution group first
+3. Verify DNS works on test peers
+4. Roll out to all peers
+
+### 5. Document Your Domains
+
+Keep a list of which domains belong to which systems:
+
+```
+company.internal → On-premise Active Directory
+*.corp.company.internal → Corporate services
+*.ec2.internal → AWS VPC
+*.compute.internal → GCP
+```
+
+### 6. Monitor and Maintain
+
+- Check that all nameserver IPs are reachable
+- Update IP addresses if infrastructure changes
+- Remove unused nameservers to keep configuration clean
+
+---
+
+## Verifying Configuration
+
+After creating nameservers, verify they're working:
+
+### Check Peer Status
+
+1. Go to **Peers** in dashboard
+2. Find a peer in your distribution group
+3. Check DNS status indicator
+
+### Test from Peer
+
+On the peer device:
+
+```bash
+# Check NetBird DNS is active
+nslookup example.com 127.0.0.1
+
+# Test internal domain resolution
+nslookup internal.company.internal
+
+# Check search domains
+ping server  # Should expand to server.company.internal
+```
+
+See [Troubleshooting](/manage/dns/troubleshooting) for more diagnostic commands.
+
+---
+
+## Advanced: Private DNS Behind Routing Peers
+
+If your DNS server is on a private network accessible only through a routing peer, you need to set up network routes and access control in addition to the nameserver configuration.
+
+### Scenario
+
+You have:
+- **DNS server**: `192.168.0.32:53` on a private network
+- **Routing peer**: Can reach the `192.168.0.0/24` network
+- **Client peers**: Need to query this DNS through the routing peer
+
+### Setup Requirements
+
+#### 1. Configure the Nameserver
+
+Create a nameserver pointing to your private DNS:
+- IP: `192.168.0.32`
+- Port: `53`
+- Distribution groups: Your client peer groups (e.g., "Remote Developers")
+
+#### 2. Create a Network Route
+
+Set up a network route so clients can reach the DNS server:
+- Network: `192.168.0.0/24`
+- Routing peer: The peer that can access this network
+- Distribution groups: Same as your nameserver (e.g., "Remote Developers")
+
+#### 3. Configure Access Control
+
+Create an access control rule allowing DNS traffic:
+- Source: Client groups (e.g., "Remote Developers")
+- Destination: Routing peer's group
+- Protocol: UDP
+- Port: 53
+
+### DNS Forwarder Port
+
+<Note>
+**Technical detail**: When using private DNS behind routing peers, NetBird uses a DNS forwarder on routing peers. Starting with v0.59.0, this forwarder uses port `22054` (changed from `5353`) to avoid collisions with mDNS. For backward compatibility, port `5353` is used if any peer in your account runs below v0.59.0.
+</Note>
+
+This forwarder port is internal to NetBird's routing mechanism - you don't need to configure it, but may see it in logs or network traces.
+
+---
+
+## Next Steps
+
+- **[DNS Settings](/manage/dns/dns-settings)** - Disable DNS management for specific groups
+- **[Troubleshooting](/manage/dns/troubleshooting)** - Fix common DNS issues
+- **[API Reference](/ipa/resources/dns)** - Automate with the API
+
+<Note>
+Need help? Check our [troubleshooting guide](/manage/dns/troubleshooting) or join the [NetBird Slack community](https://netbird.io/slack).
+</Note>

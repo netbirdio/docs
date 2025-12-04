@@ -1,0 +1,455 @@
+export const description = 'Diagnose and fix common DNS issues in NetBird'
+
+# DNS Troubleshooting
+
+This guide helps you diagnose and resolve common DNS issues in NetBird. Follow the structured approach below to identify and fix problems quickly.
+
+## Quick Diagnostics Checklist
+
+Before diving deep, run through this quick checklist:
+
+```bash
+# 1. Is NetBird connected?
+netbird status
+
+# 2. Is DNS the peer being passed the correct nameservers?
+netbird status | grep Nameserver
+
+# 3. Can you resolve public domains?
+nslookup google.com
+
+# 4. Can you resolve internal domains?
+nslookup internal.company.internal
+
+# 5. What DNS server is being used?
+cat /etc/resolv.conf  # Linux/macOS
+# or
+Get-DnsClientServerAddress  # Windows
+```
+
+If any of these fail, continue to the relevant section below.
+
+<Note>
+**Quick isolation test**: To check if an issue is caused by NetBird DNS, temporarily disable DNS management on the peer:
+```bash
+netbird down
+netbird up --disable-dns
+```
+If the problem goes away, the issue is in your NetBird DNS configuration. If it persists, it's unrelated to NetBird DNS.
+</Note>
+
+## Common Issues and Solutions
+
+### Issue 1: Can't Resolve Internal Domains
+
+**Symptoms**:
+- `nslookup internal.company.internal` fails
+- `ping server.company.internal` returns "unknown host"
+- Public domains work fine
+
+**Solutions**:
+
+#### Solution A: System Not Using NetBird DNS
+
+The OS isn't configured to use NetBird's resolver.
+
+**Linux/macOS**:
+```bash
+# Check resolv.conf
+cat /etc/resolv.conf
+
+# Should contain:
+# nameserver 100.x.255.254 (where x is from your NetBird /16 block)
+
+# If not, restart NetBird
+sudo systemctl restart netbird
+# or
+sudo netbird down && sudo netbird up
+```
+
+**Windows**:
+```powershell
+# Check DNS settings
+Get-DnsClientServerAddress -InterfaceAlias "NetBird"
+
+# Should show: 100.x.255.254 (where x is from your NetBird /16 block)
+
+# If not, restart NetBird service
+Restart-Service netbird
+```
+
+#### Solution B: Wrong Nameserver Configuration
+
+NetBird is routing queries to the wrong DNS server.
+
+1. **Go to Dashboard → DNS → Nameservers**
+2. **Check match domains**:
+   - Does your domain pattern match? 
+   - `company.internal` won't match `*.company.internal` (need both)
+3. **Check nameserver IPs**:
+   - Are they correct?
+   - Are they reachable from peers?
+4. **Check distribution groups**:
+   - Is the peer's group assigned to this nameserver?
+
+**Common mistakes**:
+```json
+// ❌ Wrong: Wildcard only
+{
+  "domains": ["*.company.internal"]
+}
+// Doesn't match "company.internal" (no subdomain)
+
+// ✅ Correct: Both patterns
+{
+  "domains": ["company.internal", "*.company.internal"]
+}
+```
+
+#### Solution C: Nameserver Unreachable
+
+The configured nameserver can't be reached.
+
+**Test connectivity**:
+```bash
+# Can peer reach the nameserver?
+ping 10.0.0.1  # Replace with your nameserver IP
+
+# Test DNS query directly
+dig @10.0.0.1 internal.company.internal
+
+# If this times out:
+# → Firewall or routing issue
+# → Check NetBird routes
+# → Check firewall rules on DNS server
+```
+
+### Issue 2: Public Domains Not Resolving
+
+**Symptoms**:
+- Can't resolve `google.com`, `github.com`, etc.
+- Internal domains may work
+- "DNS resolution failed" errors
+
+**Diagnosis**:
+
+```bash
+# Test public DNS
+nslookup google.com
+nslookup google.com <NetBird local resolver IP>
+nslookup google.com 8.8.8.8
+# If direct to 8.8.8.8 works but others fail, it's likely a NetBird resolver issue
+# If all fail, it's likely a Network connectivity issue
+```
+
+**Solutions**:
+
+#### Solution A: No Primary Nameserver Configured
+
+**Check**:
+1. Go to **DNS → Nameservers**
+2. Look for a nameserver with empty match domains (this is the primary)
+3. Verify it's assigned to your peer's distribution groups
+
+**Fix**: Create a primary nameserver:
+```json
+{
+  "name": "Public DNS",
+  "primary": true,
+  "domains": [], // don't configure any match domains!
+  "nameservers": [
+    {"ip": "1.1.1.1", "ns_type": "udp", "port": 53},
+    {"ip": "8.8.8.8", "ns_type": "udp", "port": 53}
+  ],
+  "groups": ["All Peers"]
+}
+```
+
+#### Solution B: Primary Nameserver Unreachable
+
+Your primary DNS server is down or unreachable.
+
+**Test**:
+```bash
+# Test primary nameserver directly
+dig @1.1.1.1 google.com
+# If timeout, it's likely Network issue or firewall block
+```
+
+**Fix**:
+1. Add backup nameservers to the primary group
+2. Or switch to a different primary DNS:
+
+```json
+{
+  "nameservers": [
+    {"ip": "1.1.1.1", "ns_type": "udp", "port": 53},
+    {"ip": "1.0.0.1", "ns_type": "udp", "port": 53},
+    {"ip": "8.8.8.8", "ns_type": "udp", "port": 53}
+  ]
+}
+```
+
+#### Solution C: DNS Management Disabled
+
+The peer's group has DNS management disabled.
+
+**Check**:
+1. Go to **DNS → DNS Settings**
+2. Look for peer's group in `disabled_management_groups`
+
+**Fix**: Remove from disabled list or expected behavior.
+
+### Issue 3: Intermittent DNS Failures
+
+**Symptoms**:
+- DNS works sometimes but not always
+- Queries timeout randomly
+- Slow DNS resolution
+
+**Diagnosis**:
+
+```bash
+# Test multiple times
+for i in {1..10}; do 
+  echo "Test $i:"
+  time nslookup internal.company.internal
+  sleep 1
+done
+
+# Look for:
+# - Timeouts
+# - Slow responses (>1 second)
+# - Inconsistent results
+```
+
+**Solutions**:
+
+#### Solution A: Nameserver Performance Issues
+
+**Test nameserver directly**:
+```bash
+# Time direct queries to each nameserver
+time dig @10.0.0.1 internal.company.internal
+time dig @10.0.0.2 internal.company.internal
+
+# If slow or timeout:
+# → Nameserver is overloaded or having issues
+```
+
+**Fix**:
+1. Add more nameservers for load balancing
+2. Check nameserver health
+3. Consider caching DNS server closer to peers
+
+#### Solution B: Network Instability
+
+**Check NetBird connectivity**:
+```bash
+netbird status
+
+# Should show: Status: Connected
+
+# If shows disconnected/reconnecting:
+# → Underlying network issues
+```
+
+**Fix**:
+- Check physical network connection
+- Verify firewall rules
+- Review NetBird logs: `netbird up --log-level debug`
+
+#### Solution C: DNS Cache Issues
+
+**Clear DNS cache**:
+
+**Linux**:
+```bash
+# systemd-resolved
+sudo systemd-resolve --flush-caches
+
+# nscd
+sudo systemctl restart nscd
+```
+
+**macOS**:
+```bash
+sudo dscacheutil -flushcache
+sudo killall -HUP mDNSResponder
+```
+
+**Windows**:
+```powershell
+ipconfig /flushdns
+```
+
+**NetBird**:
+```bash
+# Restart NetBird to clear its cache
+netbird down && netbird up
+```
+
+### Issue 4: Search Domains Not Working
+
+**Symptoms**:
+- `ping server` doesn't work
+- `ping server.company.internal` does work
+- Short names aren't expanded
+
+**Diagnosis**:
+
+```bash
+# Check search domains
+cat /etc/resolv.conf
+
+# Should contain:
+# search company.internal
+
+# Or on Windows:
+Get-DnsClientGlobalSetting | Select-Object SuffixSearchList
+```
+
+**Solutions**:
+
+#### Solution A: Search Domains Not Enabled
+
+**Check configuration**:
+1. Go to **DNS → Nameservers**
+2. Find your internal domain nameserver
+3. Check **Mark match domains as search domains** is enabled
+
+**Fix**:
+```json
+{
+  "domains": ["company.internal", "*.company.internal"],
+  "search_domains_enabled": true  // Must be true!
+}
+```
+
+<Note>
+Search domains only work for match domain groups, not primary groups.
+</Note>
+
+#### Solution B: Multiple Search Domains Conflict
+
+If you have multiple nameservers with search domains enabled, they may conflict.
+
+**Check**:
+```bash
+cat /etc/resolv.conf
+
+# If you see many search entries:
+# search domain1.internal domain2.internal domain3.internal domain4.internal
+# → OS may truncate or ignore some
+```
+
+**Fix**: Limit to 3-4 most important search domains.
+
+### Issue 5: DNS Works on NetBird Network, Fails Outside
+
+**Symptoms**:
+- DNS works when connected to NetBird
+- DNS fails when NetBird disconnects
+- Computer can't resolve anything after using NetBird
+
+**Diagnosis**:
+
+```bash
+# Disconnect NetBird
+netbird down
+
+# Check DNS
+cat /etc/resolv.conf
+
+# If still shows 100.x.255.254, NetBird didn't restore original DNS
+```
+
+**Solutions**:
+
+#### Solution A: Manual DNS Restoration
+
+**Linux/macOS**:
+```bash
+# Remove NetBird DNS manually
+sudo rm /etc/resolv.conf
+sudo ln -s /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+# or create new resolv.conf:
+echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+```
+
+**Windows**:
+```powershell
+# Reset to automatic DNS
+Set-DnsClientServerAddress -InterfaceAlias "Ethernet" -ResetServerAddresses
+```
+
+#### Solution B: Clean Reinstall
+
+If DNS keeps breaking:
+
+```bash
+# Completely remove NetBird
+sudo netbird down
+sudo systemctl stop netbird
+sudo systemctl disable netbird
+
+# Restore DNS manually (see above)
+
+# Reinstall NetBird
+curl -sSL https://pkgs.netbird.io/install.sh | sh
+```
+
+### Issue 6: DNS Rebinding Protection
+
+**Symptoms**:
+- Router blocks internal DNS queries
+- "DNS rebinding attack detected" in router logs
+- Inconsistent resolution
+
+**Diagnosis**:
+
+This happens when using NetBird DNS with routers that have DNS rebinding protection (pfSense, OpenWRT, etc.).
+
+**Solutions**:
+
+#### Solution A: Whitelist Domains
+
+In your router's DNS settings, whitelist your internal domains:
+
+**pfSense**:
+1. Services → DNS Resolver
+2. Add to "Domain Overrides" or whitelist
+
+**OpenWRT**:
+```bash
+# Add to /etc/config/dhcp
+config domain
+    option name 'company.internal'
+    option ip '10.0.0.1'
+```
+
+---
+
+## Prevention Checklist
+
+Avoid future DNS issues:
+
+- ✅ Always configure at least one primary nameserver
+- ✅ Use 2-3 nameservers for redundancy
+- ✅ Test configuration on one peer before rolling out
+- ✅ Document your DNS architecture
+- ✅ Monitor DNS resolution performance
+- ✅ Keep NetBird client updated
+- ✅ Include both `domain.internal` and `*.domain.internal` patterns
+- ✅ Verify nameservers are reachable before configuring
+- ✅ Use fast, reliable public DNS for primary (Cloudflare, Google)
+- ✅ Set `search_domains_enabled: true` for internal domains
+
+---
+
+## Related Documentation
+
+- **[DNS Overview](/manage/dns)** - Understand DNS architecture
+- **[Configuring Nameservers](/manage/dns/nameserver-groups)** - Configuration guide
+- **[DNS Settings](/manage/dns/dns-settings)** - Management modes
+- **[API Reference](/ipa/resources/dns)** - Automate DNS

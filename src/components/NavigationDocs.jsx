@@ -159,7 +159,10 @@ export const docsNavigation = [
                 title: 'DNS',
                 isOpen: false,
                 links: [
-                    { title: 'Manage DNS in Your Network', href: '/manage/dns' },
+                    { title: 'Overview', href: '/manage/dns' },
+                    { title: 'Configuring Nameservers', href: '/manage/dns/nameserver-groups' },
+                    { title: 'DNS Settings', href: '/manage/dns/dns-settings' },
+                    { title: 'DNS Troubleshooting', href: '/manage/dns/troubleshooting' },
                 ]
             },
             {
