@@ -14,6 +14,7 @@ import {ToastContainer} from "react-toastify";
 import 'react-toastify/dist/ReactToastify.css';
 import {dom} from "@fortawesome/fontawesome-svg-core";
 import {AnnouncementBannerProvider} from "@/components/announcement-banner/AnnouncementBannerProvider";
+import {ImageZoom} from "@/components/ImageZoom";
 
 function onRouteChange() {
   useMobileNavigationStore.getState().close()
@@ -42,6 +43,7 @@ export default function App({ Component, pageProps }) {
           </MDXProvider>
       </AnnouncementBannerProvider>
       <ToastContainer />
+      <ImageZoom />
     </>
   )
 }
