@@ -10,21 +10,39 @@ Before diving deep, run through this quick checklist:
 
 ```bash
 # 1. Is NetBird connected?
-netbird status
+netbird status -d
 
-# 2. Is DNS the peer being passed the correct nameservers?
-netbird status | grep Nameserver
+# 2. Is the peer receiving the correct nameservers for match domains?
+netbird status | grep -A 5 Nameserver
 
-# 3. Can you resolve public domains?
+# 3. Check what DNS servers are currently active on the system
+# Linux:
+cat /etc/resolv.conf
+resolvectl status 2>/dev/null || systemd-resolve --status 2>/dev/null
+# macOS:
+cat /etc/resolv.conf
+scutil --dns
+# Windows:
+Get-DnsClientServerAddress
+
+# 4. Verify the match domain nameserver is reachable from this peer
+ping 10.0.0.53
+# Replace with your nameserver IP
+
+# 5. Test resolution directly against the match domain nameserver (bypass system resolver)
+dig @10.0.0.53 app.internal.company.com
+# Replace 10.0.0.53 with your actual nameserver IP
+
+# 6. Can you resolve match domains through the system resolver?
+# Linux:
+resolvectl query app.internal.company.com
+# macOS:
+dscacheutil -q host -a name app.internal.company.com
+# Windows/Cross-platform:
+nslookup app.internal.company.com
+
+# 7. Confirm public domains still resolve (verifies split DNS is working)
 nslookup google.com
-
-# 4. Can you resolve internal domains?
-nslookup internal.company.internal
-
-# 5. What DNS server is being used?
-cat /etc/resolv.conf  # Linux/macOS
-# or
-Get-DnsClientServerAddress  # Windows
 ```
 
 If any of these fail, continue to the relevant section below.
@@ -53,15 +71,13 @@ If the problem goes away, the issue is in your NetBird DNS configuration. If it 
 
 The OS isn't configured to use NetBird's resolver.
 
+**Check**: Refer to the [Verifying Configuration](#verifying-configuration) section to confirm if your OS is using NetBird's resolver.
+
+**Fix**:
+If the configuration is incorrect, restart NetBird to force the OS to pick up the DNS settings:
+
 **Linux/macOS**:
 ```bash
-# Check resolv.conf
-cat /etc/resolv.conf
-
-# Should contain:
-# nameserver 100.x.255.254 (where x is from your NetBird /16 block)
-
-# If not, restart NetBird
 sudo systemctl restart netbird
 # or
 sudo netbird down && sudo netbird up
@@ -69,12 +85,6 @@ sudo netbird down && sudo netbird up
 
 **Windows**:
 ```powershell
-# Check DNS settings
-Get-DnsClientServerAddress -InterfaceAlias "NetBird"
-
-# Should show: 100.x.255.254 (where x is from your NetBird /16 block)
-
-# If not, restart NetBird service
 Restart-Service netbird
 ```
 
@@ -83,27 +93,24 @@ Restart-Service netbird
 NetBird is routing queries to the wrong DNS server.
 
 1. **Go to Dashboard → DNS → Nameservers**
-2. **Check match domains**:
-   - Does your domain pattern match? 
-   - `company.internal` won't match `*.company.internal` (need both)
-3. **Check nameserver IPs**:
+2. **Check nameserver IPs**:
    - Are they correct?
    - Are they reachable from peers?
-4. **Check distribution groups**:
+3. **Check distribution groups**:
    - Is the peer's group assigned to this nameserver?
 
 **Common mistakes**:
 ```json
-// ❌ Wrong: Wildcard only
+// ❌ Wrong: Wildcard syntax not supported
 {
   "domains": ["*.company.internal"]
 }
-// Doesn't match "company.internal" (no subdomain)
 
-// ✅ Correct: Both patterns
+// ✅ Correct: Single domain (automatically matches all subdomains)
 {
-  "domains": ["company.internal", "*.company.internal"]
+  "domains": ["company.internal"]
 }
+// This matches company.internal, app.company.internal, server.company.internal, etc.
 ```
 
 #### Solution C: Nameserver Unreachable
@@ -133,14 +140,11 @@ dig @10.0.0.1 internal.company.internal
 
 **Diagnosis**:
 
-```bash
-# Test public DNS
-nslookup google.com
-nslookup google.com <NetBird local resolver IP>
-nslookup google.com 8.8.8.8
-# If direct to 8.8.8.8 works but others fail, it's likely a NetBird resolver issue
-# If all fail, it's likely a Network connectivity issue
-```
+Refer to **Step 7** in the [Quick Diagnostics Checklist](#quick-diagnostics-checklist) to verify if public domains resolve.
+
+If public domains resolution fails, check if you can resolve against a public resolver directly (e.g., `nslookup google.com 8.8.8.8`).
+- If direct resolution works: It's likely a NetBird resolver issue.
+- If direct resolution fails: It's likely a general network connectivity issue.
 
 **Solutions**:
 
@@ -211,7 +215,7 @@ The peer's group has DNS management disabled.
 
 ```bash
 # Test multiple times
-for i in {1..10}; do 
+for i in {1..10}; do
   echo "Test $i:"
   time nslookup internal.company.internal
   sleep 1
@@ -321,7 +325,7 @@ Get-DnsClientGlobalSetting | Select-Object SuffixSearchList
 **Fix**:
 ```json
 {
-  "domains": ["company.internal", "*.company.internal"],
+  "domains": ["company.internal"],
   "search_domains_enabled": true  // Must be true!
 }
 ```
@@ -430,6 +434,374 @@ config domain
 
 ---
 
+## Verifying Configuration
+
+### Public nameservers
+
+When you configure a nameserver accessible from the Internet (without a VPN), the NetBird client acts as a proxy to that public nameserver.
+
+There are two things to verify:
+
+1. The NetBird client has picked up the nameserver
+2. The operating system is configured to use the NetBird client's proxy nameserver
+
+To check the first item (works on all operating systems):
+
+1. Run `netbird status -d`
+2. Locate the nameserver's IP address
+3. Confirm it shows as "Available" (it could also show as timed out or in another state)
+
+```
+...
+Nameservers:
+  [1.1.1.1:53, 1.0.0.1:53] for [.] is Available
+...
+```
+
+#### Verifying DNS resolution in practice
+
+Here are commands to query nameservers for `name.at.example.com` on different operating systems. The trailing `.` ensures you're querying a fully-qualified domain name, independent of your local network's search domain configuration:
+
+```shell
+# macOS
+dscacheutil -q host -a name name.at.example.com.
+# Windows PowerShell
+Resolve-DnsName -Name name.at.example.com.
+# Linux/UNIX
+dig name.at.example.com.
+nslookup name.at.example.com.
+# Linux with systemd-resolved
+resolvectl query name.at.example.com.
+
+```
+
+#### Verifying nameserver registration on Windows
+
+To confirm nameservers are properly registered on Windows using PowerShell:
+
+```shell
+PS C:\Users\kdn> Get-DnsClientNrptRule
+Name                             : NetBird-Match
+Version                          : 2
+Namespace                        : {.netbird.cloud, .83.100.in-addr.arpa}
+...
+ NameServers                      : 100.83.255.254
+...
+PS C:\Users\kdn> Get-DnsClientNrptPolicy
+
+
+Namespace                        : .83.100.in-addr.arpa
+...
+NameServers                      : 100.83.255.254
+...
+
+Namespace                        : .netbird.cloud
+...
+NameServers                      : 100.83.255.254
+...
+
+PS C:\Users\kdn> ipconfig /all
+...
+Unknown adapter wt0:
+
+   Connection-specific DNS Suffix  . : netbird.cloud
+   Description . . . . . . . . . . . : WireGuard Tunnel
+...
+   Connection-specific DNS Suffix Search List :
+                                      netbird.cloud
+                                      83.100.in-addr.arpa
+...
+```
+
+In the output above, look for:
+
+- `100.XXX.255.254` under _NameServers_ (the local proxy address of the NetBird client)
+- `.netbird.cloud` and `.XXX.100.in-addr.arpa` under _Namespace_ for built-in entries
+- `.your.custom.domain.example.com` under _Namespace_ for your custom domains
+
+#### Verifying nameserver registration on macOS
+
+To confirm nameservers are properly registered on macOS using the terminal:
+
+```shell
+> scutil --dns
+...
+resolver #2
+  domain   : netbird.cloud
+  nameserver[0] : 100.83.255.254
+  port     : 53
+  flags    : Supplemental, Request A records, Request AAAA records
+  reach    : 0x00000002 (Reachable)
+  order    : 101200
+...
+resolver #8
+  domain   : 83.100.in-addr.arpa
+  nameserver[0] : 100.83.255.254
+  port     : 53
+  flags    : Supplemental, Request A records, Request AAAA records
+  reach    : 0x00000002 (Reachable)
+  order    : 102402
+...
+```
+
+In the output above, look for:
+
+- `100.XXX.255.254` under _nameserver[N]_ (the local proxy address of the NetBird client)
+- `netbird.cloud` and `.XXX.100.in-addr.arpa` under _domain_ for built-in entries
+- `.your.custom.domain.example.com` under _domain_ for your custom domains
+- `Reachable` in the _reach_ field
+
+##### macOS DNS caching issues
+
+macOS may cache DNS results from previous queries and continue serving stale data. To flush the cache:
+
+```shell
+sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder
+```
+
+To verify whether caching is causing your issue:
+
+1. Run `netbird down` or disconnect
+2. Flush the cache (see above)
+3. Resolve the domain: `dscacheutil -q host -a name <domain>`
+4. Run `netbird up` or connect
+5. Check if `dscacheutil -q host -a name <domain>` works
+   - If it doesn't, flush the cache and retry
+
+#### Verifying nameserver registration on Linux
+
+Nameserver configuration varies depending on your distribution:
+
+For `systemd-resolved`, check the configuration with `resolvectl status`.
+
+For other configuration backends, look for these entries in `/etc/resolv.conf`:
+
+- `127.0.0.1` - default address for NetBird DNS proxy listener
+- `127.0.0.153` - fallback address for NetBird DNS proxy listener
+- Value of `$NB_DNS_RESOLVER_ADDRESS` - custom override for the NetBird DNS proxy listener
+
+To find the address the NetBird client is listening on:
+
+```shell
+sudo ss -nlptu 'sport = 53' | grep netbird
+sudo netstat -ltnup | grep ':53' | grep netbird
+```
+
+### Internal nameservers
+
+When you configure an internal nameserver (not accessible from the Internet), you need to complete the steps in the [Public nameservers](#public-nameservers) section above, plus verify that the nameserver's IP addresses are properly routed and accessible.
+
+Refer to [Access from `peer-a` to `srv-c`](/help/troubleshooting-client#access-from-peer-a-to-srv-c) in the client troubleshooting guide.
+
+To configure `int-dns1`, follow [Access from `peer-a` to `srv-c`](/help/troubleshooting-client#access-from-peer-a-to-srv-c) with these substitutions:
+
+- Replace port `80` with port `53`
+- Replace IP address `10.123.45.17` with `10.123.45.6`
+
+To configure `int-dns2`, follow [Access from `peer-a` to `srv-c`](/help/troubleshooting-client#access-from-peer-a-to-srv-c) with these substitutions:
+
+- Replace port `80` with port `53`
+- Ignore the `10.123.45.0/24` network instructions entirely
+- Replace IP address `10.123.45.17` with `10.7.8.9`
+- Create a Network (with Resources and Routing Peers) or Network Route for the `10.7.8.9/32` IP address range
+
+To test the configuration, refer to the [Public nameservers](#public-nameservers) section.
+
+## Debugging Access to Domain Resources
+
+While we strive to make domain-based Resources "just work", issues can still occur. Common causes include:
+
+- Local device management software or system firewalls on the client
+- Routing Peer problems (often firewall-related)
+- Access Policies misconfiguration preventing connectivity
+
+This section provides step-by-step guidance for verifying connectivity at each stage of Domain Resource handling, helping you identify where problems occur.
+
+For a detailed overview of how this works, read the [Domain Resources](/manage/networks#domain-resources) section.
+
+We'll troubleshoot in reverse order, starting with the most common issues. First, we'll verify that the Routing Peer is working correctly, then check the client's operating system configuration as one of the final steps.
+
+For the examples in this section, we'll assume:
+
+- A `*.nb.test` Network Resource is configured
+- We're trying to access `srv.nb.test`
+- `zxc.nb.test` doesn't exist (used to demonstrate errors)
+- The Routing Peer's NetBird address is `100.83.136.209`
+    - It's named `brys-vm-nbt-ubuntu-isolated-02` in the outputs
+- The client is named `brys-vm-nbt-ubuntu-01` in the outputs
+    - The client runs Ubuntu, but most commands work across all platforms
+    - Its IP address is `100.83.73.97`
+    - On macOS and Windows, use `100.83.255.254` to access the local DNS forwarder instead
+- The Resource runs on `brys-vm-nbt-ubuntu-isolated-01` in the outputs
+- We'll only check port `22054`, but you may need to repeat steps for port `5353` on legacy clients
+
+<Note>
+  Port `5353` is the well-known Multicast DNS port (used by Avahi, Bonjour, printer sharing, Chromecast, etc.) and may already be in use by other software. This can prevent older Routing Peers from routing Domain Resources.
+
+  Notably, Chrome and Chromium-based browsers can occupy port `5353`, even on Windows Server machines.
+
+  To address this, we switched to port `22054`. We strongly recommend updating your fleet to version `0.59.10` or later.
+</Note>
+
+### Is the Routing Peer correctly resolving queries?
+
+While this is rarely the issue in practice, it's worth verifying that the Routing Peer can resolve the requested domain and access the target resource.
+
+Refer to [Verifying DNS resolution in practice](#verifying-dns-resolution-in-practice) for OS-specific commands, adjusting the domain to `srv.nb.test`.
+
+Also verify that the Routing Peer has network access to the routed resource:
+
+For TCP services, you should see something like this:
+
+```shell
+kdn@brys-vm-nbt-ubuntu-01:~$ nc -vz -w 1 srv.nb.test 80
+Connection to srv.nb.test (192.168.100.10) 80 port [tcp/http] succeeded!
+kdn@brys-vm-nbt-ubuntu-01:~$ nc -vz -w 1 srv.nb.test 12345
+nc: connect to srv.nb.test (192.168.100.10) port 12345 (tcp) failed: Connection refused
+```
+
+For UDP:
+
+```shell
+kdn@brys-vm-nbt-ubuntu-01:~$ nc -vz -w 1 -u srv.nb.test 12345 ; echo $?
+Connection to srv.nb.test (192.168.100.10) 12345 port [udp/*] succeeded!
+0
+kdn@brys-vm-nbt-ubuntu-01:~$ nc -vz -w 1 -u srv.nb.test 12347 ; echo $?
+1
+```
+
+### Is the remote DNS resolver accessible to the client?
+
+Verify that the client Peer can reach and use the Routing Peer's DNS resolver. This step rules out firewall-related issues with the Routing Peer. If the following command fails, you'll need to open port `22054` in the Routing Peer's firewall.
+
+```shell
+kdn@brys-vm-nbt-ubuntu-01:~$ nslookup -timeout=1 -port=22054 srv.nb.test 100.83.136.209
+Server:         100.83.136.209
+Address:        100.83.136.209#22054
+
+Non-authoritative answer:
+Name:   srv.nb.test
+Address: 192.168.100.10
+
+kdn@brys-vm-nbt-ubuntu-01:~$ nslookup -timeout=1 -port=22054 zxc.nb.test 100.83.136.209
+Server:         100.83.136.209
+Address:        100.83.136.209#22054
+
+** server can't find zxc.nb.test: NXDOMAIN
+
+```
+
+### Trigger the Domain Resource
+
+While local DNS forwarder failures are rare, using it is a good way to force the NetBird client to set up routing for the domain (see [Domain Resources](/manage/networks#domain-resources) for details).
+
+<Note>
+  On macOS and Windows, the IP address is always `100.83.255.254` instead of `100.83.73.97`.
+</Note>
+
+Notice that the IP addresses are initially missing from the routing table (`ip route show` on Linux), but are added after resolving the domain for the first time using the local DNS Forwarder:
+
+```shell
+kdn@brys-vm-nbt-ubuntu-01:~$ netbird networks ls
+Available Networks:
+
+  - ID: *.nb.test
+    Domains: *.nb.test
+    Status: Selected
+    Resolved IPs: -
+kdn@brys-vm-nbt-ubuntu-01:~$ ip route show table all | grep 192.168.100
+kdn@brys-vm-nbt-ubuntu-01:~$ nslookup -timeout=1 srv.nb.test 100.83.73.97
+Server:         100.83.73.97
+Address:        100.83.73.97#53
+
+Non-authoritative answer:
+Name:   srv.nb.test
+Address: 192.168.100.10
+kdn@brys-vm-nbt-ubuntu-01:~$ ip route show table all | grep 192.168.100
+192.168.100.10 dev wt0 table 7120
+kdn@brys-vm-nbt-ubuntu-01:~$ netbird networks ls
+Available Networks:
+
+  - ID: *.nb.test
+    Domains: *.nb.test
+    Status: Selected
+    Resolved IPs:
+      [srv.nb.test.]: 192.168.100.10
+```
+
+### Verifying Domain Resource registration with the operating system
+
+After confirming everything works within NetBird's scope, restart NetBird and check whether the operating system's default DNS resolver resolves the Domain Resource correctly.
+
+<Note>
+  See [Verifying Configuration > Public nameservers](#public-nameservers) for equivalent macOS and Windows debugging steps.
+</Note>
+
+<Note>
+  You might notice that `netbird down` followed by `netbird up` doesn't clear the `Resolved IPs`:
+
+  ```shell
+  kdn@brys-vm-nbt-ubuntu-01:~$ sudo netbird down
+  Disconnected
+  kdn@brys-vm-nbt-ubuntu-01:~$ sudo netbird up
+  Connected
+  kdn@brys-vm-nbt-ubuntu-01:~$ netbird networks ls
+  Available Networks:
+
+    - ID: *.nb.test
+      Domains: *.nb.test
+      Status: Selected
+      Resolved IPs:
+        [srv.nb.test.]: 192.168.100.10
+  ```
+
+  This is expected behavior—the results are stored in the client daemon's in-memory cache. However, the routing rules are properly cleared:
+
+  ```shell
+  kdn@brys-vm-nbt-ubuntu-01:~$ ip route show table all | grep 192.168.100
+  kdn@brys-vm-nbt-ubuntu-01:~$
+  ```
+</Note>
+
+We'll start fresh by restarting the entire NetBird service to purge all caches, then proceed with testing:
+
+```shell
+kdn@brys-vm-nbt-ubuntu-01:~$ sudo netbird service restart
+NetBird service has been restarted
+kdn@brys-vm-nbt-ubuntu-01:~$ netbird networks ls
+Available Networks:
+
+  - ID: *.nb.test
+    Domains: *.nb.test
+    Status: Selected
+    Resolved IPs: -
+kdn@brys-vm-nbt-ubuntu-01:~$ ip route show table all | grep 192.168.100
+kdn@brys-vm-nbt-ubuntu-01:~$ resolvectl query srv.nb.test
+srv.nb.test: 192.168.100.10                    -- link: wt0
+
+-- Information acquired via protocol DNS in 8.1ms.
+-- Data is authenticated: no; Data was acquired via local or encrypted transport: no
+-- Data from: network
+kdn@brys-vm-nbt-ubuntu-01:~$ ip route show table all | grep 192.168.100
+192.168.100.10 dev wt0 table 7120
+kdn@brys-vm-nbt-ubuntu-01:~$ netbird networks ls
+Available Networks:
+
+  - ID: *.nb.test
+    Domains: *.nb.test
+    Status: Selected
+    Resolved IPs:
+      [srv.nb.test.]: 192.168.100.10
+```
+
+<Note>
+  The operating system resolver may not be the only source of DNS queries, but using it is required for Domain Resources to work.
+
+  Some applications (especially web browsers) cache DNS results internally and may never trigger Domain Resource routing.
+
+  While we can (and do) clear the operating system resolver's caches, there's no way to instruct applications to do the same.
+</Note>
+
 ## Prevention Checklist
 
 Avoid future DNS issues:
@@ -440,12 +812,10 @@ Avoid future DNS issues:
 - ✅ Document your DNS architecture
 - ✅ Monitor DNS resolution performance
 - ✅ Keep NetBird client updated
-- ✅ Include both `domain.internal` and `*.domain.internal` patterns
 - ✅ Verify nameservers are reachable before configuring
 - ✅ Use fast, reliable public DNS for primary (Cloudflare, Google)
 - ✅ Set `search_domains_enabled: true` for internal domains
 
----
 
 ## Related Documentation
 
