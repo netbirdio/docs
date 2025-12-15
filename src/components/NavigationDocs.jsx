@@ -37,7 +37,9 @@ export const docsNavigation = [
                 { title: 'MacOS', href: '/get-started/install/macos' },
                 { title: 'Docker', href: '/get-started/install/docker' },
                 { title: 'iOS', href: '/get-started/install/ios' },
+                { title: 'tvOS', href: '/get-started/install/tvos'},
                 { title: 'Android', href: '/get-started/install/android' },
+                { title: 'Android TV', href: '/get-started/install/android-tv'}
               ],
             },
             {
