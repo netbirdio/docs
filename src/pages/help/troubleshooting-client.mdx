@@ -408,7 +408,8 @@ sudo firewall-cmd --reload
 
 ### Windows Firewall
 
-NetBird creates a Windows Firewall rule automatically. If traffic is blocked:
+NetBird creates a Windows Firewall rule automatically that allows traffic on the NetBird IP address 
+(the `wt0` interface). This covers traffic after WireGuard decryption.
 
 **Check if the NetBird rule exists**:
 ```powershell
@@ -432,6 +433,47 @@ Check with your IT administrator or review:
 ```powershell
 Get-NetFirewallProfile | Format-List Name, Enabled, DefaultInboundAction
 ```
+
+### Environments without NAT (flat networks, routed VLANs)
+
+In most environments, NAT provides stateful connection tracking. When Peer A sends UDP to Peer B, the 
+return traffic is allowed because the NAT device tracks it as part of an established connection.
+
+However, in environments **without NAT between peers** (e.g., flat office networks, routed VLANs without 
+masquerading), Windows Firewall may block incoming WireGuard P2P traffic because:
+
+1. There is no NAT state tracking the "connection"
+2. Windows Firewall sees the incoming UDP packets as unsolicited inbound traffic
+3. The default NetBird rule only covers traffic on the `wt0` interface (after decryption), not the raw 
+   WireGuard packets arriving on the physical interface
+
+**Symptoms**:
+- P2P works when one peer is behind NAT but fails when both peers are on the same flat network
+- `netbird status -d` shows connection type as "Relayed" instead of "P2P" for local peers
+- P2P works after disabling Windows Firewall
+
+**Solution**: Add a firewall rule to allow inbound UDP for WireGuard P2P traffic, scoped to the NetBird process:
+```powershell
+New-NetFirewallRule -DisplayName "NetBird P2P" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 49152-65535 -Program "C:\Program Files\Netbird\netbird.exe"
+```
+
+This rule:
+- Allows inbound UDP on the ephemeral port range (used for WireGuard)
+- Is scoped to only the NetBird process for security
+- Does not expose any other services
+
+**Note**: This is only needed in environments without NAT between peers. If your peers connect through 
+NAT (typical for remote access scenarios), the default rules are sufficient.
+
+**Linux in non-NAT environments**: The same principle applies. If UFW or firewalld is blocking inbound 
+UDP on the physical interface, you may need to allow it. However, Linux cannot scope firewall rules to 
+a specific process like Windows can. A broader rule would be required:
+```bash
+# UFW - allows inbound UDP on ephemeral ports (less restrictive than Windows equivalent)
+sudo ufw allow in proto udp to any port 49152:65535
+```
+
+Consider whether this is acceptable for your security posture, or use NetBird's relay fallback instead.
 
 ### Third-party security software
 
@@ -495,6 +537,7 @@ Get-NetFirewallProfile
 | UFW (Linux) | `sudo ufw status` | `sudo ufw allow in on wt0` |
 | firewalld (Linux) | `sudo firewall-cmd --get-zone-of-interface=wt0` | `sudo firewall-cmd --permanent --zone=trusted --add-interface=wt0 && sudo firewall-cmd --reload` |
 | Windows | `Get-NetFirewallRule \| Where-Object { $_.DisplayName -like "*NetBird*" }` | Check Group Policy or third-party software |
+| Windows (no NAT) | P2P shows as Relayed for local peers | `New-NetFirewallRule -DisplayName "NetBird P2P" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 49152-65535 -Program "C:\Program Files\Netbird\netbird.exe"` |
 
 ## Client login failures
 

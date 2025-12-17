@@ -6,7 +6,7 @@ export const title = 'FAQ'
 
 This section covers **network/perimeter firewall** requirements (e.g., Fortigate, pfSense, cloud security groups). 
 For host-based firewalls (Windows Firewall, UFW, iptables), see 
-[How does NetBird interact with host-based firewalls?](#how-does-netbird-interact-with-host-based-firewalls)
+[How does NetBird interact with host-based firewalls?](#how-does-net-bird-interact-with-host-based-firewalls)
 
 ### Incoming ports
 NetBird's agent doesn't require any incoming port to be open; It negotiates the connection with the support of the signal and relay services.
@@ -63,7 +63,7 @@ Below is the list of NetBird hosted endpoints and ports they listen to:
     Download the full list of NetBird Cloud STUN/TURN/Relay endpoints and port requirements in <a href="/docs-static/files/netbird-cloud-endpoints.json" download>JSON format.</a>
 </Note>
 
-## How does Netbird interact with host-based firewalls?
+## How does NetBird interact with host-based firewalls?
 
 NetBird automatically manages host-based firewall rules to allow traffic on the NetBird interface (`wt0`). 
 This is separate from your network/perimeter firewall, which requires no inbound port configuration.
@@ -94,13 +94,21 @@ iptables on Ubuntu and other Linux distributions. When you enable UFW, its defau
 - **Incoming**: Deny all
 - **Outgoing**: Allow all
 
-This can conflict with NetBird because UFW manages iptables through its own chain structure. Depending 
-on chain evaluation order, UFW's deny policy may block NetBird traffic before it reaches NetBird's rules.
+This can conflict with NetBird because both UFW and NetBird manage iptables rules. The conflict is about 
+**chain evaluation order**, not about opening ports to the internet:
+
+1. WireGuard UDP packets arrive via hole punching (no inbound port needed on your router)
+2. NetBird decrypts them and presents traffic on the `wt0` interface
+3. UFW may evaluate its deny rules before NetBird's allow rules
+4. Result: Traffic blocked at the host level despite successful hole punching
 
 **Solution**: Allow traffic on the NetBird interface:
 ```bash
 sudo ufw allow in on wt0
 ```
+
+This does **not** open any ports to the internet. It allows traffic on the virtual `wt0` interface, which 
+only carries already-authenticated, already-encrypted NetBird traffic.
 
 **Verify the rule**:
 ```bash
@@ -109,8 +117,10 @@ sudo ufw status | grep wt0
 
 ### Windows Firewall
 
-NetBird creates a Windows Firewall rule automatically during installation/connection. If traffic is 
-blocked despite NetBird showing peers as connected, check for:
+NetBird creates a Windows Firewall rule automatically during installation/connection. This rule allows 
+traffic on the NetBird IP address (the `wt0` interface after decryption).
+
+If traffic is blocked despite NetBird showing peers as connected, check for:
 
 - Group Policy overriding the NetBird rule
 - Third-party security software (antivirus, endpoint protection) with its own firewall
@@ -120,6 +130,18 @@ blocked despite NetBird showing peers as connected, check for:
 ```powershell
 Get-NetFirewallRule | Where-Object { $_.DisplayName -like "*NetBird*" }
 ```
+
+#### Environments without NAT
+
+In flat office networks or routed VLANs without NAT, an additional firewall rule may be needed for P2P 
+to work. This is because Windows Firewall sees incoming WireGuard UDP packets as unsolicited traffic 
+when there is no NAT state tracking the connection.
+```powershell
+New-NetFirewallRule -DisplayName "NetBird P2P" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 49152-65535 -Program "C:\Program Files\Netbird\netbird.exe"
+```
+
+See [Environments without NAT](/help/troubleshooting-client#environments-without-nat-flat-networks-routed-vlans) 
+for details.
 
 ### Troubleshooting
 
