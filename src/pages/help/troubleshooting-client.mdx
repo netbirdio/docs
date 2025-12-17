@@ -333,6 +333,168 @@ sudo netbird service stop
 sudo bash -c 'PIONS_LOG_DEBUG=all NB_LOG_LEVEL=debug netbird up -F' > /tmp/netbird.log
 ```
 
+## Host-based firewall issues
+
+NetBird automatically adds firewall rules on all platforms to allow traffic on the NetBird interface (`wt0`). 
+However, conflicts can occur with other firewall management tools or security software.
+
+### Symptoms
+
+- Peers show as "Connected" in `netbird status` but cannot ping or reach each other
+- Connection works on some machines but not others with the same network configuration
+- Connection works after disabling the host firewall but fails when re-enabled
+- P2P connections work but routed traffic does not
+
+### Understanding the issue
+
+NetBird manages firewall rules directly via iptables/nftables (Linux/macOS) or Windows Firewall APIs. 
+When another tool also manages firewall rules, conflicts can occur:
+
+| Tool | Conflict Type |
+|------|---------------|
+| UFW (Linux) | Chain ordering - UFW may evaluate its deny rules before NetBird's allow rules |
+| firewalld (Linux) | Zone conflicts - NetBird interface may be in wrong zone |
+| Windows Group Policy | Policy may override or remove NetBird's firewall rule |
+| Third-party security software | May block traffic independently of OS firewall |
+
+### UFW (Linux)
+
+UFW is a frontend to iptables commonly used on Ubuntu. Its default policy denies all incoming traffic, 
+which can block NetBird traffic before it reaches NetBird's iptables rules.
+
+**Check UFW status**:
+```bash
+sudo ufw status verbose
+```
+
+If UFW is active with a default deny incoming policy, add a rule for the NetBird interface:
+
+**Allow NetBird interface**:
+```bash
+sudo ufw allow in on wt0
+```
+
+**Verify the rule was added**:
+```bash
+sudo ufw status | grep wt0
+```
+
+Expected output:
+```Anywhere on wt0             ALLOW       Anywhere
+Anywhere (v6) on wt0        ALLOW       Anywhere (v6)
+```
+**Alternative - Allow specific NetBird subnet**:
+
+If you prefer a more restrictive rule:
+```bash
+sudo ufw allow in on wt0 from 100.64.0.0/10
+```
+
+### firewalld (Linux)
+
+On distributions using firewalld (RHEL, CentOS, Fedora), ensure the `wt0` interface is in a trusted zone:
+
+**Check current zone for wt0**:
+```bash
+sudo firewall-cmd --get-zone-of-interface=wt0
+```
+
+**Add wt0 to trusted zone**:
+```bash
+sudo firewall-cmd --permanent --zone=trusted --add-interface=wt0
+sudo firewall-cmd --reload
+```
+
+### Windows Firewall
+
+NetBird creates a Windows Firewall rule automatically. If traffic is blocked:
+
+**Check if the NetBird rule exists**:
+```powershell
+Get-NetFirewallRule | Where-Object { $_.DisplayName -like "*NetBird*" } | Format-List DisplayName, Enabled, Direction, Action
+```
+
+**Check if the rule is being applied**:
+```powershell
+Get-NetFirewallRule | Where-Object { $_.DisplayName -like "*NetBird*" } | Get-NetFirewallAddressFilter
+```
+
+**Manually create the rule if missing**:
+```powershell
+New-NetFirewallRule -DisplayName "NetBird" -Direction Inbound -InterfaceAlias "wt0" -Action Allow
+```
+
+**Check for Group Policy overrides**:
+
+If the rule exists but traffic is still blocked, Group Policy may be overriding local firewall rules. 
+Check with your IT administrator or review:
+```powershell
+Get-NetFirewallProfile | Format-List Name, Enabled, DefaultInboundAction
+```
+
+### Third-party security software
+
+Antivirus and endpoint protection software often includes its own firewall that operates independently 
+of the OS firewall. Common culprits include:
+
+- Symantec Endpoint Protection
+- McAfee
+- Kaspersky
+- ESET
+- CrowdStrike Falcon
+
+If you suspect third-party software is blocking NetBird:
+
+1. Temporarily disable the third-party firewall component (not the entire product)
+2. Test NetBird connectivity
+3. If it works, add an exception for the NetBird process or the `wt0` interface
+
+The NetBird process locations:
+- **Windows**: `C:\Program Files\NetBird\netbird.exe`
+- **Linux**: `/usr/bin/netbird`
+- **macOS**: `/usr/local/bin/netbird`
+
+### Collecting firewall diagnostics
+
+When reporting firewall-related issues, include a debug bundle with system information:
+```bash
+netbird debug bundle --system-info
+```
+
+The `--system-info` flag captures:
+- Network routes
+- Interface configuration
+- Firewall rules (where accessible)
+
+**Additional diagnostics for Linux**:
+```bash
+# Current iptables rules
+sudo iptables -L -n -v
+
+# nftables rules (if applicable)
+sudo nft list ruleset
+
+# UFW status
+sudo ufw status verbose
+```
+
+**Additional diagnostics for Windows** (run as Administrator):
+```powershell
+# All firewall rules for wt0
+Get-NetFirewallRule | Where-Object { $_.DisplayName -like "*NetBird*" -or $_.DisplayName -like "*wt0*" }
+
+# Firewall profile status
+Get-NetFirewallProfile
+```
+
+### Quick reference
+
+| Platform | Check Command | Fix Command |
+|----------|---------------|-------------|
+| UFW (Linux) | `sudo ufw status` | `sudo ufw allow in on wt0` |
+| firewalld (Linux) | `sudo firewall-cmd --get-zone-of-interface=wt0` | `sudo firewall-cmd --permanent --zone=trusted --add-interface=wt0 && sudo firewall-cmd --reload` |
+| Windows | `Get-NetFirewallRule \| Where-Object { $_.DisplayName -like "*NetBird*" }` | Check Group Policy or third-party software |
+
 ## Client login failures
 
 A single machine can only connect to one NetBird account as the same user/login method throughout the lifetime of

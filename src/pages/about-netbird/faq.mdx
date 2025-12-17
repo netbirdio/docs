@@ -2,7 +2,11 @@ import {Note} from "@/components/mdx";
 
 export const title = 'FAQ'
 
-## What firewall ports should I open to use NetBird?
+## What firewall ports should I open to use NetBird (Network Firewalls)?
+
+This section covers **network/perimeter firewall** requirements (e.g., Fortigate, pfSense, cloud security groups). 
+For host-based firewalls (Windows Firewall, UFW, iptables), see 
+[How does NetBird interact with host-based firewalls?](#how-does-netbird-interact-with-host-based-firewalls)
 
 ### Incoming ports
 NetBird's agent doesn't require any incoming port to be open; It negotiates the connection with the support of the signal and relay services.
@@ -58,6 +62,75 @@ Below is the list of NetBird hosted endpoints and ports they listen to:
 <Note>
     Download the full list of NetBird Cloud STUN/TURN/Relay endpoints and port requirements in <a href="/docs-static/files/netbird-cloud-endpoints.json" download>JSON format.</a>
 </Note>
+
+## How does Netbird interact with host-based firewalls?
+
+NetBird automatically manages host-based firewall rules to allow traffic on the NetBird interface (`wt0`). 
+This is separate from your network/perimeter firewall, which requires no inbound port configuration.
+
+### Platform behavior
+
+| Platform | Firewall Manager | Automatic Rule |
+|----------|------------------|----------------|
+| Windows  | Windows Firewall | Allows all traffic on NetBird interface |
+| Linux    | iptables/nftables | Adds rules for NetBird traffic |
+
+### Network firewall vs. host-based firewall
+
+It is important to understand the distinction:
+
+- **Network/perimeter firewall** (Fortigate, pfSense, cloud security groups): Controls traffic entering 
+  and leaving your network. NetBird requires **no inbound ports** on these devices. All connections are 
+  initiated outbound using ICE/STUN for NAT traversal.
+
+- **Host-based firewall** (Windows Firewall, UFW, iptables): Controls traffic on the individual machine. 
+  NetBird automatically adds rules to allow traffic on the `wt0` interface.
+
+### UFW conflicts on Linux
+
+[UFW](https://wiki.ubuntu.com/UncomplicatedFirewall) (Uncomplicated Firewall) is a popular frontend to 
+iptables on Ubuntu and other Linux distributions. When you enable UFW, its default policy is:
+
+- **Incoming**: Deny all
+- **Outgoing**: Allow all
+
+This can conflict with NetBird because UFW manages iptables through its own chain structure. Depending 
+on chain evaluation order, UFW's deny policy may block NetBird traffic before it reaches NetBird's rules.
+
+**Solution**: Allow traffic on the NetBird interface:
+```bash
+sudo ufw allow in on wt0
+```
+
+**Verify the rule**:
+```bash
+sudo ufw status | grep wt0
+```
+
+### Windows Firewall
+
+NetBird creates a Windows Firewall rule automatically during installation/connection. If traffic is 
+blocked despite NetBird showing peers as connected, check for:
+
+- Group Policy overriding the NetBird rule
+- Third-party security software (antivirus, endpoint protection) with its own firewall
+- The rule failing to apply due to permissions
+
+**Check if the NetBird rule exists**:
+```powershell
+Get-NetFirewallRule | Where-Object { $_.DisplayName -like "*NetBird*" }
+```
+
+### Troubleshooting
+
+If you suspect host-based firewall issues, capture a debug bundle:
+```bash
+netbird debug bundle --system-info
+```
+
+The `--system-info` flag includes network routes and interface configuration, which helps identify 
+firewall-related issues. See [Host-based firewall issues](/help/troubleshooting-client#host-based-firewall-issues) 
+for detailed troubleshooting steps.
 
 ## Why and what are the anonymous usage metrics?
 
