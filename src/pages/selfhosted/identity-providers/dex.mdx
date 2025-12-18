@@ -1,0 +1,243 @@
+import {Note} from "@/components/mdx";
+
+# Dex with NetBird Self-Hosted
+
+This guide is a part of the [NetBird Self-hosting Guide](/docs/selfhosted/selfhosted-guide) and explains how to integrate
+**self-hosted** NetBird with [Dex](https://dexidp.io).
+
+<Note>
+    For the quickest setup with Dex, use our [one-line installation script](/selfhosted/selfhosted-quickstart-dex).
+    This guide is for users who want to manually configure Dex with an existing NetBird installation.
+</Note>
+
+## Overview
+
+[Dex](https://dexidp.io) is a lightweight, open-source OIDC identity provider that acts as a portal to other identity providers.
+It's ideal for self-hosted NetBird deployments where you want:
+- Minimal resource usage (~50MB memory)
+- Simple static user configuration
+- Optional integration with external identity providers (LDAP, GitHub, Google, SAML, etc.)
+
+## Step 1: Configure Dex
+
+Create a `dex.yaml` configuration file:
+
+```yaml
+issuer: https://<YOUR_NETBIRD_DOMAIN>/dex
+
+storage:
+  type: sqlite3
+  config:
+    file: /var/dex/dex.db
+
+web:
+  http: 0.0.0.0:5556
+
+# gRPC API for user management (used by NetBird IDP manager)
+grpc:
+  addr: 0.0.0.0:5557
+
+oauth2:
+  skipApprovalScreen: true
+
+# Static OAuth2 clients for NetBird
+staticClients:
+  # Dashboard client
+  - id: netbird-dashboard
+    name: NetBird Dashboard
+    secret: <GENERATE_A_RANDOM_SECRET>
+    redirectURIs:
+      - https://<YOUR_NETBIRD_DOMAIN>/nb-auth
+      - https://<YOUR_NETBIRD_DOMAIN>/nb-silent-auth
+
+  # CLI client (public - uses PKCE)
+  - id: netbird-cli
+    name: NetBird CLI
+    public: true
+    redirectURIs:
+      - http://localhost:53000/
+      - http://localhost:54000/
+
+# Enable password database for static users
+enablePasswordDB: true
+
+# Static users - add more users here as needed
+staticPasswords:
+  - email: "admin@<YOUR_NETBIRD_DOMAIN>"
+    hash: "<BCRYPT_HASH_OF_PASSWORD>"
+    username: "admin"
+    userID: "admin-user-id-001"
+```
+
+<Note>
+Generate a bcrypt hash for the password using:
+```bash
+htpasswd -bnBC 10 "" "your-password" | tr -d ':\n'
+```
+</Note>
+
+## Step 2: Add Dex to Docker Compose
+
+Add the Dex service to your `docker-compose.yml`:
+
+```yaml
+services:
+  dex:
+    image: ghcr.io/dexidp/dex:v2.38.0
+    container_name: netbird-dex
+    restart: unless-stopped
+    networks: [netbird]
+    volumes:
+      - ./dex.yaml:/etc/dex/config.docker.yaml:ro
+      - netbird_dex_data:/var/dex
+    command: ["dex", "serve", "/etc/dex/config.docker.yaml"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "2"
+
+volumes:
+  netbird_dex_data:
+```
+
+## Step 3: Configure Caddy reverse proxy
+
+Add Dex routing to your `Caddyfile`:
+
+```
+# Dex
+reverse_proxy /dex/* dex:5556
+```
+
+## Step 4: Configure NetBird Management
+
+Set properties in the `setup.env` file:
+
+```shell
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<YOUR_NETBIRD_DOMAIN>/dex/.well-known/openid-configuration"
+NETBIRD_USE_AUTH0=false
+NETBIRD_AUTH_CLIENT_ID="netbird-dashboard"
+NETBIRD_AUTH_CLIENT_SECRET="<YOUR_DEX_DASHBOARD_CLIENT_SECRET>"
+NETBIRD_AUTH_SUPPORTED_SCOPES="openid profile email offline_access"
+NETBIRD_AUTH_AUDIENCE="netbird-dashboard"
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="netbird-cli"
+NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE="netbird-cli"
+NETBIRD_AUTH_REDIRECT_URI="/nb-auth"
+NETBIRD_AUTH_SILENT_REDIRECT_URI="/nb-silent-auth"
+
+NETBIRD_MGMT_IDP="dex"
+```
+
+Or configure directly in `management.json`:
+
+```json
+{
+  "HttpConfig": {
+    "AuthIssuer": "https://<YOUR_NETBIRD_DOMAIN>/dex",
+    "AuthAudience": "netbird-dashboard",
+    "OIDCConfigEndpoint": "https://<YOUR_NETBIRD_DOMAIN>/dex/.well-known/openid-configuration"
+  },
+  "IdpManagerConfig": {
+    "ManagerType": "dex",
+    "ClientConfig": {
+      "Issuer": "https://<YOUR_NETBIRD_DOMAIN>/dex"
+    },
+    "ExtraConfig": {
+      "GRPCAddr": "dex:5557"
+    }
+  },
+  "DeviceAuthorizationFlow": {
+    "Provider": "hosted",
+    "ProviderConfig": {
+      "Audience": "netbird-cli",
+      "ClientID": "netbird-cli",
+      "Scope": "openid profile email offline_access",
+      "DeviceAuthEndpoint": "https://<YOUR_NETBIRD_DOMAIN>/dex/device/code",
+      "TokenEndpoint": "https://<YOUR_NETBIRD_DOMAIN>/dex/token"
+    }
+  },
+  "PKCEAuthorizationFlow": {
+    "ProviderConfig": {
+      "Audience": "netbird-cli",
+      "ClientID": "netbird-cli",
+      "Scope": "openid profile email offline_access",
+      "RedirectURLs": ["http://localhost:53000/", "http://localhost:54000/"]
+    }
+  }
+}
+```
+
+## Step 5: Configure Dashboard
+
+Set properties in `dashboard.env`:
+
+```shell
+NETBIRD_MGMT_API_ENDPOINT=https://<YOUR_NETBIRD_DOMAIN>
+NETBIRD_MGMT_GRPC_API_ENDPOINT=https://<YOUR_NETBIRD_DOMAIN>
+AUTH_AUDIENCE=netbird-dashboard
+AUTH_CLIENT_ID=netbird-dashboard
+AUTH_CLIENT_SECRET=<YOUR_DEX_DASHBOARD_CLIENT_SECRET>
+AUTH_AUTHORITY=https://<YOUR_NETBIRD_DOMAIN>/dex
+USE_AUTH0=false
+AUTH_SUPPORTED_SCOPES=openid profile email offline_access
+AUTH_REDIRECT_URI=/nb-auth
+AUTH_SILENT_REDIRECT_URI=/nb-silent-auth
+```
+
+## Adding External Identity Providers
+
+Dex supports various external identity providers through connectors. Add them to your `dex.yaml`:
+
+### LDAP Example
+```yaml
+connectors:
+  - type: ldap
+    id: ldap
+    name: LDAP
+    config:
+      host: ldap.example.com:636
+      insecureNoSSL: false
+      bindDN: cn=admin,dc=example,dc=com
+      bindPW: admin
+      userSearch:
+        baseDN: ou=users,dc=example,dc=com
+        filter: "(objectClass=person)"
+        username: uid
+        idAttr: uid
+        emailAttr: mail
+        nameAttr: cn
+```
+
+### GitHub Example
+```yaml
+connectors:
+  - type: github
+    id: github
+    name: GitHub
+    config:
+      clientID: $GITHUB_CLIENT_ID
+      clientSecret: $GITHUB_CLIENT_SECRET
+      redirectURI: https://<YOUR_NETBIRD_DOMAIN>/dex/callback
+```
+
+<Note>
+See the [Dex connectors documentation](https://dexidp.io/docs/connectors/) for all available connector types.
+</Note>
+
+## Step 6: Start Services
+
+Start Dex and restart NetBird services:
+
+```bash
+docker compose up -d dex
+docker compose restart management dashboard
+```
+
+Verify Dex is running:
+```bash
+curl -k https://<YOUR_NETBIRD_DOMAIN>/dex/.well-known/openid-configuration
+```
+
+## Step 7: Continue with the NetBird Self-hosting Guide
+You've configured all required resources in Dex. You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).
