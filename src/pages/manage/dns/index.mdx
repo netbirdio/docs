@@ -42,7 +42,7 @@ Here's what happens when a device looks up a domain:
   </Property>
   
   <Property name="Match Domains">
-    Specific domains that should be resolved by a particular nameserver (e.g., `*.company.internal`).
+    Specific domains that should be resolved by a particular nameserver (e.g., `company.internal`). Adding a domain automatically matches all its subdomains.
   </Property>
   
   <Property name="Primary Nameserver">
@@ -93,7 +93,12 @@ NetBird configures the operating system to use its DNS resolver:
 - **Linux**: NetBird always sets up DNS (via `/etc/resolv.conf` directly or `resolvconf` if `systemd-resolved` isn't available). Your original nameservers are preserved as upstream servers, so both NetBird peer domains and regular DNS work.
 - **macOS**: NetBird uses system APIs to configure DNS (it does **not** modify `/etc/resolv.conf` directly)
 - **Windows**: NetBird sets the network adapter's DNS server to the local NetBird resolver's IP
-- **Mobile**: Uses VPN DNS configuration
+- **Android**: Uses VPN DNS configuration
+- **iOS**: Uses VPN DNS configuration
+
+<Note>
+**Android**: For custom DNS resolution to work, you must disable Android's **Private DNS** setting. Go to **Settings → Network & Internet → Private DNS** and set it to **Off**. When Private DNS is enabled, Android bypasses the VPN's DNS configuration and sends DNS queries directly to the configured Private DNS provider.
+</Note>
 
 <Note>
 **Linux behavior**: Even without custom nameservers configured in the dashboard, NetBird sets up DNS. Your original upstream nameservers are preserved.
@@ -119,8 +124,8 @@ NetBird does **not** cache most DNS queries. Caching only occurs in specific cas
 
 Let's say you have this configuration:
 - **Primary nameserver**: Cloudflare (1.1.1.1) for general internet
-- **Match domains**: `*.company.internal` → Internal DNS (10.0.0.1)
-- **Match domains**: `*.ec2.internal` → AWS DNS (VPC resolver)
+- **Match domains**: `company.internal` → Internal DNS (10.0.0.1)
+- **Match domains**: `ec2.internal` → AWS DNS (VPC resolver)
 
 Here's what happens with different queries:
 
@@ -129,14 +134,14 @@ Query: "google.com"
 → No match → Primary (1.1.1.1) → Returns public IP
 
 Query: "web.company.internal"
-→ Matches *.company.internal → Internal DNS (10.0.0.1) → Returns private IP
+→ Matches company.internal → Internal DNS (10.0.0.1) → Returns private IP
 
 Query: "ip-10-0-1-50.ec2.internal"
-→ Matches *.ec2.internal → AWS DNS → Returns VPC IP
+→ Matches ec2.internal → AWS DNS → Returns VPC IP
 
 Query: "server" (with search domain "company.internal")
 → Expanded to "server.company.internal"
-→ Matches *.company.internal → Internal DNS → Returns private IP
+→ Matches company.internal → Internal DNS → Returns private IP
 ```
 
 #### 4. **DNS Management Modes**
@@ -239,11 +244,11 @@ When you assign a nameserver to distribution groups:
 
 ### Use Case 1: Split-Horizon DNS
 
-**Scenario**: You have internal services at `*.company.internal` and want peers to use your internal DNS, but use public DNS for everything else.
+**Scenario**: You have internal services at `company.internal` and want peers to use your internal DNS, but use public DNS for everything else.
 
 **Configuration**:
 - **Nameserver 1** (Primary): Cloudflare 1.1.1.1 for general internet
-- **Nameserver 2** (Match `*.company.internal`): Internal DNS 10.0.0.1
+- **Nameserver 2** (Match `company.internal`): Internal DNS 10.0.0.1 (automatically matches all subdomains like `app.company.internal`)
 
 ### Use Case 2: Multi-Cloud Setup
 
@@ -251,9 +256,9 @@ When you assign a nameserver to distribution groups:
 
 **Configuration**:
 - **Nameserver 1** (Primary): Public DNS
-- **Nameserver 2** (Match `*.ec2.internal, *.compute.internal`): AWS VPC DNS
-- **Nameserver 3** (Match `*.internal.gcp`): GCP Internal DNS  
-- **Nameserver 4** (Match `*.company.internal`): On-premise DNS
+- **Nameserver 2** (Match `ec2.internal, compute.internal`): AWS VPC DNS
+- **Nameserver 3** (Match `internal.gcp`): GCP Internal DNS
+- **Nameserver 4** (Match `company.internal`): On-premise DNS
 
 ### Use Case 3: Content Filtering
 
