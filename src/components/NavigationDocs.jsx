@@ -99,6 +99,7 @@ export const docsNavigation = [
                             },
                         ]
                     },
+                    { title: 'Auto Update', href: '/manage/peers/auto-update' },
                 ]
             },
             {
