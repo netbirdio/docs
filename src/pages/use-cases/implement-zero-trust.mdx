@@ -14,14 +14,14 @@ This guide uses features from both the **Team** and **Business** plans. Check th
 
 **Team plan**
 
-- **User and group provisioning from IdP** for automatic group sync
-- **Audit events logging** for policy and configuration change history
+- **[User and group provisioning from IdP (Identity Provider)](/manage/team/idp-sync)** for automatic group sync
+- **[Audit events logging](/manage/activity)** for policy and configuration change history
 
 **Business plan**
 
-- **Device posture checks** for OS, client version, geo, CIDR, processes (see [Section 4.2](#42-posture-checks-and-their-limits) and the [Posture Checks guide](/manage/access-control/posture-checks))
+- **Device posture checks** for limiting user access based on OS, client version, geolocation, CIDR, and processes (see [Section 4.2](#42-posture-checks-and-their-limits) and the [Posture Checks guide](/manage/access-control/posture-checks))
 - **Connection traffic events logging** for flow visibility (see [Section 7](#7-visibility-traffic-events-siem-and-control-center) and [Traffic Events](/manage/activity/traffic-events-logging))
-- **Audit and traffic events streaming** to Datadog, S3, Firehose, generic HTTP for SIEM integration (see [Section 7](#7-visibility-traffic-events-siem-and-control-center) and [Event Streaming](/manage/activity/event-streaming))
+- **Audit and traffic events streaming** to Datadog, S3, Firehose, generic HTTP for SIEM (Security Information and Event Management) integration (see [Section 7](#7-visibility-traffic-events-siem-and-control-center) and [Event Streaming](/manage/activity/event-streaming))
 
 **Available in all plans (including Free)**
 
@@ -30,25 +30,38 @@ This guide uses features from both the **Team** and **Business** plans. Check th
 - [Private DNS](/manage/dns)
 - [Control Center](/manage/control-center) topology view
 
-If you self-host, make sure Management, Signal and Relay are on supported versions for these features.
+If you self-host, make sure Management (the control plane), Signal (peer coordination service), and Relay (fallback connection service) are on supported versions for these features.
 
 ### 0.2 Firewall rules for NetBird traffic
 
-NetBird peers do not need inbound ports open. They initiate outbound connections to Management, Signal and Relay over HTTPS and UDP/STUN/TURN. If your egress is restricted, allow the documented NetBird control endpoints and ports.
+NetBird peers do not need inbound ports open. They initiate outbound connections to NetBird's Management, Signal, and Relay services over HTTPS (TCP port 443) and UDP/STUN/TURN protocols. If your network firewall restricts outbound traffic (egress filtering), you must allow these specific endpoints and ports.
+
+> For a complete list of NetBird endpoints, IP addresses, and detailed firewall configuration examples, see the [FAQ: What firewall ports should I open to use NetBird?](/about-netbird/faq#what-firewall-ports-should-i-open-to-use-netbird-network-firewalls)
+
+**Understanding the services:**
+- **Management service**: The control plane that manages peer authentication, policies, and configuration
+- **Signal service**: Coordinates peer-to-peer connections and helps peers discover each other
+- **Relay service**: Provides fallback connections when direct peer-to-peer connections cannot be established (e.g., behind restrictive NATs)
+
+**Understanding the protocols:**
+- **HTTPS (TCP/443)**: Secure web protocol used for control plane communication
+- **STUN/TURN (UDP)**: Protocols used for NAT traversal, helping peers connect through firewalls and routers
 
 Outbound Allowlist Rules for NetBird Clients:
 
 ```bash
 # 1) Management (must be reachable):
-# Controls management plane access
+# Controls management plane access - required for all NetBird operations
 ALLOW OUT TCP 443 to api.netbird.io
-# Signaling service (peer coordination)
+# Signaling service (peer coordination) - required for peer discovery
 ALLOW OUT TCP 443 to signal.netbird.io
 
 # 2) NAT traversal support (recommended for reliable P2P):
+# STUN servers help peers establish direct connections through NATs/firewalls
 ALLOW OUT UDP 80,443,3478,5555 to stun.netbird.io
 
 # 3) Fallback relay servers:
+# Used when direct peer-to-peer connections fail
 ALLOW OUT TCP 443 to *.relay.netbird.io
 ```
 
@@ -58,13 +71,13 @@ ALLOW OUT TCP 443 to *.relay.netbird.io
 
 This section defines how terms are used in this guide and in NetBird.
 
-> Note on capitalization
-> 
-> 
-> **Network** with a capital N refers to the NetBird object that represents one or more CIDR ranges and DNS resources behind one or more routing peers.
-> 
-> **network** in lowercase refers to generic networking concepts such as LANs, VPCs or the internet.
-> 
+<Note>
+Note on capitalization:
+
+**[Network](/manage/networks)** with a capital N refers to the NetBird object that represents one or more CIDR ranges and DNS resources behind one or more routing peers.
+
+**network** in lowercase refers to generic networking concepts such as LANs, VPCs or the internet.
+</Note>
 
 ### 1.1 Core NetBird terms
 
@@ -74,15 +87,15 @@ This section defines how terms are used in this guide and in NetBird.
     
 - **Routing peer**
     
-    A peer that forwards traffic between the NetBird overlay network and one or more internal subnets. It usually runs in a VPC, data center or office LAN and has IP forwarding enabled.
+    A NetBird peer that acts as a gateway, forwarding traffic between the NetBird overlay network and one or more internal subnets (private network ranges). It usually runs in a VPC (Virtual Private Cloud, like AWS VPC or Azure VNet), data center, or office LAN (Local Area Network). Think of it as a bridge between NetBird's virtual network and your physical/internal networks.
     
 - **Overlay network and overlay IP**
     
-    The virtual network that NetBird creates between peers, and will be a random /16 CIDR block within the `100.64.0.0/10` range. Each peer receives an overlay IP from this /16 range. Internal networks never see WireGuard keys or tunnels directly, only overlay IPs or the routing peer IP, depending on masquerading.
+    The overlay network is a virtual network that NetBird creates on top of your existing network infrastructure (like a "network on top of a network"). For each NetBird tenant, the overlay will be a random /16 CIDR block within the `100.64.0.0/10` range (a private IP range reserved for carrier-grade NAT). Each NetBird peer receives an overlay IP address from this /16 range, which is used for communication between peers. Internal networks never see WireGuard encryption keys or tunnels directly—they only see overlay IPs or the routing peer's IP address, depending on whether masquerading is enabled (see Section 6.2).
     
 - **Network (NetBird object)**
     
-    A NetBird configuration object that represents one or more private IP ranges and optional DNS based resources behind routing peers. Networks are used as destinations in access policies.
+    A NetBird configuration object that maps your internal networks (such as VPCs, LANs, or office networks) and organizes routing peers and resources. [Networks](/manage/networks) group routing peers that provide access to the same internal subnets. Resources within Networks (IP addresses, ranges, or DNS names) are used as destinations in access policies.
     
 - **Posture check**
     
@@ -90,22 +103,18 @@ This section defines how terms are used in this guide and in NetBird.
     
 - **SIEM (Security Information and Event Management)**
     
-    A platform such as Datadog, Firehose or an S3 based pipeline that ingests NetBird events for visibility, alerting and compliance.
+    A security platform that collects, analyzes, and stores security events from various sources. Examples include Datadog, AWS Firehose, or S3-based pipelines. SIEMs ingest NetBird events (traffic flows, policy changes, authentication events) for visibility, alerting, and compliance reporting.
     
 
-### 1.2 Subjects, resources and scopes
+### 1.2 Resources and scopes
 
-- **Subject**
-    
-    A user, service account or non-human identity that initiates connections. In NetBird this becomes a set of peers and groups.
-    
 - **Resource**
     
-    What you are protecting: applications, APIs, databases, internal services or entire Networks.
+    What you are protecting: applications, APIs, databases, internal services or entire networks.
     
 - **Scope**
     
-    A bounded set of subjects and resources that belong together operationally, for example `prod-orders-app`, `prod-admin-portal` or `dev-tooling`.
+    A bounded set of users, groups, peers and resources that belong together operationally, for example `prod-orders-app`, `prod-admin-portal` or `dev-tooling`.
     
 
 ---
@@ -146,7 +155,7 @@ Next, map how each resource actually works on the wire.
 
 For each resource:
 
-- Which subjects need to talk to which resources
+- Which users, groups, or peers need to talk to which resources
 - Which protocols and ports are used (for example TCP/443, TCP/5432, SSH, metrics ports)
 - Supporting services such as DNS, IdP, logging, metrics and external APIs
 - Background jobs or batch exports that also touch the resource
@@ -161,7 +170,7 @@ Most admins do not have perfect flow logs. Treat this as a rough first pass that
 
 **Outcome of Phase 2**
 
-- A list of subjects and resources per scope with their relationships
+- A list of users/groups/peers and resources per scope with their relationships
 - A simple diagram or table of “who talks to what, on which port and protocol”
 - A short list of supporting services (DNS, IdP, logging, monitoring) that must remain reachable
 
@@ -178,7 +187,7 @@ For each flow identified in Phase 2:
 - Which protocol and port are actually required?
 - Should the flow be allowed, restricted to a smaller group or blocked?
 
-Capture this as a simple matrix: subjects on one axis, resources on the other, with allowed protocols and ports in each cell.
+Capture this as a simple matrix: users/groups/peers on one axis, resources on the other, with allowed protocols and ports in each cell.
 
 When you implement this in NetBird, you can start slightly more permissive for a short period and use Traffic Events and SIEM to validate your assumptions, then tighten down to the final allow list.
 
@@ -202,9 +211,9 @@ The next sections show how to turn these phases into concrete NetBird configurat
 
 ### 3.1 Integrate your Identity Provider
 
-Connect NetBird to your IdP (for example Microsoft Entra ID, Google Workspace, Okta) and enable SSO with MFA.
+Connect NetBird to your IdP (Identity Provider, for example Microsoft Entra ID, Google Workspace, Okta) and enable SSO (Single Sign-On) with MFA (Multi-Factor Authentication). This allows users to log in to NetBird using their existing corporate credentials instead of separate NetBird accounts.
 
-Where to do this: Integrations → Identity Provider Sync.
+Where to do this: [Integrations → Identity Provider Sync](/manage/team/idp-sync).
 
 Map:
 
@@ -220,7 +229,7 @@ Do not expose production Networks yet. At this point you only want authenticated
 
 Use groups for two things:
 
-- Subject groups: who is initiating the connection (users, teams, service accounts)
+- Source groups: who is initiating the connection (users, teams, service accounts)
 - Resource groups: what is being accessed (servers, apps, Networks)
 
 Where to manage groups: [Access Control → Groups](/manage/access-control).
@@ -244,7 +253,7 @@ See [Appendix A](#appendix-a-naming-and-object-cheat-sheet) for a quick naming
 
 ### 3.3 Setup keys for automation and service accounts
 
-Use setup keys for:
+[Setup keys](/manage/peers/register-machines-using-setup-keys) are used for:
 
 - Servers with no human login (CI runners, Kubernetes nodes, headless Linux boxes)
 - Automated deployment through MDM, RMM or configuration management tools
@@ -272,7 +281,7 @@ Existing peers are not affected when you rotate keys. Rotation affects only new 
 
 **You know identity and onboarding are working when**
 
-- Users log in with SSO and MFA and see only their own devices.
+- Users can successfully authenticate with SSO and MFA and enroll their devices.
 - Servers enrolled with setup keys land in the correct groups automatically.
 - Your SIEM receives NetBird events and you can filter by peer, user and group.
 
@@ -293,8 +302,9 @@ For a Zero Trust posture:
 - Keep the Default policy while you are only enrolling and testing.
 - Before going to production, replace it with specific policies and then delete it.
 
-> **Warning:** Before deleting the Default Policy, ensure you have created and tested at least one specific Allow rule. Otherwise, you will immediately lose connectivity to all peers.
-> 
+<Note>
+**Warning:** Before deleting the Default Policy, ensure you have created and tested at least one specific Allow rule. Otherwise, you will immediately lose connectivity to all peers.
+</Note>
 
 ### 4.2 Posture checks and their limits
 
@@ -308,11 +318,9 @@ NetBird posture checks evaluate device state before allowing traffic through a p
 
 Where to configure them: [Access Control → Posture Checks](/manage/access-control/posture-checks).
 
-> Security warning
-> 
-> 
-> Posture checks are not a security boundary against compromised endpoints. They validate configuration and policy compliance, not trustworthiness. An attacker with admin rights on a device can bypass or spoof them. Design your policies as if posture checks can be evaded.
-> 
+<Note>
+**Security warning:** Posture checks are not a security boundary against compromised endpoints. They validate configuration and policy compliance, not trustworthiness. An attacker with admin rights on a device can bypass or spoof them. Design your policies as if posture checks can be evaded.
+</Note>
 
 Recommended posture checks per policy:
 
@@ -320,10 +328,10 @@ Recommended posture checks per policy:
     - Enforce minimum NetBird version (for example `>= 0.45.0`) for critical access.
 - **OS and version**
     - Block unsupported or unpatched OS versions on production access.
-- **Geo or network**
-    - Restrict administrative access to known countries or corporate CIDRs.
+- **Geolocation or peer network range**
+    - Restrict access to known countries or corporate CIDRs (IP address ranges, like `10.0.0.0/8` or `192.168.1.0/24`).
 - **Process checks**
-    - Require your EDR or RMM agent process to be running before granting access to sensitive resources.
+    - Require your EDR (Endpoint Detection and Response) or RMM (Remote Monitoring and Management) agent process to be running before granting access to sensitive resources. This ensures security tools are active on the device.
 
 Example posture combinations:
 
@@ -347,9 +355,9 @@ Most application traffic has a clear client and server:
 
 In NetBird:
 
-- Use TCP or UDP with exact ports to create unidirectional rules where only the source initiates the connection.
-- “All” protocol policies are broad and should be limited to very specific scopes or emergency use.
-- Portless rules are effectively “all ports” and should be treated as wide open.
+- Use TCP (Transmission Control Protocol, connection-oriented) or UDP (User Datagram Protocol, connectionless) with exact ports to create unidirectional rules where only the source initiates the connection.
+- "All" protocol policies are broad and should be limited to very specific scopes or emergency use.
+- Portless rules are effectively "all ports" and should be treated as wide open (not recommended for Zero Trust).
 
 Where to do this: create or edit policies in **[Access Control → Policies](/manage/access-control)**, choose **Source group**, **Destination group**, then restrict **Protocol** and **Ports**.
 
@@ -357,17 +365,17 @@ This keeps most of your policies simple and least privilege.
 
 ### 4.4 Worked example: Three tier app
 
-Take a simple production orders app:
+Take a simple production orders app with a three-tier architecture (web frontend, application backend, database):
 
-- Web: `svc-orders-web-prod` (port 443)
-- App: `svc-orders-app-prod` (port 8443)
-- DB: `svc-orders-db-prod` (port 5432)
-- DNS: internal resolvers `10.10.0.10` and `10.10.0.11`
-- Monitoring: `svc-monitoring-prod` scraping metrics on 9100 and 9200
+- **Web tier**: `svc-orders-web-prod` (port 443 - HTTPS, the secure web protocol)
+- **App tier**: `svc-orders-app-prod` (port 8443 - typically HTTPS for internal API communication)
+- **DB tier**: `svc-orders-db-prod` (port 5432 - PostgreSQL database default port)
+- **DNS**: Internal DNS resolvers at IP addresses `10.10.0.10` and `10.10.0.11` (used for name resolution)
+- **Monitoring**: `svc-monitoring-prod` scraping metrics on ports 9100 (Prometheus) and 9200 (Elasticsearch)
 
 **Groups**
 
-Subject groups:
+Source groups:
 
 - `peer-devops-prod`
 - `peer-support`
@@ -418,9 +426,9 @@ All peers -> internal DNS (svc-dns-prod)
     - Destination: `svc-orders-web-prod`, `svc-orders-app-prod`, `svc-orders-db-prod`
     - Protocol: TCP, Ports: 9100 and 9200
 5. **DNS (critical, often forgotten)**
-    - Source: all peer groups that use this environment (`peer-devops-prod`, `peer-support`, `svc-*`)
-    - Destination: `svc-dns-prod` or a Network containing `10.10.0.10/32` and `10.10.0.11/32`
-    - Protocol: UDP, TCP; Port: 53
+    - Source: all peer groups that use this environment (`peer-devops-prod`, `peer-support`, `svc-*`)
+    - Destination: `svc-dns-prod` or a network containing `10.10.0.10/32` and `10.10.0.11/32` (the `/32` means a single IP address)
+    - Protocol: UDP (primary), TCP (fallback); Port: 53 (standard DNS port)
 
 **Deliberately not allowed**
 
@@ -449,7 +457,7 @@ Use routing peers and Networks when you need to reach private subnets (LAN, VPC,
 A routing peer is a NetBird peer that:
 
 - Has network access to one or more internal subnets (for example `10.10.0.0/16`)
-- Is selected as a routing peer in a Network or Network Route configuration
+- Is selected as a routing peer in a [Network](/manage/networks) or [Network Route](/manage/network-routes/routing-traffic-to-private-networks) configuration
 
 <p>
     <img src="/docs-static/img/manage/networks/netbird-network-routes.png" alt="high-level-dia" className="imagewrapper-big"/>
@@ -461,17 +469,21 @@ Network access policies are unidirectional: they allow traffic from NetBird peer
 
 If you need true bidirectional initiation between two endpoints, run NetBird on both and create an access policy that allows traffic in both directions.
 
+<Note>
+If you need to access the routing peer itself, there must be an access policy explicitly allowing traffic. You may add the routing peer to a group of resources, or create an entirely new access policy.
+</Note>
+
 ### 5.3 DNS for routed networks
 
-Routed environments almost always rely on internal DNS. If peers can reach `10.10.0.0/16` but cannot resolve `db.internal.example.com`, they will fail.
+Routed environments almost always rely on internal DNS (Domain Name System, which translates human-readable names like `db.internal.example.com` to IP addresses like `10.10.1.5`). If peers can reach the IP range `10.10.0.0/16` but cannot resolve hostnames like `db.internal.example.com`, applications will fail because they typically use hostnames, not IP addresses.
 
-With Networks and domain resources, NetBird can route both IP ranges and DNS based resources, and can forward DNS lookups through the routing peer.
+With Networks and domain resources, NetBird can route both IP ranges (like `10.10.0.0/16`) and DNS-based resources (like `*.corp.internal`), and can forward DNS lookups through the routing peer.
 
 General rules:
 
 - Create a Network that includes:
-    - IP ranges (for example `10.10.0.0/16`)
-    - DNS resources (for example `db.internal.example.com` or `.corp.internal`) where appropriate
+    - IP ranges (for example `10.10.0.0/16` - the `/16` means the first 16 bits are the network portion, allowing 65,536 IP addresses)
+    - DNS resources (for example `db.internal.example.com` for a specific hostname, or `*.corp.internal` for all subdomains) where appropriate
 - Add a DNS server in NetBird with the right match domain (for example `corp.internal`) under [DNS → Nameservers](/manage/dns/nameserver-groups).
 - Add explicit policies allowing peers to reach the DNS servers themselves (UDP and TCP 53 to the resolver IPs).
 
@@ -491,8 +503,8 @@ You can assign multiple routing peers to the same Network or route to provide hi
 
 Selection is based on route priority (metric):
 
-- Each routing peer for a Network has a priority or metric. Lower is preferred.
-- If multiple routing peers share the same metric, clients may pick any of them. Do not rely on equal metrics for deterministic routing.
+- Each routing peer for a Network has a metric. The lower metric is preferred and will be the chosen routing peer for traffic.
+- If multiple routing peers share the same metric, and the difference in latency is more than 10ms, traffic will switch to the faster routing peer.
 
 Practical recommendations:
 
@@ -509,7 +521,7 @@ See [Appendix B](#appendix-b-quick-reference-and-commands) for a quick HA chec
 
 ### 6.2 Masquerading versus return routes
 
-Masquerading controls how routed traffic appears to internal networks.
+Masquerading (also called NAT masquerading or source NAT) controls how routed traffic appears to internal networks. When enabled, NetBird rewrites the source IP address of traffic so it appears to come from the routing peer's internal IP address instead of the original NetBird overlay IP.
 
 With masquerading enabled, internal systems see traffic as coming from the routing peer’s internal IP. For example:
 
@@ -531,15 +543,17 @@ To make non-masqueraded traffic work you must:
 
 Examples for non masquerade mode:
 
-- Linux router:
+- **Linux router:**
     
     ```bash
+    # Add a route: send all traffic destined for 100.64.0.0/10 
+    # through the gateway at 10.10.0.5 (the routing peer's internal IP)
     ip route add 100.64.0.0/10 via 10.10.0.5
     ```
     
-- AWS VPC route table:
-    - Destination: `100.64.0.0/10`
-    - Target: ENI of the routing peer instance
+- **AWS VPC route table:**
+    - Destination: `100.64.0.0/10` (the NetBird overlay range)
+    - Target: ENI (Elastic Network Interface) of the routing peer instance (the network interface attached to your EC2 instance running the routing peer)
 
 *Q1: Do you control the internal network router?*
 
@@ -583,10 +597,10 @@ NetBird has route selection tools and an experimental lazy connections feature f
 
 Enable these as soon as possible, ideally right after IdP integration:
 
-- Traffic Events in the NetBird dashboard
-- Activity event streaming to your SIEM or log platform
+- [Traffic Events](/manage/activity/traffic-events-logging) in the NetBird dashboard
+- [Activity event streaming](/manage/activity/event-streaming) to your SIEM or log platform
 
-Where to configure: Activity → Traffic Events & Integrations → Event Streaming
+Where to configure: Activity → Traffic Events & Integrations → Event Streaming
 
 Use them to:
 
@@ -598,7 +612,7 @@ Use them to:
 
 For each new Zero Trust scope:
 
-1. Create a temporary broad policy from the relevant subject group to the target resource or Network.
+1. Create a temporary broad policy from the relevant source group to the target resource or Network.
 2. Run for 48 to 72 hours during normal use.
 3. In the SIEM:
     - Filter by source group, destination group and resource.
@@ -610,7 +624,7 @@ This turns “guessing the flows” into a data driven process.
 
 ### 7.3 Control Center for topology and policy review
 
-NetBird’s Control Center gives you a topological view of who can reach what, based on policies, groups and Networks.
+NetBird's [Control Center](/manage/control-center) gives you a topological view of who can reach what, based on policies, groups and Networks. Access control policies can be edited directly from the control center.
 
 Where to access: **Control Center** in the dashboard.
 
@@ -618,6 +632,8 @@ Use it for:
 
 - **Peer view**
     - Select a peer and see which resources it can reach and through which policies.
+- **Group view**
+    - Select a group of users and see which resources they can reach and through which policies.
 - **Network view**
     - Select a Network and see which groups have access and on which ports.
 - **Large organizations**
@@ -786,15 +802,21 @@ Fix:
     - Destination: DNS resolvers or DNS Networks
     - Ports: UDP and TCP 53
 - Verify DNS routing configuration in Networks and match domains.
-- From a client, run and compare behavior with your expectations:
+- From a client, run DNS lookup commands and compare behavior with your expectations:
     
     ```bash
+    # nslookup: Basic DNS lookup tool (works on Windows, Linux, macOS)
     nslookup db.internal.example.com
+    
+    # dig: More detailed DNS query tool (Linux/macOS, or install on Windows)
+    # The @10.10.0.10 specifies which DNS server to query
     dig @10.10.0.10 db.internal.example.com
     ```
     
-- *Linux:* `resolvectl status` (to see if the NetBird interface has the right domains).
-- *Windows:* `Get-DnsClientNrptPolicy` (to see if the NRPT rules are active).
+- *Linux:* `resolvectl status` (systemd-resolved command to see if the NetBird interface has the right DNS domains configured).
+- *Windows:* `Get-DnsClientNrptPolicy` (PowerShell command to see if Name Resolution Policy Table rules are active - these tell Windows which DNS server to use for specific domains).
+
+For more detailed DNS troubleshooting steps, see the [DNS Troubleshooting guide](/manage/dns/troubleshooting).
 
 ---
 
