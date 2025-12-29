@@ -44,11 +44,12 @@ The management server does not edit your host OS firewall or perform OS-level po
 
 To use SSH access through NetBird, you need:
 
-1. **NetBird v0.60.0 or later** on peers that should support native SSH (dev/development versions are treated as supporting native SSH).
+1. **NetBird v0.61.0 or later** on all peers using SSH (both clients and servers). For fine-grained access control features, v0.61.0 is required.
 2. **SSH enabled on target peer** - the peer must run with `--allow-server-ssh`.
-3. **SSH enabled in Dashboard** - SSH access must be enabled for the peer and ServerSSHAllowed set in the peer meta.
-4. **Access Control Policy** - an ACL rule allowing TCP port 22 for the peer (management will auto-add 22022 behind the scenes for modern peers).
-5. **(Optional)** For JWT authentication: an Identity Provider configured in NetBird.
+3. **Access Control Policy** - either:
+   - A `NetBird SSH` policy for fine-grained access control (recommended), or
+   - A TCP policy allowing port 22 for basic network-level SSH access
+4. **(Optional)** For JWT authentication: an Identity Provider configured in NetBird.
 
 <Note>
     Management distributes NetBird access-policy objects (FirewallRule) - it does
@@ -111,25 +112,15 @@ Create an ACL policy to allow SSH access:
 - **Destination**: Select the peers or groups running the SSH server
 - **Protocol**: Select `NetBird SSH` for SSH-specific policies with fine-grained access control, or use `TCP` with port 22 for basic network-level SSH access
 - **Authorized Groups** (when using NetBird SSH protocol): Configure which user groups can access which local OS users on the destination machines
-- **Action**: Accept
 4. Save the policy
+
+<p>
+    <img src="/docs-static/img/manage/peers/ssh/ssh-access-policy.png" alt="netbird ssh access policy" className="imagewrapper"/>
+</p>
 
 <Note>
     The `NetBird SSH` protocol option provides fine-grained access control features not available with standard TCP policies. When using `TCP` with port 22, the management server automatically adds rules for port 22022 (NetBird's internal SSH port) for peers running v0.60.0+.
 </Note>
-
-### Step 3: Enable SSH in Dashboard
-
-Enable SSH on individual peers:
-
-1. Navigate to the target peer details page
-2. Enable SSH access for the peer
-3. Save the changes
-
-<p>
-    <img src="/docs-static/img/manage/peers/ssh/ssh-dashboard.png"
-         alt="netbird ssh dashboard" className="imagewrapper-big"/>
-</p>
 
 ## Using NetBird SSH
 
@@ -295,14 +286,25 @@ For example, you can configure:
 - Members of the "DBAs" group can SSH as `postgres` user
 - Members of the "SysAdmins" group can SSH as `root` user
 
-### Configuring Authorized Groups
+### Configuring Fine-Grained Access Control
 
 When creating or editing an SSH policy in the Dashboard:
 
-1. Select `NetBird SSH` as the protocol
-2. Configure the source groups (NetBird users who will connect)
-3. Configure the destination (peers running SSH server)
-4. In the **Authorized Groups** section, map each source group to the local OS users they can access
+1. Navigate to **Access Control** and click **Create Policy**
+2. Select **NetBird SSH** as the protocol
+3. Configure the **Source** - select the user groups that will connect via SSH
+4. Configure the **Destination** - select the peers or groups running the SSH server
+5. Under **SSH Access**, choose the access level:
+   - **Full Access**: Allow SSH as any local user on the destination machines
+   - **Limited Access**: Specify which local users each source group can access
+6. If you selected **Limited Access**, configure the user mappings:
+   - For each source group, specify which local OS users they are allowed to SSH as
+   - Add multiple local users per group as needed (e.g., `ashley`, `root`)
+7. Enable the policy and click **Continue**
+
+<p>
+    <img src="/docs-static/img/manage/peers/ssh/ssh-fine-grained-access-policy.png" alt="netbird ssh fine grained access policy" className="imagewrapper"/>
+</p>
 
 **Example configuration:**
 
@@ -311,6 +313,10 @@ When creating or editing an SSH policy in the Dashboard:
 | Developers   | developer, deploy   |
 | DBAs         | postgres            |
 | SysAdmins    | root, admin         |
+
+<Note>
+    When **Full Access** is selected, users in the source groups can SSH as any local user on the destination machines. Use **Limited Access** to enforce the principle of least privilege.
+</Note>
 
 ### Authorization Flow
 
@@ -556,16 +562,31 @@ For complete CLI command reference, including all SSH-related commands and flags
 
 Version 0.61.0 introduces fine-grained SSH access control:
 
+<Note type="warning">
+    **Breaking change**: Management server v0.61.0 will break NetBird SSH for all peers running versions older than v0.61.0. You must update all peers that use SSH to v0.61.0 or later before upgrading the management server.
+</Note>
+
 **New capabilities:**
 - **NetBird SSH protocol**: New protocol type in policies specifically for SSH access control
 - **Fine-grained user mapping**: Map NetBird user groups to specific local OS users
 - **Authorized Groups**: Configure which users can access which local accounts per policy
+- **Full Access vs Limited Access**: Choose between unrestricted local user access or granular per-group mappings
 - **Enhanced security**: Fail-closed authorization model with granular audit trail
 
 **Upgrading from v0.60.x:**
-- No breaking changes - existing SSH policies continue to work
+
+<Note type="warning">
+    **Update order is critical:**
+    1. Update all SSH server peers to v0.61.0 first
+    2. Update all SSH client peers to v0.61.0
+    3. Update the management server to v0.61.0 last
+
+    Peers running older versions will lose SSH functionality once the management server is upgraded.
+</Note>
+
+- Existing TCP port 22 policies will continue to work for network-level access
 - To use fine-grained access control, create new policies with the `NetBird SSH` protocol
-- Existing TCP port 22 policies provide network-level access without user mapping
+- Fine-grained policies support both **Full Access** (any local user) and **Limited Access** (specific local users per group)
 
 ## Migrating from v0.59.x and Earlier
 
@@ -574,7 +595,7 @@ Version 0.61.0 introduces fine-grained SSH access control:
     earlier. New installations can skip this section.
 </Note>
 
-### What Changed in v0.60.0
+### What's New in v0.60.0
 
 Version 0.60.0 is a complete rewrite with breaking changes:
 
@@ -622,7 +643,6 @@ Source: [SSH Client Group/Peers]
 Destination: [SSH Server Group/Peers]
 Protocol: TCP
 Port: 22
-Action: Accept
    ```
 
 4. **Update SSH servers FIRST** (peers running `--allow-server-ssh`)
