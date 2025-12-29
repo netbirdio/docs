@@ -1,0 +1,572 @@
+import {Note} from "@/components/mdx";
+
+# SSH Access
+
+NetBird provides SSH access to peers through its built-in SSH server. Unlike traditional SSH setups that require exposing port 22 to the internet, NetBird SSH operates entirely over your private network. You can connect using either the `netbird ssh` command or native OpenSSH clients.
+
+<Note>
+    SSH Access is disabled by default and must be enabled both on the target
+    peer and in the NetBird Dashboard.
+</Note>
+
+## Concepts
+
+### SSH Server
+
+Each NetBird peer can run an embedded SSH server by enabling `--allow-server-ssh`. From the peer's perspective the session arrives on its normal port (TCP 22); internally it's re-routed to the NetBird client on port 22022. 
+
+Management may automatically ensure the mesh access policy permits 22022 for a peer when the policy explicitly allows port 22 (or a range containing 22) and the peer advertises native SSH support (NetBird v0.60.0+). That access policy is distributed by the management plane; enforcement and forwarding are performed by the NetBird client on the peer.
+
+### Authentication Methods
+
+- **JWT Authentication (default)**: Maps SSH sessions to user identities via your configured Identity Provider (OIDC). Each new session will require completing the OIDC flow to mint the JWT used for SSH authentication (unless JWT caching is enabled, in which case JWT tokens are cached for a configurable duration).
+- **Machine Identity (`--disable-ssh-auth`)**: When SSH auth is disabled, SSH access is governed by NetBird network ACLs (machine-level access) rather than per-user JWT identity.
+
+### OpenSSH Integration
+
+NetBird can provide configuration so the remote peer's OpenSSH clients behave transparently. The remote peer's NetBird client performs interception and JWT handling; NetBird may install OpenSSH configuration snippets on the client to simplify usage. The interception and forwarding logic lives in the remote peer's NetBird client, not the management server.
+
+### Port 22 Redirection
+
+The management server does not edit your host OS firewall or perform OS-level port redirects. The model is:
+
+- **22** - the standard SSH port used by SSH clients and the local SSH daemon.
+- **22022** - the NetBird-native endpoint used by the NetBird client on remote peers. When NetBird SSH is enabled for a peer, standard SSH traffic is redirected here. 
+
+**Behavior:**
+
+- A modern NetBird client can intercept an `ssh user@remote` (which targets remote:22) and redirect the SSH stream to the NetBird client on port 22022. 
+- Management will auto-add a NetBird access-policy rule for 22022 when a policy allows 22 (or a range containing 22) and the peer supports native SSH (v0.60.0+) and SSH is enabled on the peer in the NetBird dashboard.
+
+## Requirements
+
+To use SSH access through NetBird, you need:
+
+1. **NetBird v0.60.0 or later** on peers that should support native SSH (dev/development versions are treated as supporting native SSH).
+2. **SSH enabled on target peer** - the peer must run with `--allow-server-ssh`.
+3. **SSH enabled in Dashboard** - SSH access must be enabled for the peer and ServerSSHAllowed set in the peer meta.
+4. **Access Control Policy** - an ACL rule allowing TCP port 22 for the peer (management will auto-add 22022 behind the scenes for modern peers).
+5. **(Optional)** For JWT authentication: an Identity Provider configured in NetBird.
+
+<Note>
+    Management distributes NetBird access-policy objects (FirewallRule) - it does
+    not directly open host OS ports or edit host-level firewalls. Enforcement and
+    forwarding are handled by the NetBird client running on each peer.
+</Note>
+
+## Enabling SSH
+
+### Step 1: Enable SSH Server on Target Peer
+
+On the machine you want to access via SSH, enable the NetBird SSH server.
+
+**Using the GUI:**
+
+1. Click on the NetBird tray icon
+2. Navigate to Settings
+3. Click on **Allow SSH** to enable the SSH server
+
+<p>
+    <img src="/docs-static/img/manage/peers/ssh/ssh-client.png" alt="netbird ssh client"
+         className="imagewrapper"/>
+</p>
+
+**Using the CLI:**
+
+```bash
+netbird down  # if NetBird is already running
+netbird up --allow-server-ssh
+```
+
+For additional SSH server features, use these flags:
+
+```bash
+netbird up --allow-server-ssh \
+  --enable-ssh-local-port-forwarding \
+  --enable-ssh-remote-port-forwarding \
+  --enable-ssh-sftp \
+  --enable-ssh-root
+```
+
+**Flag Reference:**
+
+- `--allow-server-ssh`: Enable the SSH server
+- `--enable-ssh-local-port-forwarding`: Allow clients to forward local ports through the server
+- `--enable-ssh-remote-port-forwarding`: Allow clients to request remote port forwarding
+- `--enable-ssh-sftp`: Enable SFTP subsystem for file transfers
+- `--enable-ssh-root`: Allow root user login (use with caution)
+- `--disable-ssh-auth`: Disable JWT authentication (allows any peer with network access)
+- `--ssh-jwt-cache-ttl <seconds>`: Enable JWT token caching with specified TTL in seconds (default: 0, disabled)
+
+### Step 2: Create Access Control Policy
+
+Create an ACL policy to allow SSH access:
+
+1. Log in to your NetBird Dashboard
+2. Navigate to **Access Control**
+3. Create a new policy:
+- **Source**: Select the peers or groups that will connect via SSH
+- **Destination**: Select the peers or groups running the SSH server
+- **Protocol**: TCP
+- **Ports**: 22
+- **Action**: Accept
+4. Save the policy
+
+### Step 3: Enable SSH in Dashboard
+
+Enable SSH on individual peers:
+
+1. Navigate to the target peer details page
+2. Enable SSH access for the peer
+3. Save the changes
+
+<p>
+    <img src="/docs-static/img/manage/peers/ssh/ssh-dashboard.png"
+         alt="netbird ssh dashboard" className="imagewrapper-big"/>
+</p>
+
+## Using NetBird SSH
+
+### NetBird CLI Client
+
+The simplest way to connect is using the `netbird ssh` command:
+
+```bash
+netbird ssh user@100.119.230.104
+```
+
+**Execute a single command:**
+
+```bash
+netbird ssh user@100.119.230.104 "uptime"
+```
+
+**Port forwarding:**
+
+```bash
+# Local port forwarding: forward local port 8080 to remote port 80
+netbird ssh -L 8080:localhost:80 user@100.119.230.104
+
+# Remote port forwarding: forward remote port 8080 to local port 3000
+netbird ssh -R 8080:localhost:3000 user@100.119.230.104
+```
+
+For detailed CLI usage, see the [CLI documentation](/get-started/cli#ssh).
+
+### Native SSH Clients (OpenSSH)
+
+NetBird automatically configures OpenSSH through a drop-in configuration file.
+
+<Note>
+    Currently, only OpenSSH clients are supported. Other SSH clients (PuTTY,
+    etc.) are not compatible.
+</Note>
+
+**Prerequisites:**
+
+NetBird creates `/etc/ssh/ssh_config.d/99-netbird.conf` (or equivalent on your OS) which automatically:
+1. Detects if the target is a NetBird SSH server
+2. Handles JWT authentication transparently
+3. Handles server host key verification
+
+**Using OpenSSH:**
+
+```bash
+# Connect using standard SSH
+ssh user@100.119.230.104
+
+# Port forwarding
+ssh -L 8080:localhost:80 user@100.119.230.104
+
+# SFTP
+sftp user@100.119.230.104
+
+# SCP
+scp file.txt user@100.119.230.104:/path/to/destination
+```
+
+**How it works:**
+
+When you run `ssh user@<netbird-peer>`:
+
+1. OpenSSH reads the NetBird configuration from `99-netbird.conf`
+2. NetBird detects if the target is a NetBird SSH server
+3. If detected, NetBird handles JWT authentication automatically (OIDC flow if needed)
+4. The SSH connection is established with your user identity
+
+### Browser Client
+
+For SSH access directly from your web browser without installing any software, refer to the [Browser Client documentation](/manage/peers/browser-client#ssh-connection).
+
+## Authentication
+
+### JWT Authentication (Default)
+
+By default, NetBird SSH uses JWT-based authentication with the configured Identity Provider. This provides user identity verification instead of machine identity.
+
+<Note>
+    Currently, SSH access is controlled by ACL policies and the
+    `--enable-ssh-root` flag. Users connect as either root (if enabled) or
+    admin-equivalent users on Windows. In the future, NetBird will support more
+    granular user mapping, allowing OIDC user X to connect to specific local
+    users (PAM/local) on the target system.
+</Note>
+
+<Note type="warning">
+    **Time synchronization required**: The SSH server's system clock must be
+    synchronized with the IdP for JWT validation. Clock skew can cause
+    authentication failures.
+</Note>
+
+**How it works:**
+
+1. When you connect via SSH, the NetBird client requests a JWT token
+2. If no cached token exists or the token is expired:
+- NetBird initiates an OIDC flow
+- A URL is displayed that you must open in your browser to authenticate with the IdP
+- After successful login, NetBird receives and caches the JWT token
+3. The client sends the JWT to the SSH server
+4. The server validates the JWT using the JWKS endpoint configured in the management server
+5. If valid, the SSH session is established with the user identity from the JWT
+
+**Benefits:**
+
+- **User identity**: SSH sessions are associated with actual users, not machines
+- **Centralized auth**: Leverage the configured IdP (Okta, Google, Microsoft, etc.)
+- **Audit trail**: Know exactly which user accessed which machine
+- **Token expiration**: Automatic re-authentication when tokens expire
+
+**Token caching:**
+
+By default, JWT tokens are **not cached**, meaning you'll need to authenticate for each new SSH connection. To enable token caching and reduce authentication prompts on the **SSH client machine**, use the `--ssh-jwt-cache-ttl` flag:
+
+```bash
+# On the SSH client: enable caching with 1-hour TTL
+netbird up --ssh-jwt-cache-ttl 3600
+
+# On the SSH client: disable caching (default)
+netbird up --ssh-jwt-cache-ttl 0
+```
+
+**When caching is disabled (default):**
+- You'll authenticate via OIDC for each new SSH connection
+- More secure but less convenient
+- Recommended for high-security environments
+
+**When caching is enabled:**
+- JWT tokens are cached on the client for the specified TTL in seconds
+- Reduces repeated authentication prompts
+- Cached tokens expire after the configured TTL or when the NetBird daemon is restarted
+
+### Machine Identity (--disable-ssh-auth)
+
+If you prefer to allow SSH access from any peer with network access (similar to pre-0.60 behavior), you can disable JWT authentication:
+
+```bash
+netbird up --allow-server-ssh --disable-ssh-auth
+```
+
+**Important considerations:**
+
+- **Less secure**: Any peer with network access (ACL policy) can connect
+- **Machine identity**: Connections are identified by peer/machine, not by user
+- **No audit trail**: You cannot track which user accessed the system
+- **Use cases**: Automated scripts, service accounts, environments without IdP
+
+<Note type="warning">
+    When JWT authentication is disabled, SSH access is controlled solely by
+    network-level ACL policies. Ensure your policies are appropriately
+    restrictive.
+</Note>
+
+## Advanced Features
+
+### Port Forwarding
+
+NetBird SSH supports both local and remote port forwarding, allowing you to create secure tunnels through the SSH connection.
+
+**Local Port Forwarding:**
+
+Forward a local port on your machine to a remote address through the SSH server:
+
+```bash
+# Forward local port 8080 to remote localhost:80
+netbird ssh -L 8080:localhost:80 user@100.119.230.104
+
+# Forward local port 5432 to a database accessible from the remote peer
+netbird ssh -L 5432:database.internal:5432 user@100.119.230.104
+```
+
+Use case: Access a web service or database running on the remote peer or in its network.
+
+**Remote Port Forwarding:**
+
+Forward a port on the remote SSH server to your local machine:
+
+```bash
+# Forward remote port 8080 to local port 3000
+netbird ssh -R 8080:localhost:3000 user@100.119.230.104
+```
+
+Use case: Allow the remote peer to access a service running on your local machine.
+
+<Note>
+    Port forwarding must be enabled on the SSH server using
+    `--enable-ssh-local-port-forwarding` and
+    `--enable-ssh-remote-port-forwarding` flags.
+</Note>
+
+### SFTP and SCP
+
+Transfer files securely using native SFTP or SCP clients:
+
+**SFTP:**
+
+```bash
+sftp user@100.119.230.104
+```
+
+**SCP:**
+
+```bash
+# Upload file
+scp file.txt user@100.119.230.104:/path/to/destination
+
+# Download file
+scp user@100.119.230.104:/path/to/file.txt .
+
+# Copy directory
+scp -r directory/ user@100.119.230.104:/path/to/destination
+```
+
+<Note>
+    SFTP must be enabled on the SSH server using the `--enable-ssh-sftp` flag.
+    SFTP and SCP require native OpenSSH clients.
+</Note>
+
+### Non-interactive Command Execution
+
+Execute commands on remote peers without an interactive shell:
+
+```bash
+netbird ssh user@100.119.230.104 "uptime"
+```
+
+## Platform Support & Limitations
+
+### Supported Platforms
+
+NetBird SSH is supported on the following platforms:
+
+- **Linux**: Full support (all features)
+- **macOS**: Full support (all features)
+- **Windows**: Full support with platform-specific considerations (see below)
+- **FreeBSD**: Full support (all features)
+- **Android**: Server-only support (SSH client not available)
+
+### Platform-Specific Considerations
+
+#### Windows
+
+- **Port forwarding not supported**: SSH servers on Windows cannot accept port forwarding requests
+- **Other features supported**: SFTP, non-interactive commands fully functional
+
+#### Linux/Unix
+
+- **User Switching**: Available when running as root
+- The SSH server can switch to any user when running with root privileges
+- Non-root NetBird (e.g., rootless containers) will run sessions under the given account
+- **All features supported**: Full feature parity across these platforms
+
+#### Android
+
+- **Server-only**: SSH client functionality not available
+- **Server features**: Can run NetBird SSH server (configured via GUI)
+
+## Known Limitations
+
+### Port Forwarding
+
+Port forwarding has the following limitations:
+
+- **Not supported with native SSH clients**: Port forwarding (both local `-L` and remote `-R`) is **only available** when using the `netbird ssh` command directly
+- Native OpenSSH clients **cannot** use port forwarding
+- This is a current implementation limitation
+- Use `netbird ssh -L` or `netbird ssh -R` instead of `ssh -L` or `ssh -R`
+- **Not supported on Windows servers**: SSH servers running on Windows cannot accept port forwarding requests
+- **No user switching with port forwarding**: Port forwarding only works when connecting as the user running the NetBird process
+
+### User Mapping
+
+- **Current behavior**: SSH sessions connect as either:
+- The `root` user on Linux/Unix (if `--enable-ssh-root` is enabled)
+- Administrator-equivalent users on Windows
+- The SSH server's service account (if user switching is unavailable)
+- **Future enhancement**: Planned support for granular user mapping (OIDC user → specific local user)
+- **PAM integration**: Linux/Unix PAM integration is planned for more flexible authentication
+
+### Feature Availability
+
+Some features require specific flags to be enabled on the SSH server:
+
+- **SFTP**: Requires `--enable-ssh-sftp`
+- **Local port forwarding**: Requires `--enable-ssh-local-port-forwarding`
+- **Remote port forwarding**: Requires `--enable-ssh-remote-port-forwarding`
+- **Root login**: Requires `--enable-ssh-root` (use with caution)
+
+## Security Considerations
+
+### Access Control
+
+SSH access is controlled by multiple layers:
+
+1. **Network ACL policies**: Control which peers can access SSH over the mesh. Management will auto-add the mesh-native endpoint (22022) for a peer when the policy explicitly allows port 22 (or a range containing 22) and the peer advertises native SSH support (NetBird v0.60.0+). 
+2. **SSH enabled in dashboard**: Per-peer SSH access toggle
+3. **JWT authentication** (if enabled): User identity verification via IdP
+
+## Troubleshooting
+
+### Connection Issues
+
+**"SSH server not detected"** or **"Permission denied (publickey)"** or **"No more authentication methods available"**
+
+- Ensure the target peer is running with `--allow-server-ssh`
+- Verify SSH is enabled in the dashboard for the target peer
+- Check that the target peer is online and connected
+
+**"Authentication failed"** (JWT authentication)
+
+- Complete the OIDC flow when prompted
+- Verify the IdP is properly configured
+- Check if your JWT token is expired (NetBird will request a new one)
+- Ensure the SSH server's system clock is synchronized (time skew causes JWT validation failures)
+- For `--disable-ssh-auth`: Ensure ACL policy allows access
+
+**"Connection timeout"**
+
+- Verify ACL policy allows TCP port 22
+- Check if peers are connected to each other: `netbird status -d`
+- Test basic connectivity: `ping <peer-ip>`
+
+### Port Forwarding Issues
+
+**"Port forwarding not available"**
+
+- Ensure the SSH server was started with appropriate flags:
+- `--enable-ssh-local-port-forwarding` for local forwarding
+- `--enable-ssh-remote-port-forwarding` for remote forwarding
+
+**"Cannot bind to port"**
+
+- For local forwarding: Ensure the local port is not already in use
+- For remote forwarding: Ensure the remote port is available
+
+### SFTP Issues
+
+**"SFTP subsystem not available"**
+
+- Ensure the SSH server was started with `--enable-ssh-sftp`
+
+**"Permission denied"**
+
+- Check file system permissions on the target peer
+- Verify you're connecting with the correct user
+
+## CLI Reference
+
+For complete CLI command reference, including all SSH-related commands and flags, see the [CLI documentation](/get-started/cli#ssh).
+
+## Migrating from v0.59.x and Earlier
+
+<Note>
+    This section is only relevant if you're upgrading from NetBird v0.59.x or
+    earlier. New installations can skip this section.
+</Note>
+
+### What Changed in v0.60.0
+
+Version 0.60.0 is a complete rewrite with breaking changes:
+
+**New capabilities:**
+- OpenSSH client support via automatic proxy configuration
+- Windows client and server support
+- SFTP subsystem for file transfers
+- Local and remote port forwarding (`netbird ssh` only)
+- Non-interactive command execution
+- Configurable JWT token caching
+
+**Breaking changes:**
+- Server port changed from 44338 to 22 (22022 internally)
+- Authentication changed from machine public keys to JWT tokens (user identity)
+- Port 22 automatically redirects to 22022 for NetBird traffic
+- Old implicit firewall rule removed - explicit ACL policy required for port 22
+- Client no longer requires `sudo` for authentication
+- **Not backward compatible**: v0.60.0+ clients cannot connect to older servers and vice versa
+
+### Upgrade Steps
+
+<Note type="warning">
+    **Self-hosted deployments:** Update order is important:
+    1. Management server
+    2. Dashboard (optional - only if you use browser-based SSH)
+    3. **SSH servers first** (peers running `--allow-server-ssh`)
+    4. SSH clients last (peers using `netbird ssh`)
+
+    New clients cannot connect to old servers, so update servers before clients.
+</Note>
+
+#### For Self-Hosted Deployments
+
+1. **Update management server** to v0.60.0 or later
+- Verify server is running correctly
+- Confirm JWKS endpoint is accessible
+
+2. **Update dashboard** (optional)
+- Only needed if you use the browser-based SSH client
+- Maintains browser SSH access during peer migration
+
+3. **Create ACL policy** for port 22:
+```
+Source: [SSH Client Group/Peers]
+Destination: [SSH Server Group/Peers]
+Protocol: TCP
+Port: 22
+Action: Accept
+   ```
+
+4. **Update SSH servers FIRST** (peers running `--allow-server-ssh`)
+- Start with non-critical peers for testing
+- Old clients can still connect to updated servers
+
+5. **Update SSH clients LAST** (peers using `netbird ssh`)
+- Updated clients cannot connect to old servers
+- This is why servers must be updated first
+
+#### Optional Configuration
+
+Disable JWT authentication on SSH servers (allows network-level access without user auth):
+```bash
+netbird up --allow-server-ssh --disable-ssh-auth
+```
+
+Enable JWT token caching on SSH clients (reduces auth prompts):
+```bash
+netbird up --ssh-jwt-cache-ttl 3600  # 1 hour
+```
+
+<Note>
+    The browser-based SSH client in the dashboard remains compatible with both
+    old and new peer versions.
+</Note>
+
+## Get started
+<p float="center">
+    <Button name="button" className="button-5"
+            onClick={() => window.open("https://netbird.io/pricing")}>Use
+        NetBird</Button>
+</p>
+
+- Make sure to [star us on GitHub](https://github.com/netbirdio/netbird)
+- Follow us [on X](https://x.com/netbird)
+- Join our [Slack Channel](/slack-url)
+- NetBird [latest release](https://github.com/netbirdio/netbird/releases) on GitHub

@@ -24,9 +24,37 @@ NetBird with custom IdPs.
 - Docker Compose installed (see [Install Docker Compose](https://docs.docker.com/compose/install/)).
 - [jq](https://jqlang.github.io/jq/) installed. In most distributions usually available in the official repositories and can be installed with `sudo apt install jq` or `sudo yum install jq`
 - Domain name pointing to the public IP address of your server.
-- Open TCP ports ```80, 443, 33073, 10000, 33080``` (Dashboard HTTP & HTTPS, Management gRPC & HTTP APIs, Signal gRPC API, Relay respectively) on your server.
-- Coturn is used for relay using the STUN/TURN protocols. It requires a listening port, `UDP 3478`, and range of ports, `UDP 49152-65535`, for dynamic relay connections. These are set as defaults in setup file, but can be configured to your requirements.
+- **Firewall ports** (see below for your setup type).
 - Maybe a cup of coffee or tea :)
+
+#### Port requirements
+
+Since version 0.29, NetBird uses a consolidated port architecture where Management and Signal services share ports via HTTP/2 protocol negotiation. This significantly reduces the number of ports you need to open.
+
+**With reverse proxy (recommended):**
+| Port | Protocol | Description |
+|------|----------|-------------|
+| 80   | TCP      | HTTP (Let's Encrypt certificate validation, redirects to HTTPS) |
+| 443  | TCP      | HTTPS (Dashboard, Management API/gRPC, Signal gRPC, Relay WebSocket) |
+| 3478 | UDP      | Coturn STUN/TURN server |
+
+**Without reverse proxy (direct exposure):**
+| Port  | Protocol | Description |
+|-------|----------|-------------|
+| 80    | TCP      | HTTP (redirects to HTTPS) |
+| 443   | TCP      | HTTPS (Dashboard, Management HTTP API) |
+| 33073 | TCP      | Management gRPC API |
+| 10000 | TCP      | Signal gRPC API |
+| 33080 | TCP      | Relay (WebSocket/QUIC) |
+| 3478  | UDP      | Coturn STUN/TURN server |
+
+<Note>
+The default setup script configures a Caddy reverse proxy that consolidates all services behind ports 80 and 443. If you're running NetBird behind your own reverse proxy, see the [advanced configuration](#advanced-running-net-bird-behind-an-existing-reverse-proxy) section.
+</Note>
+
+<Note>
+**Legacy port requirements (pre-v0.29):** TCP `80, 443, 33073, 10000, 33080` plus UDP `3478` and UDP `49152-65535` (Coturn TURN relay port range). If you have any clients running versions below v0.29, you must keep these legacy ports open even if your server is upgraded - older clients cannot use the consolidated ports.
+</Note>
 
 For this tutorial we will be using domain ```demo.netbird.io``` which points to our Ubuntu 22.04 machine hosted at Hetzner.
 
@@ -86,7 +114,7 @@ This can be any email address. [Let's Encrypt](https://letsencrypt.org/) will cr
 </Note>
 
 <Note>
-    If you want to setup NetBird with your own reverse-Proxy and without using the integrated letsencrypt, follow [this step here instead](#advanced-running-netbird-behind-an-existing-reverse-proxy).
+    If you want to setup NetBird with your own reverse-Proxy and without using the integrated letsencrypt, follow [this step here instead](#advanced-running-net-bird-behind-an-existing-reverse-proxy).
 </Note>
 
 ### Step 3: Configure Identity Provider (IDP)
@@ -211,7 +239,7 @@ sudo cat /proc/sys/net/ipv4/ip_local_port_range
 More info can be found at this GitHub [issue](https://github.com/netbirdio/netbird/issues/390#issuecomment-1185298689).
 
 ### Oracle Cloud Infrastructure (OCI)
-Linux images provided by Oracle Cloud includes some default [firewall rules](https://docs.oracle.com/en-us/iaas/Content/Compute/References/bestpracticescompute.htm#Essentia) which block ingress UDP on port 3478. This is required by Coturn without which only peers in same LAN would be able to communicate with each other but not peers on different networks. Besides opening [required](#requirements) ports on _Security Rules_, you also need to run below command on the virtual machine.
+Linux images provided by Oracle Cloud includes some default [firewall rules](https://docs.oracle.com/en-us/iaas/Content/Compute/References/bestpracticescompute.htm#Essentia) which block ingress UDP on port 3478. This is required by Coturn without which only peers in same LAN would be able to communicate with each other but not peers on different networks. Besides opening the [required ports](#port-requirements) on _Security Rules_, you also need to run below command on the virtual machine.
 ```bash
 sudo iptables -I INPUT -p udp -m udp --dport 3478 -j ACCEPT
 ```
@@ -226,7 +254,7 @@ The configuration files are located in the folder where you ran the installation
 ```bash
 cd netbird/infrastructure_files/artifacts/
 mkdir backup
-cp docker-compose.yml turnserver.conf management.json backup/
+cp docker-compose.yml turnserver.conf management.json openid-configuration.json backup/
 ```
 
 To save the Management service databases, you need to stop the Management service and copy the files from the store directory using a docker compose command as follows:

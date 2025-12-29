@@ -1,0 +1,162 @@
+# pfSense Installation
+
+The NetBird client (agent) allows a peer to join a pre-existing NetBird deployment. If a NetBird deployment is not yet available,
+there are both managed and [self-hosted](https://docs.netbird.io/selfhosted/selfhosted-quickstart) options available.
+
+<Note>
+This installation is intended for early adopters while the pfSense package is under review and not yet available in the pfSense package manager.
+</Note>
+
+<div className="videowrapper">
+    <iframe src="https://www.youtube.com/embed/Kgrcquyeohc" allow="fullscreen;"></iframe>
+</div>
+
+## Prerequisites
+- Shell/SSH access to pfSense (via Web UI shell or remote SSH)
+- A [setup key](/manage/peers/register-machines-using-setup-keys#types-of-setup-keys) to authenticate and register the pfSense device
+- The latest NetBird `.pkg` binary from the [GitHub Releases](https://github.com/netbirdio/pfsense-netbird/releases)
+
+## Installation
+
+1. **SSH into your pfSense system**
+   ```sh
+   ssh admin@<pfsense-ip>
+   ```
+   If remote SSH is enabled or use the built-in shell via the pfSense Web UI (`Diagnostics` > `Command Prompt`).
+
+3. **Download the NetBird client(agent)**
+
+   From a shell on your pfSense system, run:
+   ```sh
+   fetch https://github.com/netbirdio/pfsense-netbird/releases/download/v0.1.2/netbird-0.55.1.pkg
+   ```
+3. **Download the NetBird pfSense package**
+
+   From a shell on your pfSense system, run:
+   ```sh
+   fetch https://github.com/netbirdio/pfsense-netbird/releases/download/v0.1.2/pfSense-pkg-NetBird-0.1.0.pkg
+   ```
+
+4. **Install the packages**
+
+   ```sh
+   pkg add -f netbird-0.55.1.pkg
+   pkg add -f pfSense-pkg-NetBird-0.1.0.pkg
+   ```
+
+5. **Verify the installation**
+
+   The NetBird GUI should now appear under `VPN` > `NetBird` in the pfSense menu.
+
+## Configuration
+
+### Authenticate the machine
+
+Fill out the authentication form with the following values and click `Save`:
+
+- **Management URL**: Default is `https://app.netbird.io:443`. If self-hosting, enter your custom management server URL.
+- **Setup Key**: Paste the setup key from your NetBird account. .
+
+<p>
+    <img src="/docs-static/img/get-started/pfSense/authentication.png" alt="authentication" className="imagewrapper-big"/>
+</p>
+
+### Verify Connection Status
+
+The Status page shows detailed information about connected peers and control services, helping you monitor your deployment.
+Access it via `Status` > `NetBird` in the pfSense menu.
+
+Use this section for diagnostics and troubleshooting common connection or setup issues.
+
+<p>
+    <img src="/docs-static/img/get-started/pfSense/status.png" alt="connection status" className="imagewrapper-big"/>
+</p>
+
+### Assign NetBird interface
+After authentication, a new interface named `wt0(wt0)` will be available but unassigned. To assign it go to
+`Interfaces` > `Assignments`. Under `Available network ports`, select the NetBird interface `wt0(wt0)` and click `Add`.
+
+<p>
+    <img src="/docs-static/img/get-started/pfSense/new_interface.png" alt="NewInterface" className="imagewrapper-big"/>
+</p>
+
+### Enable the NetBird interface
+
+Now that the NetBird interface has been added, you need to enable it. Go to `Interfaces` > `OPT1`, then configure
+the following options and click `Save`, then `Apply changes` to activate the interface:
+
+- **Enable**: `✓ Enable Interface`
+- **Description**: `NetBird`
+
+<p> <img src="/docs-static/img/get-started/pfSense/enable_interface.png" alt="enableInterface" className="imagewrapper-big"/> </p>
+
+### Configure Firewall Rules for the NetBird interface
+
+To allow NetBird to handle all access control, permit all traffic on the NetBird interface in pfSense. This ensures traffic
+flows freely, while NetBird’s own policies (ACLs) govern the access restrictions.
+
+Create rules to control traffic coming from your NetBird network into pfSense and your local networks:
+
+1. Go to `Firewall` > `Rules` and select the `NetBird` (interface) tab and click `Add` to create rules
+2. Configure the rule:
+    - **Action**: `Pass`
+    - **Interface**: `NETBIRD`
+    - **Address Family**: `in`
+    - **Protocol**: `Any`
+    - **Source**: `Any`
+    - **Destination**: `Any`
+    - **Description**: `Allow all on NetBird (managed by NetBird)`
+3. Click `Save`, then `Apply Changes`
+
+<p><img src="/docs-static/img/get-started/pfSense/firewall_rules.png" alt="firewallRules" className="imagewrapper-big"/></p>
+
+### Config for Troubleshooting Relayed Connections
+
+By default, pfSense uses automatic outbound NAT which randomizes source ports. This can cause issues with NetBird's NAT traversal (hole punching). To ensure reliable direct connections, you must configure a Static Port mapping.
+
+1.  **Change Outbound NAT Mode**:
+    -   Navigate to `Firewall` > `NAT` > `Outbound`.
+    -   Select `Hybrid Outbound NAT rule generation`.
+    -   Click `Save`.
+
+2.  **Add Static Port Rule**:
+    -   Click `Add` (Up arrow) to create a new rule at the top of the list.
+    -   **Interface**: `WAN`
+    -   **Address Family**: `IPv4`
+    -   **Protocol**: `UDP`
+    -   **Source**: `Network` (enter the IP address of your NetBird host)
+    -   **Destination**: `Any`
+    -   **Translation / Static Port**: Check `Static Port` box
+    -   **Description**: `NetBird Static Port`
+    -   Click `Save` and then `Apply Changes`.
+
+3.  **Reset States**:
+    -   Go to `Diagnostics` > `States`.
+    -   Filter by the NetBird host IP.
+    -   Click `Kill`.
+
+4.  **Restart NetBird**:
+    -   Run `netbird service restart` on the device.
+    -   Run `netbird status -d` to verify the connection.
+
+## Uninstallation
+
+From a shell on your pfSense system, run:
+<p>
+```sh
+pkg delete netbird-0.55.1 pfSense-pkg-NetBird-0.1.0
+```
+</p>
+
+
+
+
+## Get started
+<p float="center" >
+    <Button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</Button>
+</p>
+
+- Make sure to [star us on GitHub](https://github.com/netbirdio/netbird)
+- Follow us [on X](https://x.com/netbird)
+- Join our [Slack Channel](/slack-url)
+- NetBird [latest release](https://github.com/netbirdio/netbird/releases) on GitHub

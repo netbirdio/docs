@@ -1,0 +1,375 @@
+# Simplify Connectivity During Workload Migrations
+
+For DevOps and platform engineering teams, workload migration presents significant challenges, especially when transferring
+data-intensive applications between different environments or cloud providers. Key challenges include:
+
+* **Security Vulnerabilities**: Exposing databases or application servers to the public internet during migration increases
+the risk of data breaches and unauthorized access.
+* **Network Complexity**: Setting up VPNs or configuring firewall rules for temporary access complicates the migration
+process and can lead to misconfigurations.
+* **Performance Issues**: Traditional methods may suffer from latency and bandwidth limitations, slowing down large data
+transfers.
+
+This guide introduces NetBird as a solution for secure and efficient workload migration by:
+
+* **Enhancing Security**: Creating a secure overlay network that implements zero-trust principles, ensuring data remains protected throughout the migration process.
+* **Simplifying Network Configuration**: Eliminating the need for complex VPN setups or firewall rule changes, streamlining the migration workflow.
+* **Optimizing Performance**: Using NetBird's decentralized, point-to-point connections to bypass central servers, potentially reducing network bottlenecks and, thus, latency.
+
+To demonstrate how to use NetBird for securely migrating workloads to the cloud while maintaining access to on-premise databases, we'll walk through the following process:
+
+* Set up a local PostgreSQL database with a sample table, simulating an on-premise data resource.
+* Create a Python-based workload that interacts with this database, representing an on-premise application.
+* Migrate the Python workload to a cloud instance, while keeping the database on-premise.
+* Establish a secure connection between the cloud workload and on-premise database using NetBird.
+* Verify that the migrated cloud workload can securely access and interact with the on-premise database.
+
+This practical scenario illustrates how NetBird enables organizations to use cloud resources for workloads while maintaining secure access to sensitive on-premise data, facilitating a hybrid cloud approach to database workload migration.
+
+## Prerequisites
+
+To follow along with this use case, ensure you meet the following requisites:
+
+* A [NetBird account](https://app.netbird.io/)
+* [NetBird installed](https://docs.netbird.io/get-started/install) in your laptop or local machine.
+* A cloud-based VM instance (e.g., AWS EC2, Google Compute Engine, or Azure VM) to serve as the destination for the migrated workload.
+* Python 3.x installed on both source and destination instances.
+* Ability to create and use Python virtual environments on both instances (optional but recommended to avoid OS conflicts).
+* PostgreSQL and the corresponding client tools installed on the source (on-premise) instance.
+* Sufficient permissions to create and modify database users and edit `postgresql.conf` and `pg_hba.conf` configuration files.
+
+Now that you have the prerequisites ready let's outline the process for creating a secure pathway for workload migration between your local environment and the remote cloud VM:
+
+1. Creating the Testing Environment (Local Database and Workload)
+2. Installing and Configuring NetBird on Destination Instance(s)
+3. Setting Up NetBird's Access Control for Secure Data Transfer
+4. Preparing PostgreSQL Database for Remote Access via NetBird
+5. Initiating Secure Connection for Database Workload Migration
+
+This approach ensures a protected and efficient migration of your workload, leveraging NetBird's capabilities for enhanced security and simplified networking.
+
+## 1. Creating the Testing Environment (Local Database and Workload)
+
+Create a new database and user:
+
+```bash
+createdb demo_db
+createuser -s demo_user
+```
+
+Connect to the database:
+
+```bash
+psql -d demo_db
+```
+
+Once connected, run the following SQL code to create the `employees` table and fill it with sample data:
+
+```sql
+CREATE TABLE employees (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    department VARCHAR(100)
+);
+
+INSERT INTO employees (name, department) VALUES
+('John Doe', 'IT'),
+('Jane Smith', 'HR'),
+('Mike Johnson', 'Sales');
+```
+
+Verify the table was created by printing it to the terminal:
+
+```bash
+$ psql -d demo_db -c "SELECT * FROM employees;"
+```
+
+The expected output is:
+
+```bash
+ id |     name     | department 
+----+--------------+------------
+  1 | John Doe     | IT
+  2 | Jane Smith   | HR
+  3 | Mike Johnson | Sales
+(3 rows)
+```
+
+With the database up and running, you are ready to create the local workload.
+
+Create a new folder for the Python environment, then navigate to it and run:
+
+```bash
+python3 -m venv venv
+```
+
+Activate the `venv` virtual environment:
+
+```bash
+source venv/bin/activate
+```
+
+Install the dependencies for the demo workload:
+
+```bash
+pip install psycopg2-binary
+```
+
+Create the demo workload: `employee_workload.py`
+
+```python
+import psycopg2
+
+def get_employees():
+    conn = psycopg2.connect(
+        dbname="demo_db",
+        user="demo_user",
+        password="",
+        host="localhost"
+    )
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM employees")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+if __name__ == "__main__":
+    employees = get_employees()
+    print("(On-Premise) Employee List:")
+    for employee in employees:
+        print(f"ID: {employee[0]}, Name: {employee[1]}, Department: {employee[2]}")
+```
+
+This is a simple workload that uses the `psycopg2` library to connect to the `demo_db` database you created a moment ago and then retrieve and print the values of the `employees` table to the terminal.
+
+Run the script:
+
+```bash
+python3 employee_workload.py
+```
+
+Here's the expected output:
+
+```bash
+(On-Premise) Employee List:
+ID: 1, Name: John Doe, Department: IT
+ID: 2, Name: Jane Smith, Department: HR
+ID: 3, Name: Mike Johnson, Department: Sales
+```
+
+Notice the `(On-Premise)` label in the code. You'll change this to `(Remote)` after migration to distinguish between local and remote workloads.
+
+## 2. Installing and Configuring NetBird on Destination Instance(s)
+
+With the on-premise environment ready, you can install NetBird on the destination instance.
+
+Login to NetBird and navigate to `Peers`. Ensure the source instance, the one hosting the database, is connected.
+
+![NetBird Local Peer](/docs-static/img/manage/peers/site-to-site/db-workload-migration/workload-migration-01.png)
+
+Next, generate a setup key for enhanced security when connecting your remote workload to the NetBird network:
+
+* Go to `Setup Keys` in the left menu
+* Click `Create Setup Key`
+* Enter a descriptive name for the setup key (e.g., "Remote Workload 01"). Also, set an expiration date and define auto-assigned groups (if required). You can find [more information regarding setup key options in the documentation](https://docs.netbird.io/manage/peers/register-machines-using-setup-keys).
+* Copy the generated key since you'll need it shortly
+
+![NetBird Creating Setup Key](/docs-static/img/manage/peers/site-to-site/db-workload-migration/workload-migration-02.png)
+
+To install the NetBird agent on the remote instance, run the following command: 
+
+```shell
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+```
+
+The script automatically installs the NetBird agent and starts the corresponding service. Check the service is up and running:
+
+```bash
+sudo systemctl status netbird
+```
+
+The output should be similar to:
+
+```bash
+● netbird.service - A WireGuard-based mesh network that connects your devices i>
+     Loaded: loaded (/etc/systemd/system/netbird.service; enabled; preset: enab>
+     Active: active (running) since Thu 2024-09-19 15:52:27 UTC; 24s ago
+   Main PID: 2865 (netbird)
+      Tasks: 5 (limit: 1113)
+     Memory: 15.9M (peak: 16.1M)
+        CPU: 24ms
+     CGroup: /system.slice/netbird.service
+             └─2865 /usr/bin/netbird service run --config /etc/netbird/config.j>
+```
+
+To enable the service on startup, run:
+
+```bash
+sudo systemctl enable netbird
+```
+
+Now you can connect to the NetBird network using the setup key. Ensure to replace `<YOUR_SETUP_KEY>` with the key you generated:
+
+```bash
+netbird up --setup-key <YOUR_SETUP_KEY>
+```
+
+Check NetBird status by running:
+
+```shell
+sudo netbird status
+```
+
+The expected output is similar to the following:
+
+```bash
+OS: linux/amd64
+Daemon version: 0.29.0
+CLI version: 0.29.0
+Management: Connected
+Signal: Connected
+Relays: 2/2 Available
+Nameservers: 0/0 Available
+FQDN: remote-workload.netbird.cloud
+NetBird IP: 100.85.195.197/16
+Interface type: Kernel
+Quantum resistance: false
+Routes: -
+Peers count: 0/0 Connected
+```
+
+If everything goes as expected, you will see your remote workload in NetBird's `Peers` dashboard.
+
+![NetBird Peers Network](/docs-static/img/manage/peers/site-to-site/db-workload-migration/workload-migration-03.png)
+
+## 3. Setting Up NetBird's Access Control for Secure Data Transfer
+
+NetBird's `Default` access control policy assigns all peers to the `All` group, enabling bidirectional access between devices and users. While this default setting allows immediate connectivity between your remote workload and on-premise database, it's recommended to implement stricter access controls. [NetBird Access Policies](https://docs.netbird.io/manage/access-control/manage-network-access) enable you to limit connections to the on-premise instance, ensuring only authorized users or devices can access it, thus enhancing security.
+
+To create a new policy:
+
+* Go to `Access Control > Policies`
+* Click `Add Policy` to create a new policy. For more details on creating access policies, refer to [Managing Access with NetBird: Groups and Access Policies](https://docs.netbird.io/manage/access-control/manage-network-access).
+
+For this use case, we disabled the `Default` policy and created the following one:
+
+* **Source Group**: `On-Premise-DB`
+* **Destination Group**: `Remote Workloads`
+* **Protocol**: TCP
+* **Port**: 5432 (default PostgreSQL port)
+* **Action**: Allow
+
+This policy restricts access to the local environment where the database is running by only allowing the members of the group `Remote Workloads` to connect.
+
+![NetBird Access Policy](/docs-static/img/manage/peers/site-to-site/db-workload-migration/workload-migration-04.png)
+
+The next step is to assign peers to their respective groups. To add the remote instance to the `Remote Workloads` group:
+
+* Navigate to `Peers` in the left menu
+* Click on `remote-workload` (or any name you gave to the remote instance)
+* Find the `Assigned Groups` field and select `Remote Workloads` from the dropdown list.
+
+![NetBird Remote Peer](/docs-static/img/manage/peers/site-to-site/db-workload-migration/workload-migration-05.png)
+
+Follow a similar procedure to assign your local machine to the `On-Premise-DB` group:
+
+* Locate and click on the local peer
+* Find the `Assigned Groups` field and select `On-Premise-DB` from the dropdown list.
+
+![NetBird Local User Peer](/docs-static/img/manage/peers/site-to-site/db-workload-migration/workload-migration-06.png)
+
+Your network configuration is complete, enabling secure communication between the remote instance and your local machine via an encrypted WireGuard tunnel. However, additional adjustments are necessary to finalize the workload migration process.
+
+## 4. Preparing PostgreSQL Database for Remote Access via NetBird
+
+Your PostgreSQL database requires editing two files: `postgresql.conf` and `pg_hba.conf` to enable remote connections. Locate these files using the `psql` console, as their paths may vary based on your operating system and installation method:
+
+```bash
+$ psql postgres
+```
+
+Once logged, run the following commands:
+
+```sql
+SHOW config_file;
+SHOW hba_file;
+```
+
+The output should be similar to:
+
+```sql
+                   config_file                   
+-------------------------------------------------
+ /opt/homebrew/var/postgresql@14/postgresql.conf
+(1 row)
+
+                  hba_file                   
+---------------------------------------------
+ /opt/homebrew/var/postgresql@14/pg_hba.conf
+(1 row)
+```
+
+Now edit `postgresql.conf`. Uncomment and modify the line `listen_address` as follows:
+
+```bash
+listen_address = '*'
+```
+
+Next, edit `pg_hba.conf` and add the following line:
+
+```bash
+host    all    all    100.85.0.0/10    md5
+```
+
+These changes allow PostgreSQL to listen on all interfaces and accept connections from the NetBird IP range (100.85.0.0/10). While sufficient for this example, keep in mind that production environments should implement stronger authentication and security options.
+
+## 5. Initiating Secure Connection for Database Workload Migration
+
+To complete the migration, deploy your workload to the remote instance by recreating the local setup: establish a Python virtual environment, install the `psycopg2-binary` library, and create `employee_workload.py`. However, in the Python code, you must update the `host` parameter, replacing `localhost` with the NetBird-assigned IP address of the remote instance. You can find this IP address in your peers' list on your NetBird dashboard.
+
+![NetBird IP Addresses](/docs-static/img/manage/peers/site-to-site/db-workload-migration/workload-migration-07.png) 
+
+Optionally, you can change the label `(On-Premise)` with `(Remote)` as mentioned earlier. The Python code should look similar to this:
+
+```python
+import psycopg2
+
+def get_employees():
+    conn = psycopg2.connect(
+        dbname="demo_db",
+        user="demo_user",
+        password="",
+        host="NETBIRD_IP_OR_DOMAIN_NAME"
+    )
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM employees")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+if __name__ == "__main__":
+    employees = get_employees()
+    print("(Remote) Employee List:")
+    for employee in employees:
+        print(f"ID: {employee[0]}, Name: {employee[1]}, Department: {employee[2]}")
+```
+
+Now, run the script:
+
+```bash
+python3 employee_workload.py
+```
+
+Here's the output
+
+```bash
+(Remote) Employee List:
+ID: 1, Name: John Doe, Department: IT
+ID: 2, Name: Jane Smith, Department: HR
+ID: 3, Name: Mike Johnson, Department: Sales
+```
+
+This simple script confirms the migration was successful. You just established a secure, firewall-free connection from your remote instance to your on-premise database via NetBird, which demonstrates its power in simplifying robust network security.
+

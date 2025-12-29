@@ -1,0 +1,158 @@
+# Accessing restricted website domain resources
+
+It is very common to find scenarios where you need to access restricted websites or services. This can be due to company policies, geographical restrictions, or even to avoid tracking. These resources are often located behind a cloud load balancer, which changes IP addresses frequently, making it hard to whitelist them. NetBird can help you access these resources by routing your traffic through a [routing peer](https://docs.netbird.io/manage/network-routes/routing-traffic-to-private-networks#routing-peer) configured with [Networks](https://docs.netbird.io/manage/networks) using [Domain resources](https://docs.netbird.io/manage/networks#resources).
+
+## Example Use Case Scenario
+
+Imagine a company that runs its accounting application at the subdomain `accounting.example.com`. The website is behind a load balancer and hosted on an EC2 instance within the company's AWS infrastructure in the EU Central region. To enhance security, the company decided to follow zero-trust principles by giving differentiated access to the finance and support teams tailored to their specific responsibilities and operational needs.
+
+To this end, the company deployed [NetBird clients](https://docs.netbird.io/get-started) on the devices used by both the finance and support teams. Complementing this, [NetBird routing peers](https://docs.netbird.io/manage/networks#routing-peers) were configured within the AWS VPC using [setup keys](https://docs.netbird.io/manage/peers/access-infrastructure/setup-keys-add-servers-to-network). This configuration guarantees a solid foundation for streamlined and secure connectivity. 
+
+More importantly, this setup allows the company to use NetBird's Networks and [Access Policies](https://docs.netbird.io/manage/access-control/manage-network-access), to ensure that only authorized finance and support team members access the restricted website domain as follows:
+
+- **Finance Team**: HTTP and HTTPS access to the website frontend at `accounting.example.com` over ports `80` and `443`, respectively.
+- **Support Team**: SSH access to backend resources at `example.com` over port `22`, enabling server management, troubleshooting, and support tasks.
+
+This configuration adds another layer of security within the AWS environment, thus reinforcing the company network security framework and enhancing operational efficiency.
+
+## Creating a Network for the Restricted Website Domain
+
+To create a new network for the accounting website subdomain:
+
+* Go to `Networks` > `Networks` in NetBird's dashboard.
+* Click the `Add Network` button.
+* Give a memorable name to the network, such as `AWS EU Network`. Optionally, add a description.
+* Click `Add Network` to proceed.
+
+![Create Restricted Website Domain Network](/docs-static/img/manage/networks/accessing-restricted-domain-resources/01-restricted-domain.png)
+
+### Adding Routing Peers
+
+Continue the process by clicking `Add Routing Peer`. This step is necessary to enable the network's resources to be accessible to other peers.
+
+![Add Routing Peers Window](/docs-static/img/manage/networks/accessing-restricted-domain-resources/02-restricted-domain.png)
+
+In the next window, you will see two tabs: `Routing Peers` and `Peer Group`.
+
+* Choose `Routing Peers` to add a single peer to the network, e.g., `aws-router`.
+* Alternatively, you can select `Peer Group` to add multiple peers simultaneously for high availability. 
+* Click `Continue` once ready.
+
+![Local Routing Peers](/docs-static/img/manage/networks/accessing-restricted-domain-resources/03-restricted-domain.png)
+
+In the `Advanced Settings` tab:
+
+* Set `Masquerade` if you want to access private networks without configuring local routers or other devices.
+* Set the `Metric` to prioritize routers. Lower values indicate higher priority.   
+* Click `Add Routing Peer`.
+
+![Masquerade and Metric](/docs-static/img/manage/networks/accessing-restricted-domain-resources/04-restricted-domain.png)
+
+### Adding Network Resources
+
+Next, click `Add Resource` to add the accounting website resource.
+
+![Add Network Resource](/docs-static/img/manage/networks/accessing-restricted-domain-resources/05-restricted-domain.png)
+
+* Give the network resource an appropriate name, e.g., `Accounting restricted subdomain`
+* Enter the restricted website domain for the accounting website, in this example, `accounting.example.com`.
+* Under `Assigned Groups`, select or create a group, like `Accounting Subdomain`. This group will be used to create an access policy to allow the finance team access to the restricted subdomain.
+* Click `Add Resource` when done.
+
+![Add Accounting Website Restricted Subdomain Resource](/docs-static/img/manage/networks/accessing-restricted-domain-resources/06-restricted-domain.png)
+
+### Creating Access Policies
+
+The last step consists of creating an access control policy. Click `Create Policy` to create a new policy for the finance team.
+
+![Add Policy](/docs-static/img/manage/networks/accessing-restricted-domain-resources/07-restricted-domain.png)
+
+Since the finance team only needs access to the web-based app at `accounting.example.com`, this policy will restrict access to ports: `TCP/80` for `HTTP` traffic and `TCP/443` for encrypted `HTTPS` traffic.
+
+* Under `Protocol`, select `TCP`.
+* Under `Source` choose the group corresponding to the finance team, e.g., `Finance`.
+* The `Destination` is automatically set to the group of the newly created resource, e.g., `Accounting Subdomain`.
+* Under `Ports`, enter `80` and `443`, the default ports for `HTTP` and `HTTPS` traffic.
+
+![Finance Policy](/docs-static/img/manage/networks/accessing-restricted-domain-resources/08-restricted-domain.png)
+
+* Click `Continue` to move to the `Posture Checks` tab, where you can optionally create or select posture checks for this policy.
+* Click `Continue` again, and provide a descriptive name for the policy, e.g., `Accounting subdomain Policy`.
+* Click `Add Policy` to finish.
+
+![Finance Policy Name](/docs-static/img/manage/networks/accessing-restricted-domain-resources/09-restricted-domain.png)
+
+### Setting Up Additional Resources and Access Policies
+
+Contrary to the finance team, the support team does not need access to the front end of the restricted accounting app but to the back end of the top-level domain: `example.com`, meaning you must add a new network resource and access policy for this team.
+
+To set up a new network resource:
+
+* In the `AWS EU Network` screen, click `Add Resource`.
+* Give the resource a descriptive name, for example, `Restricted Website TLD`.
+* Enter the domain, in our case, `example.com`.
+* Under `Assigned Groups`, select or create the appropriate group such as `Webserver`. This group will be used to create a policy allowing the support team to access the TLD `example.com`.
+
+![Add TLD Resource](/docs-static/img/manage/networks/accessing-restricted-domain-resources/10-restricted-domain.png)
+
+Next, create an access policy for the support team. Usually, support teams only need SSH access to the website backend, meaning that they only need access to the `TCP/22` port:
+
+* Click `Add Policy` next to the `Restricted Website TLD` resource.
+* Under `Protocol`, select `TCP`.
+* Set `Source` to `Support` and `Destination` to `Webserver`. This allows the support team to access the restricted website backend over SSH.
+* Under `Ports`, enter `22`, the default port for SSH.
+* Click `Continue`.
+ 
+![Add Support Team Policy](/docs-static/img/manage/networks/accessing-restricted-domain-resources/11-restricted-domain.png)
+
+* Optionally, select or create posture checks for this policy. Click `Continue`.
+* Give a name to the policy on the final tab, such as `Restricted Website TLD Policy`. 
+
+![Name Support Team Policy](/docs-static/img/manage/networks/accessing-restricted-domain-resources/12-restricted-domain.png)
+
+This completes the network setup. You have configured two network resources, their respective access policies, and routing peers.
+
+![AWS EU Network](/docs-static/img/manage/networks/accessing-restricted-domain-resources/13-restricted-domain.png)
+
+Now, you can review, select, or deselect available networks using NetBird's CLI.
+
+Here's the output of the `netbird networks list` command from a Finance team client:
+
+```bash
+$ netbird networks list
+Available Networks:
+
+  - ID: Accounting restricted subdomain
+    Domains: accounting.example.com
+    Status: Selected
+    Resolved IPs: -
+
+  - ID: Internal Web Services
+    Domains: *.company.internal
+    Status: Selected
+    Resolved IPs: -
+```
+
+As expected, finance members only have access to `accounting.example.com`.
+
+Here's the output from a support team workstation:
+
+```bash
+$ netbird networks list
+Available Networks:
+
+  - ID: Internal Web Services
+    Domains: *.company.internal
+    Status: Selected
+    Resolved IPs: -
+
+  - ID: Restricted Website TLD
+    Domains: example.com
+    Status: Selected
+    Resolved IPs:
+      [example.com]: 93.184.215.14, 2606:2800:21f:cb07:6820:80da:af6b:8b2c
+```
+
+As you can see, the support team only has access to the TLD `example.com`
+
+That's it! Using NetBird's Networks feature, you can efficiently create and manage custom network traffic routes and access policies for restricted website domain resources.

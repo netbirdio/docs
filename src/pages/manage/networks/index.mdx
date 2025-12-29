@@ -1,0 +1,179 @@
+# Networks
+
+NetBird provides a fast and secure peer-to-peer mesh network with end-to-end encryption, enabling devices and machines
+running the NetBird agent to connect directly. This setup allows for precise network segmentation,
+isolation of individual machines, and secure remote access without the need to open ports or expose resources to the
+internet. However, there are situations where installing the agent on every machine is not feasible or hasn't been
+completed, requiring access to entire LANs, office networks, or cloud VPCs instead.
+
+Starting from version `0.35.0`, NetBird introduces Networks, a new concept that allows you to map your internal networks
+such as LANs, VPCs, or office networks, and manage access to internal resources without installing NetBird agent.
+
+<p>
+    <img src="/docs-static/img/manage/networks/netbird-network-routes.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+<Note>
+    Networks replace the old [Network Routes](/manage/network-routes/routing-traffic-to-private-networks) concept, which is now deprecated.
+    Existing Network routes will continue to work as before, but we recommend migrating to Networks for better access
+    management to your resources.
+</Note>
+
+## Concepts
+### Networks
+Networks are configuration containers that map your on-premise or cloud networks in a logical set of configurations,
+making it easier to visualise and manage access to your internal resources. You can create multiple networks to represent your
+different environments, such as office networks, cloud VPCs, or on-premise LANs.
+
+<p>
+    <img src="/docs-static/img/manage/networks/index/new-network-2.png" alt="high-level-dia" className="imagewrapper"/>
+</p>
+
+### Routing peers
+To access your internal resources, you need to route traffic from your NetBird peers to your internal networks.
+Routing peers are machines that connect your NetBird peers and your internal networks.
+You can add as many routing peers as you need using single peers or groups to ensure high availability and load balancing.
+You can define masquerading and priority for each routing peer.
+
+<p>
+    <img src="/docs-static/img/manage/networks/index/add-routing-peer-1.png" alt="high-level-dia" className="imagewrapper"/>
+</p>
+
+
+### Resources
+Resources are individual machines, services, or subnets within your internal network. You can define resources as single
+IP addresses, IP ranges, domain names, or wildcard domains (e.g., *.company.internal) when enabling [DNS wildcard routing](#enable-dns-wildcard-routing).
+
+<p>
+    <img src="/docs-static/img/manage/networks/index/resources-1.png" alt="resources" className="imagewrapper-big"/>
+</p>
+<Note>
+  Support to exit nodes and site-2-site VPNs may become available in future releases. In the meantime you can use [Network routes](/manage/network-routes/routing-traffic-to-private-networks) add your exit-node routes and site-2-site routes.
+</Note>
+
+### Domain Resources
+
+In addition to routing IP addresses, NetBird also supports routing domain names. In the Dashboard you can just pass
+a domain name (eg: `example.com`) or a wildcard domain (eg: `*.example.com`) in place where you would normally
+put an IP address range. Then NetBird clients will start responding to and routing the given domain.
+
+Please consult the
+[Debugging access to Domain Resources](/help/troubleshooting-client#debugging-access-to-domain-resources)
+documentation to troubleshoot common issues with this type of resources yourself.
+
+<Note>
+  Due to a mix of a bug and initial design choice clients running `0.59.0` & `0.59.1` might not be able to resolve
+  domain Resources served by Routing Peers running versions `0.59.0` to `0.59.9` in case when all the Peers in the
+  NetBird organization are running versions `0.59.0` or newer.
+
+  Installing client in versions `<= 0.58.2` or `>= 0.59.2` or upgrading a Routing Peer to version `0.59.10+` will
+  resolve this issue.
+</Note>
+
+On a technical level the feature works as follows:
+
+1. Initially (when NetBird connects) the operating system is instructed to use NetBird to resolve the requested
+   domain(s).  No routing rules are configured yet.
+2. An Application (could be a web browser) requests a domain `example.com` from the Operating System
+   1. the Operating System requests a name from NetBird's Local DNS Forwarder, by default running on port `53` of:
+      - for MacOS & Windows: the highest available IP address in your NetBird range, usually `100.xxx.255.254:53`
+      - for other systems: local NetBird client's IP address, eg: `100.xxx.123.45`
+   2. the Local DNS Forwarder forwards the query to Remote DNS Resolver running on Routing Peer's address
+      and the following port:
+      - `22054` for version `0.59.0` and newer
+      - `5353` for versions below `0.58.x` and older
+   3. the Routing Peer resolves the domain name using its local configuration (often independent of NetBird) and returns
+     the result.
+   4. the Local DNS Forwarder sets up routing rules for IP addresses returned from the query, 
+      before returning them to the Application
+      - see [Trigger the Domain Resource](/help/troubleshooting-client#trigger-the-domain-resource)
+        to observe this behaviour "in action".
+3. the Application receives the result "as usual", except for a slight delay before all of the above takes place the
+  first time a domain name is requested,
+4. all subsequent requests to `example.com` will be served instantly from the Local DNS Forwarder's cache
+
+<Note>
+  NetBird tries its best to automatically open up DNS forwarder ports on Routing Peer's firewalls, but might fail on
+  some system configurations and you might need to open up above 2 ports manually.
+
+  You can verify that firewall allows the DNS request in using following command issued from the clients device
+  `nslookup -port=22054 <routed-domain> <routing-peer-ip>`, eg: `nslookup -port=22054 example.com 100.123.45.67`.
+
+  This is by far the most common cause of issues with domain Resources.
+</Note>
+
+## Manage access to resources
+
+To manage access to resources, you should assign them to groups and create [access control policies](/manage/access-control/manage-network-access#creating-policies) to grant access from the specific peer groups. A peer will "see" the resource only after a policy allows access from one of peer's (source) groups to one of the resource's (destination) groups.
+
+See the image below with an example resource `CRM`:
+<p>
+    <img src="/docs-static/img/manage/networks/index/resources-2.png" alt="resource-group" className="imagewrapper"/>
+</p>
+
+Access control policies are rules that define which peers can access the resources in your network. You can create policies based on the source and destination groups, and the type of traffic allowed (e.g., TCP, UDP, ICMP).
+The groups assigned to resources should always be placed in the destination input field of the policy.
+The peers belonging to the source groups will receive the resources linked to the policy and the firewall rules will be applied according to what is defined.
+
+<Note>
+  Unlike peers, resources are not members of the built-in `All` group by default. If you want to utilize `All` group rules with resources, you must explicitly add them to this group.
+</Note>
+
+See the example below with a policy that allows the group `Berlin Office` to access the internal CRM system:
+
+<p>
+    <img src="/docs-static/img/manage/networks/index/resource-acl-1.png" alt="resource-acl" className="imagewrapper-big"/>
+</p>
+
+<Note>
+    Policies for domains or wildcard domains applied to peers with IP ranges might influence access control for those peers, as their destination ranges include any IPs. Therefore, we recommend creating networks with routing peers dedicated to domain and wildcard domains to prevent unwanted access. In upcoming releases, we will provide a fix for this behavior.
+</Note>
+
+## Enable DNS wildcard routing
+When you configure wildcard domains as resources, you need to enable DNS wildcard routing. Which has an additional effect in comparison to the previous DNS routes behavior from Network routes; it switches the DNS resolution to the routing peer instead of the local client system.
+This is also useful for regular DNS routes when you want to resolve the domain names using the routing peer's IP infrastructure, which will allow for more restricted access control rules in newer versions of the clients (**1**) and for the traffic to go to a near routing peer service.
+<Note>
+ (1) Support for more restricted rules will be available in future releases.
+</Note>
+You can enable DNS resolution on the routing peer by accessing your account `Settings` > `Networks` > Enable DNS wildcard routing. See example below:
+<p>
+    <img src="/docs-static/img/manage/networks/index/settings-1.png" alt="settings-acl" className="imagewrapper-big"/>
+</p>
+
+<Note>
+    The `Enable DNS wildcard routing` is supported by routing peers and routing clients running version 0.35.0 or later.
+    Once the feature is enabled, you may need to restart your routing peers and clients to apply the changes.
+</Note>
+
+<Note>
+    DNS Forwarder port change: starting with NetBird v0.59.0, the local DNS forwarder used for routed DNS routes switches from port <code>5353</code> to <code>22054</code> to avoid collisions on client devices. For backward compatibility, the Management Service applies the new port only when <strong>all peers in the account</strong> run v0.59.0 or newer. If any peer is below v0.59.0, port <code>5353</code> will be used for all peers in that account.
+</Note>
+
+## Differences between Networks and Network Routes
+
+|                                                                           | Networks                                                                                                          | Network routes                                                                                                                      |
+|---------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| **Requires extra policy connecting routing peers to distribution peers?** | No, the connection is implied when a policy is added to control access to resources                               | Yes, the routing peers need to have a policy that connects them to peers in the distribution groups                                 |
+| **Needs distribution groups?**                                            | No, the source groups in the policies define the distribution groups                                              | Yes, they need to be explicitly defined per network route configured                                                                |
+| **Requires adding full sets of configurations per routed resource?**      | No, the routing peers in a Network are used to route all resources in that network                                | Yes, every network route needs to have a routing peer, distribution group, access control group, and the network range or DNS route |
+| **Allows edit routed resources?**                                         | Yes, you can edit ranges or domains                                                                               | No, you can't edit IP ranges or DNS routes once created                                                                             |
+| **Allows edit names?**                                                    | Yes, names are editable                                                                                           | No, names are defined once while creating the route                                                                                 |
+| **Support to wildcard domains?**                                          | Yes, wildcard domains are supported                                                                               | No, network routes are limited to individual domains                                                                                |
+| **Support for exit-nodes?**                                               | No, even though that exit-nodes can be linked to on-premises or cloud networks, they invalidate other resources   | Yes, but the same note is valid when using an exit-node to route other traffic to the same resources                                |
+| **Support for site-2-site IP ranges routing?**                            | No, but support is planned                                                                                        | Yes, when you create a network route without access control groups                                                                  |
+
+
+## Use cases
+- [Routing traffic to multiple IP resources](/manage/networks/routing-traffic-to-multiple-resources)
+- [Accessing restricted website domain resources](/manage/networks/accessing-restricted-domain-resources)
+- [Accessing entire domains within networks](/manage/networks/accessing-entire-domains-within-networks)
+
+## Get started
+<p float="center" >
+    <Button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</Button>
+</p>
+
+- Make sure to [star us on GitHub](https://github.com/netbirdio/netbird)
+- Follow us [on X](https://x.com/netbird)
+- Join our [Slack Channel](/slack-url)
+- NetBird [latest release](https://github.com/netbirdio/netbird/releases) on GitHub

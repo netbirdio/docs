@@ -1,0 +1,129 @@
+import {Note} from "@/components/mdx";
+
+# Okta with NetBird Self-Hosted
+
+This guide is a part of the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide) and explains how to integrate 
+**self-hosted** NetBird with [Okta](https://www.okta.com/).
+
+<Note>
+If you prefer to have full control over authentication and authorization of your NetBird network, there are good self-hosted alternatives to the managed Okta service like [Keycloak](/selfhosted/identity-providers#keycloak).
+</Note>
+
+Before you start creating and configuring an Okta application, ensure that you have an Okta workforce identity cloud account. If you don't have one, sign up for a free account at https://www.okta.com/free-trial/.
+
+## Step 1. Create and configure Okta single-page application
+In this step, we will create and configure Netbird single-page application in okta.
+- Navigate to Okta Admin Dashboard
+- Click `Applications` in the left menu and then click on `Applications`
+- Click `Create App Integration`
+- Fill in the form with the following values and click `Next`
+  - Sign-in method: `OIDC - OpenID Connect`
+  - Application type: `Single-Page Application`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/okta/okta-new-single-page-application.png" alt="high-level-dia" className="imagewrapper"/>
+</p>
+
+- Fill in the form with the following values and click `Save`
+    - App integration name: `Netbird`
+    - Grant type: `Authorization Code` and `Refresh Token`
+    - Sign-in redirect URIs: `https://<yournetbirddomain.com>/auth`, `https://<yournetbirddomain.com>/silent-auth` and `http://localhost:53000`
+    - Sign-out redirect URIs: `https://<yournetbirddomain.com>/`
+- Click `Save`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/okta/okta-single-page-application.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Navigate to Okta Admin Dashboard
+- Click `Applications` in the left menu and then click on `Applications`
+- Select `Netbird` application on the list and take a note of the `Client ID`, we will use it later
+- Click on `Sign On` tab on top menu
+- Under `OpenID Connect ID Token` section, click `Edit` and update `Issuer`  to use the `Okta URL`
+- Click `Save`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/okta/okta-single-sign-on-configuration.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+## Step 2. Create and configure Okta native application
+In this step, we will create and configure Netbird native application in okta.
+- Navigate to Okta Admin Dashboard
+- Click `Applications` in the left menu and then click on `Applications`
+- Click `Create App Integration`
+- Fill in the form with the following values and click `Next`
+  - Sign-in method: `OIDC - OpenID Connect`
+  - Application type: `Native Application`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/okta/okta-new-native-application.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Fill in the form with the following values and click `Save`
+    - App integration name: `Netbird Native App`
+    - Grant type: `Device Authorization`
+- Click `Save`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/okta/okta-native-application.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+- Navigate to Okta Admin Dashboard
+- Click `Applications` in the left menu and then click on `Applications`
+- Select `Netbird Native App` application on the list and take a note of the `Client ID`, we will use it later
+- Click on `Sign On` tab on top menu
+- Under `OpenID Connect ID Token` section, click `Edit` and update `Issuer`  to use the `Okta URL`
+- Click `Save`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/okta/okta-native-sign-on-configuration.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+
+## Step 3. Generate api token
+In this step, we will generate netbird api token in okta for authorizing calls to user api.
+
+- Navigate to Okta Admin Dashboard
+- Click `Security` in the left menu and then click on `API`
+- Click on `Tokens` tab on top menu
+- Click `Create token`
+- Fill in the form with the following values and click `Create token`
+    - Name: `Netbird`
+- Take note of token value and click `OK, got it`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/okta/okta-generate-token.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+
+Your authority OIDC configuration will be available under:
+```bash
+https://<YOUR_OKTA_ORGANIZATION_URL>/.well-known/openid-configuration
+```
+<Note>
+    Double-check if the endpoint returns a JSON response by calling it from your browser.
+</Note>
+
+- Set properties in the `setup.env` file:
+```json
+NETBIRD_DOMAIN="<YOUR_DOMAIN>"
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<YOUR_OKTA_ORGANIZATION_URL>/.well-known/openid-configuration"
+NETBIRD_USE_AUTH0=false
+NETBIRD_AUTH_AUDIENCE="<<NETBIRD_CLIENT_ID>>"
+NETBIRD_AUTH_CLIENT_ID="<NETBIRD_CLIENT_ID>"
+NETBIRD_AUTH_SUPPORTED_SCOPES="openid profile email"
+NETBIRD_AUTH_REDIRECT_URI="/auth"
+NETBIRD_AUTH_SILENT_REDIRECT_URI="/silent-auth"
+NETBIRD_TOKEN_SOURCE="idToken"
+
+NETBIRD_AUTH_DEVICE_AUTH_PROVIDER="hosted"
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<NETBIRD_NATIVE_CLIENT_ID>>"
+NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE="<NETBIRD_NATIVE_CLIENT_ID>"
+NETBIRD_AUTH_DEVICE_AUTH_SCOPE="openid email"
+NETBIRD_AUTH_DEVICE_AUTH_USE_ID_TOKEN=true
+
+NETBIRD_MGMT_IDP="okta"
+NETBIRD_IDP_MGMT_EXTRA_API_TOKEN="<api_token>"
+```
+## Step 4: Continue with the NetBird Self-hosting Guide
+You've configured all required resources in Okta. You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).

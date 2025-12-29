@@ -1,0 +1,366 @@
+
+# Routing Traffic to Private Networks
+
+<div className="videowrapper">
+    <iframe src="https://www.youtube.com/embed/VQuPuBOAknQ" allow="fullscreen;"></iframe>
+</div>
+<br/><br/>
+
+
+<Note>
+    **WARNING:** `Network Routes` will allow any traffic to pass through to the routed networks without regard for
+    the Access Control rules, unless you [configure those explicitly](/manage/network-routes/configuring-routes-with-access-control).
+
+    See [Network Routes caveats](#caveats) below for a more detailed explanation.
+</Note>
+
+NetBird provides fast and reliable end-to-end encryption between peers in your network. You can install the agent on every desktop, VM, container, or physical server to create a fast, secure peer-to-peer mesh network. This is the desired configuration, but some cases do not allow for agent installation or can slow down migration from legacy systems:
+
+- Side-by-side migrations where part of your network is already using NetBird but needs to access services that are not.
+- Systems that have limited operating system access, such as IoT devices, printers, and managed services.
+- Legacy networks where an administrator is unable to install the agent on all nodes.
+
+In these cases, you can configure network routes assigning routing peers to connect existing infrastructure. Routing peers will forward packets between your NetBird peers and your other networks; they can masquerade traffic going to your data centers or embedded devices, reducing the need for external route configuration and agent installation.
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/netbird-network-routes.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+<Note>
+    If you want to see the Network Routes feature in action, try our managed version at https://app.netbird.io/routes. It's free and easy to use.
+</Note>
+
+## Concepts
+
+### Network routes
+A network route describes the network you want to connect with your NetBird peers. It has an identifier, a network range or list of domains, a routing peer, and some parameters available for managing priority and masquerading.
+
+<Note>
+    Network routes are available in NetBird [v0.9.0](https://github.com/netbirdio/netbird/releases) or later.
+</Note>
+
+**Network identifiers and ranges** Network identifiers are names for each network you want to route traffic from your peers, and ranges are IP ranges declared in CIDR notation which refers to an external network. The combination of identifiers and these ranges makes a single network.
+
+**Routing peer**: A routing peer is a peer that routes packets between your routed network and the other NetBird peers.
+
+**Routing group**: A routing group is a set of routing peers. Each will route packets between your routed network and the other NetBird peers.
+
+**High availability routes**: A highly available route is a combination of multiple routes with the same network identifier and ranges. They have different routing peers or routing peer groups offering highly available paths for communication between your peers and external networks. 
+Nodes connected to routing peers will choose one of them to route packets to external networks based on connection type and defined metrics.
+
+**Masquerade**: Masquerade hides other NetBird network IPs behind the routing peer local address when accessing the target network range. This option allows access to your private networks without configuring routes on your local routers or other devices.
+
+_If you do not enable this option, you must configure a route to your NetBird network in your external network infrastructure._
+
+**DNS Routes**: An alternative to specifying a network range directly is to use DNS routes. Instead of adding the network directly, you can add multiple domains in a route that will be dynamically resolved on the client. The resolved IP addresses for these domains will be added as routes. For example, a network administrator can ensure that traffic to `website.com` or `api.website.com` is routed through a specific machine. So they configure DNS routes for these domains instead of specifying the IP ranges.
+
+By default, DNS routes are resolved every 60 seconds. You can adjust this interval using the `--dns-router-interval` flag:
+
+
+```bash
+netbird up --dns-router-interval 30s
+```
+
+Additionally, the keep routes switch is enabled by default.
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/netbird-network-routes-dns-routes.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+When the keep routes switch is on, and a domain no longer resolves to an IP address, the corresponding route will still be maintained (and any new resolved IP addresses will be added).
+If the switch is off, the routes will be replaced with the newly resolved IP addresses.
+
+The purpose of the keep routes functionality is to retain previously resolved routes after IP address updates, in order to maintain stable connections. For example, long-running connections to an IP address that are still valid even if the DNS now resolves to a different IP address (e.g., DNS-based load balancing).
+
+
+<Note>
+    DNS Routes are available for NetBird [v0.28.0](https://github.com/netbirdio/netbird/releases) or later.
+</Note>
+
+<Note>
+    Currently, wildcard domains are not supported for DNS routes.
+</Note>
+
+<Note>
+    DNS Forwarder port change: starting with NetBird v0.59.0, the local DNS forwarder used for routed DNS routes switches from port <code>5353</code> to <code>22054</code> to avoid collisions on client devices. For backward compatibility, the Management Service applies the new port only when <strong>all peers in the account</strong> run v0.59.0 or newer. If any peer is below v0.59.0, port <code>5353</code> will be used for all peers in that account.
+</Note>
+
+### Metric and priority
+Metric defines prioritization when choosing the main routing peer in a high availability network. Lower metrics have higher priority.
+Outside of high availability routes, the metric has no effect.
+
+
+### Distribution groups
+Distribution groups specify which peers will receive the network route. Peers that belong to the groups specified in this field will automatically receive the network route configuration.
+<Note>
+    This does not remove the need for the routing peer to be connected to these peers.
+</Note>
+
+### Access Control Groups
+Access Control Groups provide granular control over internal services within your network. They are used as destination
+groups in access control policies, allowing you to precisely define which internal services can be accessed by
+different network entities.
+
+When you associate these groups with specific routes, the routes inherit the access control policies where
+the groups are defined as destination groups. This setup enforces access restrictions based on the policies,
+ensuring that only authorized traffic can reach the designated services.
+
+Routes that do not incorporate these groups will permit unrestricted access, allowing all traffic to pass through
+without any limitations.
+
+## Managing Network Routes
+A network route describes a network you want to connect with your NetBird peers. It has an identifier, a network range, a routing peer or set of peer groups, and some parameters available for managing priority and masquerading.
+
+### Creating a Network Route
+Access the `Network Routes` tab and click the `Add Route` button to create a new route.
+This will open a route configuration screen where you can add the information about the network you want to route:
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/netbird-network-routes-add-button.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+Now you can enter the details of your route.
+In the example below, we are creating a route with the following information:
+
+- Network identifier: `aws-eu-central-1-vpc`
+- Description: `Production VPC in Frankfurt`
+- Network range: `172.31.0.0/16`
+- Routing peer: `ec2-demo-node`
+- Distribution Groups: `All`
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/netbird-network-routes-create.png" alt="high-level-dia" className="imagewrapper" width="70%"/>
+</p>
+
+
+Once you fill in the route information, you can click on the `Add Route` button to save your new route.
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/netbird-network-routes-saved-new.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+The route has been created successfully. Now every peer connected to your routing peer will be able to send traffic to your external network.
+
+### Creating a Network Route with Routing Group
+You can use a peer group to automatically add any Linux peers from the groups as routing peers. To do so, follow the steps above but select the `Peer group` tab.
+Ensure that the peer groups have Linux peers, as traffic routing is only supported on Linux machines.
+Groups with multiple peers automatically provide [high availability routing](#high-availability-routes).
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/netbird-network-routes-groups-create.png" alt="high-level-dia" className="imagewrapper" width="70%"/>
+</p>
+
+Once you fill in the route information, you can click on the `Add Route` button to save your new route.
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/netbird-network-routes-groups-saved-new.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+The route has been created successfully. Now every peer connected to the peer members of the groups will be able to send traffic to your external network.
+
+### Creating highly available routes
+To avoid a single point of failure when managing your network, we recommend installing NetBird on every resource. However, when running NetBird on every machine is not feasible, you still want to ensure a reliable connection to your private network. The NetBird Network Routes feature has a High Availability (HA) mode, allowing one or more NetBird peers to serve as routing peers for the same private network.
+
+There are two options to enable HA routes:
+1. Use a peer group with more than one peer in it.
+2. Add more individual peers to the route.
+
+The first option is covered [above](#creating-a-network-route-with-routing-group).
+
+To enable the high-availability mode by adding individual peers, click on `Add Peer` in the High Availability column in the Network Routes
+table and select a peer in the `Routing Peer` field. Then select the `Distribution Groups` and click on `Add Route`. This
+routing configuration will be distributed to machines in the selected groups `Distribution Groups`.
+
+In the following example, we are adding the peer `aws-nb-europe-router-az-b` to the `aws-eu-central-1-vpc` route:
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/netbird-network-routes-create-ha.png" alt="high-level-dia" className="imagewrapper" width="70%"/>
+</p>
+
+This way, peers connected to `aws-nb-europe-router-az-a` and `aws-nb-europe-router-az-b` will have highly available access to the `172.31.0.0/16` network.
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/netbird-network-routes-saved-new-ha.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+<Note>
+    The number of routes that form a highly available route is unlimited.
+    Each connected peer will pick one routing peer to use as the router for a network.
+    NetBird agent bases this decision on metric prioritization (lower the metric, higher the priority) and connection attributes like direct or relayed connections.
+</Note>
+
+### Apply different routes to peers with group attribution
+You can select as many distribution groups as you want for your network route.
+Peers that belong to the specified group will use the route automatically to connect to the underlying network.
+
+Remember to link groups to peers that need to access the route and, if required,
+add access control rules ensuring connectivity between these peers and the routing peers.
+
+In the following example (see column `Distribution Groups`), peers that belong to the group `berlin-office` will use
+the `aws-nb-europe-router-az-a` routing peer to access the `aws-eu-central-1-vpc` network.
+Peers that belong to the `london-office` group will use the `aws-nb-europe-router-az-b` routing peer.
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/netbird-network-routes-groups-attribution.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+### Routes without masquerading
+If you want more transparency and would like to manage your external network routers, you may choose to disable masquerade for your network routes.
+In this case, the routing peer will not hide any NetBird peer IP and will forward the packets to the target network transparently.
+
+This will require a routing configuration on your external network router pointing your NetBird network back to your routing peer.
+This way, devices that do not have the agent installed can communicate with your NetBird peers.
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/netbird-network-routes-masquerading.png" alt="high-level-dia" className="imagewrapper-big"/>
+</p>
+
+## Network Routes caveats
+
+Unless [configured explicitly](/manage/network-routes/configuring-routes-with-access-control), the **Network Routes** feature will not take into
+consideration any of the Access Control rules. This might lead to surprising outcomes, which may initially appear to be security vulnerabilities.
+
+**Important:** Understanding these caveats is essential for properly securing your network routes.
+
+This has led us to create another, more intuitive design of **Networks** with their **Resources**, **Routers** and
+mandatory **Groups** used for both access control and advertisement: your client will not "see" the resource
+until it has access to its **Group**.
+
+### Example: Network Route Configuration
+
+Let's assume a **Network Route** is distributed through `Group R` (Routing Peer) to `Group A` (intended client):
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/route-ip-address.png" alt="route-ip-address" className="imagewrapper-big"/>
+</p>
+
+After creating an **Access Policy** granting `ICMP` access from `Group A` to `Group R`:
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/policy-icmp-group-r.png" alt="ICMP policy from group A to R" className="imagewrapper-big"/>
+</p>
+
+You will be able to access everything on the routed network without any restrictions.
+This is because **Network Route** requires access to the **Routing Peer** to activate at all, which can be confusing.
+
+```shell
+root@brys-vm-nbt-ubuntu-01:~# netbird networks ls
+Available Networks:
+
+  - ID: network-route-srvs-site
+    Network: 192.168.100.0/24
+    Status: Selected
+root@brys-vm-nbt-ubuntu-01:~# ping -c1 192.168.100.10
+PING 192.168.100.10 (192.168.100.10) 56(84) bytes of data.
+64 bytes from 192.168.100.10: icmp_seq=1 ttl=63 time=0.521 ms
+
+--- 192.168.100.10 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.521/0.521/0.521/0.000 ms
+root@brys-vm-nbt-ubuntu-01:~# curl 192.168.100.10/health && echo
+OK
+```
+
+### Setting up a Network Resource secured by HTTP policy
+
+In the following example, we set up a **Network Resource** for a `*.nb.test` wildcard domain
+using ACL group `manual:srvs`:
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/resource-domain.png" alt="*.nb.test domain Resource" className="imagewrapper-big"/>
+</p>
+
+Granting HTTP-only access to that resource from group `manual:client`:
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/policy-http.png" alt="a HTTP-only policy from manual:client group" className="imagewrapper-big"/>
+</p>
+
+Everything appears to be set up correctly. We have HTTP access and can confirm the domain was resolved:
+
+```shell
+root@brys-vm-nbt-ubuntu-02:~# netbird networks ls
+Available Networks:
+
+  - ID: *.nb.test
+    Domains: *.nb.test
+    Status: Selected
+    Resolved IPs: -
+root@brys-vm-nbt-ubuntu-02:~# curl srv.nb.test/health; echo
+OK
+root@brys-vm-nbt-ubuntu-02:~# netbird networks ls
+Available Networks:
+
+  - ID: *.nb.test
+    Domains: *.nb.test
+    Status: Selected
+    Resolved IPs:
+      [srv.nb.test.]: 192.168.100.10
+```
+
+Before finishing, let's verify that only HTTP access is granted:
+
+```shell
+root@brys-vm-nbt-ubuntu-02:~# ping -c1 srv.nb.test
+PING srv.nb.test (192.168.100.10) 56(84) bytes of data.
+64 bytes from 192.168.100.10: icmp_seq=1 ttl=63 time=0.242 ms
+
+--- srv.nb.test ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.242/0.242/0.242/0.000 ms
+```
+
+However, this reveals an unexpected behavior:
+
+```shell
+root@brys-vm-nbt-ubuntu-02:~# ssh srv.nb.test
+root@srv.nb.test: Permission denied (publickey).
+```
+
+Did we inadvertently grant access to the **Network Route**?
+
+```shell
+root@brys-vm-nbt-ubuntu-02:~# netbird networks ls
+Available Networks:
+
+  - ID: *.nb.test
+    Domains: *.nb.test
+    Status: Selected
+    Resolved IPs:
+      [srv.nb.test.]: 192.168.100.10
+```
+
+This does not appear to be the case.
+
+### Why did we get ping and SSH access for the domain?
+
+Unrestricted access to the `srv.nb.test` domain was granted, because we have used the same **Routing Peer**
+for both **Network Route** and the newly created **Network**:
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/network-routers.png" alt="Network's `manual:router:srvs` router" className="imagewrapper-big"/>
+</p>
+
+Here are this specific **Routing Peer**'s details:
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/routing-traffic-to-private-networks/routing-peer-groups.png" alt="Routing Peer's detail page with Network Route handling" className="imagewrapper-big"/>
+</p>
+
+It is a member of both routing groups:
+1. `m:group-r` to advertise the **Network Route**,
+2. `manual:router:srvs` to advertise the **Network** and its domain **Resource**,
+
+<Note>
+  You can address the "overflowing permissions" issue by setting up a dedicated set of **Routing Peers**
+  to handle the **Network Routes** and never using those for anything else (especially **Networks**).
+
+  While this is achievable, it is extremely easy to miss during configuration.
+</Note>
+  
+## Get started
+<p float="center" >
+    <Button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</Button>
+</p>
+
+- Make sure to [star us on GitHub](https://github.com/netbirdio/netbird)
+- Follow us [on X](https://x.com/netbird)
+- Join our [Slack Channel](/slack-url)
+- NetBird [latest release](https://github.com/netbirdio/netbird/releases) on GitHub

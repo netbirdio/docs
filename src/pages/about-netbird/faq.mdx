@@ -2,7 +2,11 @@ import {Note} from "@/components/mdx";
 
 export const title = 'FAQ'
 
-## What firewall ports should I open to use NetBird?
+## What firewall ports should I open to use NetBird (Network Firewalls)?
+
+This section covers **network/perimeter firewall** requirements (e.g., Fortigate, pfSense, cloud security groups). 
+For host-based firewalls (Windows Firewall, UFW, iptables), see 
+[How does NetBird interact with host-based firewalls?](#how-does-net-bird-interact-with-host-based-firewalls)
 
 ### Incoming ports
 NetBird's agent doesn't require any incoming port to be open; It negotiates the connection with the support of the signal and relay services.
@@ -12,10 +16,10 @@ all outgoing traffic, and that may affect how NetBird clients connect to the [co
 and negotiate the peer-to-peer connections. 
 
 <Note>
-    Allowing the outbound **P2P (STUN)** service below is **recommended** in more restricted networks for reliable peer connections. This will also improve the reliability of your [High Availability Routes](https://docs.netbird.io/how-to/routing-traffic-to-private-networks#high-availability-routes).
+    Allowing the outbound **P2P (STUN)** service below is **recommended** in more restricted networks for reliable peer connections. This will also improve the reliability of your [High Availability Routes](https://docs.netbird.io/manage/network-routes/routing-traffic-to-private-networks#high-availability-routes).
 </Note>
 <Note>
-    Allowing the outbound **Relay (TURN)** service below is **recommended** in more restricted networks for reliable peer connections. This will also improve the reliability of your [High Availability Routes](https://docs.netbird.io/how-to/routing-traffic-to-private-networks#high-availability-routes).
+    Allowing the outbound **Relay (TURN)** service below is **recommended** in more restricted networks for reliable peer connections. This will also improve the reliability of your [High Availability Routes](https://docs.netbird.io/manage/network-routes/routing-traffic-to-private-networks#high-availability-routes).
 </Note>
 <Note>
     If using `fail2ban` or similar, you should whitelist each netbird.io endpoint below.
@@ -25,13 +29,16 @@ Below is the list of NetBird hosted endpoints and ports they listen to:
 * Management service:
   * **Endpoint**: api.netbird.io
     * **Port**: TCP/443
-    * **IPv4**: 35.186.199.111
-    * **IPv6**: 2600:1901:0:adb3::
+    * **IPv4**: 35.186.199.111, 85.9.201.14, 85.9.206.109, 213.163.201.31, 213.163.206.27, 85.9.196.80, 209.151.150.249
+    * **IPv6**: 2600:1901:0:adb3::, 2a04:3542:1000:910:2465:1fff:fe8a:5597, 2a04:3542:1000:910:2465:1fff:fe8a:2f9a, 2a04:3543:1000:2310:2465:1fff:fe8a:5f8d, 2a04:3543:1000:2310:2465:1fff:fe8a:1308, 2605:7380:8000:1000:2465:1fff:fe8a:3b62, 2605:7380:8000:1000:2465:1fff:fe8a:4dcd
+
+
 * Signal service:
   * **Endpoint**: signal.netbird.io
     * **Port**: TCP/443
-    * **IPv4**: 35.186.199.111
-    * **IPv6**: 2600:1901:0:adb3::
+    * **IPv4**: 35.186.199.111, 85.9.201.14, 85.9.206.109, 213.163.201.31, 213.163.206.27, 85.9.196.80, 209.151.150.249
+    * **IPv6**: 2600:1901:0:adb3::, 2a04:3542:1000:910:2465:1fff:fe8a:5597, 2a04:3542:1000:910:2465:1fff:fe8a:2f9a, 2a04:3543:1000:2310:2465:1fff:fe8a:5f8d, 2a04:3543:1000:2310:2465:1fff:fe8a:1308, 2605:7380:8000:1000:2465:1fff:fe8a:3b62, 2605:7380:8000:1000:2465:1fff:fe8a:4dcd
+
 * P2P (STUN) service:
   * **Endpoint**: stun.netbird.io
     * **Port range**: UDP/80,443,3478,5555
@@ -52,7 +59,100 @@ Below is the list of NetBird hosted endpoints and ports they listen to:
   * **IPv4**: The list is dynamic and geo-distributed; When looking at the `netbird status -d` output, you can see which relay you are connecting to.
   * It is advised to wildcard `*.relay.netbird.io` when possible, to avoid interrupts.
 
+<Note>
+    Download the full list of NetBird Cloud STUN/TURN/Relay endpoints and port requirements in <a href="/docs-static/files/netbird-cloud-endpoints.json" download>JSON format.</a>
+</Note>
 
+## How does NetBird interact with host-based firewalls?
+
+NetBird automatically manages host-based firewall rules to allow traffic on the NetBird interface (`wt0`). 
+This is separate from your network/perimeter firewall, which requires no inbound port configuration.
+
+### Platform behavior
+
+| Platform | Firewall Manager | Automatic Rule |
+|----------|------------------|----------------|
+| Windows  | Windows Firewall | Allows all traffic on NetBird interface |
+| Linux    | iptables/nftables | Adds rules for NetBird traffic |
+
+### Network firewall vs. host-based firewall
+
+It is important to understand the distinction:
+
+- **Network/perimeter firewall** (Fortigate, pfSense, cloud security groups): Controls traffic entering 
+  and leaving your network. NetBird requires **no inbound ports** on these devices. All connections are 
+  initiated outbound using ICE/STUN for NAT traversal.
+
+- **Host-based firewall** (Windows Firewall, UFW, iptables): Controls traffic on the individual machine. 
+  NetBird automatically adds rules to allow traffic on the `wt0` interface.
+
+### UFW conflicts on Linux
+
+[UFW](https://wiki.ubuntu.com/UncomplicatedFirewall) (Uncomplicated Firewall) is a popular frontend for 
+iptables on Ubuntu and other Linux distributions. When you enable UFW, its default policy is:
+
+- **Incoming**: Deny all
+- **Outgoing**: Allow all
+
+This can conflict with NetBird because both UFW and NetBird manage iptables rules. The conflict is about 
+**chain evaluation order**, not about opening ports to the internet:
+
+1. WireGuard UDP packets arrive via hole punching (no inbound port needed on your router)
+2. NetBird decrypts them and presents traffic on the `wt0` interface
+3. UFW may evaluate its deny rules before NetBird's allow rules
+4. Result: Traffic blocked at the host level despite successful hole punching
+
+**Solution**: Allow traffic on the NetBird interface:
+```bash
+sudo ufw allow in on wt0
+```
+
+This does **not** open any ports to the internet. It allows traffic on the virtual `wt0` interface, which 
+only carries already-authenticated, already-encrypted NetBird traffic.
+
+**Verify the rule**:
+```bash
+sudo ufw status | grep wt0
+```
+
+### Windows Firewall
+
+NetBird creates a Windows Firewall rule automatically during installation/connection. This rule allows 
+traffic on the NetBird IP address (the `wt0` interface after decryption).
+
+If traffic is blocked despite NetBird showing peers as connected, check for:
+
+- Group Policy overriding the NetBird rule
+- Third-party security software (antivirus, endpoint protection) with its own firewall
+- The rule failing to apply due to permissions
+
+**Check if the NetBird rule exists**:
+```powershell
+Get-NetFirewallRule | Where-Object { $_.DisplayName -like "*NetBird*" }
+```
+
+#### Environments without NAT
+
+In flat office networks or routed VLANs without NAT, an additional firewall rule may be needed for P2P 
+to work. This is because Windows Firewall sees incoming WireGuard UDP packets as unsolicited traffic 
+when there is no NAT state tracking the connection.
+```powershell
+New-NetFirewallRule -DisplayName "NetBird P2P" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 49152-65535 -Program "C:\Program Files\Netbird\netbird.exe"
+```
+
+See [Environments without NAT](/help/troubleshooting-client#environments-without-nat-flat-networks-routed-vlans) 
+for details.
+
+### Troubleshooting
+
+If you suspect host-based firewall issues, capture a debug bundle:
+```bash
+netbird debug bundle --system-info
+```
+
+The `--system-info` flag includes network routes and interface configuration, which helps identify 
+firewall-related issues. See [Host-based firewall issues](/help/troubleshooting-client#host-based-firewall-issues) 
+for detailed troubleshooting steps.
 
 ## Why and what are the anonymous usage metrics?
 
@@ -70,7 +170,6 @@ We are collecting the following metrics:
 * Number of accounts
 * Number of users
 * Number of peers
-* Number of peers 
 * Number of active peers in the last 24 hours
 * Number of peers per operating system
 * Number of setup keys usage
