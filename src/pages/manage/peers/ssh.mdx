@@ -551,48 +551,60 @@ For complete CLI command reference, including all SSH-related commands and flags
 
 ## Version History
 
-### What's New in v0.61.0
+### v0.61.0
 
-Version 0.61.0 introduces fine-grained SSH access control:
+Version 0.61.0 introduces fine-grained SSH access control.
 
 <Note type="warning">
     **Breaking change**: Management server v0.61.0 will break NetBird SSH for all peers running versions older than v0.61.0. You must update all peers that use SSH to v0.61.0 or later before upgrading the management server.
 </Note>
 
-**New capabilities:**
+#### New Capabilities
+
 - **NetBird SSH protocol**: New protocol type in policies specifically for SSH access control
 - **Fine-grained user mapping**: Map NetBird user groups to specific local OS users
 - **Authorized Groups**: Configure which users can access which local accounts per policy
 - **Full Access vs Limited Access**: Choose between unrestricted local user access or granular per-group mappings
 - **Enhanced security**: Fail-closed authorization model with granular audit trail
 
-**Upgrading from v0.60.x:**
+#### Breaking Changes
+
+- Peers running versions older than v0.61.0 will lose SSH functionality when the management server is upgraded to v0.61.0
+
+#### Upgrade Steps
 
 <Note type="warning">
-    **Update order is critical:**
-    1. Update all SSH server peers to v0.61.0 first
-    2. Update all SSH client peers to v0.61.0
-    3. Update the management server to v0.61.0 last
-
-    Peers running older versions will lose SSH functionality once the management server is upgraded.
+    **Update order is critical** - peers must be updated before the management server and dashboard.
 </Note>
 
-- Existing TCP port 22 policies will continue to work for network-level access
-- To use fine-grained access control, create new policies with the `NetBird SSH` protocol
-- Fine-grained policies support both **Full Access** (any local user) and **Limited Access** (specific local users per group)
+1. **Update all SSH server peers** to v0.61.0 first (peers running `--allow-server-ssh`)
+   - Start with non-critical peers for testing
 
-## Migrating from v0.59.x and Earlier
+2. **Update all SSH client peers** to v0.61.0
+
+3. **Update the management server** to v0.61.0
+
+4. **Update the dashboard** to v0.61.0
+
+5. **Create NetBird SSH policy**:
+   - Source: SSH client user groups
+   - Destination: SSH server peers/groups
+   - Protocol: NetBird SSH
+   - SSH Access: Full Access or Limited Access
+   - If Limited Access: configure local user mappings per source group
+
+---
+
+### v0.60.0
+
+Version 0.60.0 is a complete rewrite of NetBird SSH with breaking changes.
 
 <Note>
-    This section is only relevant if you're upgrading from NetBird v0.59.x or
-    earlier. New installations can skip this section.
+    This section is only relevant if you're upgrading from NetBird v0.59.x or earlier.
 </Note>
 
-### What's New in v0.60.0
+#### New Capabilities
 
-Version 0.60.0 is a complete rewrite with breaking changes:
-
-**New capabilities:**
 - OpenSSH client support via automatic proxy configuration
 - Windows client and server support
 - SFTP subsystem for file transfers
@@ -600,7 +612,8 @@ Version 0.60.0 is a complete rewrite with breaking changes:
 - Non-interactive command execution
 - Configurable JWT token caching
 
-**Breaking changes:**
+#### Breaking Changes
+
 - Server port changed from 44338 to 22 (22022 internally)
 - Authentication changed from machine public keys to JWT tokens (user identity)
 - Port 22 automatically redirects to 22022 for NetBird traffic
@@ -608,43 +621,30 @@ Version 0.60.0 is a complete rewrite with breaking changes:
 - Client no longer requires `sudo` for authentication
 - **Not backward compatible**: v0.60.0+ clients cannot connect to older servers and vice versa
 
-### Upgrade Steps
+#### Upgrade Steps
 
 <Note type="warning">
-    **Self-hosted deployments:** Update order is important:
-    1. Management server
-    2. Dashboard (optional - only if you use browser-based SSH)
-    3. **SSH servers first** (peers running `--allow-server-ssh`)
-    4. SSH clients last (peers using `netbird ssh`)
-
-    New clients cannot connect to old servers, so update servers before clients.
+    **Update order is important** - SSH servers must be updated before SSH clients.
 </Note>
 
-#### For Self-Hosted Deployments
-
 1. **Update management server** to v0.60.0 or later
-- Verify server is running correctly
-- Confirm JWKS endpoint is accessible
+   - Verify server is running correctly
+   - Confirm JWKS endpoint is accessible
 
 2. **Update dashboard** (optional)
-- Only needed if you use the browser-based SSH client
-- Maintains browser SSH access during peer migration
+   - Only needed if you use the browser-based SSH client
 
 3. **Create ACL policy** for port 22:
-```
-Source: [SSH Client Group/Peers]
-Destination: [SSH Server Group/Peers]
-Protocol: TCP
-Port: 22
-   ```
+   - Source: SSH client peers/groups
+   - Destination: SSH server peers/groups
+   - Protocol: TCP
+   - Port: 22
 
-4. **Update SSH servers FIRST** (peers running `--allow-server-ssh`)
-- Start with non-critical peers for testing
-- Old clients can still connect to updated servers
+4. **Update SSH servers first** (peers running `--allow-server-ssh`)
+   - Start with non-critical peers for testing
 
-5. **Update SSH clients LAST** (peers using `netbird ssh`)
-- Updated clients cannot connect to old servers
-- This is why servers must be updated first
+5. **Update SSH clients last** (peers using `netbird ssh`)
+   - Updated clients cannot connect to old servers
 
 #### Optional Configuration
 
@@ -657,11 +657,6 @@ Enable JWT token caching on SSH clients (reduces auth prompts):
 ```bash
 netbird up --ssh-jwt-cache-ttl 3600  # 1 hour
 ```
-
-<Note>
-    The browser-based SSH client in the dashboard remains compatible with both
-    old and new peer versions.
-</Note>
 
 ## Get started
 <p float="center">
