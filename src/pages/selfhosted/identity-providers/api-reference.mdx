@@ -1,0 +1,490 @@
+# Identity Provider API Reference
+
+This page documents the API endpoints for managing identity providers when using the [embedded IdP](/selfhosted/identity-providers/embedded-idp).
+
+## Base URL
+
+All endpoints are relative to your NetBird Management API:
+
+```
+https://netbird.example.com/api
+```
+
+## Authentication
+
+Most endpoints require authentication via Bearer token:
+
+```
+Authorization: Bearer <access_token>
+```
+
+## Permissions
+
+Identity provider management requires administrator privileges. The following permission is required:
+
+- `identity_providers` permission - For managing identity provider configurations
+- `settings:read` - For viewing the Identity Providers tab
+
+---
+
+## Instance Setup
+
+These endpoints handle the initial setup when embedded IdP is enabled and no accounts exist. Both endpoints are **unauthenticated** and only work before setup is complete.
+
+### Get Instance Status
+
+Check if the instance requires initial setup.
+
+```http
+GET /instance
+```
+
+**Authentication:** None required (public endpoint)
+
+**Response:**
+
+```json
+{
+  "setup_required": true
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `setup_required` | boolean | `true` if no accounts exist and setup is needed |
+
+### Complete Setup
+
+Create the initial owner account.
+
+```http
+POST /instance/setup
+```
+
+**Authentication:** None required (only available during setup)
+
+**Request Body:**
+
+```json
+{
+  "email": "admin@example.com",
+  "password": "securepassword123",
+  "name": "Admin User"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email` | string | Yes | Email address for the owner account |
+| `password` | string | Yes | Password (minimum 8 characters) |
+| `name` | string | No | Display name |
+
+**Response:**
+
+```json
+{
+  "user_id": "user-abc123",
+  "account_id": "account-xyz789"
+}
+```
+
+**Errors:**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | `invalid_request` | Missing required fields or invalid format |
+| 412 | `precondition_failed` | Setup already completed (redirects to login) |
+| 503 | `idp_unavailable` | Embedded IdP is not enabled |
+
+---
+
+## Identity Providers (Connectors)
+
+Manage external identity provider connectors. The Identity Providers tab is visible in Settings when `embedded_idp_enabled` is `true` in account settings.
+
+### List Identity Providers
+
+Get all configured identity providers.
+
+```http
+GET /identity-providers
+```
+
+**Response:**
+
+```json
+[
+  {
+    "id": "idp-abc123",
+    "type": "google",
+    "name": "Google Workspace",
+    "client_id": "123456789.apps.googleusercontent.com",
+    "issuer": "",
+    "redirect_url": "https://netbird.example.com/api/idp/callback/idp-abc123"
+  },
+  {
+    "id": "idp-def456",
+    "type": "oidc",
+    "name": "Corporate SSO",
+    "client_id": "netbird-client",
+    "issuer": "https://sso.example.com",
+    "redirect_url": "https://netbird.example.com/api/idp/callback/idp-def456"
+  }
+]
+```
+
+<Note>
+Client secrets are never returned in API responses for security.
+</Note>
+
+### Get Identity Provider
+
+Get details for a specific identity provider.
+
+```http
+GET /identity-providers/{id}
+```
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | string | Identity provider ID |
+
+**Response:**
+
+```json
+{
+  "id": "idp-abc123",
+  "type": "google",
+  "name": "Google Workspace",
+  "client_id": "123456789.apps.googleusercontent.com",
+  "issuer": "",
+  "redirect_url": "https://netbird.example.com/api/idp/callback/idp-abc123"
+}
+```
+
+### Create Identity Provider
+
+Add a new identity provider connector.
+
+```http
+POST /identity-providers
+```
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | Yes | Provider type (see below) |
+| `name` | string | Yes | Display name on login page |
+| `client_id` | string | Yes | OAuth client ID |
+| `client_secret` | string | Yes | OAuth client secret |
+| `issuer` | string | Conditional | Issuer URL (required for oidc, okta, zitadel, pocketid) |
+
+**Provider Types:**
+
+| Type | Description | Requires Issuer |
+|------|-------------|-----------------|
+| `google` | Google accounts / Google Workspace | No |
+| `microsoft` | Microsoft personal accounts | No |
+| `entra` | Microsoft Entra ID (Azure AD) | No |
+| `okta` | Okta SSO | Yes |
+| `zitadel` | Zitadel IdP | Yes |
+| `pocketid` | PocketID | Yes |
+| `oidc` | Generic OIDC provider | Yes |
+
+#### Google Configuration
+
+```json
+{
+  "type": "google",
+  "name": "Google Workspace",
+  "client_id": "123456789.apps.googleusercontent.com",
+  "client_secret": "GOCSPX-xxxxx"
+}
+```
+
+<Note>
+Google and Microsoft types do not require an `issuer` field - the issuer is determined automatically.
+</Note>
+
+#### Microsoft / Entra ID Configuration
+
+```json
+{
+  "type": "entra",
+  "name": "Microsoft Entra ID",
+  "client_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "client_secret": "xxxxx"
+}
+```
+
+Use `microsoft` for personal Microsoft accounts, or `entra` for Azure AD / work accounts.
+
+#### Okta Configuration
+
+```json
+{
+  "type": "okta",
+  "name": "Okta SSO",
+  "client_id": "0oaxxxxxxxxxx",
+  "client_secret": "xxxxx",
+  "issuer": "https://yourcompany.okta.com/oauth2/default"
+}
+```
+
+#### Zitadel Configuration
+
+```json
+{
+  "type": "zitadel",
+  "name": "Zitadel",
+  "client_id": "123456789",
+  "client_secret": "xxxxx",
+  "issuer": "https://zitadel.example.com"
+}
+```
+
+#### PocketID Configuration
+
+```json
+{
+  "type": "pocketid",
+  "name": "PocketID",
+  "client_id": "netbird",
+  "client_secret": "xxxxx",
+  "issuer": "https://pocketid.example.com"
+}
+```
+
+#### Generic OIDC Configuration
+
+```json
+{
+  "type": "oidc",
+  "name": "Custom SSO",
+  "client_id": "netbird-client",
+  "client_secret": "xxxxx",
+  "issuer": "https://sso.example.com"
+}
+```
+
+The issuer URL must have a valid `/.well-known/openid-configuration` endpoint.
+
+**Response:**
+
+On successful creation, the response includes a `redirect_url` that must be configured in your identity provider:
+
+```json
+{
+  "id": "idp-abc123",
+  "type": "google",
+  "name": "Google Workspace",
+  "client_id": "123456789.apps.googleusercontent.com",
+  "issuer": "",
+  "redirect_url": "https://netbird.example.com/api/idp/callback/idp-abc123"
+}
+```
+
+<Note>
+**Important:** After creating an identity provider, you must configure the `redirect_url` in your IdP's OAuth application settings. The Dashboard shows a modal with copy functionality after successful creation.
+</Note>
+
+**Errors:**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | `invalid_request` | Missing required fields |
+| 400 | `invalid_type` | Unknown provider type |
+| 403 | `permission_denied` | Insufficient permissions |
+
+### Update Identity Provider
+
+Update an existing identity provider.
+
+```http
+PUT /identity-providers/{id}
+```
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | string | Identity provider ID |
+
+**Request Body:**
+
+Include only fields you want to update. The `type` cannot be changed.
+
+```json
+{
+  "name": "Updated Name",
+  "client_id": "new-client-id",
+  "client_secret": "new-secret"
+}
+```
+
+<Note>
+If `client_secret` is empty or omitted, the existing secret is preserved. The help text in the Dashboard says: "Leave empty to keep the existing secret."
+</Note>
+
+**Response:**
+
+```json
+{
+  "id": "idp-abc123",
+  "type": "google",
+  "name": "Updated Name",
+  "client_id": "new-client-id",
+  "issuer": "",
+  "redirect_url": "https://netbird.example.com/api/idp/callback/idp-abc123"
+}
+```
+
+### Delete Identity Provider
+
+Remove an identity provider connector.
+
+```http
+DELETE /identity-providers/{id}
+```
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | string | Identity provider ID |
+
+**Response:**
+
+```
+204 No Content
+```
+
+**Errors:**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 404 | `not_found` | Identity provider not found |
+| 403 | `permission_denied` | Insufficient permissions |
+
+<Warning>
+Deleting an identity provider will prevent users who authenticate exclusively through that provider from logging in.
+</Warning>
+
+---
+
+## Users (Embedded IdP)
+
+When embedded IdP is enabled, the Dashboard shows a **"Create User"** button instead of "Invite User". Created users receive a generated password that is shown only once.
+
+### Create User
+
+Create a new local user. In the Dashboard, after creation, a modal displays the generated password with a copy button and the warning: *"This password will only be shown once. Please copy it now."*
+
+```http
+POST /users
+```
+
+**Request Body:**
+
+```json
+{
+  "email": "user@example.com",
+  "name": "New User",
+  "role": "user",
+  "auto_groups": ["group-id-1", "group-id-2"]
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `email` | string | Yes | User's email address |
+| `name` | string | Yes | Display name |
+| `role` | string | No | Role: `admin`, `user` (default: `user`) |
+| `auto_groups` | string[] | No | Groups to automatically assign |
+
+**Response:**
+
+```json
+{
+  "id": "user-abc123",
+  "email": "user@example.com",
+  "name": "New User",
+  "role": "user",
+  "status": "active",
+  "password": "generated-password-here"
+}
+```
+
+<Warning>
+The `password` field is only included in the response when creating a user with embedded IdP enabled. It is never returned in subsequent API calls. Store it securely or share it with the user immediately.
+</Warning>
+
+### User IdP Association
+
+When users authenticate through an external identity provider connector, their user record includes an `idp_id` field linking them to the provider. The Dashboard displays an IdP badge (with the provider's icon) next to the user's name in the Users table.
+
+```json
+{
+  "id": "user-abc123",
+  "email": "user@example.com",
+  "name": "User Name",
+  "role": "user",
+  "status": "active",
+  "idp_id": "idp-def456"
+}
+```
+
+<Note>
+This endpoint is only available when embedded IdP is enabled (`account.settings.extra.embedded_idp_enabled: true`). With external IdPs, users are provisioned through the IdP.
+</Note>
+
+---
+
+## Error Responses
+
+All error responses follow this format:
+
+```json
+{
+  "error": {
+    "code": "error_code",
+    "message": "Human-readable error message",
+    "details": {}
+  }
+}
+```
+
+### Common Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `invalid_request` | 400 | Request body is malformed or missing required fields |
+| `invalid_config` | 400 | Provider configuration is invalid |
+| `unauthorized` | 401 | Missing or invalid authentication token |
+| `permission_denied` | 403 | Insufficient permissions for this operation |
+| `not_found` | 404 | Requested resource not found |
+| `duplicate` | 409 | Resource already exists |
+| `idp_unavailable` | 503 | Embedded IdP is not enabled or unavailable |
+
+---
+
+## Rate Limits
+
+API requests are subject to rate limiting:
+
+| Endpoint Category | Rate Limit |
+|-------------------|------------|
+| Read operations | 100 requests/minute |
+| Write operations | 20 requests/minute |
+| Onboarding | 5 requests/minute |
+
+Rate limit headers are included in responses:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1642089600
+```

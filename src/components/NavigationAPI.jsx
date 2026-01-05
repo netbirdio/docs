@@ -23,6 +23,7 @@ export const apiNavigation = [
     links: [
       { title: 'Accounts', href: '/api/resources/accounts' },
       { title: 'Users', href: '/api/resources/users' },
+      { title: 'Identity Providers', href: '/api/resources/identity-providers' },
       { title: 'Tokens', href: '/api/resources/tokens' },
       { title: 'Peers', href: '/api/resources/peers' },
       { title: 'Ingress Ports', href: '/api/resources/ingress-ports' },

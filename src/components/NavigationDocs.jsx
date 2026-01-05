@@ -280,30 +280,17 @@ export const docsNavigation = [
         ],
     },
     {
-        title: 'USE CASES',
-        links: [
-            { title: 'Site-to-Site and Site-to-VPN', href: '/use-cases/setup-site-to-site-access' },
-            { title: 'Serverless and NetBird', href: '/use-cases/netbird-on-faas' },
-            { title: 'Routing peers and Kubernetes', href: '/use-cases/routing-peers-and-kubernetes' },
-            { title: 'NetBird Client on AWS ECS', href: '/use-cases/examples' },
-            { title: 'NetBird on Mikrotik Router', href: '/use-cases/client-on-mikrotik-router' },
-            { title: 'Distributed AI on Kubernetes', href: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm' },
-            { title: 'Self-hosted vs. Cloud-hosted NetBird', href: '/selfhosted/self-hosted-vs-cloud-netbird' },
-        ],
-    },
-    {
         title: 'SELF-HOST NETBIRD',
         links: [
             { title: 'Quickstart guide', href: '/selfhosted/selfhosted-quickstart' },
-            { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
-            { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store' },
-            { title: 'Management Postgres Store', href: '/selfhosted/postgres-store' },
-            { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store' },
             {
                 title: 'Supported IdPs',
                 isOpen: false,
                 links: [
                     { title: 'Using IdPs on Self-Hosted', href: '/selfhosted/identity-providers' },
+                    { title: 'Embedded IdP', href: '/selfhosted/identity-providers/embedded-idp' },
+                    { title: 'Connectors', href: '/selfhosted/identity-providers/connectors' },
+                    { title: 'API Reference', href: '/selfhosted/identity-providers/api-reference' },
                     {
                         title: 'Self-hosted IdPs',
                         isOpen: true,
@@ -327,8 +314,24 @@ export const docsNavigation = [
                     },
                 ]
             },
+            { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
+            { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store' },
+            { title: 'Management Postgres Store', href: '/selfhosted/postgres-store' },
+            { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store' },
             { title: 'Management geolocation', href: '/selfhosted/geo-support' },
             { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
+        ],
+    },
+    {
+        title: 'USE CASES',
+        links: [
+            { title: 'Site-to-Site and Site-to-VPN', href: '/use-cases/setup-site-to-site-access' },
+            { title: 'Serverless and NetBird', href: '/use-cases/netbird-on-faas' },
+            { title: 'Routing peers and Kubernetes', href: '/use-cases/routing-peers-and-kubernetes' },
+            { title: 'NetBird Client on AWS ECS', href: '/use-cases/examples' },
+            { title: 'NetBird on Mikrotik Router', href: '/use-cases/client-on-mikrotik-router' },
+            { title: 'Distributed AI on Kubernetes', href: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm' },
+            { title: 'Self-hosted vs. Cloud-hosted NetBird', href: '/selfhosted/self-hosted-vs-cloud-netbird' },
         ],
     },
     {
