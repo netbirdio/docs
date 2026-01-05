@@ -289,7 +289,7 @@ export const docsNavigation = [
                 links: [
                     { title: 'Using IdPs on Self-Hosted', href: '/selfhosted/identity-providers' },
                     { title: 'Embedded IdP', href: '/selfhosted/identity-providers/embedded-idp' },
-                    { title: 'Connectors', href: '/selfhosted/identity-providers/connectors' },
+                    { title: 'Connectors', href: '/selfhosted/identity-providers/idp-connectors' },
                     { title: 'API Reference', href: '/selfhosted/identity-providers/api-reference' },
                     {
                         title: 'Self-hosted IdPs',
