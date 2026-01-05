@@ -12,11 +12,11 @@ import { useLocalStorage } from '@/hooks/useLocalStorage'
 const BANNER_ENABLED = true
 
 export const announcement = {
-  tag: '',
-  text: 'NetBird v0.60 Released - Native SSH Access',
-  link: '/manage/peers/ssh',
-  linkText: 'Read Release Documentation',
-  linkAlt: 'Learn more about the NetBird v0.60 release',
+  tag: 'New',
+  text: 'Embedded Identity Provider with DEX for Self-Hosted Installations',
+  link: '/selfhosted/identity-providers/embedded-idp',
+  linkText: 'Learn More',
+  linkAlt: 'Learn more about the embedded Identity Provider powered by DEX for self-hosted installations',
   isExternal: false,
   closeable: true,
 }
