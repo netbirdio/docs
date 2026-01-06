@@ -282,12 +282,13 @@ export const docsNavigation = [
     {
         title: 'SELF-HOST NETBIRD',
         links: [
-            { title: 'Quickstart guide', href: '/selfhosted/selfhosted-quickstart' },
+            { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
             {
-                title: 'Supported IdPs',
+                title: 'Accounts and IdPs',
                 isOpen: false,
                 links: [
-                    { title: 'Using IdPs on Self-Hosted', href: '/selfhosted/identity-providers' },
+                    { title: 'Identity Providers', href: '/selfhosted/identity-providers' },
+                    { title: 'Local User Accounts', href: '/selfhosted/identity-providers/local' },
                     {
                         title: 'Self-hosted IdPs',
                         isOpen: true,
