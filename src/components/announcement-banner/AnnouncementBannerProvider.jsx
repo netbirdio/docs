@@ -14,7 +14,7 @@ const BANNER_ENABLED = true
 export const announcement = {
   tag: 'New',
   text: 'Embedded Identity Provider with DEX for Self-Hosted Installations',
-  link: '/selfhosted/identity-providers/embedded-idp',
+  link: '/selfhosted/identity-providers#local-user-management',
   linkText: 'Learn More',
   linkAlt: 'Learn more about the embedded Identity Provider powered by DEX for self-hosted installations',
   isExternal: false,
