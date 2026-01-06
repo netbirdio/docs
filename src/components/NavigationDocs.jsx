@@ -288,7 +288,6 @@ export const docsNavigation = [
                 isOpen: false,
                 links: [
                     { title: 'Using IdPs on Self-Hosted', href: '/selfhosted/identity-providers' },
-                    { title: 'API Reference', href: '/selfhosted/identity-providers/api-reference' },
                     {
                         title: 'Self-hosted IdPs',
                         isOpen: true,
