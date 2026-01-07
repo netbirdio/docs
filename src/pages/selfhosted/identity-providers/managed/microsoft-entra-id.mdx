@@ -1,133 +1,224 @@
 import {Note} from "@/components/mdx";
 
-# Microsoft Entra ID with NetBird Self-Hosted
+# Microsoft Entra ID
 
-This guide is a part of the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide) and explains how to integrate **self-hosted** NetBird with [Azure AD](https://azure.microsoft.com/en-us/products/active-directory/).
+Use Microsoft accounts for authentication with NetBird. This supports both personal Microsoft accounts and Microsoft Entra ID (formerly Azure AD) for work and school accounts.
 
-Azure AD is a an enterprise identity service that provides single sign-on and multifactor authentication to your applications.
-It is a 3rd party managed service and can't be self-hosted.
+## Connector Setup (Recommended)
+
+Add Microsoft as a connector to the embedded IdP. Choose the appropriate connector type based on your needs:
+
+| Connector Type | Use Case |
+|---------------|----------|
+| **Microsoft** (`microsoft`) | Personal Microsoft accounts |
+| **Microsoft Entra ID** (`entra`) | Work/school accounts via Azure AD |
+
+### Prerequisites
+
+- NetBird self-hosted with embedded IdP enabled
+- Access to [Azure Portal](https://portal.azure.com/) or [Entra Admin Center](https://entra.microsoft.com/)
+
+### Step 1: Create App Registration
+
+1. Navigate to [Azure Portal](https://portal.azure.com/) → **Azure Active Directory** (or [Entra Admin Center](https://entra.microsoft.com/))
+2. Click **App registrations** → **New registration**
+3. Fill in:
+   - **Name**: `NetBird`
+   - **Supported account types**: Choose based on your needs:
+     - *Personal accounts only*: `Personal Microsoft accounts only`
+     - *Work/school only*: `Accounts in this organizational directory only`
+     - *Both*: `Accounts in any organizational directory and personal Microsoft accounts`
+   - **Redirect URI**: Leave empty for now
+4. Click **Register**
+5. Note the **Application (client) ID** and **Directory (tenant) ID**
+
+### Step 2: Create Client Secret
+
+1. Go to **Certificates & secrets**
+2. Click **New client secret**
+3. Add a description and expiration
+4. Click **Add**
+5. Copy the **Value** immediately (it won't be shown again)
+
+### Step 3: Add Connector in NetBird
+
+1. Log in to your NetBird Dashboard
+2. Navigate to **Settings** → **Identity Providers**
+3. Click **Add Identity Provider**
+4. Fill in the fields:
+
+**For Personal Microsoft Accounts:**
+
+| Field | Value |
+|-------|-------|
+| Type | Microsoft |
+| Name | Microsoft (or your preferred display name) |
+| Client ID | Application (client) ID from Azure |
+| Client Secret | Secret value from Azure |
+
+**For Microsoft Entra ID (Work/School):**
+
+| Field | Value |
+|-------|-------|
+| Type | Microsoft Entra ID |
+| Name | Microsoft Work (or your preferred display name) |
+| Client ID | Application (client) ID from Azure |
+| Client Secret | Secret value from Azure |
+| Tenant ID | Directory (tenant) ID from Azure |
+
+5. Click **Save**
+
+### Step 4: Configure Redirect URI
+
+After saving, NetBird displays the **Redirect URL**. Copy this URL and add it to your Azure app:
+
+1. Return to Azure Portal → Your app registration
+2. Go to **Authentication**
+3. Click **Add a platform** → **Single-page application**
+4. Add the redirect URL from NetBird
+5. Click **Configure**
+
+### Step 5: Test the Connection
+
+1. Log out of NetBird Dashboard
+2. On the login page, you should see the Microsoft button
+3. Click it and sign in with your Microsoft account
+4. You should be redirected back to NetBird and logged in
+
+---
+
+## Standalone Setup (Advanced)
+
+Use Microsoft Entra ID as your primary identity provider instead of NetBird's embedded IdP. This option gives you full control over authentication and user management, is recommended for experienced Microsoft Entra ID administrators as it also requires additional setup and ongoing maintenance.
+
+For most deployments, the [embedded IdP](/selfhosted/identity-providers/local) is the simpler choice — it's built into NetBird, fully integrated, and requires minimal configuration to get started. For this implementation, go back up to the [Connector Setup (Recommended)](#connector-setup-recommended) section above.
 
 <Note>
-    If you prefer to have full control over authentication and authorization of your NetBird network, there are good
-    self-hosted alternatives to the managed Auth0 service like [Keycloak](/selfhosted/identity-providers#keycloak).
+If you prefer to have full control over authentication, consider self-hosted alternatives like [Keycloak](/selfhosted/identity-providers/keycloak).
 </Note>
 
-Before you start creating and configuring an Azure AD application, ensure that you have the following:
-- An Azure account: To create an Azure AD application, you must have an Azure account. If you don't have one, sign up for a free account at https://azure.microsoft.com/free/.
+### Prerequisites
 
-- User account with appropriate permissions: You must have an Azure AD user account with the appropriate permissions to create and manage Azure AD applications. If you don't have the required permissions, ask your Azure AD administrator to grant them to you.
+- An Azure account with appropriate permissions
+- Docker and Docker Compose for NetBird
 
+### Step 1: Create and Configure Azure AD Application
 
-## Step 1. Create and configure Azure AD application
-In this step, we will create and configure NetBird application in azure AD.
-- Navigate to [Azure Active Directory](https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/Overview)
-- Click `App Registrations` in the left menu then click on the `+ New registration` button to create a new application.
-- Fill in the form with the following values and click Register
-    - Name: `Netbird`
-    - Account Types: `Accounts in this organizational directory only (Default Directory only - Single tenant)`
-    - Redirect URI: select `Single-page application (SPA)` and URI as `https://<yournetbirddomain.com>/silent-auth`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-new-application.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-#### Step 2. Platform configurations
-- Click `Authentication` on the left side menu
-- Under the `Single-page application` Section, add another URI `https://<yournetbirddomain.com>/auth`
+1. Navigate to [Azure Active Directory](https://portal.azure.com/#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/Overview)
+2. Click **App Registrations** → **+ New registration**
+3. Fill in:
+   - **Name**: `Netbird`
+   - **Supported account types**: `Accounts in this organizational directory only (Single tenant)`
+   - **Redirect URI**: Select `Single-page application (SPA)` and enter `https://<yournetbirddomain.com>/silent-auth`
+4. Click **Register**
 
 <p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-spa-uri-setup.png" alt="high-level-dia" className="imagewrapper-big"/>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-new-application.png" alt="New application" className="imagewrapper-big"/>
 </p>
 
-- Scroll down and setup other options as on the screenshot below and click Save
+### Step 2: Configure Platform Settings
+
+1. Click **Authentication** on the left menu
+2. Under **Single-page application**, add another URI: `https://<yournetbirddomain.com>/auth`
 
 <p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-flows-setup.png" alt="high-level-dia" className="imagewrapper-big"/>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-spa-uri-setup.png" alt="SPA URI setup" className="imagewrapper-big"/>
 </p>
 
-- Click `Add a Platform` and select `Mobile and desktop applications`
-- Fill in the form with the following values and click Configure
-    - Custom redirect URIs:  `http://localhost:53000`
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-spa-uri-setup.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-## Step 3. Create a NetBird application scope
-- Click `Expose an API` on the left menu
-- Under `Application ID URI` click `Set` and then `Save`
-- Click `+ Add a Scope`
-- Fill in the form with the following values and click `Add scope`
-- Scope name: `api`
+3. Scroll down and configure options as shown:
 
 <p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-add-scope.png" alt="high-level-dia" className="imagewrapper-big"/>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-flows-setup.png" alt="Flows setup" className="imagewrapper-big"/>
 </p>
 
-- Under `Authorized client Applications`, click on `+ add a client application` and enter the following:
-- Fill in the form with the following values and click `Add application`
-- Client ID: same as your Application ID URI minus the `api://`
+4. Click **Add a Platform** → **Mobile and desktop applications**
+5. Add custom redirect URI: `http://localhost:53000`
+6. Click **Configure**
+
+### Step 3: Create Application Scope
+
+1. Click **Expose an API** on the left menu
+2. Under **Application ID URI**, click **Set** then **Save**
+3. Click **+ Add a Scope**
+4. Fill in:
+   - **Scope name**: `api`
+5. Click **Add scope**
 
 <p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-add-application-scope.png" alt="high-level-dia" className="imagewrapper-big"/>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-add-scope.png" alt="Add scope" className="imagewrapper-big"/>
 </p>
 
-
-## Step 4. Add API permissions
-Add `Netbird` permissions
-
-- Click `API permissions` on the left menu
-- Click `Add a permission`
-- Click `My APIs` tab, and select `Netbird`. Next check `api` permission checkbox and click `Add permissions`.
+6. Under **Authorized client applications**, click **+ Add a client application**
+7. Enter your **Client ID** (same as Application ID URI minus `api://`)
+8. Click **Add application**
 
 <p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-netbird-api-permisssions.png" alt="high-level-dia" className="imagewrapper-big"/>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-add-application-scope.png" alt="Add application scope" className="imagewrapper-big"/>
 </p>
 
-Add `Delegated permissions` to Microsoft Graph
+### Step 4: Add API Permissions
 
-- Click `Add a permission`
-- Click `Microsoft Graph` and then click `Application permissions` tab
-- In `Select permissions` search for `User.Read` and under the `User` section select `User.Read.All` and click  `Add permissions`
+1. Click **API permissions** on the left menu
+2. Click **Add a permission**
+3. Select **My APIs** tab → **Netbird** → check `api` permission → **Add permissions**
 
 <p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-openid-permissions.png" alt="high-level-dia" className="imagewrapper-big"/>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-netbird-api-permisssions.png" alt="NetBird API permissions" className="imagewrapper-big"/>
 </p>
 
-
-- Click `Grant admin consent for Default Directory` and click `Yes`
+4. Click **Add a permission** again
+5. Select **Microsoft Graph** → **Application permissions**
+6. Search for `User.Read` and select `User.Read.All`
+7. Click **Add permissions**
 
 <p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-grant-admin-conset.png" alt="high-level-dia" className="imagewrapper-big"/>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-openid-permissions.png" alt="OpenID permissions" className="imagewrapper-big"/>
 </p>
 
-## Step 5. Update token version
-- Click `Manifest` on left menu
-- Search for `accessTokenAcceptedVersion` and change the value from `null` to `2`
-- Click `Save`
-
-## Step 6. Generate client secret
-- Click `Certificates & secrets` on left menu
-- Click `New client secret`
-- Fill in the form with the following values and click `Add`
-- Description: `Netbird`
-- Copy `Value` and save it as it can be viewed only once after creation.
+8. Click **Grant admin consent for Default Directory** → **Yes**
 
 <p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-client-secret.png" alt="high-level-dia" className="imagewrapper-big"/>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-grant-admin-conset.png" alt="Grant admin consent" className="imagewrapper-big"/>
 </p>
 
-- Click `Overview` on left menu and take note of `Application (client) ID`, `Object ID` and `Directory (tenant) ID`
-will be required in next step.
+### Step 5: Update Token Version
 
-Your authority OIDC configuration will be available under:
+1. Click **Manifest** on the left menu
+2. Find `accessTokenAcceptedVersion` and change from `null` to `2`
+3. Click **Save**
+
+### Step 6: Generate Client Secret
+
+1. Click **Certificates & secrets** on the left menu
+2. Click **New client secret**
+3. Fill in:
+   - **Description**: `Netbird`
+4. Click **Add**
+5. Copy the **Value** immediately
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/microsoft-entra-id/azure-client-secret.png" alt="Client secret" className="imagewrapper-big"/>
+</p>
+
+6. Click **Overview** and note:
+   - **Application (client) ID**
+   - **Object ID**
+   - **Directory (tenant) ID**
+
+### Step 7: Configure NetBird
+
+Your authority OIDC configuration will be available at:
+
 ```bash
 https://login.microsoftonline.com/<Directory (tenant) ID>/v2.0/.well-known/openid-configuration
 ```
+
 <Note>
-    Double-check if the endpoint returns a JSON response by calling it from your browser.
+Double-check if the endpoint returns a JSON response by calling it from your browser.
 </Note>
 
-- Set properties in the `setup.env` file:
+Set properties in the `setup.env` file:
+
 ```shell
 NETBIRD_DOMAIN="<YOUR_DOMAIN>"
 NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://login.microsoftonline.com/<Directory (tenant) ID>/v2.0/.well-known/openid-configuration"
@@ -147,8 +238,43 @@ NETBIRD_IDP_MGMT_CLIENT_ID="<Application (client) ID>"
 NETBIRD_IDP_MGMT_CLIENT_SECRET="<CLIENT_SECRET>"
 NETBIRD_IDP_MGMT_EXTRA_OBJECT_ID="<Object ID>"
 NETBIRD_IDP_MGMT_EXTRA_GRAPH_API_ENDPOINT="https://graph.microsoft.com/v1.0"
-
 ```
 
-## Step 7: Continue with the NetBird Self-hosting Guide
-You've configured all required resources in Azure AD. You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).
+### Step 8: Continue with NetBird Setup
+
+You've configured all required resources in Azure AD. Continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).
+
+---
+
+## Troubleshooting
+
+### "AADSTS50011: The redirect URI specified in the request does not match"
+
+- Ensure the redirect URI in Azure exactly matches what NetBird provides
+- Check platform type (SPA vs Mobile/Desktop)
+- Verify no trailing slashes
+
+### "AADSTS700016: Application not found"
+
+- Verify the Application (client) ID is correct
+- Check tenant ID for single-tenant apps
+- Ensure the app registration is in the correct directory
+
+### Users from wrong tenant signing in
+
+- Use single-tenant configuration for organization-only access
+- Verify "Supported account types" setting in app registration
+
+### Token validation errors
+
+- Ensure `accessTokenAcceptedVersion` is set to `2` in the manifest
+- Verify all scopes are properly configured
+- Check that admin consent was granted
+
+---
+
+## Related Resources
+
+- [Microsoft Identity Platform Documentation](https://docs.microsoft.com/en-us/azure/active-directory/develop/)
+- [Azure Portal](https://portal.azure.com/)
+- [Embedded IdP Overview](/selfhosted/identity-providers/local)

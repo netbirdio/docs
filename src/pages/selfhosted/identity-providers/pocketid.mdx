@@ -1,72 +1,134 @@
 import {Note} from "@/components/mdx";
 
-# PocketID with NetBird Self-Hosted
+# PocketID
 
-This guide is a part of the [NetBird Self-hosting Guide](/docs/selfhosted/selfhosted-guide) and explains how to integrate
-**self-hosted** NetBird with [PocketID](https://pocket-id.org/).
+[PocketID](https://pocket-id.org/) is a simplified identity management solution designed for self-hosted environments, offering a lightweight and easy-to-deploy option for authentication.
 
 <Note>
-    PocketID is a simplified identity management solution designed for self hosted environments.
-    It is secure and effective, but makes some tradeoffs in terms of features and usability.
-    Notably, it does not allow scoping the access of API Tokens.
-    This isn't an issue per se, but it does mean that you should keep careful track of the token used by NetBird for management.
+PocketID is secure and effective but makes some tradeoffs in terms of features. Notably, it does not allow scoping the access of API Tokens. Keep careful track of the token used by NetBird for management.
 </Note>
 
-## Step 1. Create and configure PocketID application
-In this step, we will create and configure NetBird application in pocketid.
+## Connector Setup (Recommended)
 
-Create new PocketID OIDC Client
-- Navigate to pocketid console
-- Click the `Administration` dropdown in the left hand bar, then select `OIDC Clients`
-- Fill in the form with the following values and click `Continue`
-- Name: `NetBird`
-- Client Launch URL: `https://<domain>`
-- Callback URL's:
-- `http://localhost:53000`
-- `https://<domain>/auth`
-- `https://<domain>/silent-auth`
-- Logout Callback URL: `https://<domain>/`
-- Public Client: On
-- PKCE: On
-- Click `Save`
+Add PocketID as a connector to the embedded IdP. This is the simplest approach and recommended for most deployments.
+
+### Prerequisites
+
+- NetBird self-hosted with embedded IdP enabled
+- PocketID instance with admin access
+
+### Step 1: Create OIDC Client in PocketID
+
+1. Navigate to PocketID console
+2. Click the **Administration** dropdown in the left-hand bar
+3. Select **OIDC Clients**
+4. Click **Add** to create a new client
+5. Fill in the form:
+   - **Name**: `NetBird`
+   - **Public Client**: Off (for confidential client)
+   - **PKCE**: Off
+6. Click **Save**
+7. Note the **Client ID** and **Client Secret**
+
+### Step 2: Add Connector in NetBird
+
+1. Log in to your NetBird Dashboard
+2. Navigate to **Settings** → **Identity Providers**
+3. Click **Add Identity Provider**
+4. Fill in the fields:
+
+| Field | Value |
+|-------|-------|
+| Type | PocketID |
+| Name | PocketID (or your preferred display name) |
+| Client ID | From PocketID |
+| Client Secret | From PocketID |
+| Issuer | `https://pocketid.example.com` |
+
+5. Click **Save**
+
+### Step 3: Configure Redirect URI
+
+After saving, NetBird displays the **Redirect URL**. Copy this URL and add it to your PocketID client:
+
+1. Return to PocketID console → **OIDC Clients**
+2. Edit your NetBird client
+3. Add the redirect URL to **Callback URLs**
+4. Click **Save**
+
+### Step 4: Test the Connection
+
+1. Log out of NetBird Dashboard
+2. On the login page, you should see a "PocketID" button
+3. Click it and authenticate with your PocketID credentials
+4. You should be redirected back to NetBird and logged in
+
+---
+
+## Standalone Setup (Advanced)
+
+Use PocketID as your primary identity provider instead of NetBird's embedded IdP. This option gives you full control over authentication and user management, is recommended for experienced PocketID administrators as it also requires additional setup and ongoing maintenance.
+
+For most deployments, the [embedded IdP](/selfhosted/identity-providers/local) is the simpler choice — it's built into NetBird, fully integrated, and requires minimal configuration to get started. For this implementation, go back up to the [Connector Setup (Recommended)](#connector-setup-recommended) section above.
+
+### Prerequisites
+
+- PocketID instance running with SSL
+- Docker and Docker Compose for NetBird
+
+### Step 1: Create and Configure PocketID Application
+
+1. Navigate to PocketID console
+2. Click the **Administration** dropdown, then select **OIDC Clients**
+3. Fill in the form:
+   - **Name**: `NetBird`
+   - **Client Launch URL**: `https://<domain>`
+   - **Callback URLs**:
+     - `http://localhost:53000`
+     - `https://<domain>/auth`
+     - `https://<domain>/silent-auth`
+   - **Logout Callback URL**: `https://<domain>/`
+   - **Public Client**: On
+   - **PKCE**: On
+4. Click **Save**
 
 <p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/pocketid/pocketid-create-oidc-client.png" alt="high-level-dia" className="imagewrapper-big"/>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/pocketid/pocketid-create-oidc-client.png" alt="Create OIDC client" className="imagewrapper-big"/>
 </p>
 
-- Copy `Client ID` will be used later in the `setup.env`
+5. Copy **Client ID** for later use
 
-## Step 2: Application Token Configuration
+### Step 2: Create API Token
 
-To configure the application token you need to:
-
-- Click `Administration` dropdown in the left hand bar, then select `API Keys`
-- Click `Add API Key`
-- Enter the following values and click `Save`
-- Name: 'NetBird Management Token'
-- Expires At: Pick a date in the future
-- Description: 'NetBird Management Token'
-- Click `Save`
+1. Click **Administration** dropdown, then select **API Keys**
+2. Click **Add API Key**
+3. Fill in:
+   - **Name**: `NetBird Management Token`
+   - **Expires At**: Pick a date in the future
+   - **Description**: `NetBird Management Token`
+4. Click **Save**
 
 <p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/pocketid/pocketid-create-api-token.png" alt="high-level-dia" className="imagewrapper-big"/>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/pocketid/pocketid-create-api-token.png" alt="Create API token" className="imagewrapper-big"/>
 </p>
 
-- Copy `API Key` will be used later in the `setup.env`
+5. Copy **API Key** for later use
 
+### Step 3: Configure NetBird
 
-Your authority OIDC configuration will be available under:
+Your authority OIDC configuration will be available at:
 
 ```bash
 https://<YOUR_POCKETID_HOST_AND_PORT>/.well-known/openid-configuration
 ```
 
-:::caution
+<Note>
 Double-check if the endpoint returns a JSON response by calling it from your browser.
-:::
+</Note>
 
-- Set properties in the `setup.env` file:
-```json
+Set properties in the `setup.env` file:
+
+```shell
 NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<YOUR_POCKETID_HOST_AND_PORT>/.well-known/openid-configuration"
 NETBIRD_USE_AUTH0=false
 NETBIRD_AUTH_CLIENT_ID="<CLIENT_ID>"
@@ -86,8 +148,34 @@ NETBIRD_MGMT_IDP="pocketid"
 NETBIRD_IDP_MGMT_CLIENT_ID="netbird"
 NETBIRD_IDP_MGMT_EXTRA_MANAGEMENT_ENDPOINT="https://<YOUR_POCKETID_HOST_AND_PORT>"
 NETBIRD_IDP_MGMT_EXTRA_API_TOKEN="<API_TOKEN>"
-
 ```
 
-## Step 3: Continue with the NetBird Self-hosting Guide
-You've configured all required resources in PocketID. You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).
+### Step 4: Continue with NetBird Setup
+
+You've configured all required resources in PocketID. Continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).
+
+---
+
+## Troubleshooting
+
+### "Invalid redirect URI" error
+
+- Ensure all callback URLs are properly configured in PocketID
+- Include both HTTP (localhost) and HTTPS (domain) variants
+
+### API token not working
+
+- Verify the token hasn't expired
+- Ensure the token was created by an admin user
+
+### Device authorization not available
+
+- PocketID has limited device auth support
+- Set `NETBIRD_AUTH_DEVICE_AUTH_PROVIDER="none"` if issues persist
+
+---
+
+## Related Resources
+
+- [PocketID Documentation](https://pocket-id.org/docs)
+- [Embedded IdP Overview](/selfhosted/identity-providers/local)

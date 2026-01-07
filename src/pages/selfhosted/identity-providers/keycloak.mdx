@@ -1,265 +1,323 @@
 import {Note} from "@/components/mdx";
 
-# Keycloak with NetBird Self-Hosted
+# Keycloak
 
-This guide is a part of the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide) and explains how to integrate
-**self-hosted** NetBird with [Keycloak](https://www.keycloak.org/).
+[Keycloak](https://www.keycloak.org/) is an open-source Identity and Access Management solution maintained by Red Hat. It provides single sign-on, social login, user federation, fine-grained authorization, and supports OpenID Connect, OAuth 2.0, and SAML 2.0 protocols.
 
-Keycloak is an open source software product to allow single sign-on with Identity and Access Management aimed at modern applications and services.
+## Connector Setup (Recommended)
 
-<Note>
-    If you prefer not to self-host an Identity and Access Management solution, then you could use a managed alternative like
-    [Auth0](/selfhosted/identity-providers#auth0).
-</Note>
+Add Keycloak as a connector to the embedded IdP. This is the simplest approach and recommended for most deployments.
 
-The following guide is an adapted version of the original
-[Keycloak on Docker](https://www.keycloak.org/getting-started/getting-started-docker) guide from the official website.
+### Prerequisites
 
-## Expected Result
+- NetBird self-hosted with embedded IdP enabled
+- Keycloak instance running with SSL
 
-After completing this guide, you can log in to your self-hosted NetBird Dashboard and add your machines
-to your network using the [Interactive SSO Login feature](/get-started/install#running-net-bird-with-sso-login)
-over Keycloak.
+### Step 1: Create Client in Keycloak
 
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-auth-grant.gif" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
+1. Open the Keycloak Admin Console
+2. Select your realm (or create a new one, e.g., `netbird`)
+3. Click **Clients** → **Create client**
+4. Fill in the form:
+   - **Client type**: `OpenID Connect`
+   - **Client ID**: `netbird`
+5. Click **Next**
+6. On Capability config:
+   - Enable **Client authentication**
+7. Click **Next**
+8. On Login settings:
+   - Leave redirect URIs empty for now
+9. Click **Save**
+10. Go to the **Credentials** tab and copy the **Client secret**
 
-## Step 1: Check your Keycloak Instance
+### Step 2: Add Connector in NetBird
 
-For this guide, you need a fully configured Keycloak instance running with SSL.
+1. Log in to your NetBird Dashboard
+2. Navigate to **Settings** → **Identity Providers**
+3. Click **Add Identity Provider**
+4. Fill in the fields:
 
-We assume that your Keycloak instance is available at **`https://YOUR-KEYCLOAK-HOST-AND_PORT`**.
-Feel free to change the port if you have configured Keycloak with a different one.
+| Field | Value |
+|-------|-------|
+| Type | Generic OIDC |
+| Name | Keycloak (or your preferred display name) |
+| Client ID | `netbird` (from Step 1) |
+| Client Secret | From Keycloak Credentials tab |
+| Issuer | `https://keycloak.example.com/realms/your-realm` |
 
-Most of the OIDC software requires SSL for production use.
-We encourage you to comply with this requirement to make the world more secure 😊.
+5. Click **Save**
 
-## Step 2: Create a realm
+### Step 3: Configure Redirect URI
 
-To create a realm you need to:
+After saving, NetBird displays the **Redirect URL**. Copy this URL and add it to your Keycloak client:
 
-- Open the Keycloak Admin Console
-- Hover the mouse over the dropdown in the top-left corner where it says `Master`, then click on `Create Realm`
-- Fill in the form with the following values:
-- Realm name: `netbird`
-- Click `Create`
+1. Return to Keycloak Admin Console
+2. Go to your client → **Settings** tab
+3. Under **Valid redirect URIs**, add the redirect URL from NetBird
+4. Click **Save**
 
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-create-realm.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
+### Step 4: Test the Connection
 
-
-## Step 3: Create a user
-
-In this step we will create a NetBird administrator user.
-
-- Open the Keycloak Admin Console
-- Make sure, that the selected realm is `Netbird`
-- Click `Users` (left-hand menu)
-- Click `Create new user`
-- Fill in the form with the following values:
-- Username: `netbird`
-- Click `Create`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-create-user.png" alt="high-level-dia" className="imagewrapper"/>
-</p>
-
-The user will need an initial password set to be able to log in. To do this:
-- Click `Credentials` tab
-- Click `Set password` button
-- Fill in the password form with a password
-- Set the `Temporary` field to `Off` to prevent having to update password on first login
-- Click `Save`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-set-password.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-## Step 4: Create a NetBird client
-
-In this step we will create NetBird application client and register with the Keycloak instance.
-
-- Open the Keycloak Admin Console
-- Make sure, that the selected realm is `Netbird`
-- Click `Clients`
-- Click `Create client` button
-- Fill in the form with the following values and click Next:
-- Client Type: `OpenID Connect`
-- Client ID: `netbird-client`
-- Your newly client `netbird-client` will be used later to set `NETBIRD_AUTH_CLIENT_ID` in the `setup.env`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-create-client.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-
-- Check the checkboxes as on the screenshot below and click Save
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-enable-auth.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-## Step 5: Adjust NetBird client access settings
-
-In this step we will configure NetBird application client access with the NetBird URLs.
-
-- Open the Keycloak Admin Console
-- Make sure, that the selected realm is `Netbird`
-- Click `Clients`
-- Choose `netbird-client` from the list
-- Go to `Access Settings` section
-- Fill in the fields with the following values:
-- Root URL: `https://YOUR DOMAIN/` (this is the NetBird Dashboard root URL)
-- Valid redirect URIs: `https://YOUR DOMAIN/*` and `http://localhost:53000`
-- Valid post logout redirect URIs: `https://YOUR DOMAIN/*`
-- Web origins: `+`
-- Click `Save`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-access-settings.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-## Step 6: Create a NetBird client scope
-
-In this step, we will create and configure the NetBird client audience for Keycloak to add it to the generated JWT tokens.
-
-- Open the Keycloak Admin Console
-- Make sure, that the selected realm is `Netbird`
-- Click `Client scopes` (left-hand menu)
-- Click `Create client scope` button
-- Fill in the form with the following values:
-- Name: `api`
-- Type: `Default`
-- Protocol: `OpenID Connect`
-- Click `Save`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-create-client-scope.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-- While in the newly created Client Scope, switch to the `Mappers` tab
-- Click `Configure a new mapper`
-- Choose the `Audience` mapping
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-configure-audience-mapper.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-- Fill in the form with the following values:
-- Name: `Audience for NetBird Management API`
-- Included Client Audience: `netbird-client`
-- Add to access token: `On`
-- Click `Save`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-configure-audience-mapper-2.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-## Step 7: Add client scope to NetBird client
-
-- Open the Keycloak Admin Console
-- Make sure, that the selected realm is `Netbird`
-- Click `Clients`
-- Choose `netbird-client` from the list
-- Switch to `Client scopes` tab
-- Click `Add client scope` button
-- Choose `api`
-- Click `Add` choosing `Default`
-- The value `netbird-client` will be used as audience
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-add-client-scope.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-## Step 8: Create a NetBird-Backend client
-
-In this step we will create NetBird backend client and register with the Keycloak instance.
-
-- Open the Keycloak Admin Console
-- Make sure, that the selected realm is `Netbird`
-- Click `Clients`
-- Click `Create client` button
-- Fill in the form with the following values and click Next:
-- Client Type: `OpenID Connect`
-- Client ID: `netbird-backend`
-- Your newly client `netbird-backend` will be used later to set `NETBIRD_IDP_MGMT_CLIENT_ID` in the `setup.env`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-create-backend-client.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-- Check the checkboxes as on the screenshot below and click Save
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-backend-client-auth.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-The client will need secret to authenticate. To do this:
-- Click `Credentials` tab
-- Copy `client secret` will be used later to set `NETBIRD_IDP_MGMT_CLIENT_SECRET` in the `setup.env`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-backend-client-credentials.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-## Step 9: Add view-users role to netbird-backend
-
-- Open the Keycloak Admin Console
-- Make sure, that the selected realm is `Netbird`
-- Click `Clients`
-- Choose `netbird-backend` from the list
-- Switch to `Service accounts roles` tab
-- Click `Assign roles` button
-- Select `Filter by clients` and search for `view-users`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-service-account-role.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-- Check the role checkbox and click assign
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-add-role.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
+1. Log out of NetBird Dashboard
+2. On the login page, you should see a "Keycloak" button
+3. Click it and authenticate with your Keycloak credentials
+4. You should be redirected back to NetBird and logged in
 
 <Note>
-Optional
-
-NetBird offers the ability to automatically delete a user from the Keycloak side when the user is deleted from the associated account.
- To enable this functionality, simply include the `--user-delete-from-idp` flag in the management startup command within your Docker Compose configuration. If you choose to enable this feature,
- please ensure that you assign the `manage-users` role to the `netbird-backend` following the steps outlined above.
+Users who authenticate via Keycloak will appear in your NetBird Users list with a Keycloak badge next to their name.
 </Note>
 
-Your authority OIDC configuration will be available under:
+---
+
+## Standalone Setup (Advanced)
+
+Use Keycloak as your primary identity provider instead of NetBird's embedded IdP. This option gives you full control over authentication and user management, is recommended for experienced Keycloak administrators as it also requires additional setup and ongoing maintenance.
+
+For most deployments, the [embedded IdP](/selfhosted/identity-providers/local) is the simpler choice — it's built into NetBird, fully integrated, and requires minimal configuration to get started. For this implementation, go back up to the [Connector Setup (Recommended)](#connector-setup-recommended) section above.
+
+<Note>
+If you prefer not to self-host an Identity and Access Management solution, you could use a managed alternative like [Auth0](/selfhosted/identity-providers/managed/auth0).
+</Note>
+
+### Expected Result
+
+After completing this guide, you can log in to your self-hosted NetBird Dashboard and add machines to your network using the [Interactive SSO Login feature](/get-started/install#running-net-bird-with-sso-login) over Keycloak.
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-auth-grant.gif" alt="Keycloak auth flow" className="imagewrapper-big"/>
+</p>
+
+### Prerequisites
+
+- Keycloak instance running with SSL
+- Docker and Docker Compose for NetBird
+
+### Step 1: Check Your Keycloak Instance
+
+Ensure your Keycloak instance is available at `https://YOUR-KEYCLOAK-HOST-AND-PORT` with SSL enabled.
+
+### Step 2: Create a Realm
+
+1. Open the Keycloak Admin Console
+2. Hover over the dropdown in the top-left corner where it says `Master`
+3. Click **Create Realm**
+4. Fill in:
+   - **Realm name**: `netbird`
+5. Click **Create**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-create-realm.png" alt="Create realm" className="imagewrapper-big"/>
+</p>
+
+### Step 3: Create a User
+
+1. Make sure the selected realm is `netbird`
+2. Click **Users** (left-hand menu)
+3. Click **Create new user**
+4. Fill in:
+   - **Username**: `netbird`
+5. Click **Create**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-create-user.png" alt="Create user" className="imagewrapper"/>
+</p>
+
+6. Click **Credentials** tab
+7. Click **Set password**
+8. Fill in the password and set **Temporary** to `Off`
+9. Click **Save**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-set-password.png" alt="Set password" className="imagewrapper-big"/>
+</p>
+
+### Step 4: Create NetBird Client
+
+1. Click **Clients** → **Create client**
+2. Fill in:
+   - **Client Type**: `OpenID Connect`
+   - **Client ID**: `netbird-client`
+3. Click **Next**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-create-client.png" alt="Create client" className="imagewrapper-big"/>
+</p>
+
+4. Enable the authentication options as shown:
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-enable-auth.png" alt="Enable auth" className="imagewrapper-big"/>
+</p>
+
+5. Click **Save**
+
+### Step 5: Configure Client Access Settings
+
+1. Go to **Clients** → **netbird-client**
+2. In **Access Settings**, fill in:
+   - **Root URL**: `https://YOUR_DOMAIN/`
+   - **Valid redirect URIs**: `https://YOUR_DOMAIN/*` and `http://localhost:53000`
+   - **Valid post logout redirect URIs**: `https://YOUR_DOMAIN/*`
+   - **Web origins**: `+`
+3. Click **Save**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-access-settings.png" alt="Access settings" className="imagewrapper-big"/>
+</p>
+
+### Step 6: Create Client Scope
+
+1. Click **Client scopes** (left-hand menu)
+2. Click **Create client scope**
+3. Fill in:
+   - **Name**: `api`
+   - **Type**: `Default`
+   - **Protocol**: `OpenID Connect`
+4. Click **Save**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-create-client-scope.png" alt="Create client scope" className="imagewrapper-big"/>
+</p>
+
+5. Switch to the **Mappers** tab
+6. Click **Configure a new mapper**
+7. Choose **Audience** mapping
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-configure-audience-mapper.png" alt="Configure audience mapper" className="imagewrapper-big"/>
+</p>
+
+8. Fill in:
+   - **Name**: `Audience for NetBird Management API`
+   - **Included Client Audience**: `netbird-client`
+   - **Add to access token**: `On`
+9. Click **Save**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-configure-audience-mapper-2.png" alt="Audience mapper config" className="imagewrapper-big"/>
+</p>
+
+### Step 7: Add Client Scope to NetBird Client
+
+1. Go to **Clients** → **netbird-client**
+2. Switch to **Client scopes** tab
+3. Click **Add client scope**
+4. Choose `api`
+5. Click **Add** choosing `Default`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-add-client-scope.png" alt="Add client scope" className="imagewrapper-big"/>
+</p>
+
+### Step 8: Create NetBird-Backend Client
+
+1. Click **Clients** → **Create client**
+2. Fill in:
+   - **Client Type**: `OpenID Connect`
+   - **Client ID**: `netbird-backend`
+3. Click **Next**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-create-backend-client.png" alt="Create backend client" className="imagewrapper-big"/>
+</p>
+
+4. Enable authentication as shown:
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-backend-client-auth.png" alt="Backend client auth" className="imagewrapper-big"/>
+</p>
+
+5. Click **Save**
+6. Go to **Credentials** tab
+7. Copy the **Client secret**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-backend-client-credentials.png" alt="Backend client credentials" className="imagewrapper-big"/>
+</p>
+
+### Step 9: Add View-Users Role
+
+1. Go to **Clients** → **netbird-backend**
+2. Switch to **Service accounts roles** tab
+3. Click **Assign roles**
+4. Select **Filter by clients** and search for `view-users`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-service-account-role.png" alt="Service account role" className="imagewrapper-big"/>
+</p>
+
+5. Check the role checkbox and click **Assign**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/keycloak/keycloak-add-role.png" alt="Add role" className="imagewrapper-big"/>
+</p>
+
+<Note>
+**Optional**: To enable automatic user deletion from Keycloak when deleted from NetBird, add the `--user-delete-from-idp` flag to the management startup command and assign the `manage-users` role instead.
+</Note>
+
+### Step 10: Configure NetBird
+
+Your authority OIDC configuration will be available at:
+
 ```bash
 https://<YOUR_KEYCLOAK_HOST_AND_PORT>/realms/netbird/.well-known/openid-configuration
 ```
+
 <Note>
-    Double-check if the endpoint returns a JSON response by calling it from your browser.
+Double-check if the endpoint returns a JSON response by calling it from your browser.
 </Note>
 
-- Set properties in the `setup.env` file:
-```shell
-NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT=`https://<YOUR_KEYCLOAK_HOST_AND_PORT>/realms/netbird/.well-known/openid-configuration`.
-NETBIRD_USE_AUTH0=false
-NETBIRD_AUTH_CLIENT_ID=`netbird-client`
-NETBIRD_AUTH_SUPPORTED_SCOPES="openid profile email offline_access api"
-NETBIRD_AUTH_AUDIENCE=`netbird-client`
+Set properties in the `setup.env` file:
 
-NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID=`netbird-client`
-NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE=`netbird-client`
+```shell
+NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<YOUR_KEYCLOAK_HOST_AND_PORT>/realms/netbird/.well-known/openid-configuration"
+NETBIRD_USE_AUTH0=false
+NETBIRD_AUTH_CLIENT_ID="netbird-client"
+NETBIRD_AUTH_SUPPORTED_SCOPES="openid profile email offline_access api"
+NETBIRD_AUTH_AUDIENCE="netbird-client"
+
+NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="netbird-client"
+NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE="netbird-client"
 
 NETBIRD_MGMT_IDP="keycloak"
 NETBIRD_IDP_MGMT_CLIENT_ID="netbird-backend"
 NETBIRD_IDP_MGMT_CLIENT_SECRET="<NETBIRD_BACKEND_CLIENT_SECRET>"
 NETBIRD_IDP_MGMT_EXTRA_ADMIN_ENDPOINT="https://<YOUR_KEYCLOAK_HOST_AND_PORT>/admin/realms/netbird"
-
 ```
+
 <Note>
-    Make sure that your Keycloak instance use HTTPS. Otherwise, the setup won't work.
+Make sure your Keycloak instance uses HTTPS. Otherwise, the setup won't work.
 </Note>
 
-#### Step 10: Continue with the NetBird Self-hosting Guide
-You've configured all required resources in Keycloak. You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).
+### Step 11: Continue with NetBird Setup
+
+You've configured all required resources in Keycloak. Continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).
+
+---
+
+## Troubleshooting
+
+### "Invalid redirect URI" error
+
+- Ensure the redirect URI matches exactly what's configured
+- For connector: Use the exact URL from the NetBird success modal
+- For standalone: Include both `https://YOUR_DOMAIN/*` and `http://localhost:53000`
+
+### "Invalid token" errors
+
+- Verify the issuer URL includes `/realms/your-realm`
+- Ensure the client ID matches in both Keycloak and NetBird
+- Check clock synchronization between servers
+
+### Users not appearing in NetBird
+
+- For connector: Users appear after their first successful login
+- For standalone: Verify the backend client has `view-users` role
+
+---
+
+## Related Resources
+
+- [Keycloak Documentation](https://www.keycloak.org/documentation)
+- [Embedded IdP Overview](/selfhosted/identity-providers/local)
