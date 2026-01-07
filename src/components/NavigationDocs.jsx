@@ -284,11 +284,11 @@ export const docsNavigation = [
         links: [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
             {
-                title: 'Accounts and IdPs',
+                title: 'Authentication',
                 isOpen: false,
                 links: [
-                    { title: 'Identity Providers', href: '/selfhosted/identity-providers' },
-                    { title: 'Local User Accounts', href: '/selfhosted/identity-providers/local' },
+                    { title: 'Authentication and IdPs', href: '/selfhosted/identity-providers' },
+                    { title: 'Local User Management', href: '/selfhosted/identity-providers/local' },
                     {
                         title: 'Self-hosted IdPs',
                         isOpen: true,
