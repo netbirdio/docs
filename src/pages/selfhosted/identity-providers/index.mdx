@@ -1,90 +1,200 @@
-import { Note, Button } from '@/components/mdx'
+import {Note} from "../../../components/mdx";
 
-# Supported Identity Providers (IdPs)
+# Authentication and Identity Providers (IdPs)
 
-NetBird’s self-hosted implementation (Community Edition) uses the OpenID Connect (OIDC) protocol for authentication, an
-industry-standard identity layer built on top of OAuth 2.0. OIDC is used both for user authentication to access the
-Management Service Dashboard and for user device authorization when accessing internal resources.
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/idp-main.png" alt="Identity Providers List" className="imagewrapper-big"/>
+</p>
 
-There are several Identity Provider (IdP) options available for running a self-hosted version of NetBird. This document provides
-an overview of each option along with links to detailed setup guides.
+NetBird's self-hosted implementation uses the OpenID Connect (OIDC) protocol for authentication, an industry-standard
+identity layer built on top of OAuth 2.0. OIDC is used both for user authentication to access the Management Service
+Dashboard and for user device authorization when accessing internal resources.
+
+## How Authentication Works in NetBird
+
+When a user attempts to access the NetBird dashboard from a web browser or an internal resource from their device,
+authentication is handled by the configured identity provider. Upon successful authentication, the identity provider
+issues a [JSON Web Token (JWT)](https://en.wikipedia.org/wiki/JSON_Web_Token) containing the user's identity and claims. The Management Service validates this token to
+verify the user's identity and grant access.
+
+By default, NetBird does not require an external identity provider. New installations include a built-in authentication
+system that lets you create and manage users directly through the Dashboard using local username and password authentication.
+External identity providers are entirely optional. Add them when you need SSO integration with Google, Microsoft, Okta, or
+self-hosted identity providers like Keycloak or Authentik, and more.
+
+## Local User Management
+
+Refer to the [Local User Management](/selfhosted/identity-providers/local) page for detailed instructions on using local users
+authentication.
+
+## External Identity Providers
+
+NetBird supports connecting **multiple external identity providers** [alongside local user management](/selfhosted/identity-providers/local).
+This allows users to sign in with their existing accounts from services like Google, Microsoft and your corporate or self-hosted identity
+provider, while still maintaining the option for local username/password authentication.
+
+NetBird supports any OIDC-compliant identity providers. Here are some popular providers and their setup instructions:
+
+| Provider | Type | Best For |
+|----------|------|----------|
+| [**Generic OIDC**](#adding-external-identity-providers) | `oidc` | Any OIDC-compliant provider |
+| [**Google**](/selfhosted/identity-providers/managed/google-workspace) | `google` | Google Workspace, personal Google accounts |
+| [**Microsoft**](/selfhosted/identity-providers/managed/microsoft-entra-id) | `microsoft` / `entra` | Personal accounts, Azure AD / Entra ID |
+| [**Okta**](/selfhosted/identity-providers/managed/okta) | `okta` | Enterprise SSO |
+| [**Zitadel**](/selfhosted/identity-providers/zitadel) | `zitadel` | Open-source IAM with multi-tenancy and passwordless auth |
+| [**Keycloak**](/selfhosted/identity-providers/keycloak) | `keycloak` |  Popular open source IAM with extensive enterprise features |
+| [**Authentik**](/selfhosted/identity-providers/authentik) | `authentik` | Flexible open source IdP with SSO, MFA, and policy engine |
+| [**Pocket ID**](/selfhosted/identity-providers/pocketid) | `pocketid` | Lightweight OIDC provider with passkey authentication |
 
 <Note>
-    In addition to OIDC-based authentication, NetBird supports provisioning users and groups through SCIM and the API.
-    However, this functionality is not available in the open source Community Edition. It is offered only in the cloud-managed
-    version of NetBird or through a [Commercial License](https://netbird.io/pricing#on-prem) for enterprise self-hosted deployments.
+    Any identity provider that supports OpenID Connect can be integrated with NetBird. If your provider isn't listed above,
+    use the generic OIDC configuration.
 </Note>
 
-## Our Approach
+    ### Adding an Identity Provider
 
-When a user attempts to access the NetBird network, the Management Service redirects them to your configured Identity Provider for authentication. After successful authentication, the IdP issues a JSON Web Token (JWT) that contains the user's identity and claims. NetBird's Management Service validates this token and uses it to authenticate the user without ever storing passwords or sensitive credentials.
+#### Via Dashboard
 
-This approach provides several key benefits: it leverages your existing identity infrastructure, enables Single Sign-On (SSO) across your organization, maintains security through token-based authentication, and allows NetBird to cache user information like names and email addresses without storing sensitive data. 
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/idp-list.png" alt="Identity Providers List" className="imagewrapper-big"/>
+</p>
 
-## Self-hosted IdPs
+1. Log in to your NetBird Dashboard
+2. Navigate to **Settings** → **Identity Providers**
+3. Click **Add Identity Provider**
+4. Select your provider type from the dropdown
+5. Configure the required fields:
+   - **Name** - Display name for the login button
+   - **Client ID** - From your identity provider
+   - **Client Secret** - From your identity provider
+   - **Issuer** - From your identity provider
+6. Copy the **Redirect URL** and configure it in your identity provider
+7. Click **Save**
 
-Self-hosted Identity Providers give you full control over authentication and authorization of your NetBird network. You manage and maintain the IdP infrastructure yourself.
+<Note>
+    Make sure you are creating a confidential OIDC client in your identity provider. The secret will be stored privately in
+    your NetBird installation and will never be exposed to the public.
+</Note>
 
-### Zitadel
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/add-idp.png" alt="Identity Providers List" className="imagewrapper-big"/>
+</p>
 
-[Zitadel](https://github.com/zitadel/zitadel) is an open-source identity infrastructure platform designed for cloud-native environments. It provides multi-tenancy, customizable branding, passwordless authentication, and supports protocols like OpenID Connect, OAuth2, SAML2, and LDAP. Zitadel offers features such as passkeys (FIDO2), OTP, SCIM 2.0 server, and unlimited audit trails.
+#### Via API
 
-<Button href="/selfhosted/identity-providers/zitadel" variant="outline">Setup Zitadel</Button>
+```bash
+curl -X POST "https://netbird.example.com/api/identity-providers" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "oidc",
+    "name": "My SSO Provider",
+    "client_id": "your-client-id",
+    "client_secret": "your-client-secret",
+    "issuer": "https://sso.example.com"
+  }'
+```
 
-### Authentik
+For instance setup endpoints, see [Accounts API](/api/resources/accounts). For user creation with embedded IdP, see [Users API](/api/resources/users).
 
-[Authentik](https://github.com/goauthentik/authentik) is an open-source identity provider focused on flexibility and security. It serves as a self-hosted alternative to commercial solutions like Okta and Auth0, providing single sign-on (SSO), multi-factor authentication (MFA), access policies, user management, and support for SAML and OIDC protocols. Authentik includes audit logging, password policies, and full API access for automation.
+### Managing Identity Providers via API
 
-<Button href="/selfhosted/identity-providers/authentik" variant="outline">Setup Authentik</Button>
+```bash
+# List configured identity providers
+curl "https://netbird.example.com/api/identity-providers" \
+  -H "Authorization: Bearer ${TOKEN}"
 
-### Keycloak
+# Update an identity provider
+curl -X PUT "https://netbird.example.com/api/identity-providers/{id}" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated Name"
+  }'
 
-[Keycloak](https://github.com/keycloak/keycloak) is an open-source Identity and Access Management solution aimed at modern applications and services. It's one of the most popular self-hosted IdP solutions with extensive documentation and community support. Keycloak provides single sign-on, social login, user federation, fine-grained authorization, and supports OpenID Connect, OAuth 2.0, and SAML 2.0 protocols.
+# Delete an identity providers
+curl -X DELETE "https://netbird.example.com/api/identity-providers/{id}" \
+  -H "Authorization: Bearer ${TOKEN}"
+```
 
-<Button href="/selfhosted/identity-providers/keycloak" variant="outline">Setup Keycloak</Button>
+### How It Works
 
-### PocketID
+1. User clicks the provider button on the login page
+2. User is redirected to the identity provider to authenticate
+3. After successful authentication, user is redirected back to NetBird
+4. NetBird validates the token and creates/updates the user account
+5. User is logged in and can access the Dashboard
 
-[PocketID](https://pocket-id.org/) is a simplified identity management solution designed for self-hosted environments. It provides authentication and authorization services with a focus on security and effectiveness, making it a lightweight and easy-to-deploy option for organizations seeking a straightforward identity management solution.
+Users who authenticate via an external identity provider appear in your Users list with a badge showing their identity provider.
 
-<Button href="/selfhosted/identity-providers/pocketid" variant="outline">Setup PocketID</Button>
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/user-list.png" alt="Identity Providers List" className="imagewrapper-big"/>
+</p>
 
-## Managed IdPs
+### Multiple Identity Providers
 
-Managed Identity Providers are third-party cloud services that handle the infrastructure and maintenance of your identity provider. These are ideal if you don't want to manage an IdP instance yourself.
+You can configure **multiple identity providers simultaneously**:
 
-### Microsoft Entra ID
+- All configured providers appear as buttons on the login page
+- "Continue with Email" (local authentication) is always available first
+- Users can authenticate with any configured provider
+- Each user's provider is tracked and displayed in the Dashboard
 
-[Microsoft Entra ID](https://www.microsoft.com/en-us/security/business/identity-access/microsoft-entra-id) (formerly Azure AD) is an enterprise identity service that provides single sign-on and multifactor authentication to your applications. It's a managed service that integrates seamlessly with Microsoft's ecosystem, offering conditional access policies, identity protection, and privileged identity management. Ideal for organizations already using Microsoft services.
+This allows you to support different authentication methods for different user groups.
 
-<Button href="/selfhosted/identity-providers/managed/microsoft-entra-id" variant="outline">Setup Microsoft Entra ID</Button>
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/idp-login.png" alt="Multiple Identity Providers" className="imagewrapper"/>
+</p>
 
-### Okta
+### Best Practices
 
-[Okta](https://www.okta.com/) is a cloud-based identity and access management service designed for enterprise use. It provides single sign-on, multifactor authentication, user management, and lifecycle management capabilities. Okta offers extensive integration options with thousands of pre-built connectors, adaptive authentication, and comprehensive API access management.
+1. **Start simple** - Begin with local users, add external providers as needed
+2. **Test thoroughly** - Verify the provider works before announcing to users
+3. **Communicate changes** - Let users know about new login options
+4. **Keep a fallback** - Local authentication remains available if an external provider has issues
 
-<Button href="/selfhosted/identity-providers/managed/okta" variant="outline">Setup Okta</Button>
+### Troubleshooting
 
-### Google Workspace
+#### Provider not appearing on login page
 
-[Google Workspace](https://workspace.google.com/) (formerly G Suite) provides identity management through Google's cloud infrastructure. It offers single sign-on capabilities, multi-factor authentication, and seamless integration with Google services. It's an excellent choice for organizations already using Google Workspace for their business operations, providing unified identity across Google and third-party applications.
+- Verify the provider was saved successfully in Settings → Identity Providers
+- Check that the provider is enabled
+- Clear browser cache and reload the login page
 
-<Button href="/selfhosted/identity-providers/managed/google-workspace" variant="outline">Setup Google Workspace</Button>
+#### "Invalid redirect URI" error
 
-### JumpCloud
+- Copy the exact Redirect URL from NetBird after creating the provider
+- Ensure no trailing slashes or typos
+- Some providers are case-sensitive
 
-[JumpCloud](https://jumpcloud.com/) is a cloud-based directory platform that provides identity, access, and device management in a unified solution. It offers single sign-on, multi-factor authentication, directory services, device management, and network access control. JumpCloud provides a comprehensive approach to managing users, devices, and applications from a single platform.
+#### Authentication succeeds but user not created
 
-<Button href="/selfhosted/identity-providers/managed/jumpcloud" variant="outline">Setup JumpCloud</Button>
+- Check Management service logs for errors
+- Verify the token contains required claims (email, name)
+- Ensure the user's email domain is not blocked by any policies in your IdP. Some providers like Pocket ID block all users by default unless you unrestrict groups in the OIDC client configuration.
 
-### Keycloak (Managed)
+#### External connector not working
 
-[Keycloak](https://www.keycloak.org/) can also be deployed as a managed service through various cloud providers, providing the same open-source features with the convenience of cloud hosting and management. This option offers the flexibility and features of Keycloak without the operational overhead of self-hosting.
+1. Verify Client ID and Secret are correct
+2. Check redirect URIs are properly configured in the external IdP
+3. Review Management logs for OIDC/SAML errors
 
-<Button href="/selfhosted/identity-providers/managed/keycloak" variant="outline">Setup Keycloak</Button>
+For provider-specific troubleshooting, see the individual provider pages.
 
-### Auth0
+## User Provisioning (SCIM)
 
-[Auth0](https://auth0.com/) is a flexible, drop-in solution to add authentication and authorization services to your applications. It's a managed service that's ideal if you don't want to manage an Identity Provider instance on your own. Auth0 offers extensive customization options, developer-friendly APIs, universal login, social identity providers, and advanced security features like anomaly detection and breached password detection.
+In addition to OIDC-based authentication, NetBird supports provisioning users and groups through SCIM.
+However, this functionality is not available in the open source Community Edition. It is offered only in the cloud-managed version of NetBird or through a [Commercial License](https://netbird.io/pricing#on-prem) for enterprise self-hosted deployments.
 
-<Button href="/selfhosted/identity-providers/managed/auth0" variant="outline">Setup Auth0</Button>
+## Migration Guide and Backwards Compatibility
+
+If you have an existing NetBird deployment using a standalone IdP (like Zitadel from the previous quickstart), you have several options:
+
+1. **Keep using your standalone IdP** - No changes required, your setup continues to work
+2. **Add your IdP as an external provider** - Keep your IdP but add it as an OIDC provider alongside local users.
+This option requires a migration as user IDs have a different format. See below.
+
+<Note>
+    We are working on a migration tool to automate the process of switching from standalone IdPs to external providers.
+    Please contact us at [](mailto:support@netbird.io) if you are interested in this feature.
+</Note>
