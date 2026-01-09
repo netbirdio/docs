@@ -307,7 +307,6 @@ export const docsNavigation = [
                             { title: 'Okta', href: '/selfhosted/identity-providers/managed/okta' },
                             { title: 'Google Workspace', href: '/selfhosted/identity-providers/managed/google-workspace' },
                             { title: 'JumpCloud', href: '/selfhosted/identity-providers/managed/jumpcloud' },
-                            { title: 'Keycloak', href: '/selfhosted/identity-providers/managed/keycloak' },
                         ]
                     },
                 ]
