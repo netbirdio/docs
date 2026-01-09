@@ -7,13 +7,64 @@ import * as yaml from 'js-yaml';
 import { merge } from 'allof-merge'
 import RequestBodyObject = OpenAPIV3_1.RequestBodyObject;
 
+// Pre-processes the spec to fix allOf with conflicting enums by merging them
+function fixConflictingEnumAllOf(obj: any): any {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => fixConflictingEnumAllOf(item));
+  }
+
+  // Check if this object has an allOf with conflicting enums
+  if (obj.allOf && Array.isArray(obj.allOf)) {
+    const enumSchemas = obj.allOf.filter((s: any) => s.enum);
+    if (enumSchemas.length > 1) {
+      // Merge all enums into one combined enum
+      const combinedEnum = Array.from(new Set(enumSchemas.flatMap((s: any) => s.enum)));
+      const nonEnumSchemas = obj.allOf.filter((s: any) => !s.enum);
+
+      // Merge all properties from enum schemas (type, description, example, etc.)
+      const mergedEnumSchema: any = { enum: combinedEnum };
+      for (const s of enumSchemas) {
+        for (const key of Object.keys(s)) {
+          if (key !== 'enum' && !mergedEnumSchema[key]) {
+            mergedEnumSchema[key] = s[key];
+          }
+        }
+      }
+
+      if (nonEnumSchemas.length === 0) {
+        // All schemas had enums, replace allOf with the merged schema
+        const { allOf, ...rest } = obj;
+        return { ...rest, ...fixConflictingEnumAllOf(mergedEnumSchema) };
+      } else {
+        // Keep non-enum schemas in allOf and add merged enum schema
+        return {
+          ...obj,
+          allOf: [...nonEnumSchemas.map((s: any) => fixConflictingEnumAllOf(s)), mergedEnumSchema]
+        };
+      }
+    }
+  }
+
+  // Recursively process all properties
+  const result: any = {};
+  for (const key of Object.keys(obj)) {
+    result[key] = fixConflictingEnumAllOf(obj[key]);
+  }
+  return result;
+}
+
 export default async function gen(inputFileName: string, outputDir: string) {
   const specRaw = fs.readFileSync(inputFileName, 'utf8')
   const specYaml = yaml.load(specRaw);
+  const fixedSpec = fixConflictingEnumAllOf(specYaml);
   const onMergeError = (msg) => {
     throw new Error(msg)
   }
-  const merged = merge(specYaml, { onMergeError })
+  const merged = merge(fixedSpec, { onMergeError })
 
   const spec = merged as OpenAPIV3.Document
 
