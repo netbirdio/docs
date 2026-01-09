@@ -303,10 +303,11 @@ export const docsNavigation = [
                         title: 'Managed IdPs',
                         isOpen: true,
                         links: [
-                            { title: 'Entra ID', href: '/selfhosted/identity-providers/managed/microsoft-entra-id' },
-                            { title: 'Okta', href: '/selfhosted/identity-providers/managed/okta' },
                             { title: 'Google Workspace', href: '/selfhosted/identity-providers/managed/google-workspace' },
+                            { title: 'Microsoft Entra ID', href: '/selfhosted/identity-providers/managed/microsoft-entra-id' },
                             { title: 'JumpCloud', href: '/selfhosted/identity-providers/managed/jumpcloud' },
+                            { title: 'Auth0', href: '/selfhosted/identity-providers/managed/auth0' },
+                            { title: 'Okta', href: '/selfhosted/identity-providers/managed/okta' },
                         ]
                     },
                 ]
