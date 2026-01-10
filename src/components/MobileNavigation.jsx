@@ -105,7 +105,7 @@ export function MobileNavigation() {
               >
                 <motion.div
                   layoutScroll
-                  className="fixed bottom-0 left-0 top-14 w-full overflow-y-auto bg-white px-4 pb-4 pt-6 shadow-lg shadow-zinc-900/10 ring-1 ring-zinc-900/7.5 dark:bg-zinc-900 dark:ring-zinc-800 min-[416px]:max-w-sm sm:px-6 sm:pb-10"
+                  className="fixed bottom-0 left-0 top-14 w-full overflow-y-auto bg-white/70 dark:bg-black/70 backdrop-blur-lg px-4 pb-4 pt-6 shadow-lg shadow-zinc-900/10 ring-1 ring-zinc-900/7.5 dark:ring-neutral-500/10 min-[416px]:max-w-sm sm:px-6 sm:pb-10"
                 >
                   {router.route.startsWith("/ipa") ? <NavigationAPI tableOfContents={[]} /> :
                       <NavigationDocs />}

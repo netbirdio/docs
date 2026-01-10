@@ -183,15 +183,15 @@ export function Layout({ children, title, tableOfContents }) {
             className="contents lg:pointer-events-none lg:fixed lg:inset-0 lg:z-40 lg:flex"
             style={{ top: bannerHeight }}
         >
-          <div className="contents lg:pointer-events-auto lg:block lg:w-72 lg:overflow-y-auto lg:border-r lg:border-zinc-900/10 lg:px-6 lg:pb-8 lg:pt-4 lg:dark:border-white/10 xl:w-80">
+          <div className="contents lg:pointer-events-auto lg:block lg:w-72 lg:overflow-y-auto lg:border-r lg:border-zinc-900/10 lg:dark:border-neutral-500/10 lg:px-6 lg:pb-8 lg:pt-4 lg:bg-white/70 lg:dark:bg-black/70 lg:backdrop-blur-lg xl:w-80 lg:overflow-x-visible">
             <div className="hidden lg:flex">
               <Link href="/" aria-label="Home">
                 <Logo className="h-6" />
               </Link>
             </div>
-            <Header />
             {router.route.startsWith("/ipa") ? <NavigationAPI className="hidden lg:mt-10 lg:block" tableOfContents={tableOfContents} /> : <NavigationDocs className="hidden lg:mt-10 lg:block" />}
           </div>
+          <Header />
         </header>
         <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-5">
           <main className="py-16">
