@@ -18,18 +18,20 @@ export function HeroPattern() {
           className="absolute inset-x-0 inset-y-[-50%] h-[200%] w-full skew-y-[-18deg] fill-black/40 stroke-black/50 mix-blend-overlay dark:fill-white/2.5 dark:stroke-white/5"
         />
       </div>
-      <div className="absolute left-1/2 top-0 ml-[-38rem] h-[25rem] w-[81.25rem] dark:[mask-image:linear-gradient(white,transparent)] pointer-events-none z-10">
+      <div className="absolute inset-x-0 top-0 h-[25rem] dark:[mask-image:linear-gradient(white,transparent)] pointer-events-none z-10">
         <svg
           viewBox="0 0 1113 440"
+          preserveAspectRatio="xMidYMin slice"
           aria-hidden="true"
-          className="absolute left-1/2 top-0 ml-[-19rem] w-[69.5625rem] fill-white blur-[26px] dark:hidden"
+          className="absolute left-1/2 top-0 -translate-x-1/2 w-full min-w-[69.5625rem] h-full fill-white blur-[26px] dark:hidden"
         >
           <path d="M.016 439.5s-9.5-300 434-300S882.516 20 882.516 20V0h230.004v439.5H.016Z" />
         </svg>
         <svg
           viewBox="0 0 1113 440"
+          preserveAspectRatio="xMidYMin slice"
           aria-hidden="true"
-          className="absolute left-1/2 top-0 ml-[-19rem] w-[69.5625rem] fill-netbird/30 blur-[26px] hidden dark:block"
+          className="absolute left-1/2 top-0 -translate-x-1/2 w-full min-w-[69.5625rem] h-full fill-netbird/30 blur-[26px] hidden dark:block"
         >
           <path d="M.016 439.5s-9.5-300 434-300S882.516 20 882.516 20V0h230.004v439.5H.016Z" />
         </svg>
