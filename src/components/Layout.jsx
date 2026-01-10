@@ -175,7 +175,7 @@ export function Layout({ children, title, tableOfContents }) {
       <AnnouncementBanner />
       <HeroPattern/>
       <div
-        className="relative mx-auto flex max-w-8xl sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80 bg-transparent dark:bg-black/95"
+        className="relative mx-auto flex max-w-8xl sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80"
         style={{ paddingTop: bannerHeight }}
       >
         <header
