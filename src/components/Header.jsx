@@ -50,7 +50,7 @@ export const Header = forwardRef(function Header({ className }, ref) {
       <div
         className={clsx(
           'absolute inset-x-0 top-full h-px transition border-b border-transparent',
-          !isInsideMobileNavigation && 'border-zinc-900/10 dark:border-neutral-500/10'
+          !isInsideMobileNavigation && 'border-zinc-900/10 dark:border-neutral-700/50'
         )}
       />
       <Search />
