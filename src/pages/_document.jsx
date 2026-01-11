@@ -44,7 +44,7 @@ export default function Document() {
           <script dangerouslySetInnerHTML={{ __html: modeScript }} />
           <link rel="shortcut icon" href="/docs-static/img/favicon.ico" />
       </Head>
-      <body className="bg-white antialiased dark:bg-[#010101]">
+      <body className="bg-white antialiased dark:bg-[#181A1D]">
         <GoogleTageManagerBodyScript />
         <Main />
         <NextScript />

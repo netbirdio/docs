@@ -39,9 +39,9 @@ export const Header = forwardRef(function Header({ className }, ref) {
           className,
           'fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-3 px-5 transition h-[64px] lg:left-72 lg:z-50 lg:px-8 xl:left-80 min-h-[64px] lg:pointer-events-auto',
           !isInsideMobileNavigation &&
-            'backdrop-blur-lg bg-white/70 dark:bg-black/70 lg:left-72 xl:left-80',
+            'backdrop-blur-lg bg-white/70 dark:bg-[#181A1D]/95 lg:left-72 xl:left-80',
           isInsideMobileNavigation &&
-            'bg-white/70 dark:bg-black/70 backdrop-blur-lg'
+            'bg-white/70 dark:bg-[#181A1D]/95 backdrop-blur-lg'
         )}
       style={{
         top: bannerHeight,
