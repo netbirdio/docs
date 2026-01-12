@@ -192,7 +192,7 @@ export function Layout({ children, title, tableOfContents }) {
             className="contents lg:pointer-events-none lg:fixed lg:inset-0 lg:z-40 lg:flex"
             style={{ top: bannerHeight }}
         >
-          <div className="contents lg:pointer-events-auto lg:block lg:w-72 lg:overflow-y-auto lg:border-r lg:border-zinc-900/10 lg:dark:border-neutral-700/50 lg:px-6 lg:pb-8 lg:pt-4 lg:bg-white/70 lg:dark:bg-[#181A1D]/95 lg:backdrop-blur-lg xl:w-80 lg:overflow-x-visible">
+          <div className="contents lg:pointer-events-auto lg:block lg:w-72 lg:overflow-y-auto lg:border-r lg:border-zinc-900/10 lg:dark:border-neutral-700/50 lg:px-6 lg:pb-8 lg:pt-4 lg:bg-white/70 lg:dark:bg-[#181A1D]/95 lg:backdrop-blur-lg xl:w-80 lg:overflow-x-visible sidebar-scroll">
             <div className="hidden lg:flex">
               <Link href="/" aria-label="Home">
                 <Logo className="h-6" />
