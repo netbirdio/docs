@@ -17,8 +17,8 @@ export const docsNavigation = [
         title: 'ABOUT',
         links: [
             { title: 'How NetBird Works', href: '/about-netbird/how-netbird-works' },
-            { title: 'Understanding NAT and Connectivity', href: '/about-netbird/understanding-nat-and-connectivity' },
             { title: 'NetBird vs. Traditional VPN', href: '/about-netbird/netbird-vs-traditional-vpn' },
+            { title: 'Understanding NAT and Connectivity', href: '/about-netbird/understanding-nat-and-connectivity' },
             { title: 'Why WireGuard with NetBird', href: '/about-netbird/why-wireguard-with-netbird' },
             { title: 'Browser Client Architecture', href: '/about-netbird/browser-client-architecture' },
             { title: 'FAQ', href: '/about-netbird/faq' },
