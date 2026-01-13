@@ -20,8 +20,10 @@ export function ImageZoom() {
         target.tagName === 'IMG' &&
         (target.classList.contains('imagewrapper') ||
           target.classList.contains('imagewrapper-big') ||
+          target.classList.contains('imagewrapper-medium') ||
           target.closest('.imagewrapper') ||
-          target.closest('.imagewrapper-big'))
+          target.closest('.imagewrapper-big') ||
+          target.closest('.imagewrapper-medium'))
       ) {
         e.preventDefault()
         setZoomedImage(target.src)

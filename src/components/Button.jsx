@@ -16,14 +16,16 @@ function ArrowIcon(props) {
 
 const variantStyles = {
   primary:
-    'rounded-full bg-zinc-900 py-1 px-3 text-white hover:bg-zinc-700 dark:bg-orange-400/10 dark:text-orange-400 dark:ring-1 dark:ring-inset dark:ring-orange-400/20 dark:hover:bg-orange-400/10 dark:hover:text-orange-300 dark:hover:ring-orange-300',
+    'rounded-[5px] bg-netbird text-white border-0 border-transparent duration-300 relative overflow-hidden group',
   secondary:
     'rounded-full bg-zinc-100 py-1 px-3 text-zinc-900 hover:bg-zinc-200 dark:bg-zinc-800/40 dark:text-zinc-400 dark:ring-1 dark:ring-inset dark:ring-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-300',
   filled:
-    'rounded-full bg-zinc-900 py-1 px-3 text-white hover:bg-zinc-700 dark:bg-orange-500 dark:text-white dark:hover:bg-orange-400',
+    'rounded-full bg-zinc-900 py-1 px-3 text-white hover:bg-zinc-700 dark:bg-netbird dark:text-white dark:hover:bg-netbird-dark',
   outline:
     'rounded-full py-1 px-3 text-zinc-700 ring-1 ring-inset ring-zinc-900/10 hover:bg-zinc-900/2.5 hover:text-zinc-900 dark:text-zinc-400 dark:ring-white/10 dark:hover:bg-white/5 dark:hover:text-white',
-  text: 'text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-500',
+  'outline-arrow':
+    'rounded-[5px] text-zinc-700 ring-1 ring-inset ring-zinc-900/10 hover:bg-zinc-900/2.5 hover:text-zinc-900 dark:text-zinc-400 dark:ring-white/10 dark:hover:bg-white/5 dark:hover:text-white duration-300 relative overflow-hidden group',
+  text: 'text-netbird hover:text-netbird-dark dark:text-netbird dark:hover:text-netbird-light',
 }
 
 export function Button({
@@ -36,7 +38,7 @@ export function Button({
   let Component = props.href ? Link : 'button'
 
   className = clsx(
-    'inline-flex gap-0.5 justify-center overflow-hidden text-sm font-medium transition whitespace-nowrap',
+    'inline-flex gap-0.5 justify-center text-[12px] md:text-xs px-3 py-2 md:px-3 md:py-2 lg:px-4 lg:py-2.5 font-medium transition whitespace-nowrap items-center',
     variantStyles[variant],
     className
   )
@@ -51,6 +53,26 @@ export function Button({
       )}
     />
   )
+
+  if (variant === 'primary' || variant === 'outline-arrow') {
+    return (
+      <div className="relative inline-flex group transition-all" onClick={props.href ? undefined : props.onClick}>
+        {variant === 'primary' && (
+          <span className="absolute h-full w-full left-0 top-0 blur-sm bg-netbird z-0 transition-all duration-200 transform-gpu opacity-0 group-hover:opacity-100 pointer-events-none"></span>
+        )}
+        <Component className={className} {...props}>
+          {variant === 'primary' && (
+            <span className="absolute h-full w-full left-0 top-0 z-10 bg-gradient-to-br from-netbird to-netbird-dark transition-all duration-200 transform-gpu opacity-0 group-hover:opacity-100 pointer-events-none"></span>
+          )}
+          <span className="z-20 relative flex gap-2 items-center transition-all">
+            {arrow === 'left' && arrowIcon}
+            {children}
+            {arrow === 'right' && arrowIcon}
+          </span>
+        </Component>
+      </div>
+    )
+  }
 
   return (
     <Component className={className} {...props}>

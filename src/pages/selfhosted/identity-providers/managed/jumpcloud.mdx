@@ -1,6 +1,6 @@
 import {Note} from "@/components/mdx";
 
-# JumpCloud
+# JumpCloud SSO with NetBird Self-Hosted
 
 [JumpCloud](https://jumpcloud.com/) is a cloud-based directory platform that provides identity, access, and device management. It offers single sign-on (SSO), multi-factor authentication (MFA), and centralized user management.
 
@@ -13,26 +13,49 @@ Add JumpCloud as an external IdP directly in the NetBird Management Dashboard. T
 - NetBird self-hosted with embedded IdP enabled
 - JumpCloud account with admin permissions
 
-### Step 1: Create OIDC Application in JumpCloud
+### Step 1: Start Creating OIDC Application in JumpCloud
 
 1. Navigate to [JumpCloud Admin Portal](https://console.jumpcloud.com/)
 2. Click **SSO Applications** under **USER AUTHENTICATION**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/1_sso-applications.png" alt="SSO Applications" className="imagewrapper-big"/>
+</p>
+
 3. Click **Add New Application** → **Custom Application**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/2_custom-applications.png" alt="Custom Applications" className="imagewrapper-big"/>
+</p>
 4. Confirm **Custom application** and click **Next**
 5. Select **Manage Single Sign-On (SSO)** and check **Configure SSO with OIDC**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/3_SSO-with-OIDC.png" alt="SSO with OIDC" className="imagewrapper-big"/>
+</p>
+
 6. Click **Next**
 7. Enter **Display Label**: `NetBird`
 8. Click **Next**
 9. Review and click **Configure Application**
 10. On the **SSO** tab, configure:
-    - **Client Authentication Type**: `Confidential`
-    - Leave redirect URIs empty for now
-11. Click **Activate**
-12. Note the **Client ID** and **Client Secret**
+    - **Redirect URIs**: `https://<your-netbird-domain>/oauth2/callback` (you'll verify this matches exactly in Step 3)
+    - **Client Authentication Type**: `Client Secret POST`
+    - **Login URL**: `https://<your-netbird-domain>/` 
+11. Under **Attribute Mapping**, enable:
+    - **Email** scope
+    - **Profile** scope
+12. Click **Save** to save the SSO configuration
+13. Click the **User Groups** tab and select at least one user group that can access NetBird
+14. **Don't click Activate yet** — keep this tab open and proceed to Step 2
 
-### Step 2: Add Identity Provider in NetBird
+<Note>
+Sometimes, the JumpCloud application configuration will add duplicate attributes, like `email` and `email_verified`. Remove any duplicates if they appear.
+</Note>
 
-1. Log in to your NetBird Dashboard
+### Step 2: Get Redirect URL from NetBird
+
+1. Open a new tab or window and log in to your NetBird Dashboard
 2. Navigate to **Settings** → **Identity Providers**
 3. Click **Add Identity Provider**
 4. Fill in the fields:
@@ -41,27 +64,48 @@ Add JumpCloud as an external IdP directly in the NetBird Management Dashboard. T
 |-------|-------|
 | Type | Generic OIDC |
 | Name | JumpCloud (or your preferred display name) |
-| Client ID | From JumpCloud |
-| Client Secret | From JumpCloud |
-| Issuer | `https://oauth.id.jumpcloud.com` |
+| Client ID | From JumpCloud application (will fill after Step 3) |
+| Client Secret | From JumpCloud application (will fill after Step 3) |
+| Issuer | `https://oauth.id.jumpcloud.com/` **(must include trailing slash)** |
 
-5. Don't click **Add Provider** yet, copy your Redirect URL for the next step.
+<Note>
+**Important:** The Issuer must be exactly `https://oauth.id.jumpcloud.com/` (with trailing slash) to match what JumpCloud returns. If you enter it without the trailing slash, the connector will fail to initialize.
+</Note>
 
-### Step 3: Configure Redirect URI
+5. **Copy the Redirect URL** that NetBird displays (but don't click **Add Provider** yet)
 
-NetBird displays the **Redirect URL**. Copy this URL and add it to your JumpCloud application:
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/4_copy-redirect.png" alt="Copy redirect URL" className="imagewrapper-big"/>
+</p>
 
-1. Return to JumpCloud Admin → **SSO Applications** → **NetBird**
+### Step 3: Complete JumpCloud Application Setup
+
+1. Return to the JumpCloud tab
 2. Click the **SSO** tab
-3. Under **Redirect URIs**, add the redirect URL from NetBird
-4. Click **Save**
-5. Click **Add Provider** in NetBird
+3. Under **Redirect URIs**, verify the redirect URL matches the exact URL you copied from NetBird (e.g., `https://netbird.hopkins.sh/oauth2/callback`). If it doesn't match exactly, update it to match.
+4. Click **Save** (if you made any changes)
 
-### Step 4: Assign User Groups
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/5_config-jumpcloud-sso.png" alt="Configure JumpCloud SSO" className="imagewrapper-big"/>
+</p>
 
-1. Click the **User Groups** tab
-2. Select the user groups that can access NetBird
-3. Click **Save**
+5. Click **Activate**
+6. Note the **Client ID** and **Client Secret** — you'll need these for Step 4
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/6_client-ids.png" alt="Client IDs" className="imagewrapper-big"/>
+</p>
+
+### Step 4: Complete NetBird Setup
+
+1. Return to the NetBird tab
+2. Fill in the **Client ID** and **Client Secret** from Step 3
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/7_jumpcloud-config.png" alt="JumpCloud configuration" className="imagewrapper-big"/>
+</p>
+
+3. Click **Add Provider**
 
 ### Step 5: Test the Connection
 
@@ -78,152 +122,25 @@ Use JumpCloud as your primary identity provider instead of NetBird's embedded Id
 
 For most deployments, the [embedded IdP](/selfhosted/identity-providers/local) is the simpler choice — it's built into NetBird, fully integrated, and requires minimal configuration to get started. For this implementation, go back up to the [Management Setup (Recommended)](#management-setup-recommended) section above.
 
-### Prerequisites
-
-- JumpCloud account with admin permissions (sign up at https://jumpcloud.com/)
-- Docker and Docker Compose for NetBird
-
-### Step 1: Create and Configure SSO Application
-
-1. Navigate to [Admin Portal](https://console.jumpcloud.com/)
-2. Click **SSO Applications** under **USER AUTHENTICATION**
-3. Click **Add New Application** → **Custom Application**
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-new-sso-app.png" alt="New SSO app" className="imagewrapper-big"/>
-</p>
-
-4. Confirm **Custom application** selected and click **Next**
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-new-sso-app-confirm-selection.png" alt="Confirm selection" className="imagewrapper-big"/>
-</p>
-
-5. Select **Manage Single Sign-On (SSO)** and check **Configure SSO with OIDC**
-6. Click **Next**
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-new-sso-app-features.png" alt="SSO features" className="imagewrapper-big"/>
-</p>
-
-7. Enter **Display Label**: `NetBird`
-8. Click **Next**
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-new-sso-app-general-info.png" alt="General info" className="imagewrapper-big"/>
-</p>
-
-9. Review and click **Configure Application**
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-new-sso-app-confirmation.png" alt="Confirmation" className="imagewrapper-big"/>
-</p>
-
-10. On the **SSO** tab, configure:
-    - **Redirect URIs**: 
-      - `https://<domain>/silent-auth`
-      - `https://<domain>/auth`
-      - `http://localhost:53000`
-    - **Client Authentication Type**: `Public (None PKCE)`
-    - **Login URL**: `https://<domain>`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-sso-configuration.png" alt="SSO configuration" className="imagewrapper-big"/>
-</p>
-
-11. Under **Attribute Mapping (optional)**:
-    - **Standard Scopes**: `Email`, `Profile`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-sso-atributes-configuration.png" alt="Attribute configuration" className="imagewrapper-big"/>
-</p>
-
-12. Click **User Groups** tab and select groups that can access the application
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-user-groups.png" alt="User groups" className="imagewrapper-big"/>
-</p>
-
-13. Click **Activate**
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-oidc-app.png" alt="OIDC app" className="imagewrapper-big"/>
-</p>
-
-14. Note the **Client ID**
-
-### Step 2: Create Administrator for Integration
-
-The NetBird management system requires an API token to get user information from JumpCloud.
+For detailed instructions on the standalone setup, see the [JumpCloud SSO with NetBird Self-Hosted (Legacy)](/selfhosted/identity-providers/managed/advanced/jumpcloud) documentation.
 
 <Note>
-If you already have an integration user, confirm it has the required role and skip to Step 3.
+If you prefer to have full control over authentication, consider self-hosted alternatives like [PocketID](/selfhosted/identity-providers/pocketid).
 </Note>
-
-1. Navigate to [Admin Portal](https://console.jumpcloud.com/)
-2. Go to **Settings** and click the add button (+)
-3. Fill in:
-   - **First Name**: `NetBird`
-   - **Last Name**: `Integration`
-   - **Administrator Email**: `netbird-user@<yourdomain>`
-   - **Role**: `Read Only`
-4. Click **Save**
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-add-admin-user.png" alt="Add admin user" className="imagewrapper-big"/>
-</p>
-
-<Note>
-**Optional**: To enable automatic user deletion from JumpCloud when deleted from NetBird, add the `--user-delete-from-idp` flag to the management startup command and assign the `Help Desk` role instead.
-</Note>
-
-5. Check email for login instructions and set a password
-
-### Step 3: Generate API Token
-
-1. Log in to [Admin Portal](https://console.jumpcloud.com/) with the integration user
-2. Click the account initials (top-right) → **My API Key**
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-profile.png" alt="Profile" className="imagewrapper-big"/>
-</p>
-
-3. If no key exists, click **Generate New API Key**
-4. Copy the API token
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/jumpcloud/jumpcloud-api-key-generation.png" alt="API key generation" className="imagewrapper-big"/>
-</p>
-
-### Step 4: Configure NetBird
-
-Set properties in the `setup.env` file:
-
-```shell
-NETBIRD_DOMAIN="<YOUR_DOMAIN>"
-NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://oauth.id.jumpcloud.com/.well-known/openid-configuration"
-NETBIRD_USE_AUTH0=false
-NETBIRD_DASH_AUTH_USE_AUDIENCE=false
-NETBIRD_AUTH_AUDIENCE="<CLIENT_ID>"
-NETBIRD_AUTH_SUPPORTED_SCOPES="openid profile email offline_access"
-NETBIRD_AUTH_CLIENT_ID="<CLIENT_ID>"
-NETBIRD_AUTH_REDIRECT_URI="/auth"
-NETBIRD_AUTH_SILENT_REDIRECT_URI="/silent-auth"
-NETBIRD_TOKEN_SOURCE="idToken"
-
-NETBIRD_AUTH_DEVICE_AUTH_PROVIDER="none"
-
-NETBIRD_MGMT_IDP="jumpcloud"
-NETBIRD_IDP_MGMT_EXTRA_API_TOKEN="<API_TOKEN>"
-```
-
-### Step 5: Continue with NetBird Setup
-
-You've configured all required resources in JumpCloud. Continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-5-run-configuration-script).
 
 ---
 
 ## Troubleshooting
+
+### "Connector failed to initialize" error
+
+- Ensure **Attribute Mapping** has both **Email** and **Profile** scopes enabled
+- Verify at least one **User Group** is assigned to the application before activation
+- Check that **Redirect URIs** exactly matches the URL from NetBird (no trailing slashes)
+- Ensure **Client Authentication Type** is set to `Client Secret POST`
+- Verify **Login URL** matches your NetBird domain exactly
+- Make sure the application is **Activated** and you have the correct **Client ID** and **Client Secret**
+- Remove any duplicate attributes in **Attribute Mapping** (e.g., `email` and `email_verified`)
 
 ### "Invalid redirect URI" error
 
@@ -235,16 +152,6 @@ You've configured all required resources in JumpCloud. Continue with the [NetBir
 
 - Verify the user belongs to an assigned user group
 - Check that the user group is assigned to the NetBird application
-
-### API token not working
-
-- Verify the integration user has appropriate permissions
-- Generate a new API token if the current one is invalid
-
-### Device authorization not available
-
-- JumpCloud has limited device auth support
-- Set `NETBIRD_AUTH_DEVICE_AUTH_PROVIDER="none"`
 
 ---
 
