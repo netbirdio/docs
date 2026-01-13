@@ -12,7 +12,7 @@ NAT was originally designed to conserve IPv4 addresses, but it creates a challen
 
 Not all NAT is created equal. The type of NAT you're behind significantly impacts whether NetBird can establish a direct peer-to-peer connection or needs to fall back to relay servers.
 
-### Home ISP Router (Easy NAT)
+### Easy NAT
 
 Most home routers use what's called **Endpoint-Independent Mapping (EIM)** or "Easy NAT". When your device sends a packet to any external address, the router assigns a public IP:port combination that remains consistent regardless of the destination.
 
@@ -35,9 +35,9 @@ Most home routers use what's called **Endpoint-Independent Mapping (EIM)** or "E
                     Same port for all destinations
 ```
 
-### Corporate/Office Firewall (Restrictive NAT)
+### Restrictive NAT
 
-Enterprise firewalls and some ISP-grade routers use **Endpoint-Dependent Mapping (EDM)** or "Symmetric NAT". Here, the public IP:port mapping changes based on the destination.
+Many enterprise firewalls and some ISP-grade routers use **Endpoint-Dependent Mapping (EDM)** or "Symmetric NAT". Here, the public IP:port mapping changes based on the destination.
 
 **How it works:**
 1. Your device at `10.0.5.100:12345` sends a UDP packet to Server A
@@ -58,13 +58,13 @@ Enterprise firewalls and some ISP-grade routers use **Endpoint-Dependent Mapping
                         └──────────────────┘
 ```
 
-**Additional restrictions:** Corporate firewalls often:
+**Additional restrictions:** Restrictive NAT firewalls often:
 - Block UDP entirely or limit it to specific ports
 - Require traffic to flow through HTTP/HTTPS proxies
 - Perform deep packet inspection that interferes with tunneling protocols
 - Have strict egress rules that only allow traffic to known destinations
 
-### Mobile/Cellular Networks (Carrier-Grade NAT)
+### Carrier-Grade NAT
 
 Mobile carriers typically use **Carrier-Grade NAT (CGNAT)**, which adds an extra layer of NAT between you and the internet. Your phone is behind NAT on the carrier's internal network, and that network is behind another NAT facing the internet.
 
@@ -90,7 +90,7 @@ Mobile carriers typically use **Carrier-Grade NAT (CGNAT)**, which adds an extra
 The `100.64.0.0/10` range you see in mobile networks is reserved for Carrier-Grade NAT. NetBird also uses this range for its internal addressing, which is intentional to avoid conflicts with typical private network ranges.
 </Note>
 
-### Cloud and Data Center Networks
+### 1:1 NAT
 
 Cloud VMs and data center servers present a different scenario:
 
@@ -105,66 +105,34 @@ Cloud VMs and data center servers present a different scenario:
 - Or may be behind enterprise-grade firewalls with restrictive NAT
 - Often have strict egress policies
 
-## How NetBird Establishes Connections
+## NetBird Relay
 
-NetBird uses the ICE (Interactive Connectivity Establishment) protocol to find the best possible connection path between two peers. ICE is the same technology that powers WebRTC video calls.
+When direct peer-to-peer connections aren't possible (usually due to NAT difficulties), NetBird uses relay servers to ensure connectivity. NetBird includes a custom-built relay system optimized specifically for its use case.
 
-### The Connection Process
+### How the Relay Works
 
-When two NetBird peers need to connect:
+The NetBird relay is a lightweight server that forwards encrypted WireGuard traffic between peers when they cannot connect directly. Unlike traditional TURN servers, NetBird's relay uses a custom protocol designed for efficiency.
 
-**1. Candidate Gathering**
+**Transport protocols:**
+- **QUIC**: A modern UDP-based protocol with built-in encryption. This is the primary transport and offers lower latency.
+- **WebSocket**: An HTTP-based protocol that works over TCP. This serves as a fallback when UDP is blocked, as it appears as standard HTTPS traffic to firewalls.
 
-Each peer discovers all possible ways it can be reached:
+When a client connects to a relay server, it races both protocols simultaneously and uses whichever succeeds first. If QUIC (UDP) fails due to network restrictions, WebSocket (TCP) automatically takes over.
 
-- **Host candidates**: Local IP addresses on the machine (e.g., `192.168.1.50:51820`)
-- **Server reflexive candidates**: Public IP:port discovered via STUN (e.g., `203.0.113.10:54321`)
-- **Relay candidates**: Addresses allocated by TURN/relay servers (fallback option)
+### Relay Selection
 
-**2. Candidate Exchange**
+When two peers need to communicate through a relay:
 
-Peers exchange their discovered candidates through the NetBird Signal service. This exchange is encrypted end-to-end, so the Signal service cannot see the actual candidate information.
+1. Both peers receive relay server information from the NetBird Management service
+2. The Signal service helps peers negotiate which relay server to use
+3. Both peers connect to the agreed-upon relay server
+4. Traffic flows through the relay while remaining end-to-end encrypted
 
-**3. Connectivity Checks**
+NetBird supports multiple relay server instances for high availability. If a relay server becomes unavailable, peers can switch to an alternative.
 
-Both peers simultaneously attempt to reach each other using all candidate pairs. ICE performs these checks in priority order, preferring direct connections over relayed ones:
-
-```
-Priority 1: Host ↔ Host         (direct LAN connection)
-Priority 2: Host ↔ Server Reflexive  (direct through NAT)
-Priority 3: Server Reflexive ↔ Server Reflexive (both behind NAT)
-Priority 4: Relay ↔ Any         (fallback via relay server)
-```
-
-**4. Connection Establishment**
-
-The first candidate pair that successfully exchanges packets becomes the active connection. NetBird then configures WireGuard to use this path for encrypted tunnel traffic.
-
-### NAT Hole Punching
-
-When both peers are behind NAT, NetBird uses a technique called **UDP hole punching**:
-
-1. Peer A sends a UDP packet to Peer B's public address (this packet may be dropped, but it opens a hole in A's NAT)
-2. Peer B simultaneously sends a UDP packet to Peer A's public address (opening a hole in B's NAT)
-3. Because both NATs now have outbound mappings, return packets are allowed through
-4. The connection is established through both NAT holes
-
-```
-    Peer A                                           Peer B
-      │                                                │
-      │──────── UDP to B's public addr ───────────────▶│ (may be dropped)
-      │                                                │
-      │◀─────── UDP to A's public addr ────────────────│ (may be dropped)
-      │                                                │
-      │         Both NATs now allow return traffic     │
-      │                                                │
-      │◀───────────── P2P Connection ─────────────────▶│
-```
-
-**When hole punching fails:**
-- Symmetric NAT on either side changes port mappings, breaking the coordination
-- Firewalls with strict filtering drop unsolicited UDP
-- NAT mappings timeout before the connection is established
+<Note>
+Self-hosted deployments can run their own relay servers. For best performance, deploy relay servers geographically close to your users.
+</Note>
 
 ## P2P vs. Relayed Connections
 
@@ -206,7 +174,7 @@ When P2P fails, NetBird falls back to relay servers. Traffic is encrypted before
 
 **When relayed connections occur:**
 - Both peers are behind symmetric NAT
-- UDP is blocked but WebSocket/QUIC over TCP is allowed
+- UDP is blocked but WebSocket over TCP is allowed
 - Aggressive firewalls with deep packet inspection
 - Extremely restrictive corporate networks
 
@@ -286,6 +254,67 @@ ICE candidate (Local/Remote): relay/host
 ```
 P2P failed for at least one direction; traffic flows through relay.
 
+## How NetBird Establishes Connections
+
+NetBird uses the ICE (Interactive Connectivity Establishment) protocol to find the best possible connection path between two peers. ICE is the same technology that powers WebRTC video calls.
+
+### The Connection Process
+
+When two NetBird peers need to connect:
+
+**1. Candidate Gathering**
+
+Each peer discovers all possible ways it can be reached:
+
+- **Host candidates**: Local IP addresses on the machine (e.g., `192.168.1.50:51820`). These are gathered by enumerating all network interfaces on the device.
+- **Server reflexive candidates**: Public IP:port as seen from outside the NAT (e.g., `203.0.113.10:54321`). These are discovered by sending a STUN binding request to a STUN server, which responds with the public IP and port it observed.
+- **Relay candidates**: Addresses allocated by TURN/relay servers (fallback option). These are obtained by requesting an allocation from a TURN server, which reserves a port on the relay that can forward traffic to the peer.
+
+**2. Candidate Exchange**
+
+Peers exchange their discovered candidates through the NetBird Signal service. This exchange is encrypted end-to-end, so the Signal service cannot see the actual candidate information.
+
+**3. Connectivity Checks**
+
+Both peers simultaneously attempt to reach each other using all candidate pairs. ICE performs these checks in priority order, preferring direct connections over relayed ones:
+
+```
+Priority 1: Host ↔ Host         (direct LAN connection)
+Priority 2: Host ↔ Server Reflexive  (direct through NAT)
+Priority 3: Server Reflexive ↔ Server Reflexive (both behind NAT)
+Priority 4: Relay ↔ Any         (fallback via relay server)
+```
+
+**4. Connection Establishment**
+
+The first candidate pair that successfully exchanges packets becomes the active connection. NetBird then configures WireGuard to use this path for encrypted tunnel traffic.
+
+### NAT Hole Punching
+
+When both peers are behind NAT, NetBird uses a technique called **UDP hole punching**:
+
+1. Peer A sends a UDP packet to Peer B's public address (this packet may be dropped, but it opens a hole in A's NAT)
+2. Peer B simultaneously sends a UDP packet to Peer A's public address (opening a hole in B's NAT)
+3. Because both NATs now have outbound mappings, return packets are allowed through
+4. The connection is established through both NAT holes
+
+```
+    Peer A                                           Peer B
+      │                                                │
+      │──────── UDP to B's public addr ───────────────▶│ (may be dropped)
+      │                                                │
+      │◀─────── UDP to A's public addr ────────────────│ (may be dropped)
+      │                                                │
+      │         Both NATs now allow return traffic     │
+      │                                                │
+      │◀───────────── P2P Connection ─────────────────▶│
+```
+
+**When hole punching fails:**
+- Symmetric NAT on either side changes port mappings, breaking the coordination
+- Firewalls with strict filtering drop unsolicited UDP
+- NAT mappings timeout before the connection is established
+
 ## Tips for Improving P2P Success
 
 ### For Home Users
@@ -320,17 +349,14 @@ Mobile connections are inherently variable. To improve reliability:
 
 ## NetBird's Relay Infrastructure
 
-NetBird provides globally distributed relay servers to ensure connectivity even in the most restrictive networks:
+NetBird provides globally distributed relay servers to ensure connectivity even in the most restrictive networks. The relay system supports two transport protocols:
 
-- **TURN (Coturn)**: Traditional relay protocol, works on UDP and TCP
-- **WebSocket Relay**: Introduced in v0.29.0, works over TCP/443 (HTTPS port)
-- **QUIC Relay**: High-performance UDP-based relay
+- **QUIC**: High-performance UDP-based transport (primary)
+- **WebSocket**: TCP-based transport that works over port 443 (fallback when UDP is blocked)
 
-The WebSocket relay is particularly important for corporate networks that only allow HTTPS traffic, as it appears as standard web traffic to firewalls.
+The WebSocket transport is particularly important for corporate networks that only allow HTTPS traffic, as it appears as standard web traffic to firewalls.
 
-<Note>
-Self-hosted NetBird deployments include relay servers. For best results, deploy relay servers in multiple geographic regions close to your users.
-</Note>
+For legacy compatibility, NetBird also supports TURN (Coturn) servers, though the native relay is recommended for new deployments.
 
 ## Summary
 
