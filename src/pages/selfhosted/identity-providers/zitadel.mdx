@@ -135,6 +135,72 @@ Add Zitadel as an external IdP directly in the NetBird Management Dashboard. Thi
 3. Click it and authenticate with your Zitadel credentials
 4. You should be redirected back to NetBird and logged in
 
+### Configuring JWT 'groups' Claim
+
+Zitadel uses **roles** instead of groups. By default, Zitadel's role claims use a nested JSON object format, but NetBird expects a flat array of strings. You'll need to create a Zitadel Action to transform roles into a `groups` claim.
+
+#### Step 1: Create the Groups Action
+
+1. In Zitadel Console, go to **Actions**
+2. Click **New**
+3. Fill in:
+   - **Name**: `groupsClaim`
+4. Add the following script:
+
+```javascript
+function groupsClaim(ctx, api) {
+  if (ctx.v1.user.grants == undefined || ctx.v1.user.grants.count == 0) {
+    return;
+  }
+  let groups = [];
+  ctx.v1.user.grants.grants.forEach(claim => {
+    claim.roles.forEach(role => {
+      groups.push(role);
+    });
+  });
+  api.v1.claims.setClaim('groups', groups);
+}
+```
+
+5. Click **Add**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/jwt_create-action.png" alt="Create action" className="imagewrapper-big"/>
+</p>
+
+#### Step 2: Configure Action Triggers
+
+1. Go to **Actions** → **Flows**
+2. Select **Complement Token**
+3. Add triggers for the `groupsClaim` action:
+   - **Pre Userinfo creation**
+   - **Pre access token creation**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/jwt_add-trigger.png" alt="Add trigger" className="imagewrapper-big"/>
+</p>
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/zitadel/jwt_triggers.png" alt="Add trigger" className="imagewrapper-big"/>
+</p>
+
+#### Step 3: Assign Roles to Users
+
+1. Go to your **Project** in Zitadel
+2. Navigate to **Roles** and create roles (e.g., `admin`, `developer`)
+3. Go to **Authorizations** and assign roles to users
+
+#### Step 4: Enable JWT Group Sync in NetBird
+
+1. In NetBird Dashboard, go to **Settings** → **Groups**
+2. Enable **JWT group sync**
+3. Set **JWT claim** to `groups`
+4. Optionally configure **JWT allow groups** to restrict access
+
+<Note>
+The action transforms Zitadel's role structure into a flat array. If you need to include project context, modify the script to use `groups.push(role + ':' + claim.projectId)`.
+</Note>
+
 ---
 
 ## Standalone Setup (Advanced)
