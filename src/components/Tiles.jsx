@@ -42,16 +42,26 @@ function TilePattern({ mouseX, mouseY }) {
  * 
  * @param {string} title - The heading title for the tiles section
  * @param {string} [id] - Optional id for the heading anchor
+ * @param {string} [description] - Optional description text to display below the title
  * @param {Array<{href: string, name: string, description: string}>} items - Array of tile items
  * @param {string} [buttonText='Read more'] - Optional button text (defaults to "Read more")
  */
-export function Tiles({ title, id, items, buttonText = 'Read more' }) {
+export function Tiles({ title, id, description, items, buttonText = 'Read more' }) {
+  const hasHeader = title || description;
+  
   return (
     <div className="my-16 xl:max-w-none">
-      <Heading level={2} id={id} anchor={!!id}>
-        {title}
-      </Heading>
-      <div className="not-prose mt-4 grid grid-cols-1 gap-8 border-t border-zinc-900/5 pt-10 dark:border-white/5 sm:grid-cols-2">
+      {title && (
+        <Heading level={2} id={id} anchor={!!id}>
+          {title}
+        </Heading>
+      )}
+      {description && (
+        <div className={`text-sm text-zinc-600 dark:text-zinc-400 ${title ? 'mt-4' : ''}`}>
+          {description}
+        </div>
+      )}
+      <div className={`not-prose grid grid-cols-1 gap-8 sm:grid-cols-2 ${hasHeader ? 'mt-4 border-t border-zinc-900/5 pt-10 dark:border-white/5' : ''}`}>
         {items.map((item) => {
           let mouseX = useMotionValue(0)
           let mouseY = useMotionValue(0)

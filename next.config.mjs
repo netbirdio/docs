@@ -132,6 +132,11 @@ const nextConfig = {
                 permanent: true,
             },
             {
+                source: '/how-to/huntress-edr',
+                destination: '/manage/access-control/endpoint-detection-and-response/huntress-edr',
+                permanent: true,
+            },
+            {
                 source: '/how-to/intune-mdm',
                 destination: '/manage/access-control/endpoint-detection-and-response/intune-mdm',
                 permanent: true,
