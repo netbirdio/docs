@@ -77,7 +77,7 @@ export const Header = forwardRef(function Header({ className }, ref) {
           <ModeToggle />
         </div>
         <div className="hidden min-[416px]:contents">
-          <Button href="https://app.netbird.io/" target="_blank">Try NetBird</Button>
+          <Button href="https://app.netbird.io/" target="_blank" className="!py-1.5 !px-3 text-xs">Try NetBird</Button>
         </div>
       </div>
     </motion.div>
