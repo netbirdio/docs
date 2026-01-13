@@ -23,6 +23,8 @@ const variantStyles = {
     'rounded-full bg-zinc-900 py-1 px-3 text-white hover:bg-zinc-700 dark:bg-netbird dark:text-white dark:hover:bg-netbird-dark',
   outline:
     'rounded-full py-1 px-3 text-zinc-700 ring-1 ring-inset ring-zinc-900/10 hover:bg-zinc-900/2.5 hover:text-zinc-900 dark:text-zinc-400 dark:ring-white/10 dark:hover:bg-white/5 dark:hover:text-white',
+  'outline-arrow':
+    'rounded-[5px] text-zinc-700 ring-1 ring-inset ring-zinc-900/10 hover:bg-zinc-900/2.5 hover:text-zinc-900 dark:text-zinc-400 dark:ring-white/10 dark:hover:bg-white/5 dark:hover:text-white duration-300 relative overflow-hidden group',
   text: 'text-netbird hover:text-netbird-dark dark:text-netbird dark:hover:text-netbird-light',
 }
 
@@ -52,12 +54,16 @@ export function Button({
     />
   )
 
-  if (variant === 'primary') {
+  if (variant === 'primary' || variant === 'outline-arrow') {
     return (
       <div className="relative inline-flex group transition-all" onClick={props.href ? undefined : props.onClick}>
-        <span className="absolute h-full w-full left-0 top-0 blur-sm bg-netbird z-0 transition-all duration-200 transform-gpu opacity-0 group-hover:opacity-100 pointer-events-none"></span>
+        {variant === 'primary' && (
+          <span className="absolute h-full w-full left-0 top-0 blur-sm bg-netbird z-0 transition-all duration-200 transform-gpu opacity-0 group-hover:opacity-100 pointer-events-none"></span>
+        )}
         <Component className={className} {...props}>
-          <span className="absolute h-full w-full left-0 top-0 z-10 bg-gradient-to-br from-netbird to-netbird-dark transition-all duration-200 transform-gpu opacity-0 group-hover:opacity-100 pointer-events-none"></span>
+          {variant === 'primary' && (
+            <span className="absolute h-full w-full left-0 top-0 z-10 bg-gradient-to-br from-netbird to-netbird-dark transition-all duration-200 transform-gpu opacity-0 group-hover:opacity-100 pointer-events-none"></span>
+          )}
           <span className="z-20 relative flex gap-2 items-center transition-all">
             {arrow === 'left' && arrowIcon}
             {children}
