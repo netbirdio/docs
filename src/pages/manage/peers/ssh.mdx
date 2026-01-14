@@ -4,6 +4,8 @@ import {Note} from "@/components/mdx";
 
 NetBird provides SSH access to peers through its built-in SSH server. Unlike traditional SSH setups that require exposing port 22 to the internet, NetBird SSH operates entirely over your private network. You can connect using either the `netbird ssh` command or native OpenSSH clients.
 
+NetBird SSH supports fine-grained access control, allowing you to specify which NetBird users can access which local OS users on target machines.
+
 <Note>
     SSH Access is disabled by default and must be enabled both on the target
     peer and in the NetBird Dashboard.
@@ -19,7 +21,7 @@ Management may automatically ensure the mesh access policy permits 22022 for a p
 
 ### Authentication Methods
 
-- **JWT Authentication (default)**: Maps SSH sessions to user identities via your configured Identity Provider (OIDC). Each new session will require completing the OIDC flow to mint the JWT used for SSH authentication (unless JWT caching is enabled, in which case JWT tokens are cached for a configurable duration).
+- **JWT Authentication (default)**: Maps SSH sessions to user identities via your configured Identity Provider (OIDC). Each new session will require completing the OIDC flow to mint the JWT used for SSH authentication (unless JWT caching is enabled, in which case JWT tokens are cached for a configurable duration). Combined with fine-grained access control, this allows you to control exactly which authenticated users can access which local OS users on the target machine.
 - **Machine Identity (`--disable-ssh-auth`)**: When SSH auth is disabled, SSH access is governed by NetBird network ACLs (machine-level access) rather than per-user JWT identity.
 
 ### OpenSSH Integration
@@ -42,11 +44,10 @@ The management server does not edit your host OS firewall or perform OS-level po
 
 To use SSH access through NetBird, you need:
 
-1. **NetBird v0.60.0 or later** on peers that should support native SSH (dev/development versions are treated as supporting native SSH).
+1. **NetBird v0.61.0 or later** on all peers using SSH (both clients and servers). For fine-grained access control features, v0.61.0 is required.
 2. **SSH enabled on target peer** - the peer must run with `--allow-server-ssh`.
-3. **SSH enabled in Dashboard** - SSH access must be enabled for the peer and ServerSSHAllowed set in the peer meta.
-4. **Access Control Policy** - an ACL rule allowing TCP port 22 for the peer (management will auto-add 22022 behind the scenes for modern peers).
-5. **(Optional)** For JWT authentication: an Identity Provider configured in NetBird.
+3. **Access Control Policy** - A `NetBird SSH` policy configured in the dashboard
+4. **(Optional)** For JWT authentication: an Identity Provider configured in NetBird.
 
 <Note>
     Management distributes NetBird access-policy objects (FirewallRule) - it does
@@ -107,22 +108,12 @@ Create an ACL policy to allow SSH access:
 3. Create a new policy:
 - **Source**: Select the peers or groups that will connect via SSH
 - **Destination**: Select the peers or groups running the SSH server
-- **Protocol**: TCP
-- **Ports**: 22
-- **Action**: Accept
+- **Protocol**: Select `NetBird SSH` for SSH-specific policies with fine-grained access control, or use `TCP` with port 22 for basic network-level SSH access
+- **Authorized Groups** (when using NetBird SSH protocol): Configure which user groups can access which local OS users on the destination machines
 4. Save the policy
 
-### Step 3: Enable SSH in Dashboard
-
-Enable SSH on individual peers:
-
-1. Navigate to the target peer details page
-2. Enable SSH access for the peer
-3. Save the changes
-
 <p>
-    <img src="/docs-static/img/manage/peers/ssh/ssh-dashboard.png"
-         alt="netbird ssh dashboard" className="imagewrapper-big"/>
+    <img src="/docs-static/img/manage/peers/ssh/ssh-access-policy.png" alt="netbird ssh access policy" className="imagewrapper"/>
 </p>
 
 ## Using NetBird SSH
@@ -204,13 +195,7 @@ For SSH access directly from your web browser without installing any software, r
 
 By default, NetBird SSH uses JWT-based authentication with the configured Identity Provider. This provides user identity verification instead of machine identity.
 
-<Note>
-    Currently, SSH access is controlled by ACL policies and the
-    `--enable-ssh-root` flag. Users connect as either root (if enabled) or
-    admin-equivalent users on Windows. In the future, NetBird will support more
-    granular user mapping, allowing OIDC user X to connect to specific local
-    users (PAM/local) on the target system.
-</Note>
+NetBird supports fine-grained user mapping, allowing you to specify which OIDC users or groups can connect to which local OS users on the target system. See [Fine-Grained Access Control](#fine-grained-access-control) for details.
 
 <Note type="warning">
     **Time synchronization required**: The SSH server's system clock must be
@@ -278,6 +263,75 @@ netbird up --allow-server-ssh --disable-ssh-auth
     network-level ACL policies. Ensure your policies are appropriately
     restrictive.
 </Note>
+
+## Fine-Grained Access Control
+
+NetBird SSH allows you to configure granular access control that maps NetBird users to specific local OS users on target machines. This provides precise control over who can access what on your infrastructure.
+
+### How It Works
+
+When you create an SSH policy with the `NetBird SSH` protocol, you can configure **Authorized Groups** that define:
+
+1. **Source User Groups**: Which NetBird user groups are allowed to connect
+2. **Local User Mapping**: Which local OS users each group can access on the destination machines
+
+For example, you can configure:
+- Members of the "Developers" group can SSH as `developer` or `deploy` users
+- Members of the "DBAs" group can SSH as `postgres` user
+- Members of the "SysAdmins" group can SSH as `root` user
+
+### Configuring Fine-Grained Access Control
+
+When creating or editing an SSH policy in the Dashboard:
+
+1. Navigate to **Access Control** and click **Create Policy**
+2. Select **NetBird SSH** as the protocol
+3. Configure the **Source** - select the user groups that will connect via SSH
+4. Configure the **Destination** - select the peers or groups running the SSH server
+5. Under **SSH Access**, choose the access level:
+   - **Full Access**: Allow SSH as any local user on the destination machines
+   - **Limited Access**: Specify which local users each source group can access
+6. If you selected **Limited Access**, configure the user mappings:
+   - For each source group, specify which local OS users they are allowed to SSH as
+   - Add multiple local users per group as needed (e.g., `ashley`, `root`)
+7. Enable the policy and click **Continue**
+
+<p>
+    <img src="/docs-static/img/manage/peers/ssh/ssh-fine-grained-access-policy.png" alt="netbird ssh fine grained access policy" className="imagewrapper"/>
+</p>
+
+**Example configuration:**
+
+| Source Group | Allowed Local Users |
+|--------------|---------------------|
+| Developers   | developer, deploy   |
+| DBAs         | postgres            |
+| SysAdmins    | root, admin         |
+
+<Note>
+    When **Full Access** is selected, users in the source groups can SSH as any local user on the destination machines. Use **Limited Access** to enforce the principle of least privilege.
+</Note>
+
+### Authorization Flow
+
+When a user attempts to SSH into a peer:
+
+1. The user authenticates via OIDC to obtain a JWT token
+2. The JWT contains the user's identity (user ID from the `sub` claim by default)
+3. NetBird checks if the user's ID is in the list of authorized users for this peer
+4. NetBird verifies the user is allowed to access the requested local OS user based on the policy's authorized groups configuration
+5. If authorized, the SSH session is established as the specified local user
+
+<Note>
+    Fine-grained access control requires JWT authentication to be enabled (the default). It is not available when using `--disable-ssh-auth`.
+</Note>
+
+### Security Considerations
+
+- **Fail-closed**: If no mapping exists for an OS user, access is denied by default
+- **User identity verification**: Access decisions are based on the authenticated OIDC user identity
+- **Audit trail**: All SSH access attempts are logged with the authenticated user's identity
+- **Least privilege**: Configure the minimum necessary local user access for each group
 
 ## Advanced Features
 
@@ -398,12 +452,12 @@ Port forwarding has the following limitations:
 
 ### User Mapping
 
-- **Current behavior**: SSH sessions connect as either:
-- The `root` user on Linux/Unix (if `--enable-ssh-root` is enabled)
-- Administrator-equivalent users on Windows
-- The SSH server's service account (if user switching is unavailable)
-- **Future enhancement**: Planned support for granular user mapping (OIDC user → specific local user)
-- **PAM integration**: Linux/Unix PAM integration is planned for more flexible authentication
+NetBird now supports fine-grained user mapping through the `NetBird SSH` protocol and Authorized Groups configuration. See [Fine-Grained Access Control](#fine-grained-access-control) for details.
+
+**Requirements for user switching:**
+- The NetBird SSH server must run with root/administrator privileges to switch between local users
+- Non-root NetBird installations (e.g., rootless containers) will run all sessions under the NetBird process account
+- On Windows, sessions connect as Administrator-equivalent users
 
 ### Feature Availability
 
@@ -420,9 +474,9 @@ Some features require specific flags to be enabled on the SSH server:
 
 SSH access is controlled by multiple layers:
 
-1. **Network ACL policies**: Control which peers can access SSH over the mesh. Management will auto-add the mesh-native endpoint (22022) for a peer when the policy explicitly allows port 22 (or a range containing 22) and the peer advertises native SSH support (NetBird v0.60.0+). 
-2. **SSH enabled in dashboard**: Per-peer SSH access toggle
-3. **JWT authentication** (if enabled): User identity verification via IdP
+1. **Network ACL policies**: Control which peers can access SSH with dedicated 'NetBird SSH' protocol policies
+2. **JWT authentication** (if enabled): User identity verification via IdP
+3. **Fine-grained access control** (when using NetBird SSH protocol): Controls which authenticated users can access which local OS users on the target machine
 
 ## Troubleshooting
 
@@ -444,7 +498,7 @@ SSH access is controlled by multiple layers:
 
 **"Connection timeout"**
 
-- Verify ACL policy allows TCP port 22
+- Verify ACL policy allows SSH access 
 - Check if peers are connected to each other: `netbird status -d`
 - Test basic connectivity: `ping <peer-ip>`
 
@@ -472,22 +526,80 @@ SSH access is controlled by multiple layers:
 - Check file system permissions on the target peer
 - Verify you're connecting with the correct user
 
+### Fine-Grained Access Control Issues
+
+**"User is not authorized to access this peer"**
+
+- Verify the user's group is included in the SSH policy's source groups
+- Check that the policy uses the `NetBird SSH` protocol
+- Ensure the user has authenticated via OIDC
+
+**"User is not authorized to login as OS user"**
+
+- Check the Authorized Groups configuration in the SSH policy
+- Verify the user's group is mapped to the requested local OS user
+- Ensure the local OS user exists on the target machine
+
+**"No authorization mapping for OS user"**
+
+- The requested local OS user is not configured in any Authorized Groups mapping
+- Add the local OS user to the appropriate group's allowed users list in the policy
+
 ## CLI Reference
 
 For complete CLI command reference, including all SSH-related commands and flags, see the [CLI documentation](/get-started/cli#ssh).
 
-## Migrating from v0.59.x and Earlier
+## Version History
 
-<Note>
-    This section is only relevant if you're upgrading from NetBird v0.59.x or
-    earlier. New installations can skip this section.
+### v0.61.0
+
+Version 0.61.0 introduces fine-grained SSH access control.
+
+<Note type="warning">
+    **Breaking change**: Management server v0.61.0 will break NetBird SSH for all peers running versions older than v0.61.0. You must update all peers that use SSH to v0.61.0 or later before upgrading the management server/dashboard.
 </Note>
 
-### What Changed in v0.60.0
+#### New Capabilities
 
-Version 0.60.0 is a complete rewrite with breaking changes:
+- **NetBird SSH protocol**: New protocol type in policies specifically for SSH access control
+- **Fine-grained user mapping**: Map NetBird user groups to specific local OS users
+- **Authorized Groups**: Configure which users can access which local accounts per policy
+- **Full Access vs Limited Access**: Choose between unrestricted local user access or granular per-group mappings
+- **Enhanced security**: Fail-closed authorization model with granular audit trail
 
-**New capabilities:**
+#### Breaking Changes
+
+- Peers running versions older than v0.61.0 will lose SSH functionality when the management server is upgraded to v0.61.0
+
+#### Upgrade Steps
+
+1. **Update SSH servers** (peers running `--allow-server-ssh`)
+
+2. **Update SSH clients** (peers using `netbird ssh`)
+
+3. **Update the management server** to v0.61.0
+
+4. **Update the dashboard** to v0.61.0
+
+5. **Create NetBird SSH policy**:
+   - Source: SSH client user groups
+   - Destination: SSH server peers/groups
+   - Protocol: NetBird SSH
+   - SSH Access: Full Access or Limited Access
+   - If Limited Access: configure local user mappings per source group
+
+---
+
+### v0.60.0
+
+Version 0.60.0 is a complete rewrite of NetBird SSH with breaking changes.
+
+<Note>
+    This section is only relevant if you're upgrading from NetBird v0.59.x or earlier.
+</Note>
+
+#### New Capabilities
+
 - OpenSSH client support via automatic proxy configuration
 - Windows client and server support
 - SFTP subsystem for file transfers
@@ -495,7 +607,8 @@ Version 0.60.0 is a complete rewrite with breaking changes:
 - Non-interactive command execution
 - Configurable JWT token caching
 
-**Breaking changes:**
+#### Breaking Changes
+
 - Server port changed from 44338 to 22 (22022 internally)
 - Authentication changed from machine public keys to JWT tokens (user identity)
 - Port 22 automatically redirects to 22022 for NetBird traffic
@@ -503,44 +616,30 @@ Version 0.60.0 is a complete rewrite with breaking changes:
 - Client no longer requires `sudo` for authentication
 - **Not backward compatible**: v0.60.0+ clients cannot connect to older servers and vice versa
 
-### Upgrade Steps
+#### Upgrade Steps
 
 <Note type="warning">
-    **Self-hosted deployments:** Update order is important:
-    1. Management server
-    2. Dashboard (optional - only if you use browser-based SSH)
-    3. **SSH servers first** (peers running `--allow-server-ssh`)
-    4. SSH clients last (peers using `netbird ssh`)
-
-    New clients cannot connect to old servers, so update servers before clients.
+    **Update order is important** - SSH servers must be updated before SSH clients.
 </Note>
 
-#### For Self-Hosted Deployments
-
 1. **Update management server** to v0.60.0 or later
-- Verify server is running correctly
-- Confirm JWKS endpoint is accessible
+   - Verify server is running correctly
+   - Confirm JWKS endpoint is accessible
 
 2. **Update dashboard** (optional)
-- Only needed if you use the browser-based SSH client
-- Maintains browser SSH access during peer migration
+   - Only needed if you use the browser-based SSH client
 
 3. **Create ACL policy** for port 22:
-```
-Source: [SSH Client Group/Peers]
-Destination: [SSH Server Group/Peers]
-Protocol: TCP
-Port: 22
-Action: Accept
-   ```
+   - Source: SSH client peers/groups
+   - Destination: SSH server peers/groups
+   - Protocol: TCP
+   - Port: 22
 
-4. **Update SSH servers FIRST** (peers running `--allow-server-ssh`)
-- Start with non-critical peers for testing
-- Old clients can still connect to updated servers
+4. **Update SSH servers first** (peers running `--allow-server-ssh`)
+   - Start with non-critical peers for testing
 
-5. **Update SSH clients LAST** (peers using `netbird ssh`)
-- Updated clients cannot connect to old servers
-- This is why servers must be updated first
+5. **Update SSH clients last** (peers using `netbird ssh`)
+   - Updated clients cannot connect to old servers
 
 #### Optional Configuration
 
@@ -553,11 +652,6 @@ Enable JWT token caching on SSH clients (reduces auth prompts):
 ```bash
 netbird up --ssh-jwt-cache-ttl 3600  # 1 hour
 ```
-
-<Note>
-    The browser-based SSH client in the dashboard remains compatible with both
-    old and new peer versions.
-</Note>
 
 ## Get started
 <p float="center">

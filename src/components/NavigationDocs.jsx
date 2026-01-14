@@ -18,6 +18,7 @@ export const docsNavigation = [
         links: [
             { title: 'How NetBird Works', href: '/about-netbird/how-netbird-works' },
             { title: 'NetBird vs. Traditional VPN', href: '/about-netbird/netbird-vs-traditional-vpn' },
+            { title: 'Understanding NAT and Connectivity', href: '/about-netbird/understanding-nat-and-connectivity' },
             { title: 'Why WireGuard with NetBird', href: '/about-netbird/why-wireguard-with-netbird' },
             { title: 'Browser Client Architecture', href: '/about-netbird/browser-client-architecture' },
             { title: 'FAQ', href: '/about-netbird/faq' },
@@ -99,6 +100,7 @@ export const docsNavigation = [
                             },
                         ]
                     },
+                    { title: 'Auto Update', href: '/manage/peers/auto-update' },
                 ]
             },
             {
@@ -279,31 +281,15 @@ export const docsNavigation = [
         ],
     },
     {
-        title: 'USE CASES',
-        links: [
-            { title: 'Site-to-Site and Site-to-VPN', href: '/use-cases/setup-site-to-site-access' },
-            { title: 'Serverless and NetBird', href: '/use-cases/netbird-on-faas' },
-            { title: 'Routing peers and Kubernetes', href: '/use-cases/routing-peers-and-kubernetes' },
-            { title: 'Implement Zero Trust with NetBird', href: '/use-cases/implement-zero-trust' },
-            { title: 'NetBird Client on AWS ECS', href: '/use-cases/examples' },
-            { title: 'NetBird on Mikrotik Router', href: '/use-cases/client-on-mikrotik-router' },
-            { title: 'Distributed AI on Kubernetes', href: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm' },
-            { title: 'Self-hosted vs. Cloud-hosted NetBird', href: '/selfhosted/self-hosted-vs-cloud-netbird' },
-        ],
-    },
-    {
         title: 'SELF-HOST NETBIRD',
         links: [
-            { title: 'Quickstart guide', href: '/selfhosted/selfhosted-quickstart' },
-            { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
-            { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store' },
-            { title: 'Management Postgres Store', href: '/selfhosted/postgres-store' },
-            { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store' },
+            { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
             {
-                title: 'Supported IdPs',
+                title: 'Authentication',
                 isOpen: false,
                 links: [
-                    { title: 'Using IdPs on Self-Hosted', href: '/selfhosted/identity-providers' },
+                    { title: 'Authentication and IdPs', href: '/selfhosted/identity-providers' },
+                    { title: 'Local User Management', href: '/selfhosted/identity-providers/local' },
                     {
                         title: 'Self-hosted IdPs',
                         isOpen: true,
@@ -318,17 +304,34 @@ export const docsNavigation = [
                         title: 'Managed IdPs',
                         isOpen: true,
                         links: [
-                            { title: 'Entra ID', href: '/selfhosted/identity-providers/managed/microsoft-entra-id' },
-                            { title: 'Okta', href: '/selfhosted/identity-providers/managed/okta' },
                             { title: 'Google Workspace', href: '/selfhosted/identity-providers/managed/google-workspace' },
+                            { title: 'Microsoft Entra ID', href: '/selfhosted/identity-providers/managed/microsoft-entra-id' },
                             { title: 'JumpCloud', href: '/selfhosted/identity-providers/managed/jumpcloud' },
-                            { title: 'Keycloak', href: '/selfhosted/identity-providers/managed/keycloak' },
+                            { title: 'Auth0', href: '/selfhosted/identity-providers/managed/auth0' },
+                            { title: 'Okta', href: '/selfhosted/identity-providers/managed/okta' },
                         ]
                     },
                 ]
             },
+            { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
+            { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store' },
+            { title: 'Management Postgres Store', href: '/selfhosted/postgres-store' },
+            { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store' },
             { title: 'Management geolocation', href: '/selfhosted/geo-support' },
             { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
+        ],
+    },
+    {
+        title: 'USE CASES',
+        links: [
+            { title: 'Site-to-Site and Site-to-VPN', href: '/use-cases/setup-site-to-site-access' },
+            { title: 'Serverless and NetBird', href: '/use-cases/netbird-on-faas' },
+            { title: 'Routing peers and Kubernetes', href: '/use-cases/routing-peers-and-kubernetes' },
+            { title: 'Implement Zero Trust with NetBird', href: '/use-cases/implement-zero-trust' },     
+            { title: 'NetBird Client on AWS ECS', href: '/use-cases/examples' },
+            { title: 'NetBird on Mikrotik Router', href: '/use-cases/client-on-mikrotik-router' },
+            { title: 'Distributed AI on Kubernetes', href: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm' },
+            { title: 'Self-hosted vs. Cloud-hosted NetBird', href: '/selfhosted/self-hosted-vs-cloud-netbird' },
         ],
     },
     {

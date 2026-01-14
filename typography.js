@@ -18,6 +18,8 @@ module.exports = ({ theme }) => ({
       '--tw-prose-code-ring': theme('colors.zinc.300'),
       '--tw-prose-th-borders': theme('colors.zinc.300'),
       '--tw-prose-td-borders': theme('colors.zinc.200'),
+      '--tw-prose-th-bg': theme('colors.zinc.100'),
+      '--tw-prose-td-bg': theme('colors.zinc.50 / 0.5'),
 
       '--tw-prose-invert-body': theme('colors.zinc.400'),
       '--tw-prose-invert-headings': theme('colors.white'),
@@ -36,6 +38,8 @@ module.exports = ({ theme }) => ({
       '--tw-prose-invert-code-ring': theme('colors.white / 0.1'),
       '--tw-prose-invert-th-borders': theme('colors.zinc.600'),
       '--tw-prose-invert-td-borders': theme('colors.zinc.700'),
+      '--tw-prose-invert-th-bg': theme('colors.zinc.800 / 0.5'),
+      '--tw-prose-invert-td-bg': theme('colors.zinc.800 / 0.2'),
 
       // Base
       color: 'var(--tw-prose-body)',
@@ -67,8 +71,8 @@ module.exports = ({ theme }) => ({
       // Lists
       ol: {
         listStyleType: 'decimal',
-        marginTop: theme('spacing.5'),
-        marginBottom: theme('spacing.5'),
+        marginTop: theme('spacing.6'),
+        marginBottom: theme('spacing.6'),
         paddingLeft: '1.625rem',
       },
       'ol[type="A"]': {
@@ -100,16 +104,17 @@ module.exports = ({ theme }) => ({
       },
       ul: {
         listStyleType: 'disc',
-        marginTop: theme('spacing.5'),
-        marginBottom: theme('spacing.5'),
+        marginTop: theme('spacing.6'),
+        marginBottom: theme('spacing.6'),
         paddingLeft: '1.625rem',
       },
       li: {
-        marginTop: theme('spacing.2'),
-        marginBottom: theme('spacing.2'),
+        marginTop: theme('spacing.3'),
+        marginBottom: theme('spacing.3'),
       },
       ':is(ol, ul) > li': {
         paddingLeft: theme('spacing[1.5]'),
+        lineHeight: theme('lineHeight.7'),
       },
       'ol > li::marker': {
         fontWeight: '400',
@@ -135,8 +140,8 @@ module.exports = ({ theme }) => ({
         marginBottom: theme('spacing.5'),
       },
       'ul ul, ul ol, ol ul, ol ol': {
-        marginTop: theme('spacing.3'),
-        marginBottom: theme('spacing.3'),
+        marginTop: theme('spacing.4'),
+        marginBottom: theme('spacing.4'),
       },
 
       // Horizontal rules
@@ -163,12 +168,17 @@ module.exports = ({ theme }) => ({
         fontWeight: '500',
         fontStyle: 'italic',
         color: 'var(--tw-prose-quotes)',
-        borderLeftWidth: '0.25rem',
-        borderLeftColor: 'var(--tw-prose-quote-borders)',
+        borderLeftWidth: '0.375rem',
+        borderLeftColor: theme('colors.orange.500'),
+        backgroundColor: theme('colors.orange.50 / 0.3'),
         quotes: '"\\201C""\\201D""\\2018""\\2019"',
         marginTop: theme('spacing.8'),
         marginBottom: theme('spacing.8'),
+        paddingTop: theme('spacing.4'),
+        paddingRight: theme('spacing.4'),
+        paddingBottom: theme('spacing.4'),
         paddingLeft: theme('spacing.5'),
+        borderRadius: theme('borderRadius.md'),
       },
       'blockquote p:first-of-type::before': {
         content: 'open-quote',
@@ -207,7 +217,23 @@ module.exports = ({ theme }) => ({
         ...theme('fontSize.base')[1],
         fontWeight: '600',
         marginTop: theme('spacing.8'),
-        marginBottom: theme('spacing.2'),
+        marginBottom: theme('spacing.3'),
+      },
+      h5: {
+        color: 'var(--tw-prose-headings)',
+        fontSize: theme('fontSize.sm')[0],
+        ...theme('fontSize.sm')[1],
+        fontWeight: '600',
+        marginTop: theme('spacing.6'),
+        marginBottom: theme('spacing.3'),
+      },
+      h6: {
+        color: 'var(--tw-prose-headings)',
+        fontSize: theme('fontSize.sm')[0],
+        ...theme('fontSize.sm')[1],
+        fontWeight: '600',
+        marginTop: theme('spacing.6'),
+        marginBottom: theme('spacing.3'),
       },
 
       // Media
@@ -234,53 +260,73 @@ module.exports = ({ theme }) => ({
         marginTop: theme('spacing.8'),
         marginBottom: theme('spacing.8'),
         lineHeight: theme('lineHeight.6'),
+        borderRadius: theme('borderRadius.lg'),
+        overflow: 'hidden',
+        borderWidth: '1px',
+        borderColor: 'var(--tw-prose-th-borders)',
+        boxShadow: theme('boxShadow.sm'),
       },
       thead: {
-        borderBottomWidth: '1px',
+        backgroundColor: 'var(--tw-prose-th-bg)',
+        borderBottomWidth: '2px',
         borderBottomColor: 'var(--tw-prose-th-borders)',
       },
       'thead th': {
         color: 'var(--tw-prose-headings)',
         fontWeight: '600',
         verticalAlign: 'bottom',
-        paddingRight: theme('spacing.2'),
-        paddingBottom: theme('spacing.2'),
-        paddingLeft: theme('spacing.2'),
+        paddingTop: theme('spacing.4'),
+        paddingRight: theme('spacing.4'),
+        paddingBottom: theme('spacing.4'),
+        paddingLeft: theme('spacing.4'),
+        fontSize: theme('fontSize.sm')[0],
+        textTransform: 'uppercase',
+        letterSpacing: theme('letterSpacing.wide'),
       },
       'thead th:first-child': {
-        paddingLeft: '0',
+        paddingLeft: theme('spacing.4'),
       },
       'thead th:last-child': {
-        paddingRight: '0',
+        paddingRight: theme('spacing.4'),
       },
       'tbody tr': {
         borderBottomWidth: '1px',
         borderBottomColor: 'var(--tw-prose-td-borders)',
+        transitionProperty: 'background-color',
+        transitionDuration: theme('transitionDuration.DEFAULT'),
+        transitionTimingFunction: theme('transitionTimingFunction.DEFAULT'),
+        '&:hover': {
+          backgroundColor: 'var(--tw-prose-td-bg)',
+        },
+        '&:nth-child(even)': {
+          backgroundColor: 'var(--tw-prose-td-bg)',
+        },
       },
       'tbody tr:last-child': {
         borderBottomWidth: '0',
       },
       'tbody td': {
-        verticalAlign: 'baseline',
+        verticalAlign: 'middle',
       },
       tfoot: {
-        borderTopWidth: '1px',
+        borderTopWidth: '2px',
         borderTopColor: 'var(--tw-prose-th-borders)',
+        backgroundColor: 'var(--tw-prose-td-bg)',
       },
       'tfoot td': {
         verticalAlign: 'top',
       },
       ':is(tbody, tfoot) td': {
-        paddingTop: theme('spacing.2'),
-        paddingRight: theme('spacing.2'),
-        paddingBottom: theme('spacing.2'),
-        paddingLeft: theme('spacing.2'),
+        paddingTop: theme('spacing.4'),
+        paddingRight: theme('spacing.4'),
+        paddingBottom: theme('spacing.4'),
+        paddingLeft: theme('spacing.4'),
       },
       ':is(tbody, tfoot) td:first-child': {
-        paddingLeft: '0',
+        paddingLeft: theme('spacing.4'),
       },
       ':is(tbody, tfoot) td:last-child': {
-        paddingRight: '0',
+        paddingRight: theme('spacing.4'),
       },
 
       // Inline elements
@@ -360,6 +406,12 @@ module.exports = ({ theme }) => ({
       '--tw-prose-code-ring': 'var(--tw-prose-invert-code-ring)',
       '--tw-prose-th-borders': 'var(--tw-prose-invert-th-borders)',
       '--tw-prose-td-borders': 'var(--tw-prose-invert-td-borders)',
+      '--tw-prose-th-bg': 'var(--tw-prose-invert-th-bg)',
+      '--tw-prose-td-bg': 'var(--tw-prose-invert-td-bg)',
+      blockquote: {
+        borderLeftColor: theme('colors.orange.400'),
+        backgroundColor: theme('colors.orange.900 / 0.2'),
+      },
     },
   },
 })

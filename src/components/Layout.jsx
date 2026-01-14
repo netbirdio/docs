@@ -85,6 +85,7 @@ function GitHubIcon(props) {
 
 function useTableOfContents(tableOfContents) {
   let [currentSection, setCurrentSection] = useState(tableOfContents[0]?.id)
+  let [showJumpToTop, setShowJumpToTop] = useState(false)
 
   let getHeadings = useCallback((tableOfContents) => {
     return tableOfContents
@@ -105,7 +106,10 @@ function useTableOfContents(tableOfContents) {
     if (tableOfContents.length === 0) return
     let headings = getHeadings(tableOfContents)
     function onScroll() {
-      let top = window.scrollY + 10;
+      let scrollTop = window.scrollY
+      setShowJumpToTop(scrollTop > 400)
+      
+      let top = scrollTop + 10;
       let current = headings[0]?.id
       for (let heading of headings) {
         if (top >= heading?.top) {
@@ -123,7 +127,7 @@ function useTableOfContents(tableOfContents) {
     }
   }, [getHeadings, tableOfContents])
 
-  return currentSection
+  return { currentSection, showJumpToTop }
 }
 
 export function Layout({ children, title, tableOfContents }) {
@@ -156,7 +160,12 @@ export function Layout({ children, title, tableOfContents }) {
       position: toast.POSITION.BOTTOM_RIGHT,
     });
   };
-  let currentSection = useTableOfContents(tableOfContents)
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  let { currentSection, showJumpToTop } = useTableOfContents(tableOfContents)
 
   function isActive(section) {
     if (section.id === currentSection) {
@@ -183,15 +192,15 @@ export function Layout({ children, title, tableOfContents }) {
             className="contents lg:pointer-events-none lg:fixed lg:inset-0 lg:z-40 lg:flex"
             style={{ top: bannerHeight }}
         >
-          <div className="contents lg:pointer-events-auto lg:block lg:w-72 lg:overflow-y-auto lg:border-r lg:border-zinc-900/10 lg:px-6 lg:pb-8 lg:pt-4 lg:dark:border-white/10 xl:w-80">
+          <div className="contents lg:pointer-events-auto lg:block lg:w-72 lg:overflow-y-auto lg:border-r lg:border-zinc-900/10 lg:dark:border-neutral-700/50 lg:px-6 lg:pb-8 lg:pt-4 lg:bg-white/70 lg:dark:bg-[#181A1D]/95 lg:backdrop-blur-lg xl:w-80 lg:overflow-x-visible sidebar-scroll">
             <div className="hidden lg:flex">
               <Link href="/" aria-label="Home">
                 <Logo className="h-6" />
               </Link>
             </div>
-            <Header />
             {router.route.startsWith("/ipa") ? <NavigationAPI className="hidden lg:mt-10 lg:block" tableOfContents={tableOfContents} /> : <NavigationDocs className="hidden lg:mt-10 lg:block" />}
           </div>
+          <Header />
         </header>
         <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-5">
           <main className="py-16">
@@ -211,7 +220,7 @@ export function Layout({ children, title, tableOfContents }) {
                   className="dark:hover:text-slate-300 dark:text-slate-400 text-slate-500 hover:text-slate-700 font-normal'"
               >
                 <FontAwesomeIcon icon={faPaperclip} style={iconStyle} className="icon pr-1" />
-                <text>Copy link</text>
+                <span>Copy link</span>
               </button>
             </li>
             <li key="edit-on-github">
@@ -221,19 +230,33 @@ export function Layout({ children, title, tableOfContents }) {
                   style={{display: "flex", alignItems: 'center'}}
               >
                 <FontAwesomeIcon icon={faGithub} style={iconStyle} className="icon pr-1" />
-                <text>Edit on Github</text>
+                <span>Edit on Github</span>
               </Link>
             </li>
           </ol>
           <nav aria-labelledby="on-this-page-title" className="w-80">
             {tableOfContents.length > 0 && (
               <>
-                <h2
-                  id="on-this-page-title"
-                  className="font-display text-sm font-medium text-slate-900 dark:text-white"
-                >
-                  On this page
-                </h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2
+                    id="on-this-page-title"
+                    className="font-display text-sm font-medium text-slate-900 dark:text-white"
+                  >
+                    On this page
+                  </h2>
+                  {showJumpToTop && (
+                    <button
+                      onClick={scrollToTop}
+                      className="text-xs text-slate-500 hover:text-orange-500 dark:text-slate-400 dark:hover:text-orange-400 transition-colors flex items-center gap-1"
+                      aria-label="Jump to top"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                      </svg>
+                      Top
+                    </button>
+                  )}
+                </div>
                 <ol role="list" className="mt-4 space-y-3 text-sm">
                   {tableOfContents.map((section) => (
                     <li key={section.id}>

@@ -14,9 +14,11 @@ const withMDX = nextMDX({
 })
 
 
+const isProd = process.env.NODE_ENV === 'production'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    assetPrefix: '/docs-static',
+    assetPrefix: isProd ? '/docs-static' : undefined,
     reactStrictMode: true,
     pageExtensions: ['js', 'jsx', 'ts', 'tsx', 'mdx'],
     experimental: {
@@ -128,6 +130,11 @@ const nextConfig = {
             {
                 source: '/how-to/sentinelone-edr',
                 destination: '/manage/access-control/endpoint-detection-and-response/sentinelone-edr',
+                permanent: true,
+            },
+            {
+                source: '/how-to/huntress-edr',
+                destination: '/manage/access-control/endpoint-detection-and-response/huntress-edr',
                 permanent: true,
             },
             {

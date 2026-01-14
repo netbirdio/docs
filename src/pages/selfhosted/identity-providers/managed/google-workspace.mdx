@@ -1,145 +1,176 @@
 import {Note} from "@/components/mdx";
 
-# Google Workspace with NetBird Self-Hosted
+# Google Workspace SSO with NetBird Self-Hosted
 
-This guide is a part of the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide) and explains how to integrate 
-**self-hosted** NetBird with [Google Workspace](https://workspace.google.com/).
+Use Google accounts for authentication with NetBird. This supports both personal Google accounts and Google Workspace (formerly G Suite) organizations.
+
+## Management Setup (Recommended)
+
+Add Google as an external IdP directly in the NetBird Management Dashboard. This is the simplest approach and recommended for most deployments.
+
+### Prerequisites
+
+- NetBird self-hosted with embedded IdP enabled
+- Access to [Google Cloud Console](https://console.cloud.google.com/)
+
+### Step 1: Start Creating OAuth Credentials
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Select or create a project
+3. Navigate to **APIs & Services** → **Credentials**
+4. Click **Create Credentials** → **OAuth client ID**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/1_0auth-client-id-google.png" alt="OAuth client ID" className="imagewrapper-big"/>
+</p>
+
+5. If prompted, configure the OAuth consent screen first:
+   - Choose **Internal** (for Workspace) or **External** (for any Google account)
+   - Fill in required fields (app name, support email)
+   - Add scopes: `email`, `profile`, `openid`
+   - Save and continue
+6. Back in Credentials, create the OAuth client:
+   - **Application type**: `Web application`
+   - **Name**: `NetBird`
+   - Leave redirect URIs empty for now (you'll add this in Step 3)
+
+7. **Don't click Create yet** — keep this tab open and proceed to Step 2
+
+### Step 2: Get Redirect URL from NetBird
+
+1. Open a new tab or window and log in to your NetBird Dashboard
+2. Navigate to **Settings** → **Identity Providers**
+3. Click **Add Identity Provider**
+4. Fill in the fields:
+
+| Field | Value |
+|-------|-------|
+| Type | Google |
+| Name | Google (or your preferred display name) |
+| Client ID | From Google Cloud Console (will fill after Step 3) |
+| Client Secret | From Google Cloud Console (will fill after Step 3) |
+
+5. **Copy the Redirect URL** that NetBird displays (but don't click **Add Provider** yet)
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/2_copy-redirect-google.png" alt="Copy redirect URL" className="imagewrapper-big"/>
+</p>
+
+### Step 3: Complete Google OAuth Client Setup
+
+1. Return to the Google Cloud Console tab
+2. Under **Authorized redirect URIs**, click **Add URI**
+3. Paste the redirect URL you copied from NetBird
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/3_paste-uri-google.png" alt="Paste URI" className="imagewrapper-big"/>
+</p>
+
+4. Click **Create**
+5. Note the **Client ID** and **Client Secret** — you'll need these for Step 4
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/4_0auth-client-created-google.png" alt="OAuth client created" className="imagewrapper-big"/>
+</p>
+
+### Step 4: Complete NetBird Setup
+
+1. Return to the NetBird tab
+2. Fill in the **Client ID** and **Client Secret** from Step 3
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/5_netbird-complete-google.png" alt="NetBird complete configuration" className="imagewrapper-big"/>
+</p>
+
+3. Click **Add Provider**
+
+### Step 5: Test the Connection
+
+1. Log out of NetBird Dashboard
+2. On the login page, you should see a "Google" button
+3. Click it and sign in with your Google account
+4. You should be redirected back to NetBird and logged in. Unless your user approval setting were changed you will need to log back into your local admin account to approve the user.
+
+### Restricting to Google Workspace Domains
+
+To limit authentication to specific Google Workspace domains:
+
+1. Go to **APIs & Services** → **OAuth consent screen**
+2. Under **User type**, select **Internal** (Workspace only)
+3. For external apps, verify your domain to restrict access
+
+### Configuring JWT 'groups' Claim
 
 <Note>
-Beginning with NetBird version v0.23.6 and onwards, the Google Workspace IdP manager no longer requires the creation of a custom admin role called `User and Schema Management`. 
-Instead, we are transitioning towards a more tailored role explicitly designed for managing read-only user information. 
-Consequently, you have the option to remove the previously established custom admin role and refer to the documentation to configure the admin role scope for read-only access correctly.
+**Limitation:** Google's standard OIDC implementation does not include a `groups` claim in the JWT token. Unlike other identity providers, Google only provides minimal OIDC claims (email, name, profile) and does not expose group membership through the standard OIDC flow.
 </Note>
 
-Before you start creating and configuring an Google Workspace application, ensure that you have the following:
-- An Google Workspace account: To create an Google Work application, you must have an Google Workspace. If you don't have one, sign up at https://workspace.google.com/business/signup/welcome.
-- User account with admin permissions: You must have an Google Workspace user account with the admin permissions to create and manage Google Workspace applications. If you don't have the required permissions, ask your workspace administrator to grant them to you.
-- Create new `Netbird` project in Google cloud console https://console.cloud.google.com.
-- Enable `Admin SDK API` for `Netbird` project at https://console.cloud.google.com/apis/library/admin.googleapis.com.
+To sync Google Workspace groups with NetBird, you have two options:
 
-## Step 1: Configure OAuth consent screen
-- Navigate to [OAuth consent](https://console.cloud.google.com/apis/credentials/consent) page
-- Select `Internal` User Type and click create
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/google-consent-screen-type.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
+#### Option 1: Use a Different Identity Provider (Recommended)
 
-- Fill in the form with the following values and click `SAVE AND CONTINUE`
-    - App name: `Netbird`
-    - User support email: `<administrator email address>`
-    - Authorized domain: `<your netbird domain>`
-    - Developer contact information: `<developer email address>`
-- Click `ADD OR REMOVE SCOPES`
-- Select `/auth/userinfo.email`, `/auth/userinfo.profile` and `openid` scopes and then click `UPDATE`
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/google-consent-screen-scopes.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-- Click `SAVE AND CONTINUE`
-- Verify the summary of the OAuth consent screen to ensure that everything is properly configured, and then click `BACK TO DASHBOARD`
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/google-consent-screen-summary.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
+If group-based access control is important for your deployment, consider using an identity provider that natively supports the `groups` claim:
 
-## Step 2: Create OAuth 2.0 credentials
-- Navigate to [API Credentials](https://console.cloud.google.com/apis/credentials) page
-- Click `CREATE CREDENTIALS` at the top and select `OAuth client ID`
-- Fill in the form with the following values and click `CREATE`
-    - Application type: `Web application`
-    - Name: `netbird`
-    - Authorized JavaScript origins: `https://<your netbird domain>` and `http://localhost`
-    - Authorized redirect URIs: `https://<your netbird domain>/auth`, `https://<your netbird domain>/silent-auth` and `http://localhost:53000`
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/google-oauth-client.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-- Take note of `Client ID` and `Client Secret` and click `OK`
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/google-oauth-client-created.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
+- [Keycloak](/selfhosted/identity-providers/keycloak) - Can federate with Google and add groups claims
+- [Authentik](/selfhosted/identity-providers/authentik) - Supports Google as a source with group mapping
+- [Zitadel](/selfhosted/identity-providers/zitadel) - Full OIDC support with groups
 
-## Step 3: Create service account
-- Navigate to [API Credentials](https://console.cloud.google.com/apis/credentials) page
-- Click `CREATE CREDENTIALS` at the top and select `Service account`
-- Fill in the form with the following values and click `CREATE`
-    - Service account name: `netbird`
-    - Service account ID: `netbird`
-- Take note of service account email address, we will use it later
-- Click `DONE`
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/google-service-account-create.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
+These providers can authenticate users via Google while adding proper group claims to the JWT.
 
-## Step 4: Create service account keys
-- Navigate to [API Credentials](https://console.cloud.google.com/apis/credentials) page
-- Under  `Service Accounts` click the `netbird` to edit the service account
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/google-edit-service-account.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-- Click the `Keys` tab
-- Click the `Add key` drop-down menu, then select `Create new key`
-- Select `JSON` as the Key type and click `Create`
+#### Option 2: Manual Group Management in NetBird
+
+If you don't need automatic group synchronization:
+
+1. Authenticate users via Google as configured above
+2. Manually assign users to groups in NetBird Dashboard under **Team** → **Users**
+3. Use NetBird's built-in groups for access control policies
+
+This approach works well for smaller teams where group membership doesn't change frequently.
 
 <Note>
-When you create a service account key by using the Google Cloud console, most browsers immediately download the new key and save it in a download folder on your computer.
-Read how to manage and secure your service keys [here](https://cloud.google.com/iam/docs/best-practices-for-managing-service-account-keys#temp-locations)
+Domain restrictions are configured in Google Cloud Console, not in NetBird.
 </Note>
 
-- Open downloaded json file and take note of `client_id` will be used later as `Service Account Client ID`
+---
 
-## Step 5: Grant user management admin role to service account
-- Navigate to [Admin Console](https://admin.google.com/ac/home) page
-- Select `Account` on the left menu and then click `Admin Roles`
-- Click `Create new role`
-- Fill in the form with the following values and click `CREATE`
-    - name: `User Management ReadOnly`
-    - description: `User Management ReadOnly`
-- Click `CONTINUE`
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/google-new-role-info.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
+## Standalone Setup (Advanced)
 
-- Scroll down to `Admin API privileges` and add the following privileges
-    - Users: `Read`
-- Click `CONTINUE`
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/google-privileges-review.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-- Verify preview of assigned Admin API privileges to ensure that everything is properly configured, and then click `CREATE ROLE`
-- Click `Assign service accounts`, add service account email address and then click `ADD`
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/google-assign-role.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-- Click `ASSIGN ROLE` to assign service account to `User Management ReadOnly` role
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/managed/google-workspace/google-service-account-privileges.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
+Use Google Workspace as your primary identity provider instead of NetBird's embedded IdP. This option gives you full control over authentication and user management, is recommended for experienced Google Workspace administrators as it also requires additional setup and ongoing maintenance.
 
-- Navigate to [Account Settings](https://admin.google.com/ac/accountsettings/profile?hl=en_US) page and take note of `Customer ID`
+For most deployments, the [embedded IdP](/selfhosted/identity-providers/local) is the simpler choice — it's built into NetBird, fully integrated, and requires minimal configuration to get started. For this implementation, go back up to the [Management Setup (Recommended)](#management-setup-recommended) section above.
 
-- Encode service account json key into base64 format
-    ```sh 
-    base64 -i <SERVICE_ACCOUNT_KEY_PATH>
-    ```
+For detailed instructions on the standalone setup, see the [Google Workspace SSO with NetBird Self-Hosted (Legacy)](/selfhosted/identity-providers/managed/advanced/google-workspace) documentation.
 
-- Set properties in the `setup.env` file:
-```json
-NETBIRD_DOMAIN="<YOUR_DOMAIN>"
-NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://accounts.google.com/.well-known/openid-configuration"
-NETBIRD_USE_AUTH0=false
-NETBIRD_AUTH_AUDIENCE="<OAUTH_CLIENT_ID>"
-NETBIRD_AUTH_CLIENT_ID="<OAUTH_CLIENT_ID>"
-NETBIRD_AUTH_CLIENT_SECRET="<OAUTH_CLIENT_SECRET>"
-NETBIRD_AUTH_SUPPORTED_SCOPES="openid profile email"
-NETBIRD_AUTH_REDIRECT_URI="/auth"
-NETBIRD_AUTH_SILENT_REDIRECT_URI="/silent-auth"
-NETBIRD_TOKEN_SOURCE="idToken"
+<Note>
+If you prefer to have full control over authentication, consider self-hosted alternatives like [PocketID](/selfhosted/identity-providers/pocketid).
+</Note>
 
-NETBIRD_AUTH_DEVICE_AUTH_PROVIDER="none"
+---
 
-NETBIRD_MGMT_IDP="google"
-NETBIRD_MGMT_IDP_SIGNKEY_REFRESH=true
-NETBIRD_IDP_MGMT_EXTRA_SERVICE_ACCOUNT_KEY="<BASE64_SERVICE_ACCOUNT_KEY>"
-NETBIRD_IDP_MGMT_EXTRA_CUSTOMER_ID="<GOOGLE_WORKSPACE_CUSTOMER_ID>"
-```
+## Troubleshooting
 
-## Step 6: Continue with the NetBird Self-hosting Guide
-You've configured all required resources in Google Workspace. You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).
+### "Access blocked" error
+
+- Ensure OAuth consent screen is configured correctly
+- For external apps, you may need to submit for verification or add test users
+- Check that required scopes are added
+
+### "Invalid redirect URI" error
+
+- Verify the redirect URI exactly matches what's in Google Cloud Console
+- Check for trailing slashes or HTTP vs HTTPS mismatches
+- Google is case-sensitive for redirect URIs
+
+### Users from wrong domain signing in
+
+- For Workspace, use **Internal** user type in OAuth consent screen
+- Verify domain restrictions in consent screen settings
+
+---
+
+## Related Resources
+
+- [Google Cloud Console](https://console.cloud.google.com/)
+- [Google OAuth 2.0 Documentation](https://developers.google.com/identity/protocols/oauth2)
+- [Google Workspace Admin Console](https://admin.google.com/)
+- [Embedded IdP Overview](/selfhosted/identity-providers/local)
