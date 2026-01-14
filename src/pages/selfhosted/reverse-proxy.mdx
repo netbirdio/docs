@@ -1,0 +1,409 @@
+# Reverse Proxy Configuration
+
+NetBird includes a built-in Caddy reverse proxy that handles TLS certificates automatically. However, if you already have an existing reverse proxy (Traefik, Nginx, etc.), you can configure NetBird to work with it instead.
+
+<Note>
+Not all reverse proxies are supported as NetBird uses *gRPC* for various components. Your reverse proxy must support HTTP/2 and gRPC proxying.
+</Note>
+
+## Quick Setup
+
+### New Deployments
+
+The `getting-started.sh` script supports multiple reverse proxy configurations. During initial deployment, you'll be prompted to select your reverse proxy:
+
+```
+Which reverse proxy will you use?
+  [0] Built-in Caddy (recommended - automatic TLS)
+  [1] Traefik (labels added to containers)
+  [2] Nginx (generates config template)
+  [3] Nginx Proxy Manager (generates config + instructions)
+  [4] External Caddy (generates Caddyfile snippet)
+  [5] Other/Manual (displays setup documentation)
+```
+
+The script will generate the appropriate configuration files and provide setup instructions for your chosen proxy.
+
+<Note>
+This option is only available during initial setup with `getting-started.sh`. For existing deployments, use the manual configuration templates below.
+</Note>
+
+### Existing Deployments
+
+For existing NetBird installations, use the configuration templates in the sections below to manually configure your reverse proxy.
+
+## Required Routing Endpoints
+
+All reverse proxy configurations must route the following endpoints:
+
+| Path | Protocol | Target | Notes |
+|------|----------|--------|-------|
+| `/relay*` | WebSocket | relay:80 | WebSocket upgrade required |
+| `/ws-proxy/signal*` | WebSocket | signal:80 | WebSocket upgrade required |
+| `/signalexchange.SignalExchange/*` | gRPC | signal:10000 | HTTP/2 (h2c) required |
+| `/api/*` | HTTP | management:80 | REST API |
+| `/ws-proxy/management*` | WebSocket | management:80 | WebSocket upgrade required |
+| `/management.ManagementService/*` | gRPC | management:80 | HTTP/2 (h2c) required |
+| `/oauth2/*` | HTTP | management:80 | Embedded IdP |
+| `/*` | HTTP | dashboard:80 | Catch-all for dashboard |
+
+<Note>
+The `coturn` service still needs to be directly accessible on UDP port 3478 as it handles STUN/TURN traffic.
+</Note>
+
+## Docker Compose for External Proxy
+
+When using an external reverse proxy, expose the NetBird container ports to the host:
+
+```yaml
+services:
+  dashboard:
+    image: netbirdio/dashboard:latest
+    ports:
+      - '127.0.0.1:8080:80'
+    # ... other config
+
+  signal:
+    image: netbirdio/signal:latest
+    ports:
+      - '127.0.0.1:8083:80'
+      - '127.0.0.1:10000:10000'
+    # ... other config
+
+  relay:
+    image: netbirdio/relay:latest
+    ports:
+      - '127.0.0.1:8084:80'
+    # ... other config
+
+  management:
+    image: netbirdio/management:latest
+    ports:
+      - '127.0.0.1:8081:80'
+    # ... other config
+```
+
+<Note>
+Binding to `127.0.0.1` is recommended when your reverse proxy runs on the same host. This prevents direct access to the containers and ensures all traffic goes through the proxy.
+</Note>
+
+### Container Port Reference
+
+| Service | Host Port | Container Port | Protocol |
+|---------|-----------|----------------|----------|
+| Dashboard | 8080 | 80 | HTTP |
+| Signal (HTTP) | 8083 | 80 | HTTP/WebSocket |
+| Signal (gRPC) | 10000 | 10000 | gRPC (h2c) |
+| Management | 8081 | 80 | HTTP/gRPC |
+| Relay | 8084 | 80 | WebSocket |
+
+---
+
+## Configuration Templates
+
+### Traefik
+
+For Traefik, NetBird containers are configured with Docker labels for automatic service discovery. Add the following labels to your NetBird services in `docker-compose.yml`:
+
+```yaml
+services:
+  dashboard:
+    image: netbirdio/dashboard:latest
+    networks: [traefik-network]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.netbird-dashboard.rule=Host(`netbird.example.com`)
+      - traefik.http.routers.netbird-dashboard.priority=1
+      - traefik.http.services.netbird-dashboard.loadbalancer.server.port=80
+
+  signal:
+    image: netbirdio/signal:latest
+    networks: [traefik-network]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.netbird-signal-ws.rule=Host(`netbird.example.com`) && PathPrefix(`/ws-proxy/signal`)
+      - traefik.http.routers.netbird-signal-ws.service=netbird-signal-ws
+      - traefik.http.services.netbird-signal-ws.loadbalancer.server.port=80
+      - traefik.http.routers.netbird-signal-grpc.rule=Host(`netbird.example.com`) && PathPrefix(`/signalexchange.SignalExchange/`)
+      - traefik.http.routers.netbird-signal-grpc.service=netbird-signal-grpc
+      - traefik.http.services.netbird-signal-grpc.loadbalancer.server.port=10000
+      - traefik.http.services.netbird-signal-grpc.loadbalancer.server.scheme=h2c
+
+  relay:
+    image: netbirdio/relay:latest
+    networks: [traefik-network]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.netbird-relay.rule=Host(`netbird.example.com`) && PathPrefix(`/relay`)
+      - traefik.http.services.netbird-relay.loadbalancer.server.port=80
+
+  management:
+    image: netbirdio/management:latest
+    networks: [traefik-network]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.netbird-api.rule=Host(`netbird.example.com`) && PathPrefix(`/api`)
+      - traefik.http.routers.netbird-api.service=netbird-api
+      - traefik.http.services.netbird-api.loadbalancer.server.port=80
+      - traefik.http.routers.netbird-mgmt-ws.rule=Host(`netbird.example.com`) && PathPrefix(`/ws-proxy/management`)
+      - traefik.http.routers.netbird-mgmt-ws.service=netbird-mgmt-ws
+      - traefik.http.services.netbird-mgmt-ws.loadbalancer.server.port=80
+      - traefik.http.routers.netbird-mgmt-grpc.rule=Host(`netbird.example.com`) && PathPrefix(`/management.ManagementService/`)
+      - traefik.http.routers.netbird-mgmt-grpc.service=netbird-mgmt-grpc
+      - traefik.http.services.netbird-mgmt-grpc.loadbalancer.server.port=80
+      - traefik.http.services.netbird-mgmt-grpc.loadbalancer.server.scheme=h2c
+      - traefik.http.routers.netbird-oauth2.rule=Host(`netbird.example.com`) && PathPrefix(`/oauth2`)
+      - traefik.http.routers.netbird-oauth2.service=netbird-oauth2
+      - traefik.http.services.netbird-oauth2.loadbalancer.server.port=80
+```
+
+**Traefik requirements:**
+- `providers.docker.exposedByDefault=false`
+- HTTP to HTTPS redirect (recommended)
+- Connect your Traefik container to the same Docker network as NetBird
+
+---
+
+### Nginx
+
+```nginx
+# NetBird Nginx Configuration
+# Replace netbird.example.com with your domain
+# Update SSL certificate paths
+
+upstream netbird_dashboard {
+    server 127.0.0.1:8080;
+    keepalive 10;
+}
+upstream netbird_signal {
+    server 127.0.0.1:10000;
+}
+upstream netbird_signal_ws {
+    server 127.0.0.1:8083;
+}
+upstream netbird_management {
+    server 127.0.0.1:8081;
+}
+upstream netbird_relay {
+    server 127.0.0.1:8084;
+}
+
+server {
+    listen 80;
+    server_name netbird.example.com;
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name netbird.example.com;
+
+    ssl_certificate /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
+
+    # Required for long-lived gRPC connections
+    client_header_timeout 1d;
+    client_body_timeout 1d;
+
+    # Common proxy headers
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Scheme $scheme;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # Relay (WebSocket)
+    location /relay {
+        proxy_pass http://netbird_relay;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+    }
+
+    # Signal WebSocket
+    location /ws-proxy/signal {
+        proxy_pass http://netbird_signal_ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+    }
+
+    # Signal gRPC
+    location /signalexchange.SignalExchange/ {
+        grpc_pass grpc://netbird_signal;
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+        grpc_socket_keepalive on;
+    }
+
+    # Management API
+    location /api {
+        proxy_pass http://netbird_management;
+    }
+
+    # Management WebSocket
+    location /ws-proxy/management {
+        proxy_pass http://netbird_management;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+    }
+
+    # Management gRPC
+    location /management.ManagementService/ {
+        grpc_pass grpc://netbird_management;
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+        grpc_socket_keepalive on;
+    }
+
+    # Embedded IdP OAuth2
+    location /oauth2/ {
+        proxy_pass http://netbird_management;
+    }
+
+    # Dashboard (catch-all)
+    location / {
+        proxy_pass http://netbird_dashboard;
+    }
+}
+```
+
+**Installation:**
+
+Debian/Ubuntu:
+```bash
+sudo ln -s /path/to/netbird.conf /etc/nginx/sites-available/netbird
+sudo ln -s /etc/nginx/sites-available/netbird /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+RHEL/CentOS:
+```bash
+sudo cp /path/to/netbird.conf /etc/nginx/conf.d/netbird.conf
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+---
+
+### Caddy (External)
+
+If you have an existing Caddy instance, add this block to your Caddyfile:
+
+```
+netbird.example.com {
+    # Relay (WebSocket)
+    reverse_proxy /relay* 127.0.0.1:8084
+
+    # Signal WebSocket
+    reverse_proxy /ws-proxy/signal* 127.0.0.1:8083
+
+    # Signal gRPC (h2c for plaintext HTTP/2)
+    reverse_proxy /signalexchange.SignalExchange/* h2c://127.0.0.1:10000
+
+    # Management API
+    reverse_proxy /api/* 127.0.0.1:8081
+
+    # Management WebSocket
+    reverse_proxy /ws-proxy/management* 127.0.0.1:8081
+
+    # Management gRPC
+    reverse_proxy /management.ManagementService/* h2c://127.0.0.1:8081
+
+    # Embedded IdP OAuth2
+    reverse_proxy /oauth2/* 127.0.0.1:8081
+
+    # Dashboard (catch-all)
+    reverse_proxy /* 127.0.0.1:8080
+}
+```
+
+After adding the configuration, reload Caddy:
+```bash
+sudo systemctl reload caddy
+```
+
+---
+
+### Nginx Proxy Manager
+
+Nginx Proxy Manager has limited native gRPC support. You'll need to add custom configuration via the "Advanced" tab.
+
+**1. Create a Proxy Host in NPM:**
+- Domain: `netbird.example.com`
+- Forward Hostname/IP: `127.0.0.1`
+- Forward Port: `8080`
+- Enable: Websockets Support, Block Common Exploits
+- SSL: Request or use existing certificate
+
+**2. Add Custom Locations for each path:**
+- `/relay` → `127.0.0.1:8084` (enable Websockets)
+- `/ws-proxy/signal` → `127.0.0.1:8083` (enable Websockets)
+- `/api` → `127.0.0.1:8081`
+- `/ws-proxy/management` → `127.0.0.1:8081` (enable Websockets)
+- `/oauth2` → `127.0.0.1:8081`
+
+**3. Paste into the "Advanced" tab:**
+
+```nginx
+# Required for long-lived gRPC connections
+client_header_timeout 1d;
+client_body_timeout 1d;
+
+# gRPC for Signal service
+location /signalexchange.SignalExchange/ {
+    grpc_pass grpc://127.0.0.1:10000;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+
+# gRPC for Management service
+location /management.ManagementService/ {
+    grpc_pass grpc://127.0.0.1:8081;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+```
+
+---
+
+## Troubleshooting
+
+### gRPC connections failing
+
+- Ensure your reverse proxy supports HTTP/2 and gRPC
+- Check that `h2c` (plaintext HTTP/2) is correctly configured for gRPC upstreams
+- Verify timeout settings are long enough (gRPC connections can be long-lived)
+
+### WebSocket connections failing
+
+- Ensure WebSocket upgrade headers are passed through
+- Check that `Connection: Upgrade` and `Upgrade: websocket` headers are preserved
+
+### SSL/TLS certificate issues
+
+- Verify your certificates are valid and not expired
+- Check certificate paths in your configuration
+- For Let's Encrypt, ensure ports 80 and 443 are accessible for validation
+
+### Dashboard loads but API calls fail
+
+- Check that `/api/*` routes are correctly configured
+- Verify the management container is running: `docker compose ps management`
+- Check management logs: `docker compose logs management`
+
+### Signal or Relay connections failing
+
+- Verify gRPC routes are using `h2c://` (plaintext HTTP/2)
+- Check that WebSocket routes have proper upgrade handling
+- Ensure coturn (STUN/TURN) is accessible on UDP port 3478
+
+For more help, see the [Troubleshooting guide](/selfhosted/troubleshooting) or reach out on [Slack](/slack-url).
