@@ -14,9 +14,11 @@ const withMDX = nextMDX({
 })
 
 
+const isProd = process.env.NODE_ENV === 'production'
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    assetPrefix: '/docs-static',
+    assetPrefix: isProd ? '/docs-static' : undefined,
     reactStrictMode: true,
     pageExtensions: ['js', 'jsx', 'ts', 'tsx', 'mdx'],
     experimental: {
