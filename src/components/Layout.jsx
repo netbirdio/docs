@@ -220,7 +220,7 @@ export function Layout({ children, title, tableOfContents }) {
                   className="dark:hover:text-slate-300 dark:text-slate-400 text-slate-500 hover:text-slate-700 font-normal'"
               >
                 <FontAwesomeIcon icon={faPaperclip} style={iconStyle} className="icon pr-1" />
-                <text>Copy link</text>
+                <span>Copy link</span>
               </button>
             </li>
             <li key="edit-on-github">
@@ -230,7 +230,7 @@ export function Layout({ children, title, tableOfContents }) {
                   style={{display: "flex", alignItems: 'center'}}
               >
                 <FontAwesomeIcon icon={faGithub} style={iconStyle} className="icon pr-1" />
-                <text>Edit on Github</text>
+                <span>Edit on Github</span>
               </Link>
             </li>
           </ol>
