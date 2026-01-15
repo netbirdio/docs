@@ -314,6 +314,7 @@ export const docsNavigation = [
                 ]
             },
             { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
+            { title: 'Environment Variables', href: '/selfhosted/environment-variables' },
             { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store' },
             { title: 'Management Postgres Store', href: '/selfhosted/postgres-store' },
             { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store' },
