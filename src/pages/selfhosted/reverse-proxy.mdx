@@ -103,7 +103,18 @@ Binding to `127.0.0.1` is recommended when your reverse proxy runs on the same h
 
 ### Traefik
 
-For Traefik, NetBird containers are configured with Docker labels for automatic service discovery. Add the following labels to your NetBird services in `docker-compose.yml`:
+For Traefik, NetBird containers are configured with Docker labels for automatic service discovery. The `getting-started.sh` script will prompt for your Traefik configuration:
+
+- **External network**: The Docker network your Traefik container uses
+- **HTTPS entrypoint**: Your Traefik entrypoint for HTTPS traffic (commonly `websecure`)
+- **Certificate resolver**: Your Traefik certresolver for automatic TLS (e.g., `letsencrypt`)
+
+#### Complete Docker Compose with Traefik Labels
+
+Add the following labels to your NetBird services in `docker-compose.yml`. Replace:
+- `netbird.example.com` with your domain
+- `websecure` with your HTTPS entrypoint name
+- `letsencrypt` with your certificate resolver name (or remove the certresolver lines if handling TLS externally)
 
 ```yaml
 services:
@@ -113,6 +124,9 @@ services:
     labels:
       - traefik.enable=true
       - traefik.http.routers.netbird-dashboard.rule=Host(`netbird.example.com`)
+      - traefik.http.routers.netbird-dashboard.entrypoints=websecure
+      - traefik.http.routers.netbird-dashboard.tls=true
+      - traefik.http.routers.netbird-dashboard.tls.certresolver=letsencrypt
       - traefik.http.routers.netbird-dashboard.priority=1
       - traefik.http.services.netbird-dashboard.loadbalancer.server.port=80
 
@@ -121,10 +135,18 @@ services:
     networks: [traefik-network]
     labels:
       - traefik.enable=true
+      # WebSocket router
       - traefik.http.routers.netbird-signal-ws.rule=Host(`netbird.example.com`) && PathPrefix(`/ws-proxy/signal`)
+      - traefik.http.routers.netbird-signal-ws.entrypoints=websecure
+      - traefik.http.routers.netbird-signal-ws.tls=true
+      - traefik.http.routers.netbird-signal-ws.tls.certresolver=letsencrypt
       - traefik.http.routers.netbird-signal-ws.service=netbird-signal-ws
       - traefik.http.services.netbird-signal-ws.loadbalancer.server.port=80
+      # gRPC router
       - traefik.http.routers.netbird-signal-grpc.rule=Host(`netbird.example.com`) && PathPrefix(`/signalexchange.SignalExchange/`)
+      - traefik.http.routers.netbird-signal-grpc.entrypoints=websecure
+      - traefik.http.routers.netbird-signal-grpc.tls=true
+      - traefik.http.routers.netbird-signal-grpc.tls.certresolver=letsencrypt
       - traefik.http.routers.netbird-signal-grpc.service=netbird-signal-grpc
       - traefik.http.services.netbird-signal-grpc.loadbalancer.server.port=10000
       - traefik.http.services.netbird-signal-grpc.loadbalancer.server.scheme=h2c
@@ -135,6 +157,9 @@ services:
     labels:
       - traefik.enable=true
       - traefik.http.routers.netbird-relay.rule=Host(`netbird.example.com`) && PathPrefix(`/relay`)
+      - traefik.http.routers.netbird-relay.entrypoints=websecure
+      - traefik.http.routers.netbird-relay.tls=true
+      - traefik.http.routers.netbird-relay.tls.certresolver=letsencrypt
       - traefik.http.services.netbird-relay.loadbalancer.server.port=80
 
   management:
@@ -142,29 +167,245 @@ services:
     networks: [traefik-network]
     labels:
       - traefik.enable=true
+      # API router
       - traefik.http.routers.netbird-api.rule=Host(`netbird.example.com`) && PathPrefix(`/api`)
+      - traefik.http.routers.netbird-api.entrypoints=websecure
+      - traefik.http.routers.netbird-api.tls=true
+      - traefik.http.routers.netbird-api.tls.certresolver=letsencrypt
       - traefik.http.routers.netbird-api.service=netbird-api
       - traefik.http.services.netbird-api.loadbalancer.server.port=80
+      # Management WebSocket router
       - traefik.http.routers.netbird-mgmt-ws.rule=Host(`netbird.example.com`) && PathPrefix(`/ws-proxy/management`)
+      - traefik.http.routers.netbird-mgmt-ws.entrypoints=websecure
+      - traefik.http.routers.netbird-mgmt-ws.tls=true
+      - traefik.http.routers.netbird-mgmt-ws.tls.certresolver=letsencrypt
       - traefik.http.routers.netbird-mgmt-ws.service=netbird-mgmt-ws
       - traefik.http.services.netbird-mgmt-ws.loadbalancer.server.port=80
+      # Management gRPC router
       - traefik.http.routers.netbird-mgmt-grpc.rule=Host(`netbird.example.com`) && PathPrefix(`/management.ManagementService/`)
+      - traefik.http.routers.netbird-mgmt-grpc.entrypoints=websecure
+      - traefik.http.routers.netbird-mgmt-grpc.tls=true
+      - traefik.http.routers.netbird-mgmt-grpc.tls.certresolver=letsencrypt
       - traefik.http.routers.netbird-mgmt-grpc.service=netbird-mgmt-grpc
       - traefik.http.services.netbird-mgmt-grpc.loadbalancer.server.port=80
       - traefik.http.services.netbird-mgmt-grpc.loadbalancer.server.scheme=h2c
+      # OAuth2 router (embedded IdP)
       - traefik.http.routers.netbird-oauth2.rule=Host(`netbird.example.com`) && PathPrefix(`/oauth2`)
+      - traefik.http.routers.netbird-oauth2.entrypoints=websecure
+      - traefik.http.routers.netbird-oauth2.tls=true
+      - traefik.http.routers.netbird-oauth2.tls.certresolver=letsencrypt
       - traefik.http.routers.netbird-oauth2.service=netbird-oauth2
       - traefik.http.services.netbird-oauth2.loadbalancer.server.port=80
+
+networks:
+  traefik-network:
+    external: true
 ```
 
-**Traefik requirements:**
-- `providers.docker.exposedByDefault=false`
-- HTTP to HTTPS redirect (recommended)
-- Connect your Traefik container to the same Docker network as NetBird
+#### Traefik Configuration Requirements
+
+Your Traefik instance must have the following configured:
+
+**1. HTTPS Entrypoint** (listening on port 443):
+```yaml
+# In traefik.yml or as command args
+entryPoints:
+  websecure:
+    address: ":443"
+```
+
+**2. Certificate Resolver** (for automatic Let's Encrypt certificates):
+```yaml
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: your-email@example.com
+      storage: /letsencrypt/acme.json
+      httpChallenge:
+        entryPoint: web
+```
+
+**3. Docker Provider** with exposedByDefault disabled:
+```yaml
+providers:
+  docker:
+    exposedByDefault: false
+```
+
+**4. HTTP to HTTPS Redirect** (recommended):
+```yaml
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+```
+
+#### Example Traefik Docker Compose
+
+If you don't have Traefik set up yet, here's a complete example:
+
+```yaml
+services:
+  traefik:
+    image: traefik:v3.2
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedByDefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.email=your-email@example.com"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Traefik dashboard (optional)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./letsencrypt:/letsencrypt
+    networks:
+      - traefik-network
+
+networks:
+  traefik-network:
+    name: traefik-network
+```
+
+<Note>
+When using `getting-started.sh` with Traefik, the script will ask for your network name, entrypoint, and certresolver. It will then generate a docker-compose.yml with all the correct labels pre-configured.
+</Note>
 
 ---
 
 ### Nginx
+
+#### Nginx running in Docker
+
+If Nginx is running in Docker, the easiest approach is to have NetBird join the same Docker network. The `getting-started.sh` script will ask for your Nginx network name and configure everything automatically.
+
+```nginx
+# NetBird Nginx Configuration (Docker network)
+# Uses container names for upstream servers
+
+upstream netbird_dashboard {
+    server netbird-dashboard:80;
+    keepalive 10;
+}
+upstream netbird_signal {
+    server netbird-signal:10000;
+}
+upstream netbird_signal_ws {
+    server netbird-signal:80;
+}
+upstream netbird_management {
+    server netbird-management:80;
+}
+upstream netbird_relay {
+    server netbird-relay:80;
+}
+
+server {
+    listen 80;
+    server_name netbird.example.com;
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name netbird.example.com;
+
+    ssl_certificate /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
+
+    # Required for long-lived gRPC connections
+    client_header_timeout 1d;
+    client_body_timeout 1d;
+
+    # Common proxy headers
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Scheme $scheme;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # Relay (WebSocket)
+    location /relay {
+        proxy_pass http://netbird_relay;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 1d;
+    }
+
+    # Signal WebSocket
+    location /ws-proxy/signal {
+        proxy_pass http://netbird_signal_ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 1d;
+    }
+
+    # Signal gRPC
+    location /signalexchange.SignalExchange/ {
+        grpc_pass grpc://netbird_signal;
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+        grpc_socket_keepalive on;
+    }
+
+    # Management API
+    location /api/ {
+        proxy_pass http://netbird_management;
+        proxy_set_header Host $host;
+    }
+
+    # Management WebSocket
+    location /ws-proxy/management {
+        proxy_pass http://netbird_management;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 1d;
+    }
+
+    # Management gRPC
+    location /management.ManagementService/ {
+        grpc_pass grpc://netbird_management;
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+        grpc_socket_keepalive on;
+    }
+
+    # Embedded IdP OAuth2
+    location /oauth2/ {
+        proxy_pass http://netbird_management;
+        proxy_set_header Host $host;
+    }
+
+    # Dashboard (catch-all)
+    location / {
+        proxy_pass http://netbird_dashboard;
+    }
+}
+```
+
+#### Nginx running on host (not in Docker)
+
+If Nginx is installed directly on the host, use localhost addresses:
 
 ```nginx
 # NetBird Nginx Configuration
@@ -222,6 +463,7 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "Upgrade";
         proxy_set_header Host $host;
+        proxy_read_timeout 1d;
     }
 
     # Signal WebSocket
@@ -231,6 +473,7 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "Upgrade";
         proxy_set_header Host $host;
+        proxy_read_timeout 1d;
     }
 
     # Signal gRPC
@@ -242,8 +485,9 @@ server {
     }
 
     # Management API
-    location /api {
+    location /api/ {
         proxy_pass http://netbird_management;
+        proxy_set_header Host $host;
     }
 
     # Management WebSocket
@@ -253,6 +497,7 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "Upgrade";
         proxy_set_header Host $host;
+        proxy_read_timeout 1d;
     }
 
     # Management gRPC
@@ -266,6 +511,7 @@ server {
     # Embedded IdP OAuth2
     location /oauth2/ {
         proxy_pass http://netbird_management;
+        proxy_set_header Host $host;
     }
 
     # Dashboard (catch-all)
@@ -294,7 +540,41 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### Caddy (External)
 
-If you have an existing Caddy instance, add this block to your Caddyfile:
+#### Caddy running in Docker
+
+If Caddy is running in Docker, the easiest approach is to have NetBird join the same Docker network. The `getting-started.sh` script will ask for your Caddy network name and configure everything automatically.
+
+```
+netbird.example.com {
+    # Relay (WebSocket)
+    reverse_proxy /relay* netbird-relay:80
+
+    # Signal WebSocket
+    reverse_proxy /ws-proxy/signal* netbird-signal:80
+
+    # Signal gRPC (h2c for plaintext HTTP/2)
+    reverse_proxy /signalexchange.SignalExchange/* h2c://netbird-signal:10000
+
+    # Management API
+    reverse_proxy /api/* netbird-management:80
+
+    # Management WebSocket
+    reverse_proxy /ws-proxy/management* netbird-management:80
+
+    # Management gRPC
+    reverse_proxy /management.ManagementService/* h2c://netbird-management:80
+
+    # Embedded IdP OAuth2
+    reverse_proxy /oauth2/* netbird-management:80
+
+    # Dashboard (catch-all)
+    reverse_proxy /* netbird-dashboard:80
+}
+```
+
+#### Caddy running on host (not in Docker)
+
+If Caddy is installed directly on the host, use localhost addresses:
 
 ```
 netbird.example.com {
@@ -333,28 +613,184 @@ sudo systemctl reload caddy
 
 ### Nginx Proxy Manager
 
-Nginx Proxy Manager has limited native gRPC support. You'll need to add custom configuration via the "Advanced" tab.
+Nginx Proxy Manager requires all NetBird routing to be configured via the "Advanced" tab. The Custom Locations feature doesn't properly handle path prefixes.
+
+<Note>
+NPM requires backend services to be running before you can create proxy hosts. The `getting-started.sh` script will start NetBird containers first, then display the configuration instructions.
+</Note>
+
+#### NPM running in Docker (recommended)
+
+If NPM is running in Docker, the easiest approach is to have NetBird join the same Docker network. The script will ask for your NPM network name and configure everything automatically.
+
+**1. Create a Proxy Host in NPM:**
+- Domain: `netbird.example.com`
+- Forward Hostname/IP: `netbird-dashboard`
+- Forward Port: `80`
+- Block Common Exploits: enabled
+
+**2. SSL tab:**
+- Request or select existing certificate
+- **Enable "HTTP/2 Support"** (required for gRPC)
+
+**3. Advanced tab - paste this configuration:**
+
+```nginx
+# Required for long-lived connections (gRPC and WebSocket)
+client_header_timeout 1d;
+client_body_timeout 1d;
+
+# Relay WebSocket
+location /relay {
+    proxy_pass http://netbird-relay:80;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# Signal WebSocket
+location /ws-proxy/signal {
+    proxy_pass http://netbird-signal:80;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# Management WebSocket
+location /ws-proxy/management {
+    proxy_pass http://netbird-management:80;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# API routes
+location /api/ {
+    proxy_pass http://netbird-management:80;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# OAuth2/IdP routes
+location /oauth2/ {
+    proxy_pass http://netbird-management:80;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# gRPC for Signal service
+location /signalexchange.SignalExchange/ {
+    grpc_pass grpc://netbird-signal:10000;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+
+# gRPC for Management service
+location /management.ManagementService/ {
+    grpc_pass grpc://netbird-management:80;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+```
+
+#### NPM running on host (not in Docker)
+
+If NPM is installed directly on the host, use localhost addresses:
 
 **1. Create a Proxy Host in NPM:**
 - Domain: `netbird.example.com`
 - Forward Hostname/IP: `127.0.0.1`
 - Forward Port: `8080`
-- Enable: Websockets Support, Block Common Exploits
-- SSL: Request or use existing certificate
+- Block Common Exploits: enabled
 
-**2. Add Custom Locations for each path:**
-- `/relay` → `127.0.0.1:8084` (enable Websockets)
-- `/ws-proxy/signal` → `127.0.0.1:8083` (enable Websockets)
-- `/api` → `127.0.0.1:8081`
-- `/ws-proxy/management` → `127.0.0.1:8081` (enable Websockets)
-- `/oauth2` → `127.0.0.1:8081`
+**2. SSL tab:**
+- Request or select existing certificate
+- **Enable "HTTP/2 Support"** (required for gRPC)
 
-**3. Paste into the "Advanced" tab:**
+**3. Advanced tab - paste this configuration:**
 
 ```nginx
-# Required for long-lived gRPC connections
+# Required for long-lived connections (gRPC and WebSocket)
 client_header_timeout 1d;
 client_body_timeout 1d;
+
+# Relay WebSocket
+location /relay {
+    proxy_pass http://127.0.0.1:8084;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# Signal WebSocket
+location /ws-proxy/signal {
+    proxy_pass http://127.0.0.1:8083;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# Management WebSocket
+location /ws-proxy/management {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# API routes
+location /api/ {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# OAuth2/IdP routes
+location /oauth2/ {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
 
 # gRPC for Signal service
 location /signalexchange.SignalExchange/ {
@@ -380,6 +816,7 @@ location /management.ManagementService/ {
 ### gRPC connections failing
 
 - Ensure your reverse proxy supports HTTP/2 and gRPC
+- **Nginx Proxy Manager**: Enable "HTTP/2 Support" in the SSL tab
 - Check that `h2c` (plaintext HTTP/2) is correctly configured for gRPC upstreams
 - Verify timeout settings are long enough (gRPC connections can be long-lived)
 
