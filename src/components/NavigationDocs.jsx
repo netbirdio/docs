@@ -165,6 +165,7 @@ export const docsNavigation = [
                     { title: 'Configuring Nameservers', href: '/manage/dns/nameserver-groups' },
                     { title: 'DNS Settings', href: '/manage/dns/dns-settings' },
                     { title: 'Custom Zones', href: '/manage/dns/custom-zones' },
+                    { title: 'DNS Aliases for Routed Networks', href: '/manage/dns/dns-aliases-for-routed-networks' },
                     { title: 'DNS Troubleshooting', href: '/manage/dns/troubleshooting' },
                 ]
             },
