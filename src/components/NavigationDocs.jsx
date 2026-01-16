@@ -126,6 +126,7 @@ export const docsNavigation = [
                             { title: 'Microsoft Intune', href: '/manage/access-control/endpoint-detection-and-response/intune-mdm' },
                             { title: 'SentinelOne Singularity', href: '/manage/access-control/endpoint-detection-and-response/sentinelone-edr' },
                             { title: 'Huntress', href: '/manage/access-control/endpoint-detection-and-response/huntress-edr' },
+                            { title: 'Force Approval', href: '/manage/access-control/endpoint-detection-and-response/force-approval' },
                         ]
                     },
                 ]
