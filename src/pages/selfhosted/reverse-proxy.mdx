@@ -536,6 +536,109 @@ sudo cp /path/to/netbird.conf /etc/nginx/conf.d/netbird.conf
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
+#### TLS Certificate Setup for Nginx
+
+<Note>
+**Important difference:** Unlike Caddy which obtains and renews TLS certificates automatically, Nginx requires manual certificate setup and configuration.
+</Note>
+
+You'll need to obtain SSL/TLS certificates and update the certificate paths in your Nginx configuration. Here are the most common options:
+
+**Option 1: Let's Encrypt with Certbot (Recommended)**
+
+Let's Encrypt provides free, automated TLS certificates with automatic renewal.
+
+1. Install certbot:
+```bash
+# Debian/Ubuntu
+sudo apt install certbot python3-certbot-nginx
+
+# RHEL/CentOS
+sudo yum install certbot python3-certbot-nginx
+```
+
+2. Obtain certificate:
+```bash
+# If Nginx is already running
+sudo certbot certonly --nginx -d netbird.example.com
+
+# If Nginx isn't running yet (standalone mode)
+sudo certbot certonly --standalone -d netbird.example.com
+```
+
+3. Update your Nginx config with the certificate paths:
+```nginx
+ssl_certificate /etc/letsencrypt/live/netbird.example.com/fullchain.pem;
+ssl_certificate_key /etc/letsencrypt/live/netbird.example.com/privkey.pem;
+```
+
+4. Set up automatic renewal:
+```bash
+# Certbot automatically installs a systemd timer for renewal
+# Test the renewal process:
+sudo certbot renew --dry-run
+```
+
+<Note>
+**Requirements for Let's Encrypt:**
+- Your domain must point to your server's public IP
+- Port 80 must be accessible from the internet for certificate validation
+- Certificates are valid for 90 days and renewed automatically by certbot
+</Note>
+
+**Option 2: Let's Encrypt with acme.sh**
+
+[acme.sh](https://github.com/acmesh-official/acme.sh) is a lightweight alternative to certbot:
+
+```bash
+# Install acme.sh
+curl https://get.acme.sh | sh
+
+# Issue certificate
+~/.acme.sh/acme.sh --issue -d netbird.example.com --nginx
+
+# Update Nginx config with paths:
+# ssl_certificate /root/.acme.sh/netbird.example.com/fullchain.cer;
+# ssl_certificate_key /root/.acme.sh/netbird.example.com/netbird.example.com.key;
+```
+
+**Option 3: Custom/Commercial Certificates**
+
+If you have certificates from another provider:
+
+1. Place your certificate files on the server:
+```bash
+sudo cp fullchain.pem /etc/ssl/certs/netbird.crt
+sudo cp privkey.pem /etc/ssl/private/netbird.key
+sudo chmod 600 /etc/ssl/private/netbird.key
+```
+
+2. Update your Nginx config:
+```nginx
+ssl_certificate /etc/ssl/certs/netbird.crt;
+ssl_certificate_key /etc/ssl/private/netbird.key;
+```
+
+**TLS Best Practices**
+
+The generated Nginx configurations include recommended TLS settings:
+
+```nginx
+# Use modern TLS protocols only
+ssl_protocols TLSv1.2 TLSv1.3;
+
+# Let clients choose the best cipher
+ssl_prefer_server_ciphers off;
+
+# Strong cipher suites
+ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+```
+
+These settings ensure:
+- Only TLS 1.2 and 1.3 are allowed (older protocols like TLS 1.0/1.1 are disabled)
+- Modern cipher suites that support forward secrecy
+- Compatibility with all modern browsers and NetBird clients
+
 ---
 
 ### Caddy (External)
