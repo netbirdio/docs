@@ -26,7 +26,7 @@ const nextConfig = {
         return [
             {
                 source: '/slack-url',
-                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-3i1ppsk7o-pJUUiC1ZcxcjNR_A3EUr6w',
+                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-3no4al9zm-Hljj_9F7QdggIebTk2kyUw',
                 permanent: false,
             },
             {
