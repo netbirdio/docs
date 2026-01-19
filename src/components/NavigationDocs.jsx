@@ -291,7 +291,7 @@ export const docsNavigation = [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
             {
                 title: 'Authentication',
-                isOpen: false,
+                isOpen: true,
                 links: [
                     { title: 'Authentication and IdPs', href: '/selfhosted/identity-providers' },
                     { title: 'Local User Management', href: '/selfhosted/identity-providers/local' },
@@ -313,6 +313,7 @@ export const docsNavigation = [
                             { title: 'Microsoft Entra ID', href: '/selfhosted/identity-providers/managed/microsoft-entra-id' },
                             { title: 'JumpCloud', href: '/selfhosted/identity-providers/managed/jumpcloud' },
                             { title: 'Auth0', href: '/selfhosted/identity-providers/managed/auth0' },
+                            { title: 'Duo', href: '/selfhosted/identity-providers/managed/duo' },
                             { title: 'Okta', href: '/selfhosted/identity-providers/managed/okta' },
                         ]
                     },
