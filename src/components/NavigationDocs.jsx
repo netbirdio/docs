@@ -161,6 +161,7 @@ export const docsNavigation = [
                 title: 'DNS',
                 isOpen: false,
                 links: [
+                    { title: 'Quickstart', href: '/manage/dns/private-dns-behind-routing-peers' },
                     { title: 'Overview', href: '/manage/dns' },
                     { title: 'Configuring Nameservers', href: '/manage/dns/nameserver-groups' },
                     { title: 'DNS Settings', href: '/manage/dns/dns-settings' },
