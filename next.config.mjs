@@ -508,6 +508,11 @@ const nextConfig = {
                 destination: '/help/report-bug-issues',
                 permanent: true,
             },
+            {
+                source: '/manage/dns/zones',
+                destination: '/manage/dns/custom-zones',
+                permanent: true,
+            },
         ]
     },
     rewrites: async () => {
