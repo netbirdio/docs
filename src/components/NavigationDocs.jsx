@@ -233,7 +233,9 @@ export const docsNavigation = [
                     { title: 'Authentication', href: '/manage/settings/enforce-periodic-user-authentication' },
                     { title: 'Multi-Factor Authentication', href: '/manage/settings/multi-factor-authentication' },
                     { title: 'Delete Account', href: '/manage/settings/delete-account' },
-                    { title: 'Plans and Billing', href: '/manage/settings/plans-and-billing' }
+                    { title: 'Plans and Billing', href: '/manage/settings/plans-and-billing' },
+                    { title: 'Auto Update', href: '/manage/peers/auto-update' },
+                    { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                 ]
             },
             {
