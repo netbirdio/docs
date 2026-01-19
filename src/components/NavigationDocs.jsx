@@ -161,9 +161,12 @@ export const docsNavigation = [
                 title: 'DNS',
                 isOpen: false,
                 links: [
+                    { title: 'Quickstart', href: '/manage/dns/private-dns-behind-routing-peers' },
                     { title: 'Overview', href: '/manage/dns' },
                     { title: 'Configuring Nameservers', href: '/manage/dns/nameserver-groups' },
                     { title: 'DNS Settings', href: '/manage/dns/dns-settings' },
+                    { title: 'Custom Zones', href: '/manage/dns/custom-zones' },
+                    { title: 'DNS Aliases for Routed Networks', href: '/manage/dns/dns-aliases-for-routed-networks' },
                     { title: 'DNS Troubleshooting', href: '/manage/dns/troubleshooting' },
                 ]
             },
@@ -230,7 +233,9 @@ export const docsNavigation = [
                     { title: 'Authentication', href: '/manage/settings/enforce-periodic-user-authentication' },
                     { title: 'Multi-Factor Authentication', href: '/manage/settings/multi-factor-authentication' },
                     { title: 'Delete Account', href: '/manage/settings/delete-account' },
-                    { title: 'Plans and Billing', href: '/manage/settings/plans-and-billing' }
+                    { title: 'Plans and Billing', href: '/manage/settings/plans-and-billing' },
+                    { title: 'Auto Update', href: '/manage/peers/auto-update' },
+                    { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                 ]
             },
             {
@@ -313,7 +318,8 @@ export const docsNavigation = [
                     },
                 ]
             },
-            { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
+            { title: 'Reverse Proxy', href: '/selfhosted/reverse-proxy' },
+            { title: 'Advanced Guide', href: '/selfhosted/selfhosted-guide' },
             { title: 'Environment Variables', href: '/selfhosted/environment-variables' },
             { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store' },
             { title: 'Management Postgres Store', href: '/selfhosted/postgres-store' },

@@ -14,11 +14,9 @@ const withMDX = nextMDX({
 })
 
 
-const isProd = process.env.NODE_ENV === 'production'
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    assetPrefix: isProd ? '/docs-static' : undefined,
+    assetPrefix: undefined,
     reactStrictMode: true,
     pageExtensions: ['js', 'jsx', 'ts', 'tsx', 'mdx'],
     experimental: {
@@ -28,7 +26,7 @@ const nextConfig = {
         return [
             {
                 source: '/slack-url',
-                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-3i1ppsk7o-pJUUiC1ZcxcjNR_A3EUr6w',
+                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-3no4al9zm-Hljj_9F7QdggIebTk2kyUw',
                 permanent: false,
             },
             {
@@ -508,6 +506,11 @@ const nextConfig = {
             {
                 source: '/how-to/report-bug-issues',
                 destination: '/help/report-bug-issues',
+                permanent: true,
+            },
+            {
+                source: '/manage/dns/zones',
+                destination: '/manage/dns/custom-zones',
                 permanent: true,
             },
         ]
