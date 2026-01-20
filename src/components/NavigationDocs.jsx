@@ -299,6 +299,7 @@ export const docsNavigation = [
                         title: 'Self-hosted IdPs',
                         isOpen: true,
                         links: [
+                            { title: 'Generic OIDC', href: '/selfhosted/identity-providers/generic-oidc' },
                             { title: 'Zitadel', href: '/selfhosted/identity-providers/zitadel' },
                             { title: 'Authentik', href: '/selfhosted/identity-providers/authentik' },
                             { title: 'Keycloak', href: '/selfhosted/identity-providers/keycloak' },
