@@ -1,5 +1,70 @@
 # Troubleshooting
+
 This page will help with various issues when self-hosting NetBird.
+
+## Embedded IdP Issues
+
+### Setup page not accessible
+
+**Problem**: You can't access the `/setup` page to create the first user.
+
+**Solutions**:
+- The `/setup` page is only available when no users exist. If you've already created a user, use the regular login page.
+- Check that the embedded IdP is enabled in your configuration.
+- Verify the Management service is running: `docker compose logs management`
+
+### "Setup already completed" error (HTTP 412)
+
+**Problem**: The setup endpoint returns a 412 error.
+
+**Solution**: Setup has already been completed. The first user was already created. Use the regular login page to sign in.
+
+### Password not working after user creation
+
+**Problem**: You created a user but the password doesn't work.
+
+**Solutions**:
+- Passwords are shown only once during user creation. If you didn't save it, you'll need to delete and recreate the user.
+- Via API, you can create a new user with a new password.
+- For the owner account, you may need to reset the database if no other admins exist.
+
+### SSO connector not appearing on login page
+
+**Problem**: You configured an identity provider but it doesn't show on the login page.
+
+**Solutions**:
+1. Verify the connector was saved: Go to **Settings** → **Identity Providers**
+2. Check that the redirect URL is correctly configured in your IdP
+3. Review Management service logs for configuration errors: `docker compose logs management`
+4. Ensure the IdP application has the correct redirect URI from NetBird
+
+### "Invalid redirect URI" error from IdP
+
+**Problem**: When clicking an SSO button, the IdP returns an invalid redirect URI error.
+
+**Solutions**:
+1. Copy the exact redirect URL from NetBird (shown after saving the connector)
+2. Add it to your IdP's allowed redirect URIs
+3. Check for trailing slashes or typos
+4. Some IdPs are case-sensitive
+
+### Identity Providers tab not visible
+
+**Problem**: You don't see the Identity Providers tab in Settings.
+
+**Solution**: This tab is only visible when the embedded IdP is enabled. Check your deployment configuration:
+- For quickstart deployments, the embedded IdP should be enabled by default
+- For advanced deployments, ensure `EmbeddedIdP.Enabled` is set to `true` in management.json
+
+### Users not syncing from SSO provider
+
+**Problem**: Users who authenticate via SSO don't appear in the user list.
+
+**Solutions**:
+- Users appear after their first successful login, not immediately after connector configuration
+- Check that the SSO flow completes successfully (user should land on Dashboard)
+- Review Management logs for any token validation errors
+
 ## Debugging TURN connections
 
 In the case that the peer-to-peer connection is not an option then the peer will use the TURN server for the secure connection establishment. If the connection is not possible even with TURN (Relay),
@@ -21,3 +86,100 @@ You should see an output similar to the following:
 </p>
 Where you have the following types: `host` (local address), `srflx` (STUN reflexive address), `relay`
 (TURN relay address). If `srflx` and `relay` are not present then the TURN server is not working or not accessible and you should review the required ports in the [requirements section](/selfhosted/selfhosted-guide#requirements).
+
+## Dashboard Issues
+
+### Dashboard shows blank page
+
+**Problem**: The Dashboard loads but shows a blank page or errors.
+
+**Solutions**:
+1. Check browser console for JavaScript errors (F12 → Console)
+2. Verify the Dashboard can reach the Management API
+3. Check CORS configuration if running behind a custom reverse proxy
+4. Clear browser cache and try again
+
+### "Unauthorized" or "403" errors
+
+**Problem**: API calls return unauthorized or forbidden errors.
+
+**Solutions**:
+1. Verify your authentication token is valid
+2. Check that the user has appropriate permissions
+3. For API access, ensure you're using a valid Personal Access Token (PAT)
+4. Review Management service logs for detailed error information
+
+## Certificate Issues
+
+### Let's Encrypt certificate not renewing
+
+**Problem**: SSL certificate expires and doesn't auto-renew.
+
+**Solutions**:
+1. Ensure port 80 is accessible for ACME challenge
+2. Check Caddy logs: `docker compose logs caddy`
+3. Verify the domain points to the correct IP
+4. Manually trigger renewal: `docker compose exec caddy caddy reload`
+
+### Certificate errors with custom reverse proxy
+
+**Problem**: SSL errors when using your own reverse proxy.
+
+**Solutions**:
+1. Ensure your reverse proxy terminates SSL correctly
+2. Set `NETBIRD_DISABLE_LETSENCRYPT=true` in your configuration
+3. Configure proper headers (X-Forwarded-For, X-Forwarded-Proto)
+4. Verify HTTP/2 support is enabled for gRPC endpoints
+
+## Connection Issues
+
+### Peers can't connect to each other
+
+**Problem**: Peers are registered but can't establish connections.
+
+**Solutions**:
+1. Check that UDP port 3478 is accessible (STUN/TURN)
+2. Verify the TURN server is working (see [TURN debugging](#debugging-turn-connections))
+3. Check firewall rules on both peers
+4. Review peer logs: `netbird status -d`
+
+### Management service unreachable
+
+**Problem**: Clients can't connect to the Management service.
+
+**Solutions**:
+1. Verify port 443 is accessible
+2. Check DNS resolution for your domain
+3. Review Management logs: `docker compose logs management`
+4. Test with curl: `curl -v https://your-domain.com/api/health`
+
+## Database Issues
+
+### Management service won't start after upgrade
+
+**Problem**: After upgrading, the Management service fails to start.
+
+**Solutions**:
+1. Check logs for migration errors: `docker compose logs management`
+2. Ensure you followed the [upgrade path](/selfhosted/selfhosted-quickstart#upgrade) for your version
+3. Restore from backup if needed
+4. For major version jumps, you may need intermediate upgrades
+
+### Data corruption after power loss
+
+**Problem**: Services don't start properly after unexpected shutdown.
+
+**Solutions**:
+1. Check for database lock files
+2. Review all service logs
+3. Consider restoring from backup
+4. For SQLite databases, you may need to run integrity checks
+
+## Getting Help
+
+If you're still experiencing issues:
+
+1. **Check logs**: `docker compose logs` for all services
+2. **Search existing issues**: [GitHub Issues](https://github.com/netbirdio/netbird/issues)
+3. **Join our community**: [Slack Channel](/slack-url)
+4. **Open an issue**: Include logs, configuration (without secrets), and steps to reproduce

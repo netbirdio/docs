@@ -2,154 +2,178 @@ import {Note} from "@/components/mdx";
 
 # Authentik with NetBird Self-Hosted
 
-This guide is a part of the [NetBird Self-hosting Guide](/docs/selfhosted/selfhosted-guide) and explains how to integrate
-**self-hosted** NetBird with [Authentik](https://goauthentik.io).
+[Authentik](https://goauthentik.io) is an open-source identity provider focused on flexibility and security. It serves as a self-hosted alternative to commercial solutions like Okta and Auth0, providing single sign-on (SSO), multi-factor authentication (MFA), access policies, user management, and support for SAML and OIDC protocols.
+
+## Management Setup (Recommended)
+
+Add Authentik as an external IdP directly in the NetBird Management Dashboard. This is the simplest approach and recommended for most deployments.
+
+### Prerequisites
+
+- NetBird self-hosted with embedded IdP enabled
+- Authentik instance with admin access
+
+### Step 1: Create OAuth2/OpenID Provider in Authentik
+
+1. Navigate to Authentik admin interface
+2. Click **Applications** on the left menu, then click **Providers**
+3. Click **Create** to create a new provider
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/1_create-provider-athentik.png" alt="Create provider" className="imagewrapper-big"/>
+</p>
+
+4. Select **OAuth2/OpenID Provider** and click **Next**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/2_type-oauth2-athentik.png" alt="Select OAuth2/OpenID Provider type" className="imagewrapper-big"/>
+</p>
+
+5. Fill in the form with the following values:
+   - **Name**: `NetBird`
+   - **Authorization Flow**: `default-provider-authorization-explicit-consent (Authorize Application)`
+   - **Client type**: `Confidential`
+   - **Redirect URIs/Origins**: Leave empty for now (you'll add this in Step 5)
+   - **Signing Key**: Select any cert present, e.g., `authentik Self-signed Certificate`
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/3_new-provider-auth-flow-athentik.png" alt="Provider configuration with authorization flow" className="imagewrapper-big"/>
+</p>
+
+6. Click **Finish**
+7. Note the **Client ID** and **Client Secret** — you'll need these for Step 3
+
+### Step 2: Create Application in Authentik
+
+1. Click **Applications** on the left menu, then click **Applications**
+2. Click **Create** to create a new application
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/4_create-application-athentik.png" alt="Create application" className="imagewrapper-big"/>
+</p>
+
+3. Fill in the form:
+   - **Name**: `NetBird`
+   - **Slug**: `netbird`
+   - **Provider**: Select the `NetBird` provider you created in Step 1
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/5_app-name-slug-athentik.png" alt="Application name and slug" className="imagewrapper-big"/>
+</p>
+
+4. Click **Create**
+
+### Step 3: Get Redirect URL from NetBird
+
+1. Open a new tab or window and log in to your NetBird Dashboard
+2. Navigate to **Settings** → **Identity Providers**
+3. Click **Add Identity Provider**
+4. Fill in the fields:
+
+| Field | Value |
+|-------|-------|
+| Type | Generic OIDC |
+| Name | Authentik (or your preferred display name) |
+| Client ID | From Authentik provider (from Step 1) |
+| Client Secret | From Authentik provider (from Step 1) |
+| Issuer | `https://authentik.example.com/application/o/netbird/` |
+
+5. **Copy the Redirect URL** that NetBird displays (but don't click **Add Provider** yet)
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/6_netbird-config-copy-url-athentik.png" alt="NetBird configuration and copy redirect URL" className="imagewrapper-big"/>
+</p>
+
+### Step 4: Configure Redirect URI in Authentik
+
+1. Return to Authentik admin → **Providers** → **NetBird**
+2. Click **Edit**
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/7_providers-edit-uri.png" alt="Edit provider redirect URIs" className="imagewrapper-big"/>
+</p>
+
+3. Under **Redirect URIs/Origins**, add the redirect URL you copied from NetBird
+4. Select **Strict** (not Regex) to match the exact URL from NetBird
+
+<p>
+    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/8_add-uri-strict-athentik.png" alt="Add redirect URI in Strict mode" className="imagewrapper-big"/>
+</p>
+
+5. Click **Update**
+
+### Step 5: Complete NetBird Setup
+
+1. Return to the NetBird tab
+2. Click **Add Provider**
+
+### Step 6: Test the Connection
+
+1. Log out of NetBird Dashboard
+2. On the login page, you should see an "Authentik" button
+3. Click it and authenticate with your Authentik credentials
+4. You should be redirected back to NetBird and logged in
+
+### Configuring JWT 'groups' Claim
+
+**Authentik includes a `groups` claim in the ID token by default through the `profile` scope.** However, you may need to verify the configuration and ensure groups are included in the token.
+
+#### Step 1: Verify Scope Mappings
+
+1. In Authentik admin, go to **Customization** → **Property Mappings**
+2. Find and click on **authentik default OAuth Mapping: OpenID 'profile'**
+3. Verify it includes group information, or create a custom mapping
+
+#### Step 2: Configure Provider to Include Claims in ID Token
+
+1. Go to **Applications** → **Providers**
+2. Edit your NetBird provider
+3. Under **Advanced protocol settings**, enable **Include claims in id_token**
+4. Ensure the **profile** and **groups** scopes are selected
+5. Click **Update**
+
+#### Step 3: Enable JWT Group Sync in NetBird
+
+1. In NetBird Dashboard, go to **Settings** → **Groups**
+2. Enable **JWT group sync**
+3. Set **JWT claim** to `groups`
+4. Optionally configure **JWT allow groups** to restrict access
 
 <Note>
-    If you prefer not to self-host an Identity and Access Management solution, then you could use a managed alternative like
-    [Auth0](/selfhosted/identity-providers#auth0).
+Authentik returns group names (not IDs) in the `groups` claim. Groups are synced based on the user's group membership in Authentik.
 </Note>
 
-## Step 1: Create OAuth2/OpenID Provider
-In this step, we will create OAuth2/OpenID Provider in Authentik.
+---
 
-- Navigate to authentik  admin interface
-- Click `Applications` on the left menu, then click `Providers`
-- Click `Create` to create new provider
-- Fill in the form with the following values and click `Next`
-    - type: `OAuth2/OpenID Provider`
+## Standalone Setup (Advanced)
 
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/authentik-new-provider-type.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
+Use Authentik as your primary identity provider instead of NetBird's embedded IdP. This option gives you full control over authentication and user management, is recommended for experienced Authentik administrators as it also requires additional setup and ongoing maintenance.
 
-- Fill in the form with the following values and click `Finish`
-    - Name: `Netbird`
-    - Authentication Flow: `default-authentication-flow (Welcome to authentik!)`
-    - Authorization Flow: `default-provider-authorization-explicit-consent (Authorize Application)`
-    - Protocol Settings:
-        - Client type: `Public`
-        - Redirect URIs/Origins (RegEx):
-            - Regex: `https://<domain>/.*`
-            - Strict: `http://localhost:53000`
-        - Signing Key: Must be selected! Can be any cert present, e.g. `authentik Self-signed Certificate`
-    - Advanced protocol settings:
-        - Access code validity: `minutes=10`
-        - Subject mode: `Based on the User's ID`
+For most deployments, the [embedded IdP](/selfhosted/identity-providers/local) is the simpler choice — it's built into NetBird, fully integrated, and requires minimal configuration to get started. For this implementation, go back up to the [Management Setup (Recommended)](#management-setup-recommended) section above.
 
-Take note of `Client ID`, we will use it later
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/authentik-new-provider-config.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-## Step 2: Create external applications
-In this step, we will create external applications in Authentik.
-
-- Navigate to authentik  admin interface
-- Click `Applications` on the left menu, then click `Applications`
-- Click `Create` to create new application
-- Fill in the form with the following values and click `Create`
-    - Name: `Netbird`
-    - Slug: `netbird`
-    - Provider: `Netbird`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/authentik-new-application.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-## Step 3: Create service account
-In this step, we will create service account.
-
-- Navigate to authentik  admin interface
-- Click `Directory` on the left menu, then click `Users`
-- Click `Create Service Account` to create service account
-- Fill in the form with the following values and click `Create`
-    - Username: `Netbird`
-    - Create Group: `Disable`
- 
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/authentik-new-service-account.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-- Take note of the NetBird service account `username`, we will need it later.
-- N.B. The `password` defined when creating the NetBird service account is not required.
-Users should instead create an app password for the NetBird service account within `Directory > Tokens and App passwords` in authentik's `Admin interface.
-Be sure to select the NetBird Service account object as the `User` when creating the app password.
-Take note of the app password as we will need it later.
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/authentik-service-account-details.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-## Step 4: Add service account to admin group
-In this step, we will add `Netbird` service account to `authentik Admins` group.
-
-- Navigate to authentik  admin interface
-- Click `Directory` on the left menu, then click `Groups`
-- Click `authentik Admins` from list of groups and select `Users` tab at the top
-- Click `Add existing user` and click `+` button to add user
-- Select `Netbird` and click `Add`
-- Disable `Hide service-accounts` and verify if user `Netbird` is added to the group
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/authentik-add-user-group.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-#### Step 5: Create a authentication flow for device token authentication
-
-- Navigate to authentik  admin interface
-- Click `Flows and Stages` on the left menu, then click `Flows` then `Create`
-- Fill in the form with the following values and click `Create`
-    - Name: `default-device-code-flow`
-    - Title: `Device Code Flow`
-    - Designation: `Stage Configuration`
-    - Authentication: `Require authentication`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/authentik-new-device-flow.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-- Navigate to authentik  admin interface
-- Click `System` on the left menu, then click `Brands`
-- Click on the edit button of domain `authentik-default`
-- Under Default flows set Device code flow to `default-device-code-flow`
-- Click `Update`
-
-<p>
-    <img src="/docs-static/img/selfhosted/identity-providers/self-hosted/authentik/authentik-brand-device-flow.png" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
-
-Your authority OIDC configuration will be available under:
-
-```bash
-https://< YOUR_AUTHENTIK_HOST_AND_PORT >/application/o/netbird/.well-known/openid-configuration
-```
+For detailed instructions on the standalone setup, see the [Authentik SSO with NetBird Self-Hosted (Advanced)](/selfhosted/identity-providers/advanced/authentik) documentation.
 
 <Note>
-Double-check if the endpoint returns a JSON response by calling it from your browser.
+If you prefer not to self-host an Identity and Access Management solution, you could use a managed alternative like [Auth0](/selfhosted/identity-providers/managed/auth0).
 </Note>
 
-- Set properties in the `setup.env` file:
-```shell
-NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT="https://<YOUR_AUTHENTIK_HOST_AND_PORT>/application/o/netbird/.well-known/openid-configuration"
-NETBIRD_USE_AUTH0=false
-NETBIRD_AUTH_CLIENT_ID="<PROVIDER_CLIENT_ID>"
-NETBIRD_AUTH_SUPPORTED_SCOPES="openid profile email offline_access api"
-NETBIRD_AUTH_AUDIENCE="<PROVIDER_CLIENT_ID>"
-NETBIRD_AUTH_DEVICE_AUTH_CLIENT_ID="<PROVIDER_CLIENT_ID>"
-NETBIRD_AUTH_DEVICE_AUTH_AUDIENCE="<PROVIDER_CLIENT_ID>"
-NETBIRD_AUTH_REDIRECT_URI="/auth"
-NETBIRD_AUTH_SILENT_REDIRECT_URI="/silent-auth"
+---
 
-NETBIRD_MGMT_IDP="authentik"
-NETBIRD_IDP_MGMT_CLIENT_ID="<PROVIDER_CLIENT_ID>"
-NETBIRD_IDP_MGMT_EXTRA_USERNAME="Netbird"
-NETBIRD_IDP_MGMT_EXTRA_PASSWORD="<SERVICE_ACCOUNT_PASSWORD>"
+## Troubleshooting
 
-# needs disabling due to issue with IdP. Learn more [here](https://github.com/netbirdio/netbird/issues/3654)
-NETBIRD_AUTH_PKCE_DISABLE_PROMPT_LOGIN=true
+### "Invalid redirect URI" error
 
-```
+- Ensure the redirect URI exactly matches what NetBird provides
+- Copy the exact URL from the success modal
 
-## Step 6: Continue with the NetBird Self-hosting Guide
-You've configured all required resources in Authentik. You can now continue with the [NetBird Self-hosting Guide](/selfhosted/selfhosted-guide#step-4-disable-single-account-mode-optional).
+### Authentication fails silently
+
+- Verify a signing key is selected in the provider configuration
+- Check that the application is linked to the correct provider
+
+---
+
+## Related Resources
+
+- [Authentik Documentation](https://goauthentik.io/docs/)
+- [Embedded IdP Overview](/selfhosted/identity-providers/local)

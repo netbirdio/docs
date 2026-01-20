@@ -65,7 +65,7 @@ function renderProperties(properties, required = [], depth = 0) {
         }
         %>>%>
         <% if ((type === 'object' && value.properties) || (type === 'object[]' && value.items.properties)) { %>
-            <details class="custom-details" open>
+            <details className="custom-details" open>
                 <summary><%- value.description || 'More Information' %></summary>
                 <Properties>
                 <% if (type === 'object[]') { %>
