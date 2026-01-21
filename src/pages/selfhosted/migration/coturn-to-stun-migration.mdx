@@ -1,0 +1,314 @@
+# Migration Guide: From Coturn to Embedded STUN Server
+
+This guide helps you migrate your existing NetBird self-hosted installation from using an external Coturn TURN server to the new embedded STUN server integrated into the relay service.
+
+## Overview of Changes
+
+### What's New
+
+- **Embedded STUN Server**: The relay service now includes a built-in STUN server, eliminating the need for a separate Coturn container
+- **Simplified Architecture**: Fewer containers to manage (no more Coturn)
+- **Easier Configuration**: Simple environment variables instead of complex `turnserver.conf`
+- **Better Integration**: STUN server is tightly integrated with the NetBird relay service
+
+### What's Removed
+
+- **Coturn container**: No longer needed
+- **turnserver.conf**: Configuration file no longer required
+
+## Prerequisites
+
+- NetBird [relay image](https://hub.docker.com/r/netbirdio/relay) updated to the latest version
+- Backup of your current configuration files
+- Brief maintenance window (clients will reconnect automatically)
+
+## Migration Steps
+
+### Step 1: Backup Current Configuration
+
+```bash
+# Create a backup directory
+mkdir -p netbird-backup-$(date +%Y%m%d)
+cd netbird-backup-$(date +%Y%m%d)
+
+# Backup all configuration files
+cp ../docker-compose.yml .
+cp ../management.json .
+cp ../turnserver.conf . 2>/dev/null || echo "No turnserver.conf found"
+cp ../*.env . 2>/dev/null || echo "No .env files found"
+```
+
+### Step 2: Update docker-compose.yml
+
+#### Remove the Coturn Service
+
+Delete the entire `coturn` service block from your `docker-compose.yml`:
+
+```yaml
+# REMOVE THIS ENTIRE BLOCK:
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    volumes:
+      - ./turnserver.conf:/etc/turnserver.conf:ro
+    network_mode: host
+    command:
+      - -c /etc/turnserver.conf
+```
+
+#### Update the Relay Service
+
+Add STUN configuration to your relay service. You need to expose the STUN UDP port(s) in the `ports` section. You can configure multiple STUN ports if needed (e.g., for different network interfaces or load balancing) - ensure each port is exposed in `docker-compose.yml` and listed in `NB_STUN_PORTS`:
+
+```yaml
+  relay:
+    image: netbirdio/relay:latest
+    container_name: netbird-relay
+    restart: unless-stopped
+    networks: [netbird]
+    ports:
+      - '3478:3478/udp'  # STUN UDP port (add more lines if using multiple ports)
+      # - '3479:3479/udp'  # Example: additional STUN port (optional)
+    env_file:
+      - ./relay.env
+    # OR use environment directly:
+    # environment:
+    #   - NB_LOG_LEVEL=info
+    #   - NB_LISTEN_ADDRESS=:80
+    #   - NB_EXPOSED_ADDRESS=rels://your-domain.com:443
+    #   - NB_AUTH_SECRET=your-relay-secret
+    #   - NB_ENABLE_STUN=true           # Enable embedded STUN
+    #   - NB_STUN_LOG_LEVEL=info        # STUN logging level
+    #   - NB_STUN_PORTS=3478            # STUN port(s), comma-separated for multiple (e.g., 3478,3479)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "2"
+```
+
+### Step 3: Create or Update relay.env
+
+Create a `relay.env` file with the STUN configuration:
+
+```bash
+# relay.env
+NB_LOG_LEVEL=info
+NB_LISTEN_ADDRESS=:80
+NB_EXPOSED_ADDRESS=rels://your-domain.com:443
+NB_AUTH_SECRET=your-existing-relay-secret
+
+# New STUN configuration
+NB_ENABLE_STUN=true
+NB_STUN_LOG_LEVEL=info
+NB_STUN_PORTS=3478
+# For multiple ports, use comma-separated values:
+# NB_STUN_PORTS=3478,3479
+```
+
+<Note>
+Keep your existing `NB_AUTH_SECRET` value from your current configuration. If using multiple STUN ports, ensure all ports are exposed in your `docker-compose.yml` and listed in `NB_STUN_PORTS`.
+</Note>
+
+### Step 4: Update management.json
+
+Update the `Stuns` section in your `management.json` to point to the embedded STUN server:
+
+**Before (with Coturn):**
+```json
+{
+    "Stuns": [
+        {
+            "Proto": "udp",
+            "URI": "stun:turn.your-domain.com:3478"
+        }
+    ],
+    "TURNConfig": {
+        "Turns": [
+            {
+                "Proto": "udp",
+                "URI": "turn:turn.your-domain.com:3478",
+                "Username": "some-user",
+                "Password": "some-password"
+            }
+        ],
+        "TimeBasedCredentials": false
+    },
+    ...
+}
+```
+
+**After (with embedded STUN):**
+```json
+{
+    "Stuns": [
+        {
+            "Proto": "udp",
+            "URI": "stun:your-domain.com:3478"
+        }
+    ],
+    "Relay": {
+        "Addresses": ["rels://your-domain.com:443"],
+        "CredentialsTTL": "24h",
+        "Secret": "your-relay-secret"
+    },
+    ...
+}
+```
+
+<Note>
+Remove the `TURNConfig` section entirely as TURN is replaced by the NetBird relay service.
+</Note>
+
+### Step 5: Update Firewall Rules
+
+Ensure your firewall allows:
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 3478 | UDP | STUN server (NAT traversal) |
+| 443 | TCP | Relay, Management API, Signal (via reverse proxy) |
+
+If you previously had TURN-specific firewall rules (e.g., UDP port ranges 49152-65535 for TURN relay), these are no longer needed.
+
+### Step 6: Apply Changes
+
+```bash
+# Stop all services
+docker compose down
+
+# Remove the old turnserver.conf (optional, for cleanup)
+rm -f turnserver.conf
+
+# Pull latest images
+docker compose pull
+
+# Start services
+docker compose up -d
+
+# Verify services are running
+docker compose ps
+
+# Check relay logs for STUN initialization
+docker compose logs relay | grep -i stun
+```
+
+You should see log messages indicating the STUN server has started:
+```
+level=info msg="Starting STUN server on port 3478"
+```
+
+### Step 7: Verify Migration
+
+1. **Check STUN Server**:
+
+   Enable debug logging for the STUN server by setting `NB_STUN_LOG_LEVEL=debug` in your `relay.env`, then restart the relay service and observe the logs:
+   ```bash
+   docker logs --tail 100 -f netbird-relay
+   ```
+
+   When a client connects, you should see STUN binding requests being processed:
+   ```
+   2026-01-21T12:08:54Z DEBG [component: stun-server] stun/server.go:107: [port:3478] received 20 bytes from 90.66.38.219:58044
+   2026-01-21T12:08:54Z DEBG [component: stun-server] stun/server.go:122: [port:3478] received STUN Binding request from 90.66.38.219:58044 (tx=66d2c3e114d74ab1)
+   2026-01-21T12:08:54Z DEBG [component: stun-server] stun/server.go:152: [port:3478] sent STUN BindingSuccess to 90.66.38.219:58044 (40 bytes) with XORMappedAddress 90.66.38.219:58044
+   ```
+
+2. **Check Client Connectivity**:
+   - Connect a NetBird client
+   - Verify peer connections are established
+   - Check the dashboard for connected peers
+
+3. **Review Logs**:
+   ```bash
+   docker compose logs -f relay
+   docker compose logs -f management
+   ```
+
+## Configuration Reference
+
+### Relay Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `NB_ENABLE_STUN` | Enable embedded STUN server | `false` |
+| `NB_STUN_PORTS` | STUN UDP port(s), comma-separated | `3478` |
+| `NB_STUN_LOG_LEVEL` | STUN server log level | `info` |
+
+### Relay CLI Flags (Alternative)
+
+If running the relay binary directly:
+
+```bash
+./relay \
+  --enable-stun \
+  --stun-ports 3478 \
+  --stun-log-level info
+```
+
+## Troubleshooting
+
+### STUN Server Not Starting
+
+**Symptom**: No STUN-related log messages
+
+**Solution**: Verify `NB_ENABLE_STUN=true` is set and the relay container has port 3478/udp exposed.
+
+### Clients Can't Connect
+
+**Symptom**: Clients fail to establish peer connections
+
+**Checklist**:
+1. Verify port 3478/udp is open in firewall
+2. Check `management.json` has correct STUN URI
+3. Ensure relay service is running: `docker compose ps`
+4. Check relay logs: `docker compose logs relay`
+
+### Port Already in Use
+
+**Symptom**: `Error: address already in use` for port 3478
+
+**Solution**:
+1. Check if old Coturn is still running: `docker ps -a | grep coturn`
+2. Stop and remove old Coturn: `docker rm -f coturn`
+3. Check for other services using port 3478: `netstat -tulpn | grep 3478`
+
+### NAT Traversal Issues
+
+**Symptom**: Connections work locally but fail across NAT
+
+**Solution**: Ensure the STUN URI in `management.json` uses your public domain/IP that clients can reach.
+
+## Fresh Installation
+
+For new installations, use the updated `getting-started.sh` script which automatically configures the embedded STUN server:
+
+```bash
+curl -sSL https://github.com/netbirdio/netbird/raw/main/infrastructure_files/getting-started.sh | bash
+```
+
+## Rollback Procedure
+
+If you need to rollback to Coturn:
+
+```bash
+# Stop services
+docker compose down
+
+# Restore backup
+cd netbird-backup-YYYYMMDD
+cp docker-compose.yml ../
+cp management.json ../
+cp turnserver.conf ../
+
+# Restart with old configuration
+cd ..
+docker compose up -d
+```
+
+## Additional Resources
+
+- [NetBird Self-Hosting Documentation](/selfhosted/selfhosted-guide)
+- [Relay Service Configuration](/selfhosted/relay)
+- [PR #5062: Embedded STUN Implementation](https://github.com/netbirdio/netbird/pull/5062)
+- [PR #5141: Infrastructure Integration](https://github.com/netbirdio/netbird/pull/5141)

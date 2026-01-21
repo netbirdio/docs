@@ -330,6 +330,14 @@ export const docsNavigation = [
             { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store' },
             { title: 'Management geolocation', href: '/selfhosted/geo-support' },
             { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
+            {
+                title: 'Migration Guides',
+                isOpen: false,
+                links: [
+                    { title: 'Coturn to Embedded STUN', href: '/selfhosted/migration/coturn-to-stun-migration' },
+
+                ]
+            },
         ],
     },
     {
