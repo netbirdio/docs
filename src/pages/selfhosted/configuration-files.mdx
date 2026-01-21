@@ -17,9 +17,8 @@ A standard NetBird self-hosted deployment uses the following configuration files
 |------|---------|--------------|
 | `docker-compose.yml` | Service definitions and orchestration | `getting-started.sh` / `configure.sh` |
 | `management.json` | Core management server configuration | `getting-started.sh` / `configure.sh` |
-| `relay.env` | Relay server environment variables | `getting-started.sh` |
+| `relay.env` | Relay server environment variables (includes STUN configuration) | `getting-started.sh` |
 | `dashboard.env` | Dashboard UI configuration | `getting-started.sh` |
-| `turnserver.conf` | Coturn STUN/TURN server configuration | `getting-started.sh` / `configure.sh` |
 | `Caddyfile` | Reverse proxy configuration (when using built-in Caddy) | `getting-started.sh` |
 
 ### File Locations
@@ -32,7 +31,6 @@ After running the installation script, configuration files are located in the di
 ├── management.json
 ├── relay.env
 ├── dashboard.env
-├── turnserver.conf
 └── Caddyfile          # Only when using built-in Caddy
 ```
 
@@ -47,11 +45,14 @@ The Docker Compose file defines all NetBird services, their dependencies, networ
 | Service | Image | Default Port | Description |
 |---------|-------|--------------|-------------|
 | `dashboard` | `netbirdio/dashboard` | 80, 443 | Web UI for managing NetBird |
-| `management` | `netbirdio/management` | 33073 | Core API and peer coordination |
-| `signal` | `netbirdio/signal` | 10000 | WebRTC signaling for peer connections |
-| `relay` | `netbirdio/relay` | 33080 | Relay server for NAT traversal |
-| `coturn` | `coturn/coturn` | 3478 | STUN/TURN server for connectivity |
+| `management` | `netbirdio/management` | 80 | Core API, peer coordination, and embedded IdP |
+| `signal` | `netbirdio/signal` | 80, 10000 | WebRTC signaling for peer connections |
+| `relay` | `netbirdio/relay` | 80, 3478/udp | Relay server for NAT traversal with embedded STUN |
 | `caddy` | `caddy` | 80, 443 | Reverse proxy (optional, built-in setup) |
+
+<Note>
+The relay service includes an embedded STUN server, eliminating the need for a separate coturn container. STUN functionality is enabled via the `NB_ENABLE_STUN` environment variable in `relay.env`.
+</Note>
 
 ### Default Settings
 
@@ -196,52 +197,52 @@ signal:
 
 ### Relay Service
 
-The relay service provides NAT traversal when direct peer-to-peer connections are not possible.
+The relay service provides NAT traversal when direct peer-to-peer connections are not possible. It also includes an embedded STUN server for NAT detection and traversal.
 
 ```yaml
 relay:
   image: netbirdio/relay:latest
-  environment:
-    - NB_LOG_LEVEL=info
-    - NB_LISTEN_ADDRESS=:33080
-    - NB_EXPOSED_ADDRESS=rel://netbird.example.com:33080
-    - NB_AUTH_SECRET=your-secret-here
+  env_file:
+    - ./relay.env
   ports:
-    - 33080:33080
+    - '80:80'           # Relay WebSocket
+    - '3478:3478/udp'   # Embedded STUN server
 ```
+
+The relay service is configured via the `relay.env` file. See the [relay.env section](#relayenv) for detailed configuration options.
 
 <Properties>
   <Property name="NB_LOG_LEVEL" type="string">
     Log verbosity level. Options: `debug`, `info`, `warn`, `error`. Default: `info`
   </Property>
   <Property name="NB_LISTEN_ADDRESS" type="string">
-    Address and port to listen on. Format: `:port`. Default: `:33080`
+    Address and port to listen on. Format: `:port`. Default: `:80`
   </Property>
   <Property name="NB_EXPOSED_ADDRESS" type="string">
-    Public address for peers to connect. Format: `rel://hostname:port`
+    Public address for peers to connect. Format: `rel://hostname:port` or `rels://hostname:port` for TLS.
   </Property>
   <Property name="NB_AUTH_SECRET" type="string">
     Shared secret for relay authentication. Must match `management.json` Relay.Secret.
   </Property>
+  <Property name="NB_ENABLE_STUN" type="boolean">
+    Enable the embedded STUN server. Default: `false`
+  </Property>
+  <Property name="NB_STUN_PORTS" type="string">
+    Comma-separated list of UDP ports for the STUN server. Default: `3478`
+  </Property>
 </Properties>
 
-### Coturn Service
-
-Coturn provides STUN/TURN services for NAT traversal.
-
-```yaml
-coturn:
-  image: coturn/coturn:latest
-  volumes:
-    - ./turnserver.conf:/etc/turnserver.conf:ro
-  network_mode: host
-  command:
-    - -c /etc/turnserver.conf
-```
+### STUN Server (Embedded in Relay)
 
 <Note>
-Coturn uses `network_mode: host` for optimal TURN relay performance. This means it binds directly to the host's network interfaces.
+Starting with the current quickstart installation, STUN functionality is **embedded directly in the relay service**. The separate coturn container is no longer used in the default deployment. This simplifies the architecture and reduces the number of containers to manage.
 </Note>
+
+The embedded STUN server is enabled by setting `NB_ENABLE_STUN=true` in `relay.env`. The STUN server listens on UDP port 3478 by default.
+
+#### Legacy Coturn Configuration
+
+If you have an existing installation using coturn, or need advanced TURN functionality (such as time-based credentials or TCP relay), you can still use a separate coturn container. See the [advanced self-hosting guide](/selfhosted/selfhosted-guide) for coturn configuration details.
 
 ### Volume Configuration
 
@@ -257,8 +258,99 @@ Coturn uses `network_mode: host` for optimal TURN relay performance. This means 
 
 The management configuration file controls the core behavior of the NetBird Management service. This is the most complex configuration file.
 
+### Embedded IdP vs External IdP Configuration
+
+The structure of `management.json` varies significantly depending on whether you use the **embedded IdP** (quickstart deployment) or configure identity providers at the **infrastructure level** (advanced deployment).
+
+<Note>
+**Most users following the [Quickstart Guide](/selfhosted/selfhosted-quickstart) will have a much simpler `management.json`**. The embedded IdP handles authentication automatically, and many of the sections documented below are not needed.
+</Note>
+
+#### Understanding "Embedded IdP"
+
+The term "embedded IdP" refers to NetBird's built-in identity provider system based on DEX. This is **not** a limitation - it is actually the modern, recommended approach that offers several advantages:
+
+**You CAN connect external identity providers with the embedded IdP:**
+- **Google Workspace** - Use Google accounts for authentication
+- **Microsoft Entra ID (Azure AD)** - Integrate with Microsoft 365 organizations
+- **Okta** - Connect your Okta workforce identity
+- **Self-hosted Authentik** - Use your own Authentik instance for authentication
+- **Any OIDC provider** - Any provider supporting OpenID Connect works with NetBird
+
+**How to add external IdPs with the embedded system:**
+1. Go to **Settings → Identity Providers** in the NetBird Dashboard
+2. Click **Add Identity Provider**
+3. Follow the guided setup for your chosen provider (Google, Okta, self-hosted Authentik, or any other OIDC provider)
+4. Users can then authenticate using their existing corporate credentials
+
+This Dashboard-based configuration is simpler, more maintainable, and does not require editing `management.json`.
+
+#### When to use infrastructure-level IdP configuration
+
+The `HttpConfig`, `IdpManagerConfig`, `DeviceAuthorizationFlow`, and `PKCEAuthorizationFlow` sections documented below are for the **legacy advanced deployment method** where:
+- You configure the IdP connection directly in `management.json`
+- The embedded IdP is disabled
+- You manage OAuth2/OIDC settings at the infrastructure level rather than through the UI
+
+This approach is typically only needed for:
+- Organizations with specific compliance requirements mandating infrastructure-as-code IdP configuration
+- Complex multi-tenant scenarios
+- Migrations from older NetBird deployments that predate the Dashboard IdP management feature
+
+**Quickstart deployment (embedded IdP - recommended):**
+- Uses the `EmbeddedIdP` section to enable the built-in identity provider
+- External IdPs (Google, Okta, self-hosted Authentik, or any other OIDC provider) are added via **Settings → Identity Providers** in the Dashboard
+- Sections like `HttpConfig`, `IdpManagerConfig`, `DeviceAuthorizationFlow`, and `PKCEAuthorizationFlow` are **not required** and typically omitted
+- Authentication endpoints are automatically configured at `https://your-domain/oauth2/`
+- User management is done through the Dashboard UI
+
+**Advanced deployment (infrastructure-level IdP):**
+- Does **not** use the `EmbeddedIdP` section
+- Requires full configuration of `HttpConfig`, `IdpManagerConfig`, `DeviceAuthorizationFlow`, and `PKCEAuthorizationFlow`
+- You must configure your external IdP (Okta, Keycloak, Auth0, etc.) and populate these sections with the appropriate values
+- See the [Advanced Self-hosting Guide](/selfhosted/selfhosted-guide) for setup instructions
+
+### Configuration Section Summary
+
+| Section | Quickstart (Embedded IdP) | Advanced (Infrastructure-level IdP) |
+|---------|---------------------------|-------------------------------------|
+| `Stuns` | Required | Required |
+| `TURNConfig` | Optional | Optional |
+| `Relay` | Required | Required |
+| `Signal` | Required | Required |
+| `ReverseProxy` | Optional | Optional |
+| `StoreConfig` | Optional | Optional |
+| `EmbeddedIdP` | **Required** | Not used |
+| `HttpConfig` | Not used (auto-configured) | **Required** |
+| `IdpManagerConfig` | Not used | **Required** |
+| `DeviceAuthorizationFlow` | Not used (auto-configured) | **Required** |
+| `PKCEAuthorizationFlow` | Not used (auto-configured) | **Required** |
+
+<Note>
+**Remember:** The "Quickstart (Embedded IdP)" column applies even if you want to use external providers like Google, Okta, self-hosted Authentik, or any other OIDC provider. You can add these through **Settings → Identity Providers** in the Dashboard without changing your `management.json` configuration.
+</Note>
+
 ### Complete Structure
 
+The structure differs based on your deployment type:
+
+**Quickstart deployment (embedded IdP):**
+```json
+{
+    "Stuns": [...],
+    "Relay": {...},
+    "Signal": {...},
+    "Datadir": "/var/lib/netbird",
+    "DataStoreEncryptionKey": "...",
+    "EmbeddedIdP": {
+        "Enabled": true,
+        "Issuer": "https://your-domain/oauth2",
+        "DashboardRedirectURIs": [...]
+    }
+}
+```
+
+**Advanced deployment (external IdP):**
 ```json
 {
     "Stuns": [...],
@@ -278,7 +370,17 @@ The management configuration file controls the core behavior of the NetBird Mana
 
 ### Stuns Section
 
-Configures STUN servers used for NAT detection.
+Configures STUN servers used for NAT detection and traversal.
+
+**What does STUN do?**
+
+STUN (Session Traversal Utilities for NAT) helps NetBird peers discover their public IP address and the type of NAT they are behind. This information is essential for establishing direct peer-to-peer connections:
+
+- **NAT type detection** - Determines if peers can connect directly or need relay assistance
+- **Public address discovery** - Peers learn their external IP and port, which they share via the signal server
+- **Connection optimization** - Enables direct connections when possible, reducing latency and relay load
+
+The embedded STUN server in the relay service (enabled via `NB_ENABLE_STUN=true` in `relay.env`) is typically sufficient for most deployments.
 
 ```json
 "Stuns": [
@@ -355,7 +457,15 @@ Configures TURN servers for relay when direct connections fail.
 
 ### Relay Section
 
-Configures the NetBird relay server connection.
+Configures the NetBird relay server connection for NAT traversal.
+
+**What does the relay service do?**
+
+When two NetBird peers cannot establish a direct WireGuard connection (due to restrictive NATs, firewalls, or network topology), traffic is routed through the relay server. The relay acts as an encrypted intermediary, ensuring connectivity even in challenging network environments.
+
+- **Automatic fallback** - Peers attempt direct connections first; relay is used only when needed
+- **End-to-end encryption** - Traffic remains WireGuard-encrypted; the relay cannot read packet contents
+- **Credential-based authentication** - The shared secret ensures only authorized peers can use your relay
 
 ```json
 "Relay": {
@@ -383,7 +493,15 @@ The relay secret must be identical in both `management.json` and the relay servi
 
 ### Signal Section
 
-Configures the connection to the Signal service.
+Configures the connection to the Signal service for peer-to-peer connection establishment.
+
+**What does the signal service do?**
+
+The signal service facilitates WebRTC signaling between NetBird peers. When two peers want to establish a direct connection, they exchange connection offers, answers, and ICE candidates through the signal server. This coordination enables peers to discover each other and negotiate the optimal connection path.
+
+- **Connection coordination** - Peers exchange network information to establish direct WireGuard tunnels
+- **No traffic routing** - Unlike the relay, the signal server only handles connection setup metadata, not actual traffic
+- **Persistent connections** - Peers maintain a connection to the signal server to receive incoming connection requests
 
 ```json
 "Signal": {
@@ -439,7 +557,29 @@ When running behind a reverse proxy, configure `TrustedHTTPProxies` with your pr
 
 ### StoreConfig Section
 
-Configures the database backend.
+Configures the database backend for storing all NetBird management data.
+
+**What data is stored in the database?**
+
+The management database contains all persistent state for your NetBird deployment:
+
+- **Accounts and users** - User accounts, roles, and permissions
+- **Peers** - Registered devices, their WireGuard keys, IP assignments, and metadata
+- **Groups** - Peer groupings used for access control and network organization
+- **Access policies** - Network access rules defining which peers can communicate
+- **Routes** - Network routes for accessing external subnets through NetBird peers
+- **DNS configuration** - Custom DNS settings and nameserver groups
+- **Setup keys** - Keys used for automated peer enrollment
+- **Activity logs** - Audit trail of user and system actions
+- **Posture checks** - Device security compliance policies
+
+**Where is the data stored?**
+
+| Engine | Storage Location | Notes |
+|--------|------------------|-------|
+| SQLite (default) | `/var/lib/netbird/` volume | File-based, stored in the `netbird-mgmt` Docker volume. Simple but limited to single-instance deployments. |
+| PostgreSQL | External database server | Recommended for production. Supports high availability and backups. |
+| MySQL | External database server | Alternative to PostgreSQL for organizations standardized on MySQL. |
 
 ```json
 "StoreConfig": {
@@ -457,11 +597,61 @@ For PostgreSQL or MySQL, set the connection string via environment variables:
 - `NETBIRD_STORE_ENGINE_POSTGRES_DSN` for PostgreSQL
 - `NETBIRD_STORE_ENGINE_MYSQL_DSN` for MySQL
 
+<Note>
+For production deployments with multiple users or high availability requirements, consider using PostgreSQL. SQLite is convenient for testing and small deployments but does not support concurrent writes or easy backups while the service is running.
+</Note>
+
 See [Management Postgres Store](/selfhosted/postgres-store) for PostgreSQL setup.
+
+### EmbeddedIdP Section
+
+<Note>
+This section is used by the **quickstart deployment** with the embedded identity provider. If you see this section in your `management.json`, you are using the embedded IdP and do **not** need to configure `HttpConfig`, `IdpManagerConfig`, `DeviceAuthorizationFlow`, or `PKCEAuthorizationFlow` manually.
+
+**Want to use Google, Okta, self-hosted Authentik, or any other OIDC provider?** You do not need to disable the embedded IdP or edit this file. Instead, add your external IdP through **Settings → Identity Providers** in the Dashboard. The embedded IdP system supports connecting external providers through the UI.
+</Note>
+
+Configures the built-in identity provider that handles user authentication and management. The embedded IdP is based on DEX and supports both local user management and connections to external identity providers configured through the Dashboard.
+
+```json
+"EmbeddedIdP": {
+    "Enabled": true,
+    "Issuer": "https://netbird.example.com/oauth2",
+    "DashboardRedirectURIs": [
+        "https://netbird.example.com/nb-auth",
+        "https://netbird.example.com/nb-silent-auth"
+    ]
+}
+```
+
+<Properties>
+  <Property name="Enabled" type="boolean">
+    Enable the embedded identity provider. When `true`, the management server hosts OAuth2/OIDC endpoints at `/oauth2/`. Default: `true` for quickstart deployments.
+  </Property>
+  <Property name="Issuer" type="string">
+    The issuer URL for tokens. Should be `https://your-domain/oauth2`. This URL is used to validate JWT tokens and must be accessible to clients.
+  </Property>
+  <Property name="DashboardRedirectURIs" type="array">
+    Allowed redirect URIs for OAuth2 authorization flow. Must include the dashboard authentication callbacks, typically `/nb-auth` and `/nb-silent-auth` on your domain.
+  </Property>
+</Properties>
+
+When `EmbeddedIdP.Enabled` is `true`, the management server automatically:
+- Hosts OIDC discovery at `https://your-domain/oauth2/.well-known/openid-configuration`
+- Provides JWKS (signing keys) at `https://your-domain/oauth2/keys`
+- Handles token issuance at `https://your-domain/oauth2/token`
+- Manages device authorization at `https://your-domain/oauth2/device/authorize`
+- Provides user management through the Dashboard UI
 
 ### HttpConfig Section
 
-Configures the HTTP API server and authentication.
+<Note>
+**Quickstart users:** If your `management.json` contains an `EmbeddedIdP` section with `Enabled: true`, you do **not** need this section. The embedded IdP automatically configures HTTP authentication.
+
+**Want to connect Google, Okta, self-hosted Authentik, or any other OIDC provider?** You do not need this section. The embedded IdP supports adding external identity providers through **Settings → Identity Providers** in the Dashboard. This section is only required for the [legacy advanced deployment method](/selfhosted/selfhosted-guide) where IdP configuration is done at the infrastructure level rather than through the Dashboard UI.
+</Note>
+
+Configures the HTTP API server and authentication. This section defines how the management server validates JWT tokens from your identity provider.
 
 ```json
 "HttpConfig": {
@@ -509,7 +699,15 @@ Configures the HTTP API server and authentication.
 
 ### IdpManagerConfig Section
 
-Configures the Identity Provider manager for user information retrieval.
+<Note>
+**Quickstart users:** This section is **not required** when using the embedded IdP. The embedded IdP manages user information internally and synchronizes with external identity providers added through the Dashboard.
+
+**Want to connect Google, Okta, self-hosted Authentik, or any other OIDC provider?** You do not need this section. Add your external IdP through **Settings → Identity Providers** in the Dashboard - user details (names, emails, group memberships) will be synchronized automatically.
+
+This section is only needed for the [legacy advanced deployment method](/selfhosted/selfhosted-guide) where the embedded IdP is disabled and NetBird needs to query an external IdP's management API directly for user details.
+</Note>
+
+Configures the Identity Provider manager for user information retrieval. When configured, NetBird uses the IdP's management API to fetch user details like display names, emails, and group memberships.
 
 ```json
 "IdpManagerConfig": {
@@ -551,7 +749,15 @@ Configures the Identity Provider manager for user information retrieval.
 
 ### DeviceAuthorizationFlow Section
 
-Configures device authorization flow for CLI authentication.
+<Note>
+**Quickstart users:** This section is **not required** when using the embedded IdP. The embedded IdP automatically handles device authorization flow at `https://your-domain/oauth2/device/authorize`.
+
+**Using external IdPs like Google, Okta, self-hosted Authentik, or any other OIDC provider?** If you added them through **Settings → Identity Providers** in the Dashboard, the device authorization flow works automatically - no configuration needed here.
+
+This section is only needed for the [legacy advanced deployment method](/selfhosted/selfhosted-guide) where the embedded IdP is disabled and you need to configure device authorization directly with an external identity provider.
+</Note>
+
+Configures device authorization flow for CLI authentication. This flow enables users to authenticate NetBird clients via `netbird login` by visiting a URL and entering a code. It is particularly useful for headless devices or environments where browser-based login is impractical.
 
 ```json
 "DeviceAuthorizationFlow": {
@@ -593,7 +799,15 @@ Configures device authorization flow for CLI authentication.
 
 ### PKCEAuthorizationFlow Section
 
-Configures PKCE authorization flow for browser-based authentication.
+<Note>
+**Quickstart users:** This section is **not required** when using the embedded IdP. The embedded IdP automatically handles PKCE authorization flow for desktop clients that launch a browser for authentication.
+
+**Using external IdPs like Google, Okta, self-hosted Authentik, or any other OIDC provider?** If you added them through **Settings → Identity Providers** in the Dashboard, PKCE authentication works automatically - no configuration needed here.
+
+This section is only needed for the [legacy advanced deployment method](/selfhosted/selfhosted-guide) where the embedded IdP is disabled and you need to configure PKCE flow directly with an external identity provider.
+</Note>
+
+Configures PKCE (Proof Key for Code Exchange) authorization flow for browser-based authentication. This flow is used by desktop clients that can launch a local web server to receive the OAuth callback, providing a more seamless authentication experience than the device flow.
 
 ```json
 "PKCEAuthorizationFlow": {
@@ -649,38 +863,44 @@ Configures PKCE authorization flow for browser-based authentication.
 
 <Properties>
   <Property name="DisableDefaultPolicy" type="boolean">
-    Disable the default "allow all" access policy for new accounts. Default: `false`
+    Disable the default "allow all" access policy for new accounts. When `true`, new accounts start with no access rules, requiring explicit policy creation before peers can communicate. Default: `false`
   </Property>
   <Property name="Datadir" type="string">
-    Data directory path. Usually set via command line.
+    Data directory path where the management service stores its database and state files. Usually set via command line (`--datadir`). Default: `/var/lib/netbird`
   </Property>
   <Property name="DataStoreEncryptionKey" type="string">
-    32-byte encryption key for sensitive data at rest. Auto-generated by setup scripts.
+    32-byte (256-bit) encryption key for sensitive data at rest. Used to encrypt setup keys, API tokens, and other secrets stored in the database. Auto-generated by setup scripts.
   </Property>
 </Properties>
 
 <Warning>
-Keep `DataStoreEncryptionKey` secure and backed up. Losing this key means losing access to encrypted data in the database.
+Keep `DataStoreEncryptionKey` secure and backed up. This key encrypts sensitive data in your database, including setup keys and API tokens. Losing this key means losing access to encrypted data, and you will need to regenerate all setup keys and API tokens.
 </Warning>
 
 ---
 
 ## relay.env
 
-Environment configuration for the relay service. This file is mounted into the relay container.
+Environment configuration for the relay service. This file is mounted into the relay container and configures both the relay and the embedded STUN server.
 
 ```bash
 # Log level: debug, info, warn, error
 NB_LOG_LEVEL=info
 
-# Address to listen on
-NB_LISTEN_ADDRESS=:33080
+# Address to listen on for relay connections
+NB_LISTEN_ADDRESS=:80
 
 # Public address for peers to connect
-NB_EXPOSED_ADDRESS=rel://netbird.example.com:33080
+# Use rel:// for unencrypted or rels:// for TLS
+NB_EXPOSED_ADDRESS=rels://netbird.example.com:443
 
 # Authentication secret (must match management.json Relay.Secret)
 NB_AUTH_SECRET=your-secret-here
+
+# Embedded STUN server configuration
+NB_ENABLE_STUN=true
+NB_STUN_LOG_LEVEL=info
+NB_STUN_PORTS=3478
 ```
 
 ### All Relay Variables
@@ -688,9 +908,12 @@ NB_AUTH_SECRET=your-secret-here
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NB_LOG_LEVEL` | `info` | Log verbosity |
-| `NB_LISTEN_ADDRESS` | `:33080` | Listen address |
+| `NB_LISTEN_ADDRESS` | `:80` | Listen address for relay connections |
 | `NB_EXPOSED_ADDRESS` | - | Public relay address for peers |
 | `NB_AUTH_SECRET` | - | Shared authentication secret |
+| `NB_ENABLE_STUN` | `false` | Enable embedded STUN server |
+| `NB_STUN_PORTS` | `3478` | STUN server UDP ports (comma-separated) |
+| `NB_STUN_LOG_LEVEL` | `info` | STUN server log level |
 | `NB_METRICS_PORT` | - | Prometheus metrics port (optional) |
 | `NB_TLS_CERT_FILE` | - | TLS certificate file path |
 | `NB_TLS_KEY_FILE` | - | TLS key file path |
@@ -755,56 +978,6 @@ LETSENCRYPT_EMAIL=admin@example.com
 | `NGINX_SSL_PORT` | `443` | HTTPS port |
 | `LETSENCRYPT_DOMAIN` | - | Domain for Let's Encrypt (set to `none` to disable) |
 | `LETSENCRYPT_EMAIL` | - | Email for Let's Encrypt |
-
----
-
-## turnserver.conf
-
-Coturn TURN server configuration.
-
-```ini
-# Listening ports
-listening-port=3478
-tls-listening-port=5349
-
-# TURN relay port range
-min-port=49152
-max-port=65535
-
-# Authentication
-lt-cred-mech
-user=netbird:your-turn-password
-
-# Domain/Realm
-realm=wiretrustee.com
-
-# Logging
-log-file=stdout
-
-# Fingerprinting
-fingerprint
-
-# Disable TCP relay (optional, saves resources)
-# no-tcp-relay
-```
-
-### Key Settings
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `listening-port` | `3478` | UDP/TCP STUN/TURN port |
-| `tls-listening-port` | `5349` | TLS TURN port |
-| `min-port` | `49152` | Minimum relay port |
-| `max-port` | `65535` | Maximum relay port |
-| `lt-cred-mech` | - | Enable long-term credential mechanism |
-| `user` | - | TURN credentials in format `username:password` |
-| `realm` | `wiretrustee.com` | TURN realm |
-| `external-ip` | - | External IP for NAT (if behind NAT) |
-| `fingerprint` | - | Enable STUN fingerprinting |
-
-<Note>
-If your server is behind NAT, you must configure `external-ip` with your public IP address for TURN to work correctly.
-</Note>
 
 ---
 
@@ -878,7 +1051,11 @@ See [Reverse Proxy Configuration](/selfhosted/reverse-proxy) for detailed templa
 
 ### Configuring External TURN Servers
 
-To use external TURN servers (e.g., for geographically distributed deployments):
+<Note>
+The default NetBird deployment uses the relay service for NAT traversal, which handles most connectivity scenarios. External TURN servers are only needed for advanced use cases like geographically distributed deployments or environments with restrictive firewalls that block the relay protocol.
+</Note>
+
+To use external TURN servers (e.g., coturn deployed separately):
 
 ```json
 "TURNConfig": {
