@@ -291,6 +291,7 @@ export const docsNavigation = [
         title: 'SELF-HOST NETBIRD',
         links: [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
+            { title: 'Configuration Files', href: '/selfhosted/configuration-files' },
             {
                 title: 'Authentication',
                 isOpen: true,
@@ -324,7 +325,6 @@ export const docsNavigation = [
             },
             { title: 'Reverse Proxy', href: '/selfhosted/reverse-proxy' },
             { title: 'Advanced Guide', href: '/selfhosted/selfhosted-guide' },
-            { title: 'Configuration Files', href: '/selfhosted/configuration-files' },
             { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store' },
             { title: 'Management Postgres Store', href: '/selfhosted/postgres-store' },
             { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store' },
