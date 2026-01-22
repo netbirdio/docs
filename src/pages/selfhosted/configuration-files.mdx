@@ -46,7 +46,7 @@ The Docker Compose file defines all NetBird services, their dependencies, networ
 |---------|-------|---------------|-------------------|-------------|
 | `dashboard` | `netbirdio/dashboard` | 80 | 8080:80 | The web-based management console where administrators configure networks, manage peers, create access policies, and view activity logs. Includes an embedded nginx server for serving the UI. |
 | `management` | `netbirdio/management` | 80 | 8081:80 | The central control plane that handles peer registration, distributes network configurations, manages access policies, and hosts the embedded identity provider. All peers connect to this service on startup. |
-| `signal` | `netbirdio/signal` | 80, 10000 | 8083:80, 10000:10000 | Rendezvous service that facilitates peer connections by enabling peers to exchange connection offers and establish direct WireGuard tunnels. Handles only connection setup metadata, not actual traffic. Port 80 is for modern HTTP/2 connections; port 10000 is for legacy gRPC (see note below). |
+| `signal` | `netbirdio/signal` | 80 | 8083:80 | Rendezvous service that facilitates peer connections by enabling peers to exchange connection offers and establish direct WireGuard tunnels. Handles only connection setup metadata, not actual traffic. Uses HTTP/2 protocol via the reverse proxy. |
 | `relay` | `netbirdio/relay` | 80, 3478/udp | 8084:80, 3478:3478/udp | Routes encrypted traffic between peers when direct connections fail due to restrictive NATs or firewalls. Also provides embedded STUN on UDP 3478 for NAT type detection. |
 | `caddy` | `caddy` | 80, 443 | 80:80, 443:443 | Handles TLS termination and routes incoming HTTPS requests to the appropriate NetBird services. Only included in default `getting-started.sh` deployments; can be replaced with your own reverse proxy. |
 
@@ -111,7 +111,7 @@ dashboard:
 ```
 
 <Note>
-The dashboard service is configured via the `dashboard.env` file. See the [dashboard.env section](#dashboardenv) for the full list of environment variables. When using the built-in Caddy, no ports are exposed directly from the dashboard container; Caddy routes traffic to it internally.
+The dashboard service is configured via the `dashboard.env` file. See the [dashboard.env section](#dashboard-env) for the full list of environment variables. When using the built-in Caddy, no ports are exposed directly from the dashboard container; Caddy routes traffic to it internally.
 </Note>
 
 ### Management Service
@@ -194,7 +194,7 @@ To use an external database, add environment variables:
 
 ### Signal Service
 
-The signal service acts as a rendezvous service for facilitating peer-to-peer connections. It enables peers to discover each other and exchange connection information needed to establish direct WireGuard tunnels. The service supports HTTP/2 for modern clients and gRPC for legacy compatibility.
+The signal service acts as a rendezvous service for facilitating peer-to-peer connections. It enables peers to discover each other and exchange connection information needed to establish direct WireGuard tunnels.
 
 **With built-in Caddy (default):**
 ```yaml
@@ -219,7 +219,6 @@ signal:
   networks: [netbird]
   ports:
     - '127.0.0.1:8083:80'
-    - '127.0.0.1:10000:10000'
   logging:
     driver: "json-file"
     options:
@@ -227,28 +226,13 @@ signal:
       max-file: "2"
 ```
 
-#### Signal Service Ports
-
-The signal service exposes two ports with different purposes:
-
-| Port | Protocol | Purpose | Clients |
-|------|----------|---------|---------|
-| 80 | HTTP/2 (h2c) | Modern signal connections via reverse proxy | NetBird v0.10.0+ (July 2022 and later) |
-| 10000 | gRPC | Legacy backward compatibility server | NetBird clients older than v0.10.0 |
-
 <Note>
-**About port 10000 (Legacy gRPC):** Starting with NetBird v0.10.0, the signal service moved to standard HTTP ports (443/80) with HTTP/2 support, allowing connections through reverse proxies. Port 10000 is maintained as a **backward compatibility server** for older clients that still use the original gRPC protocol.
-
-**When can you close port 10000?** If all your NetBird clients are running v0.10.0 or later (released July 2022), you can safely remove the port 10000 mapping from your `docker-compose.yml`. Modern clients connect via the reverse proxy on ports 443/80 using HTTP/2. However, if you have any older clients or are unsure, keep port 10000 open to ensure connectivity.
-</Note>
-
-<Note>
-When using the built-in Caddy reverse proxy, port 10000 is not exposed externally by default since Caddy routes modern signal traffic internally. If you need to support legacy clients with the built-in Caddy deployment, you would need to add the port mapping manually.
+The signal service listens on port 80 internally and uses HTTP/2 protocol. The reverse proxy (Caddy or your own) handles TLS termination and routes signal traffic to this service.
 </Note>
 
 ### Relay Service
 
-The relay service provides NAT traversal when direct peer-to-peer connections are not possible. It also includes an embedded STUN server for NAT detection and traversal.
+The relay service is a public service that forwards packets when direct peer-to-peer connections are not possible. It also includes an embedded STUN server for NAT detection and traversal.
 
 **With built-in Caddy (default):**
 ```yaml
@@ -291,7 +275,7 @@ relay:
 The STUN port (3478/udp) must always be exposed publicly, regardless of reverse proxy configuration. STUN uses UDP for NAT detection and cannot be proxied through HTTP reverse proxies.
 </Note>
 
-The relay service is configured via the `relay.env` file. See the [relay.env section](#relayenv) for detailed configuration options.
+The relay service is configured via the `relay.env` file. See the [relay.env section](#relay-env) for detailed configuration options.
 
 <Properties>
   <Property name="NB_LOG_LEVEL" type="string">
@@ -346,21 +330,7 @@ The management configuration file controls the core behavior of the NetBird Mana
 ### About the Embedded IdP
 
 The `getting-started.sh` deployment uses NetBird's **embedded identity provider (IdP)**, which is based on DEX. This is the standard, recommended approach that handles authentication automatically.
-
-**You CAN connect external identity providers with the embedded IdP:**
-- **Google Workspace** - Use Google accounts for authentication
-- **Microsoft Entra ID (Azure AD)** - Integrate with Microsoft 365 organizations
-- **Okta** - Connect your Okta workforce identity
-- **Self-hosted Authentik** - Use your own Authentik instance for authentication
-- **Any OIDC provider** - Any provider supporting OpenID Connect works with NetBird
-
-**How to add external IdPs:**
-1. Go to **Settings → Identity Providers** in the NetBird Dashboard
-2. Click **Add Identity Provider**
-3. Follow the guided setup for your chosen provider
-4. Users can then authenticate using their existing corporate credentials
-
-This Dashboard-based configuration is simpler, more maintainable, and does not require editing `management.json`.
+This Dashboard-based configuration is simpler, more maintainable, and does not require editing `management.json`. To configure your external IdP with this method, please refer to our [identity provider documentation](/selfhosted/identity-providers).
 
 <Note>
 If you need to configure identity providers at the infrastructure level (directly in configuration files rather than through the Dashboard), see the [Advanced Self-hosting Guide](/selfhosted/selfhosted-guide).
@@ -376,9 +346,6 @@ The `management.json` file for `getting-started.sh` deployments uses these secti
 | `Relay` | Yes | Configures relay server addresses and authentication. Peers use relay servers when direct connections fail. The secret here must match `NB_AUTH_SECRET` in `relay.env`. |
 | `Signal` | Yes | Specifies how the management server connects to the signal service. Peers receive this address and use it to exchange connection offers with other peers. |
 | `EmbeddedIdP` | Yes | Enables and configures the built-in identity provider (based on DEX). Handles user authentication, token issuance, and OIDC endpoints. Required for `getting-started.sh` deployments. |
-| `ReverseProxy` | No | Defines trusted proxy IP ranges for accurate client IP detection. Configure this when running behind a load balancer or reverse proxy to ensure correct IP logging and rate limiting. |
-| `StoreConfig` | No | Specifies the database engine (SQLite, PostgreSQL, or MySQL). Defaults to SQLite. Use PostgreSQL for production deployments requiring high availability or concurrent access. |
-| `TURNConfig` | No | Legacy configuration for external TURN servers like coturn. Not used in standard deployments since the relay service handles NAT traversal. Only needed for advanced scenarios. |
 
 ### Complete Structure
 
@@ -437,57 +404,6 @@ The embedded STUN server in the relay service (enabled via `NB_ENABLE_STUN=true`
   </Property>
 </Properties>
 
-### TURNConfig Section (Legacy)
-
-<Note>
-The `TURNConfig` section is a **legacy configuration** for deployments using external TURN servers (such as coturn). The `getting-started.sh` deployment uses the **Relay service** instead, which provides similar NAT traversal functionality with simpler configuration. This section is not included in standard `getting-started.sh` deployments.
-</Note>
-
-If you have an existing deployment using TURN servers or need specific TURN features (such as TCP relay or time-based credentials), you can configure them here:
-
-```json
-"TURNConfig": {
-    "Turns": [
-        {
-            "Proto": "udp",
-            "URI": "turn:netbird.example.com:3478",
-            "Username": "netbird",
-            "Password": "your-turn-password"
-        }
-    ],
-    "CredentialsTTL": "12h",
-    "Secret": "secret",
-    "TimeBasedCredentials": false
-}
-```
-
-<Properties>
-  <Property name="Turns" type="array">
-    Array of TURN server configurations.
-  </Property>
-  <Property name="Turns[].Proto" type="string">
-    Protocol: `udp`, `tcp`, or `tls`. Default: `udp`
-  </Property>
-  <Property name="Turns[].URI" type="string">
-    TURN server URI. Format: `turn:hostname:port` or `turns:hostname:port` for TLS.
-  </Property>
-  <Property name="Turns[].Username" type="string">
-    TURN authentication username.
-  </Property>
-  <Property name="Turns[].Password" type="string">
-    TURN authentication password.
-  </Property>
-  <Property name="CredentialsTTL" type="string">
-    Time-to-live for TURN credentials. Format: Go duration (e.g., `12h`, `30m`). Default: `12h`
-  </Property>
-  <Property name="Secret" type="string">
-    Shared secret for time-based credentials (when enabled).
-  </Property>
-  <Property name="TimeBasedCredentials" type="boolean">
-    Enable time-based TURN credentials. Default: `false`
-  </Property>
-</Properties>
-
 ### Relay Section
 
 Configures the NetBird relay server connection for NAT traversal.
@@ -539,7 +455,7 @@ The signal service acts as a rendezvous service that facilitates peer connection
 - **Rendezvous service** - Enables peers to find each other and exchange the information needed to establish direct WireGuard tunnels
 - **No traffic routing** - Unlike the relay, the signal server only handles connection setup metadata, not actual traffic
 - **Persistent connections** - Peers maintain a connection to the signal server to receive incoming connection requests
-- **Protocol support** - Modern clients use HTTP/2 (port 443/80 via reverse proxy); legacy clients use gRPC (port 10000)
+- **HTTP/2 protocol** - Clients connect via the reverse proxy on port 443 (HTTPS) or 80 (HTTP)
 
 ```json
 "Signal": {
@@ -795,7 +711,7 @@ When using the built-in Caddy or an external reverse proxy, set `LETSENCRYPT_DOM
 | Variable | Description |
 |----------|-------------|
 | `NETBIRD_MGMT_API_ENDPOINT` | The URL where the dashboard makes REST API calls to the management server (e.g., `https://netbird.example.com`). Must be accessible from users' browsers since API calls are made client-side. |
-| `NETBIRD_MGMT_GRPC_API_ENDPOINT` | The URL for gRPC communication with the management server. Usually the same as the REST endpoint. Used for real-time updates and streaming data to the dashboard. |
+| `NETBIRD_MGMT_GRPC_API_ENDPOINT` | The URL for gRPC communication with the management server. Usually the same as the REST endpoint. Used for in-browser SSH and RDP clients, as well as surfacing management links for client config instructions. |
 
 ### Authentication Configuration
 
@@ -937,8 +853,6 @@ To use external TURN servers (e.g., coturn deployed separately):
 ## See Also
 
 - [Self-hosting Quickstart Guide](/selfhosted/selfhosted-quickstart) - Get started quickly with default settings
-- [Advanced Self-hosting Guide](/selfhosted/selfhosted-guide) - Custom IdP integration
-- [Environment Variables](/selfhosted/environment-variables) - Runtime environment configuration
 - [Reverse Proxy Configuration](/selfhosted/reverse-proxy) - Traefik, Nginx, Caddy setup
 - [Management SQLite Store](/selfhosted/sqlite-store) - SQLite database details
 - [Management Postgres Store](/selfhosted/postgres-store) - PostgreSQL setup
