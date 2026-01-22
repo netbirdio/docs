@@ -38,7 +38,9 @@ export const docsNavigation = [
                 { title: 'MacOS', href: '/get-started/install/macos' },
                 { title: 'Docker', href: '/get-started/install/docker' },
                 { title: 'iOS', href: '/get-started/install/ios' },
+                { title: 'tvOS', href: '/get-started/install/tvos'},
                 { title: 'Android', href: '/get-started/install/android' },
+                { title: 'Android TV', href: '/get-started/install/android-tv'}
               ],
             },
             {
@@ -161,9 +163,12 @@ export const docsNavigation = [
                 title: 'DNS',
                 isOpen: false,
                 links: [
+                    { title: 'Quickstart', href: '/manage/dns/private-dns-behind-routing-peers' },
                     { title: 'Overview', href: '/manage/dns' },
                     { title: 'Configuring Nameservers', href: '/manage/dns/nameserver-groups' },
                     { title: 'DNS Settings', href: '/manage/dns/dns-settings' },
+                    { title: 'Custom Zones', href: '/manage/dns/custom-zones' },
+                    { title: 'DNS Aliases for Routed Networks', href: '/manage/dns/dns-aliases-for-routed-networks' },
                     { title: 'DNS Troubleshooting', href: '/manage/dns/troubleshooting' },
                 ]
             },
@@ -230,7 +235,9 @@ export const docsNavigation = [
                     { title: 'Authentication', href: '/manage/settings/enforce-periodic-user-authentication' },
                     { title: 'Multi-Factor Authentication', href: '/manage/settings/multi-factor-authentication' },
                     { title: 'Delete Account', href: '/manage/settings/delete-account' },
-                    { title: 'Plans and Billing', href: '/manage/settings/plans-and-billing' }
+                    { title: 'Plans and Billing', href: '/manage/settings/plans-and-billing' },
+                    { title: 'Auto Update', href: '/manage/peers/auto-update' },
+                    { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                 ]
             },
             {
@@ -286,7 +293,7 @@ export const docsNavigation = [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
             {
                 title: 'Authentication',
-                isOpen: false,
+                isOpen: true,
                 links: [
                     { title: 'Authentication and IdPs', href: '/selfhosted/identity-providers' },
                     { title: 'Local User Management', href: '/selfhosted/identity-providers/local' },
@@ -294,6 +301,7 @@ export const docsNavigation = [
                         title: 'Self-hosted IdPs',
                         isOpen: true,
                         links: [
+                            { title: 'Generic OIDC', href: '/selfhosted/identity-providers/generic-oidc' },
                             { title: 'Zitadel', href: '/selfhosted/identity-providers/zitadel' },
                             { title: 'Authentik', href: '/selfhosted/identity-providers/authentik' },
                             { title: 'Keycloak', href: '/selfhosted/identity-providers/keycloak' },
@@ -308,17 +316,29 @@ export const docsNavigation = [
                             { title: 'Microsoft Entra ID', href: '/selfhosted/identity-providers/managed/microsoft-entra-id' },
                             { title: 'JumpCloud', href: '/selfhosted/identity-providers/managed/jumpcloud' },
                             { title: 'Auth0', href: '/selfhosted/identity-providers/managed/auth0' },
+                            { title: 'Duo', href: '/selfhosted/identity-providers/managed/duo' },
                             { title: 'Okta', href: '/selfhosted/identity-providers/managed/okta' },
                         ]
                     },
                 ]
             },
-            { title: 'Advanced guide', href: '/selfhosted/selfhosted-guide' },
+            { title: 'Reverse Proxy', href: '/selfhosted/reverse-proxy' },
+            { title: 'Advanced Guide', href: '/selfhosted/selfhosted-guide' },
+            { title: 'Environment Variables', href: '/selfhosted/environment-variables' },
+            { title: 'Configuration Files', href: '/selfhosted/configuration-files' },
             { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store' },
             { title: 'Management Postgres Store', href: '/selfhosted/postgres-store' },
             { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store' },
             { title: 'Management geolocation', href: '/selfhosted/geo-support' },
             { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
+            {
+                title: 'Migration Guides',
+                isOpen: false,
+                links: [
+                    { title: 'Coturn to Embedded STUN', href: '/selfhosted/migration/coturn-to-stun-migration' },
+
+                ]
+            },
         ],
     },
     {

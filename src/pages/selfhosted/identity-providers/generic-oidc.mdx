@@ -1,0 +1,290 @@
+import {Note} from "@/components/mdx";
+
+# Generic OIDC Provider with NetBird Self-Hosted
+
+NetBird supports any OpenID Connect (OIDC) compliant identity provider through its generic OIDC connector. This guide covers the requirements and configuration for connecting a non-supported or custom OIDC provider to your NetBird self-hosted deployment.
+
+## Required OIDC Claims
+
+Your identity provider must include the following claims in the ID token or UserInfo response:
+
+| Claim | Required | Description |
+|-------|----------|-------------|
+| `sub` | **Yes** | Subject - unique user identifier. This is the primary key for user identity. |
+| `email` | Recommended | User's email address. Used for display and notifications. |
+| `name` | Recommended | User's full display name. |
+| `preferred_username` | Optional | Fallback display name if `name` is not present. |
+
+<Note>
+While `email` and `name` are technically optional, they are strongly recommended. Without them, users will appear with only their `sub` identifier in the NetBird dashboard.
+</Note>
+
+### Minimal Viable Token
+
+Here's the minimum JWT payload your OIDC provider should return:
+
+```json
+{
+  "iss": "https://your-idp.example.com",
+  "sub": "user-123456",
+  "aud": "your-client-id",
+  "email": "user@example.com",
+  "name": "John Doe",
+  "iat": 1234567890,
+  "exp": 1234571490
+}
+```
+
+## Required OIDC Endpoints
+
+Your identity provider must expose standard OIDC endpoints:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/.well-known/openid-configuration` | OIDC Discovery document |
+| Authorization endpoint | User authentication |
+| Token endpoint | Token exchange |
+| JWKS endpoint | Token signature verification |
+| UserInfo endpoint | Fetch additional user claims (recommended) |
+
+NetBird automatically discovers these endpoints from the OIDC discovery document at `{issuer}/.well-known/openid-configuration`.
+
+## Groups and Roles
+
+NetBird does **not require** specific roles or group memberships by default. However, you can optionally configure JWT group synchronization to:
+
+- Automatically create NetBird groups based on IdP groups
+- Restrict access to users in specific groups
+- Sync group membership changes on each login
+
+### Groups Claim Format
+
+If you want to use JWT group sync, your IdP must include a groups claim as a JSON array of strings:
+
+```json
+{
+  "sub": "user-123456",
+  "email": "user@example.com",
+  "groups": ["engineering", "admins", "team-a"]
+}
+```
+
+The claim name is configurable (default: `groups`). Some providers use `roles`, `memberOf`, or custom claim names.
+
+---
+
+## Management Setup (Recommended)
+
+Add your OIDC provider directly in the NetBird Management Dashboard. This is the simplest approach and works with any OIDC-compliant provider.
+
+### Prerequisites
+
+- NetBird self-hosted with embedded IdP enabled
+- An OIDC-compliant identity provider with admin access
+
+### Step 1: Create OIDC Client in Your Identity Provider
+
+1. Log in to your identity provider's admin console
+2. Create a new OIDC/OAuth2 application or client
+3. Configure the following settings:
+
+| Setting | Value |
+|---------|-------|
+| Application Type | Web Application (Confidential Client) |
+| Grant Type | Authorization Code |
+| Token Endpoint Auth | Client Secret (Basic or Post) |
+
+4. Note the **Client ID** and **Client Secret** - you'll need these for NetBird
+5. Note the **Issuer URL** (typically the base URL of your IdP)
+
+<Note>
+**Important:** Create a confidential client (not a public client). NetBird requires a client secret for secure token exchange. The secret is stored securely and never exposed to end users.
+</Note>
+
+### Step 2: Configure Scopes
+
+Ensure your OIDC client requests the following scopes:
+
+| Scope | Purpose |
+|-------|---------|
+| `openid` | Required for OIDC |
+| `profile` | Access to `name` and `preferred_username` claims |
+| `email` | Access to `email` claim |
+| `groups` | Access to group membership (if supported and needed) |
+
+<Note>
+Some providers include profile and email claims by default. Others require explicit scope requests. Check your provider's documentation.
+</Note>
+
+### Step 3: Add Identity Provider in NetBird
+
+1. Log in to your NetBird Dashboard
+2. Navigate to **Settings** → **Identity Providers**
+3. Click **Add Identity Provider**
+4. Select **Generic OIDC** from the type dropdown
+5. Fill in the fields:
+
+| Field | Value |
+|-------|-------|
+| Type | Generic OIDC |
+| Name | Your provider name (shown on login button) |
+| Client ID | From your identity provider |
+| Client Secret | From your identity provider |
+| Issuer | Your provider's issuer URL (e.g., `https://idp.example.com`) |
+
+6. Click **Save** (don't close the modal yet)
+
+### Step 4: Configure Redirect URI
+
+After saving, NetBird displays the **Redirect URL**. Copy this URL and add it to your identity provider's allowed redirect URIs / callback URLs.
+
+The redirect URL format is typically:
+```
+https://your-netbird-domain.com/oauth2/callback/{connector-id}
+```
+
+<Note>
+**Common issues:** Ensure the redirect URI matches exactly - no trailing slashes, correct protocol (https), and proper case sensitivity depending on your provider.
+</Note>
+
+### Step 5: Test the Connection
+
+1. Log out of NetBird Dashboard
+2. On the login page, you should see a button with your provider's name
+3. Click it and authenticate with your identity provider
+4. You should be redirected back to NetBird and logged in
+
+---
+
+## Configuring JWT 'groups' Claim
+
+To sync groups from your identity provider to NetBird:
+
+### Step 1: Configure Your IdP to Include Groups
+
+Most identity providers require explicit configuration to include groups in tokens. Common approaches:
+
+- **Add a groups scope** - Request the `groups` scope in your OIDC client
+- **Create a custom claim mapper** - Map user groups to a token claim
+- **Configure token enrichment** - Add groups to ID token or access token
+
+Refer to your identity provider's documentation for specific instructions.
+
+### Step 2: Enable JWT Group Sync in NetBird
+
+1. In NetBird Dashboard, go to **Settings** → **Groups**
+2. Enable **JWT group sync**
+3. Set **JWT claim** to the claim name your IdP uses (commonly `groups`, `roles`, or `memberOf`)
+4. Optionally configure **JWT allow groups** to restrict access to specific groups
+
+### Example: Groups Claim Configuration
+
+If your IdP returns groups like this:
+
+```json
+{
+  "sub": "user-123",
+  "groups": ["developers", "netbird-users"]
+}
+```
+
+Configure NetBird with:
+- **JWT claim**: `groups`
+- **JWT allow groups**: `netbird-users` (optional - restricts access to this group)
+
+<Note>
+Groups created via JWT sync are managed by your IdP. Users are added/removed from these groups automatically on each login based on their IdP group membership.
+</Note>
+
+---
+
+## Provider-Specific Notes
+
+### Claims in ID Token vs UserInfo
+
+Some providers only include basic claims in the ID token and require a UserInfo request for `email` and `name`. NetBird's embedded DEX connector automatically fetches UserInfo when configured with `getUserInfo: true` (the default for generic OIDC connectors).
+
+If users appear without email or name:
+1. Check if your IdP includes these claims in the ID token
+2. Verify the UserInfo endpoint is accessible
+3. Ensure the `profile` and `email` scopes are granted
+
+### Issuer URL Format
+
+The issuer URL must exactly match the `iss` claim in tokens issued by your provider. Common formats:
+
+| Provider Type | Issuer Format Example |
+|---------------|----------------------|
+| Standard OIDC | `https://idp.example.com` |
+| Realm-based (Keycloak) | `https://idp.example.com/realms/myrealm` |
+| Tenant-based | `https://idp.example.com/tenant-id` |
+| Path-based | `https://example.com/oauth2` |
+
+### Token Signature Verification
+
+NetBird validates tokens using public keys from your IdP's JWKS endpoint. Ensure:
+- The JWKS endpoint is accessible from your NetBird server
+- Tokens are signed with a supported algorithm (RS256, ES256, etc.)
+- Key rotation is properly configured
+
+---
+
+## Troubleshooting
+
+### "Invalid redirect URI" error
+
+- Copy the exact Redirect URL from NetBird after adding the provider
+- Ensure no trailing slashes or protocol mismatches
+- Some providers are case-sensitive
+
+### "Invalid token" or "Token validation failed"
+
+- Verify the issuer URL matches exactly (including trailing slashes)
+- Check clock synchronization between NetBird server and IdP
+- Ensure the client ID matches what's configured in the IdP
+- Verify JWKS endpoint is accessible
+
+### Users appear without email or name
+
+- Check if your IdP includes `email` and `name` claims
+- Verify `profile` and `email` scopes are requested and granted
+- Some IdPs require explicit claim mapping configuration
+
+### "User not found" after successful authentication
+
+- Check Management service logs for detailed errors
+- Verify the token contains the required `sub` claim
+- Ensure no account domain restrictions are blocking the user
+
+### Groups not syncing
+
+- Verify your IdP includes groups in the token (check with a JWT decoder)
+- Ensure the claim name in NetBird matches your IdP's claim name
+- Check that groups are in array format: `["group1", "group2"]`
+
+---
+
+## API Configuration
+
+You can also configure generic OIDC providers via the API:
+
+```bash
+curl -X POST "https://netbird.example.com/api/identity-providers" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "oidc",
+    "name": "My Custom IdP",
+    "client_id": "your-client-id",
+    "client_secret": "your-client-secret",
+    "issuer": "https://idp.example.com"
+  }'
+```
+
+---
+
+## Related Resources
+
+- [Identity Providers Overview](/selfhosted/identity-providers)
+- [Local User Management](/selfhosted/identity-providers/local)
+- [OpenID Connect Specification](https://openid.net/specs/openid-connect-core-1_0.html)

@@ -1,0 +1,855 @@
+import {Note, Warning} from "@/components/mdx";
+import {Properties, Property} from "@/components/mdx";
+
+# Self-Hosted Deployment Configuration Files Reference
+
+This page provides a comprehensive reference for all configuration files used when self-hosting NetBird with the `getting-started.sh` deployment method. Understanding these files helps you customize your deployment, troubleshoot issues, and integrate with existing infrastructure.
+
+<Note>
+Configuration files are **generated automatically** by the `getting-started.sh` script. Modifying files directly is only necessary for advanced customization after initial setup.
+</Note>
+
+## Overview
+
+A standard NetBird self-hosted deployment uses the following configuration files:
+
+| File | Purpose |
+|------|---------|
+| `docker-compose.yml` | Defines all NetBird services (dashboard, management, signal, relay), their Docker images, port mappings, volumes, and startup order. Modify this to change resource limits, add services, or adjust networking. |
+| `management.json` | Central configuration for the management server including STUN/relay server addresses, authentication settings, and database configuration. Changes here affect how peers connect and authenticate. |
+| `relay.env` | Environment variables for the relay service including the authentication secret, public address, and embedded STUN server settings. The relay secret here must match `management.json`. |
+| `dashboard.env` | Configures the web dashboard including API endpoints, OAuth2/OIDC settings, and optional SSL settings for standalone deployments without a reverse proxy. |
+| `Caddyfile` | Configures the built-in Caddy reverse proxy for SSL termination and routing requests to NetBird services. Only present when using the default `getting-started.sh` deployment with Caddy. |
+
+### File Locations
+
+After running the installation script, configuration files are located in the directory where you ran the script (typically `~/netbird/` or the current working directory):
+
+```
+./
+├── docker-compose.yml
+├── management.json
+├── relay.env
+├── dashboard.env
+└── Caddyfile          # Only when using built-in Caddy
+```
+
+---
+
+## docker-compose.yml
+
+The Docker Compose file defines all NetBird services, their dependencies, networking, and volumes.
+
+### Services Overview
+
+| Service | Image | Internal Port | External (Exposed) | Description |
+|---------|-------|---------------|-------------------|-------------|
+| `dashboard` | `netbirdio/dashboard` | 80 | 8080:80 | The web-based management console where administrators configure networks, manage peers, create access policies, and view activity logs. Includes an embedded nginx server for serving the UI. |
+| `management` | `netbirdio/management` | 80 | 8081:80 | The central control plane that handles peer registration, distributes network configurations, manages access policies, and hosts the embedded identity provider. All peers connect to this service on startup. |
+| `signal` | `netbirdio/signal` | 80 | 8083:80 | Rendezvous service that facilitates peer connections by enabling peers to exchange connection offers and establish direct WireGuard tunnels. Handles only connection setup metadata, not actual traffic. Uses HTTP/2 protocol via the reverse proxy. |
+| `relay` | `netbirdio/relay` | 80, 3478/udp | 8084:80, 3478:3478/udp | Routes encrypted traffic between peers when direct connections fail due to restrictive NATs or firewalls. Also provides embedded STUN on UDP 3478 for NAT type detection. |
+| `caddy` | `caddy` | 80, 443 | 80:80, 443:443 | Handles TLS termination and routes incoming HTTPS requests to the appropriate NetBird services. Only included in default `getting-started.sh` deployments; can be replaced with your own reverse proxy. |
+
+<Note>
+**Internal vs External ports**: Internal ports are what services listen on inside their containers. External (Exposed) ports show the host-to-container mapping used when running without the built-in Caddy (e.g., with Nginx, Traefik, or other reverse proxies). When using the default Caddy deployment, only Caddy exposes ports externally.
+</Note>
+
+<Note>
+The relay service includes an embedded STUN server, eliminating the need for a separate coturn container. STUN functionality is enabled via the `NB_ENABLE_STUN` environment variable in `relay.env`.
+</Note>
+
+### Default Settings
+
+The compose file includes these defaults applied to all services:
+
+```yaml
+x-default: &default
+  restart: 'unless-stopped'
+  logging:
+    driver: 'json-file'
+    options:
+      max-size: '500m'
+      max-file: '2'
+```
+
+### Dashboard Service
+
+The dashboard provides the web interface for NetBird management.
+
+**With built-in Caddy (default):**
+```yaml
+dashboard:
+  image: netbirdio/dashboard:latest
+  container_name: netbird-dashboard
+  restart: unless-stopped
+  networks: [netbird]
+  env_file:
+    - ./dashboard.env
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "500m"
+      max-file: "2"
+```
+
+**With external reverse proxy (exposed ports):**
+```yaml
+dashboard:
+  image: netbirdio/dashboard:latest
+  container_name: netbird-dashboard
+  restart: unless-stopped
+  networks: [netbird]
+  ports:
+    - '127.0.0.1:8080:80'
+  env_file:
+    - ./dashboard.env
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "500m"
+      max-file: "2"
+```
+
+<Note>
+The dashboard service is configured via the `dashboard.env` file. See the [dashboard.env section](#dashboard-env) for the full list of environment variables. When using the built-in Caddy, no ports are exposed directly from the dashboard container; Caddy routes traffic to it internally.
+</Note>
+
+### Management Service
+
+The management service is the core of NetBird, handling peer registration, authentication, and network coordination.
+
+**With built-in Caddy (default):**
+```yaml
+management:
+  image: netbirdio/management:latest
+  container_name: netbird-management
+  restart: unless-stopped
+  networks: [netbird]
+  volumes:
+    - netbird_management:/var/lib/netbird
+    - ./management.json:/etc/netbird/management.json
+  command: [
+    "--port", "80",
+    "--log-file", "console",
+    "--log-level", "info",
+    "--disable-anonymous-metrics=false",
+    "--single-account-mode-domain=netbird.selfhosted",
+    "--dns-domain=netbird.selfhosted",
+    "--idp-sign-key-refresh-enabled",
+  ]
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "500m"
+      max-file: "2"
+```
+
+**With external reverse proxy (exposed ports):**
+```yaml
+management:
+  image: netbirdio/management:latest
+  container_name: netbird-management
+  restart: unless-stopped
+  networks: [netbird]
+  ports:
+    - '127.0.0.1:8081:80'
+  volumes:
+    - netbird_management:/var/lib/netbird
+    - ./management.json:/etc/netbird/management.json
+  command: [
+    "--port", "80",
+    "--log-file", "console",
+    "--log-level", "info",
+    "--disable-anonymous-metrics=false",
+    "--single-account-mode-domain=netbird.selfhosted",
+    "--dns-domain=netbird.selfhosted",
+    "--idp-sign-key-refresh-enabled",
+  ]
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "500m"
+      max-file: "2"
+```
+
+To use an external database, add environment variables:
+```yaml
+  environment:
+    - NETBIRD_STORE_ENGINE_POSTGRES_DSN=postgres://user:password@host:5432/netbird
+    # Or for MySQL:
+    # - NETBIRD_STORE_ENGINE_MYSQL_DSN=user:password@tcp(host:3306)/netbird
+```
+
+#### Command-Line Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--port` | `80` | The port the management server listens on inside the container. The default deployment uses port 80 internally; TLS is handled by the reverse proxy. |
+| `--log-file` | `console` | Where to write log output. Use `console` for Docker logging (recommended) or specify a file path. Logs to console are captured by Docker's logging driver. |
+| `--log-level` | `info` | Controls log verbosity. Use `debug` for troubleshooting connection issues, `info` for normal operation, `warn` or `error` for quieter logs in production. |
+| `--disable-anonymous-metrics` | `false` | When `true`, stops sending anonymous usage statistics to NetBird. Set to `true` for air-gapped environments or if your security policy prohibits telemetry. |
+| `--single-account-mode-domain` | `netbird.selfhosted` | Restricts all users to a single NetBird account associated with this domain. Required for most self-hosted deployments to prevent users from creating separate accounts. |
+| `--dns-domain` | `netbird.selfhosted` | The DNS suffix used for peer name resolution within NetBird (e.g., `peer-name.netbird.selfhosted`). Must not conflict with your existing DNS domains. |
+| `--idp-sign-key-refresh-enabled` | `false` | Enables automatic refresh of IdP signing keys. Recommended for the embedded IdP to ensure tokens remain valid. |
+
+### Signal Service
+
+The signal service acts as a rendezvous service for facilitating peer-to-peer connections. It enables peers to discover each other and exchange connection information needed to establish direct WireGuard tunnels.
+
+**With built-in Caddy (default):**
+```yaml
+signal:
+  image: netbirdio/signal:latest
+  container_name: netbird-signal
+  restart: unless-stopped
+  networks: [netbird]
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "500m"
+      max-file: "2"
+```
+
+**With external reverse proxy (exposed ports):**
+```yaml
+signal:
+  image: netbirdio/signal:latest
+  container_name: netbird-signal
+  restart: unless-stopped
+  networks: [netbird]
+  ports:
+    - '127.0.0.1:8083:80'
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "500m"
+      max-file: "2"
+```
+
+<Note>
+The signal service listens on port 80 internally and uses HTTP/2 protocol. The reverse proxy (Caddy or your own) handles TLS termination and routes signal traffic to this service.
+</Note>
+
+### Relay Service
+
+The relay service is a public service that forwards packets when direct peer-to-peer connections are not possible. It also includes an embedded STUN server for NAT detection and traversal.
+
+**With built-in Caddy (default):**
+```yaml
+relay:
+  image: netbirdio/relay:latest
+  container_name: netbird-relay
+  restart: unless-stopped
+  networks: [netbird]
+  ports:
+    - '3478:3478/udp'   # Embedded STUN server (must be exposed publicly)
+  env_file:
+    - ./relay.env
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "500m"
+      max-file: "2"
+```
+
+**With external reverse proxy (exposed ports):**
+```yaml
+relay:
+  image: netbirdio/relay:latest
+  container_name: netbird-relay
+  restart: unless-stopped
+  networks: [netbird]
+  ports:
+    - '127.0.0.1:8084:80'   # Relay WebSocket (for reverse proxy)
+    - '3478:3478/udp'       # Embedded STUN server (must be exposed publicly)
+  env_file:
+    - ./relay.env
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "500m"
+      max-file: "2"
+```
+
+<Note>
+The STUN port (3478/udp) must always be exposed publicly, regardless of reverse proxy configuration. STUN uses UDP for NAT detection and cannot be proxied through HTTP reverse proxies.
+</Note>
+
+The relay service is configured via the `relay.env` file. See the [relay.env section](#relay-env) for detailed configuration options.
+
+<Properties>
+  <Property name="NB_LOG_LEVEL" type="string">
+    Log verbosity level. Options: `debug`, `info`, `warn`, `error`. Default: `info`
+  </Property>
+  <Property name="NB_LISTEN_ADDRESS" type="string">
+    Address and port to listen on. Format: `:port`. Default: `:80`
+  </Property>
+  <Property name="NB_EXPOSED_ADDRESS" type="string">
+    Public address for peers to connect. Format: `rel://hostname:port` or `rels://hostname:port` for TLS.
+  </Property>
+  <Property name="NB_AUTH_SECRET" type="string">
+    Shared secret for relay authentication. Must match `management.json` Relay.Secret.
+  </Property>
+  <Property name="NB_ENABLE_STUN" type="boolean">
+    Enable the embedded STUN server. Default: `false`
+  </Property>
+  <Property name="NB_STUN_PORTS" type="string">
+    Comma-separated list of UDP ports for the STUN server. Default: `3478`
+  </Property>
+</Properties>
+
+### STUN Server (Embedded in Relay)
+
+<Note>
+Starting with the current quickstart installation, STUN functionality is **embedded directly in the relay service**. The separate coturn container is no longer used in the default deployment. This simplifies the architecture and reduces the number of containers to manage.
+</Note>
+
+The embedded STUN server is enabled by setting `NB_ENABLE_STUN=true` in `relay.env`. The STUN server listens on UDP port 3478 by default.
+
+#### Legacy Coturn Configuration
+
+If you have an existing installation using coturn, or need advanced TURN functionality (such as time-based credentials or TCP relay), you can still use a separate coturn container. See the [advanced self-hosting guide](/selfhosted/selfhosted-guide) for coturn configuration details.
+
+### Volume Configuration
+
+| Volume | Mount Point | Purpose |
+|--------|-------------|---------|
+| `netbird_management` | `/var/lib/netbird` | Stores the management database (SQLite by default), encryption keys, and persistent state. Back up this volume regularly to preserve your accounts, peers, policies, and setup keys. |
+| `netbird_caddy_data` | `/data` | Stores Caddy's TLS certificates and other persistent data. Only used when deploying with the built-in Caddy reverse proxy. Preserve this volume to maintain TLS certificates across restarts. |
+
+<Note>
+The `getting-started.sh` deployment uses only two volumes: `netbird_management` for the management database and `netbird_caddy_data` for Caddy's certificate storage. The signal and relay services do not require persistent volumes in the default configuration.
+</Note>
+
+---
+
+## management.json
+
+The management configuration file controls the core behavior of the NetBird Management service. This is the most complex configuration file.
+
+### Authentication
+
+NetBird comes with built-in local user management and also supports integration with any OIDC-compatible identity provider.
+This enables Single Sign-On (SSO), Multi-Factor Authentication (MFA), and centralized user management.
+For setup instructions, see the [Authentication & IdPs page](/selfhosted/identity-providers) for configuration details.
+
+### Configuration Sections
+
+The `management.json` file for `getting-started.sh` deployments uses these sections:
+
+| Section | Required | Description |
+|---------|----------|-------------|
+| `Stuns` | Yes | Lists STUN servers that peers use to discover their public IP address and NAT type. Without working STUN, peers cannot establish direct connections and will always use the relay. |
+| `Relay` | Yes | Configures relay server addresses and authentication. Peers use relay servers when direct connections fail. The secret here must match `NB_AUTH_SECRET` in `relay.env`. |
+| `Signal` | Yes | Specifies how the management server connects to the signal service. Peers receive this address and use it to exchange connection offers with other peers. |
+| `EmbeddedIdP` | Yes | Enables and configures the built-in identity provider (based on DEX). Handles user authentication, token issuance, and OIDC endpoints. Required for `getting-started.sh` deployments. |
+
+### Complete Structure
+
+```json
+{
+    "Stuns": [...],
+    "Relay": {...},
+    "Signal": {...},
+    "Datadir": "/var/lib/netbird",
+    "DataStoreEncryptionKey": "...",
+    "EmbeddedIdP": {
+        "Enabled": true,
+        "Issuer": "https://your-domain/oauth2",
+        "DashboardRedirectURIs": [...]
+    }
+}
+```
+
+### Stuns Section
+
+Configures STUN servers used for NAT detection and traversal.
+
+**What does STUN do?**
+
+STUN (Session Traversal Utilities for NAT) helps NetBird peers discover their public IP address and the type of NAT they are behind. This information is essential for establishing direct peer-to-peer connections:
+
+- **NAT type detection** - Determines if peers can connect directly or need relay assistance
+- **Public address discovery** - Peers learn their external IP and port, which they share via the signal server
+- **Connection optimization** - Enables direct connections when possible, reducing latency and relay load
+
+The embedded STUN server in the relay service (enabled via `NB_ENABLE_STUN=true` in `relay.env`) is typically sufficient for most deployments.
+
+```json
+"Stuns": [
+    {
+        "Proto": "udp",
+        "URI": "stun:netbird.example.com:3478",
+        "Username": "",
+        "Password": null
+    }
+]
+```
+
+<Properties>
+  <Property name="Proto" type="string">
+    Protocol for STUN communication. Options: `udp`, `tcp`. Default: `udp`
+  </Property>
+  <Property name="URI" type="string">
+    STUN server URI. Format: `stun:hostname:port`
+  </Property>
+  <Property name="Username" type="string">
+    Optional username for authenticated STUN. Usually empty.
+  </Property>
+  <Property name="Password" type="string | null">
+    Optional password for authenticated STUN. Usually `null`.
+  </Property>
+</Properties>
+
+### Relay Section
+
+Configures the NetBird relay server connection for NAT traversal.
+
+**What does the relay service do?**
+
+When two NetBird peers cannot establish a direct WireGuard connection (due to restrictive NATs, firewalls, or network topology), traffic is routed through the relay server. The relay acts as an encrypted intermediary, ensuring connectivity even in challenging network environments.
+
+- **Automatic fallback** - Peers attempt direct connections first; relay is used only when needed
+- **End-to-end encryption** - Traffic remains WireGuard-encrypted; the relay cannot read packet contents
+- **Credential-based authentication** - The shared secret ensures only authorized peers can use your relay
+
+```json
+"Relay": {
+    "Addresses": ["rels://netbird.example.com:443"],
+    "CredentialsTTL": "24h",
+    "Secret": "your-relay-secret"
+}
+```
+
+<Note>
+The relay address uses the same port as HTTPS (443) when using TLS (`rels://`), or port 80 when not using TLS (`rel://`). The reverse proxy routes `/relay*` paths to the relay service internally.
+</Note>
+
+<Properties>
+  <Property name="Addresses" type="array">
+    Array of relay server addresses. Format: `rels://hostname:port` for TLS or `rel://hostname:port` for unencrypted. Default uses the public HTTPS port (443).
+  </Property>
+  <Property name="CredentialsTTL" type="string">
+    Time-to-live for relay credentials. Default: `24h`
+  </Property>
+  <Property name="Secret" type="string">
+    Shared authentication secret. Must match relay server's `NB_AUTH_SECRET`.
+  </Property>
+</Properties>
+
+<Warning>
+The relay secret must be identical in both `management.json` and the relay service environment. A mismatch will cause relay connections to fail.
+</Warning>
+
+### Signal Section
+
+Configures the connection to the Signal service for peer-to-peer connection establishment.
+
+**What does the signal service do?**
+
+The signal service acts as a rendezvous service that facilitates peer connections. When two peers want to establish a direct connection, they exchange connection offers, answers, and network candidates through the signal server. This coordination enables peers to discover each other and negotiate the optimal connection path.
+
+- **Rendezvous service** - Enables peers to find each other and exchange the information needed to establish direct WireGuard tunnels
+- **No traffic routing** - Unlike the relay, the signal server only handles connection setup metadata, not actual traffic
+- **Persistent connections** - Peers maintain a connection to the signal server to receive incoming connection requests
+- **HTTP/2 protocol** - Clients connect via the reverse proxy on port 443 (HTTPS) or 80 (HTTP)
+
+```json
+"Signal": {
+    "Proto": "https",
+    "URI": "netbird.example.com:443",
+    "Username": "",
+    "Password": null
+}
+```
+
+<Note>
+The signal URI uses the same public HTTPS port (443) as other services. The reverse proxy routes signal traffic (`/signalexchange.SignalExchange/*` and `/ws-proxy/signal*`) to the signal service internally.
+</Note>
+
+<Properties>
+  <Property name="Proto" type="string">
+    Protocol for signal communication. Options: `http`, `https`. Use `https` for production deployments with TLS, or `http` for non-TLS setups.
+  </Property>
+  <Property name="URI" type="string">
+    Signal server address. Format: `hostname:port`. Uses the public port (443 for HTTPS, 80 for HTTP).
+  </Property>
+  <Property name="Username" type="string">
+    Optional authentication username. Usually empty.
+  </Property>
+  <Property name="Password" type="string | null">
+    Optional authentication password. Usually `null`.
+  </Property>
+</Properties>
+
+### ReverseProxy Section
+
+Configures trusted reverse proxies for proper client IP detection.
+
+```json
+"ReverseProxy": {
+    "TrustedHTTPProxies": [],
+    "TrustedHTTPProxiesCount": 0,
+    "TrustedPeers": ["0.0.0.0/0"]
+}
+```
+
+<Properties>
+  <Property name="TrustedHTTPProxies" type="array">
+    List of trusted proxy IP addresses or CIDR ranges.
+  </Property>
+  <Property name="TrustedHTTPProxiesCount" type="number">
+    Number of trusted proxy hops. Used with X-Forwarded-For header parsing.
+  </Property>
+  <Property name="TrustedPeers" type="array">
+    CIDR ranges of trusted peers. Default: `["0.0.0.0/0"]` (trust all).
+  </Property>
+</Properties>
+
+<Note>
+When running behind a reverse proxy, configure `TrustedHTTPProxies` with your proxy's IP to ensure accurate client IP logging and rate limiting.
+</Note>
+
+### StoreConfig Section
+
+Configures the database backend for storing all NetBird management data.
+
+**What data is stored in the database?**
+
+The management database contains all persistent state for your NetBird deployment:
+
+- **Accounts and users** - User accounts, roles, and permissions
+- **Peers** - Registered devices, their WireGuard keys, IP assignments, and metadata
+- **Groups** - Peer groupings used for access control and network organization
+- **Access policies** - Network access rules defining which peers can communicate
+- **Routes** - Network routes for accessing external subnets through NetBird peers
+- **DNS configuration** - Custom DNS settings and nameserver groups
+- **Setup keys** - Keys used for automated peer enrollment
+- **Activity logs** - Audit trail of user and system actions
+- **Posture checks** - Device security compliance policies
+
+**Where is the data stored?**
+
+| Engine | Storage Location | Notes |
+|--------|------------------|-------|
+| SQLite (default) | `/var/lib/netbird/` volume | File-based database stored in the `netbird-mgmt` Docker volume. Zero configuration required, but does not support concurrent writes or running multiple management instances. Best for testing or small deployments with fewer than 100 peers. |
+| PostgreSQL | External database server | Recommended for production deployments. Supports concurrent access, enabling multiple management instances for high availability. Requires managing a separate PostgreSQL server but offers standard backup tools and replication options. |
+| MySQL | External database server | Alternative to PostgreSQL for organizations that have standardized on MySQL/MariaDB. Provides similar benefits to PostgreSQL including concurrent access and standard backup procedures. |
+
+```json
+"StoreConfig": {
+    "Engine": "sqlite"
+}
+```
+
+<Properties>
+  <Property name="Engine" type="string">
+    Database engine. Options: `sqlite`, `postgres`, `mysql`. Default: `sqlite`
+  </Property>
+</Properties>
+
+For PostgreSQL or MySQL, set the connection string via environment variables:
+- `NETBIRD_STORE_ENGINE_POSTGRES_DSN` for PostgreSQL
+- `NETBIRD_STORE_ENGINE_MYSQL_DSN` for MySQL
+
+<Note>
+For production deployments with multiple users or high availability requirements, consider using PostgreSQL. SQLite is convenient for testing and small deployments but does not support concurrent writes or easy backups while the service is running.
+</Note>
+
+See [Management Postgres Store](/selfhosted/postgres-store) for PostgreSQL setup.
+
+### EmbeddedIdP Section
+
+Configures the built-in identity provider that handles user authentication and management. The embedded IdP is based on DEX and supports both local user management and connections to external identity providers configured through the Dashboard.
+
+```json
+"EmbeddedIdP": {
+    "Enabled": true,
+    "Issuer": "https://netbird.example.com/oauth2",
+    "DashboardRedirectURIs": [
+        "https://netbird.example.com/nb-auth",
+        "https://netbird.example.com/nb-silent-auth"
+    ]
+}
+```
+
+<Properties>
+  <Property name="Enabled" type="boolean">
+    Enable the embedded identity provider. When `true`, the management server hosts OAuth2/OIDC endpoints at `/oauth2/`.
+  </Property>
+  <Property name="Issuer" type="string">
+    The issuer URL for tokens. Should be `https://your-domain/oauth2`. This URL is used to validate JWT tokens and must be accessible to clients.
+  </Property>
+  <Property name="DashboardRedirectURIs" type="array">
+    Allowed redirect URIs for OAuth2 authorization flow. Must include the dashboard authentication callbacks, typically `/nb-auth` and `/nb-silent-auth` on your domain.
+  </Property>
+</Properties>
+
+When `EmbeddedIdP.Enabled` is `true`, the management server automatically:
+- Hosts OIDC discovery at `https://your-domain/oauth2/.well-known/openid-configuration`
+- Provides JWKS (signing keys) at `https://your-domain/oauth2/keys`
+- Handles token issuance at `https://your-domain/oauth2/token`
+- Manages device authorization at `https://your-domain/oauth2/device/authorize`
+- Provides user management through the Dashboard UI
+
+### Other Top-Level Settings
+
+<Properties>
+  <Property name="DisableDefaultPolicy" type="boolean">
+    Disable the default "allow all" access policy for new accounts. When `true`, new accounts start with no access rules, requiring explicit policy creation before peers can communicate. Default: `false`
+  </Property>
+  <Property name="Datadir" type="string">
+    Data directory path where the management service stores its database and state files. Usually set via command line (`--datadir`). Default: `/var/lib/netbird`
+  </Property>
+  <Property name="DataStoreEncryptionKey" type="string">
+    32-byte (256-bit) encryption key for sensitive data at rest. Used to encrypt setup keys, API tokens, and other secrets stored in the database. Auto-generated by setup scripts.
+  </Property>
+</Properties>
+
+<Warning>
+Keep `DataStoreEncryptionKey` secure and backed up. This key encrypts sensitive data in your database, including setup keys and API tokens. Losing this key means losing access to encrypted data, and you will need to regenerate all setup keys and API tokens.
+</Warning>
+
+---
+
+## relay.env
+
+Environment configuration for the relay service. This file is mounted into the relay container and configures both the relay and the embedded STUN server.
+
+```bash
+# Log level: debug, info, warn, error
+NB_LOG_LEVEL=info
+
+# Address to listen on for relay connections
+NB_LISTEN_ADDRESS=:80
+
+# Public address for peers to connect
+# Use rel:// for unencrypted or rels:// for TLS
+NB_EXPOSED_ADDRESS=rels://netbird.example.com:443
+
+# Authentication secret (must match management.json Relay.Secret)
+NB_AUTH_SECRET=your-secret-here
+
+# Embedded STUN server configuration
+NB_ENABLE_STUN=true
+NB_STUN_LOG_LEVEL=info
+NB_STUN_PORTS=3478
+```
+
+### All Relay Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NB_LOG_LEVEL` | `info` | Controls relay log verbosity. Use `debug` when troubleshooting connection issues to see detailed peer connection attempts and failures. |
+| `NB_LISTEN_ADDRESS` | `:80` | The address and port the relay listens on inside the container. Format: `:port` or `address:port`. Usually left as `:80` since the container port is mapped externally. |
+| `NB_EXPOSED_ADDRESS` | - | The public address peers use to connect to this relay. Use `rel://` for unencrypted or `rels://` for TLS. Must be reachable from all peers. |
+| `NB_AUTH_SECRET` | - | Shared secret used to authenticate peers connecting to the relay. Must exactly match the `Relay.Secret` value in `management.json` or relay connections will fail. |
+| `NB_ENABLE_STUN` | `false` | When `true`, the relay also runs an embedded STUN server. This eliminates the need for a separate coturn container for NAT detection. |
+| `NB_STUN_PORTS` | `3478` | UDP port(s) for the embedded STUN server. Comma-separated for multiple ports. Must be exposed in `docker-compose.yml` and reachable through firewalls. |
+| `NB_STUN_LOG_LEVEL` | `info` | Separate log level for the embedded STUN server. Use `debug` to troubleshoot NAT detection issues without increasing relay log verbosity. |
+| `NB_METRICS_PORT` | - | Port to expose Prometheus metrics endpoint. When set, the relay exposes metrics at `/metrics` for monitoring connection counts and performance. |
+| `NB_TLS_CERT_FILE` | - | Path to TLS certificate file for relay-terminated HTTPS. Only needed when the relay handles TLS directly instead of using a reverse proxy. |
+| `NB_TLS_KEY_FILE` | - | Path to TLS private key file. Must be provided together with `NB_TLS_CERT_FILE` for direct TLS termination. |
+| `NB_LETSENCRYPT_DATA_DIR` | - | Directory to store Let's Encrypt certificates when the relay obtains certificates automatically. Not needed when using an external reverse proxy for TLS. |
+| `NB_LETSENCRYPT_DOMAINS` | - | Comma-separated domains for automatic Let's Encrypt certificate provisioning. The relay must be reachable on port 443 for ACME challenges. |
+| `NB_LETSENCRYPT_EMAIL` | - | Email address for Let's Encrypt registration. Required for certificate expiry notifications if using automatic provisioning. |
+| `NB_HEALTH_LISTEN_ADDRESS` | - | Address for health check endpoint (e.g., `:8080`). When set, exposes `/health` for container orchestration and load balancer health probes. |
+
+---
+
+## dashboard.env
+
+Environment configuration for the dashboard service.
+
+### Dashboard Architecture
+
+The NetBird dashboard container includes an **embedded nginx server** that serves the dashboard web pages. This nginx instance is built into the container image and handles serving the static web UI files.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Dashboard Container                         │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                   Embedded Nginx                          │  │
+│  │  - Serves dashboard web UI                                │  │
+│  │  - Can handle SSL/TLS termination (standalone mode)       │  │
+│  │  - Configurable via NGINX_* environment variables         │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+The `NGINX_SSL_PORT` and other `NGINX_*` environment variables control this embedded nginx server, not an external reverse proxy.
+
+```bash
+# Endpoints
+NETBIRD_MGMT_API_ENDPOINT=https://netbird.example.com
+NETBIRD_MGMT_GRPC_API_ENDPOINT=https://netbird.example.com
+
+# OIDC - using embedded IdP
+AUTH_AUDIENCE=netbird-dashboard
+AUTH_CLIENT_ID=netbird-dashboard
+AUTH_CLIENT_SECRET=
+AUTH_AUTHORITY=https://netbird.example.com/oauth2
+USE_AUTH0=false
+AUTH_SUPPORTED_SCOPES=openid profile email groups
+AUTH_REDIRECT_URI=/nb-auth
+AUTH_SILENT_REDIRECT_URI=/nb-silent-auth
+
+# SSL - disabled when behind reverse proxy (Caddy handles TLS)
+NGINX_SSL_PORT=443
+LETSENCRYPT_DOMAIN=none
+```
+
+<Note>
+When using the built-in Caddy or an external reverse proxy, set `LETSENCRYPT_DOMAIN=none` because the reverse proxy handles TLS termination. Only set a domain here if running the dashboard standalone without a reverse proxy.
+</Note>
+
+### Endpoint Configuration
+
+| Variable | Description |
+|----------|-------------|
+| `NETBIRD_MGMT_API_ENDPOINT` | The URL where the dashboard makes REST API calls to the management server (e.g., `https://netbird.example.com`). Must be accessible from users' browsers since API calls are made client-side. |
+| `NETBIRD_MGMT_GRPC_API_ENDPOINT` | The URL for gRPC communication with the management server. Usually the same as the REST endpoint. Used for in-browser SSH and RDP clients, as well as surfacing management links for client config instructions. |
+
+### Authentication Configuration
+
+| Variable | Description |
+|----------|-------------|
+| `AUTH_AUDIENCE` | The expected audience claim in OAuth2 tokens. Must match the audience configured in your IdP. For embedded IdP, use `netbird-dashboard`. Incorrect values cause authentication failures. |
+| `AUTH_CLIENT_ID` | The OAuth2 client identifier for the dashboard application. For embedded IdP deployments, this is `netbird-dashboard`. Must match the client ID registered with your identity provider. |
+| `AUTH_CLIENT_SECRET` | OAuth2 client secret for confidential clients. Leave empty for public clients (the default for browser-based apps like the dashboard). Only set this if your IdP requires a confidential client. |
+| `AUTH_AUTHORITY` | The OAuth2/OIDC issuer URL (e.g., `https://netbird.example.com/oauth2` for embedded IdP). The dashboard fetches OIDC discovery metadata from `{AUTH_AUTHORITY}/.well-known/openid-configuration`. |
+| `USE_AUTH0` | Set to `true` only when using Auth0 as your identity provider. Enables Auth0-specific authentication behavior. Leave as `false` for embedded IdP or other OIDC providers. |
+| `AUTH_SUPPORTED_SCOPES` | Space-separated list of OAuth2 scopes to request during login. Standard value is `openid profile email groups`. The `groups` scope enables group-based access control if supported by your IdP. |
+| `AUTH_REDIRECT_URI` | The path where the IdP redirects after authentication (e.g., `/nb-auth`). Must match a redirect URI registered with your identity provider. Incorrect values cause OAuth2 callback errors. |
+| `AUTH_SILENT_REDIRECT_URI` | The path for silent token refresh (e.g., `/nb-silent-auth`). Used by the dashboard to refresh tokens in the background without user interaction. Must also be registered with your IdP. |
+
+### Embedded Nginx Configuration
+
+The dashboard container's embedded nginx server can be configured using these environment variables. These settings control how the dashboard serves its web UI.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NGINX_SSL_PORT` | `443` | The HTTPS port for the dashboard's embedded nginx server. Only relevant in standalone mode without an external reverse proxy. When behind a reverse proxy, the dashboard serves HTTP internally. |
+| `LETSENCRYPT_DOMAIN` | - | The domain name for automatic Let's Encrypt certificate provisioning. Set to `none` when using an external reverse proxy that handles TLS. The domain must resolve to this server for ACME challenges to succeed. |
+| `LETSENCRYPT_EMAIL` | - | Email address for Let's Encrypt account registration and certificate expiry notifications. Required when `LETSENCRYPT_DOMAIN` is set. Let's Encrypt sends renewal reminders to this address. |
+
+<Note>
+**When do you need these nginx variables?**
+
+The `NGINX_SSL_PORT` and Let's Encrypt variables are **only necessary when running the dashboard standalone** without an external reverse proxy. In standalone mode, the dashboard's embedded nginx handles SSL/TLS termination directly.
+
+**For most installations** that use the built-in Caddy reverse proxy (the default `getting-started.sh` deployment) or an external reverse proxy like Traefik or Nginx, **you do not need to configure these nginx variables**. The reverse proxy handles SSL termination and routes traffic to the dashboard container, which serves content over HTTP internally.
+
+When behind a reverse proxy:
+- Set `LETSENCRYPT_DOMAIN=none` to disable the dashboard's internal Let's Encrypt
+- The embedded nginx will serve on HTTP (port 80) internally
+- Your reverse proxy handles HTTPS and forwards requests to the dashboard
+</Note>
+
+---
+
+## Common Configuration Scenarios
+
+### Using an External Database
+
+To use PostgreSQL instead of SQLite:
+
+1. Update `management.json`:
+```json
+"StoreConfig": {
+    "Engine": "postgres"
+}
+```
+
+2. Set the connection string in `docker-compose.yml`:
+```yaml
+management:
+  environment:
+    - NETBIRD_STORE_ENGINE_POSTGRES_DSN=postgres://user:password@host:5432/netbird?sslmode=disable
+```
+
+See [Management Postgres Store](/selfhosted/postgres-store) for detailed setup.
+
+### Disabling Anonymous Metrics
+
+In `docker-compose.yml`, update the management command:
+
+```yaml
+management:
+  command: [
+    "--port", "80",
+    "--disable-anonymous-metrics=true",
+    # ... other flags
+  ]
+```
+
+### Custom Relay Configuration
+
+To use multiple relay servers, update `management.json`:
+
+```json
+"Relay": {
+    "Addresses": [
+        "rels://relay1.example.com:443",
+        "rels://relay2.example.com:443"
+    ],
+    "CredentialsTTL": "24h",
+    "Secret": "shared-secret"
+}
+```
+
+Each relay server must use the same `NB_AUTH_SECRET`. Use `rels://` for TLS (port 443) or `rel://` for unencrypted (port 80).
+
+### Behind a Reverse Proxy
+
+When running behind your own reverse proxy (Traefik, Nginx, etc.):
+
+1. Set `LETSENCRYPT_DOMAIN=none` in `dashboard.env`
+2. Configure trusted proxies in `management.json`:
+```json
+"ReverseProxy": {
+    "TrustedHTTPProxies": ["10.0.0.1"],
+    "TrustedHTTPProxiesCount": 1,
+    "TrustedPeers": ["10.0.0.0/8"]
+}
+```
+
+See [Reverse Proxy Configuration](/selfhosted/reverse-proxy) for detailed templates.
+
+### Configuring External TURN Servers
+
+<Note>
+The default NetBird deployment uses the relay service for NAT traversal, which handles most connectivity scenarios. External TURN servers are only needed for advanced use cases like geographically distributed deployments or environments with restrictive firewalls that block the relay protocol.
+</Note>
+
+To use external TURN servers (e.g., coturn deployed separately):
+
+```json
+"TURNConfig": {
+    "Turns": [
+        {
+            "Proto": "udp",
+            "URI": "turn:turn-us.example.com:3478",
+            "Username": "netbird",
+            "Password": "password1"
+        },
+        {
+            "Proto": "udp",
+            "URI": "turn:turn-eu.example.com:3478",
+            "Username": "netbird",
+            "Password": "password2"
+        }
+    ],
+    "CredentialsTTL": "12h",
+    "TimeBasedCredentials": false
+}
+```
+
+---
+
+## See Also
+
+- [Self-hosting Quickstart Guide](/selfhosted/selfhosted-quickstart) - Get started quickly with default settings
+- [Reverse Proxy Configuration](/selfhosted/reverse-proxy) - Traefik, Nginx, Caddy setup
+- [Management SQLite Store](/selfhosted/sqlite-store) - SQLite database details
+- [Management Postgres Store](/selfhosted/postgres-store) - PostgreSQL setup
