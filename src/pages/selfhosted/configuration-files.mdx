@@ -46,7 +46,7 @@ The Docker Compose file defines all NetBird services, their dependencies, networ
 |---------|-------|---------------|-------------------|-------------|
 | `dashboard` | `netbirdio/dashboard` | 80 | 8080:80 | The web-based management console where administrators configure networks, manage peers, create access policies, and view activity logs. Includes an embedded nginx server for serving the UI. |
 | `management` | `netbirdio/management` | 80 | 8081:80 | The central control plane that handles peer registration, distributes network configurations, manages access policies, and hosts the embedded identity provider. All peers connect to this service on startup. |
-| `signal` | `netbirdio/signal` | 80, 10000 | 8083:80, 10000:10000 | Facilitates WebRTC signaling so peers can exchange connection offers and establish direct WireGuard tunnels. Handles only connection setup metadata, not actual traffic. Port 80 is for modern HTTP/2 connections; port 10000 is for legacy gRPC (see note below). |
+| `signal` | `netbirdio/signal` | 80, 10000 | 8083:80, 10000:10000 | Rendezvous service that facilitates peer connections by enabling peers to exchange connection offers and establish direct WireGuard tunnels. Handles only connection setup metadata, not actual traffic. Port 80 is for modern HTTP/2 connections; port 10000 is for legacy gRPC (see note below). |
 | `relay` | `netbirdio/relay` | 80, 3478/udp | 8084:80, 3478:3478/udp | Routes encrypted traffic between peers when direct connections fail due to restrictive NATs or firewalls. Also provides embedded STUN on UDP 3478 for NAT type detection. |
 | `caddy` | `caddy` | 80, 443 | 80:80, 443:443 | Handles TLS termination and routes incoming HTTPS requests to the appropriate NetBird services. Only included in default `getting-started.sh` deployments; can be replaced with your own reverse proxy. |
 
@@ -194,7 +194,7 @@ To use an external database, add environment variables:
 
 ### Signal Service
 
-The signal service handles WebRTC signaling for establishing peer-to-peer connections.
+The signal service acts as a rendezvous service for facilitating peer-to-peer connections. It enables peers to discover each other and exchange connection information needed to establish direct WireGuard tunnels. The service supports HTTP/2 for modern clients and gRPC for legacy compatibility.
 
 **With built-in Caddy (default):**
 ```yaml
@@ -534,11 +534,12 @@ Configures the connection to the Signal service for peer-to-peer connection esta
 
 **What does the signal service do?**
 
-The signal service facilitates WebRTC signaling between NetBird peers. When two peers want to establish a direct connection, they exchange connection offers, answers, and ICE candidates through the signal server. This coordination enables peers to discover each other and negotiate the optimal connection path.
+The signal service acts as a rendezvous service that facilitates peer connections. When two peers want to establish a direct connection, they exchange connection offers, answers, and network candidates through the signal server. This coordination enables peers to discover each other and negotiate the optimal connection path.
 
-- **Connection coordination** - Peers exchange network information to establish direct WireGuard tunnels
+- **Rendezvous service** - Enables peers to find each other and exchange the information needed to establish direct WireGuard tunnels
 - **No traffic routing** - Unlike the relay, the signal server only handles connection setup metadata, not actual traffic
 - **Persistent connections** - Peers maintain a connection to the signal server to receive incoming connection requests
+- **Protocol support** - Modern clients use HTTP/2 (port 443/80 via reverse proxy); legacy clients use gRPC (port 10000)
 
 ```json
 "Signal": {
