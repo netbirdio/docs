@@ -34,7 +34,11 @@ export const apiNavigation = [
       { title: 'Routes (deprecated)', href: '/api/resources/routes' },
       { title: 'Networks', href: '/api/resources/networks' },
       { title: 'DNS', href: '/api/resources/dns' },
+      { title: 'DNS Zones', href: '/api/resources/dns-zones' },
       { title: 'Events', href: '/api/resources/events' },
+      { title: 'Jobs', href: '/api/resources/jobs' },
+      { title: 'Identity Providers', href: '/api/resources/identity-providers' },
+      { title: 'Instance', href: '/api/resources/instance' },
     ],
   },
 ]
