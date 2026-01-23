@@ -135,7 +135,7 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
       }
 
       var response = null
-      if(operation.responses["200"] != undefined && operation.responses["200"]["content"]["application/json"] != undefined) {
+      if(operation.responses["200"] != undefined && operation.responses["200"]["content"] != undefined && operation.responses["200"]["content"]["application/json"] != undefined) {
         response = {
             example: extractInfo(operation.responses["200"]["content"]["application/json"].schema, 'example'),
             schema: extractInfo(operation.responses["200"]["content"]["application/json"].schema, 'type')
