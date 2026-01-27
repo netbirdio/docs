@@ -1,87 +1,122 @@
+import md5 from 'crypto-js/md5'
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
-  useMemo,
+  useRef,
   useState,
 } from 'react'
 
-import { useLocalStorage } from '@/hooks/useLocalStorage'
-
-const BANNER_ENABLED = true
-
-export const announcement = {
-  tag: 'New',
-  text: 'Simplified IdP Integration',
-  link: '/selfhosted/identity-providers',
-  linkText: 'Learn More',
-  linkAlt: 'Learn more about the embedded Identity Provider powered by DEX for self-hosted installations',
-  isExternal: false,
-  closeable: true,
-}
+const ANNOUNCEMENTS_URL =
+  'https://raw.githubusercontent.com/netbirdio/dashboard/main/announcements.json'
+const STORAGE_KEY = 'netbird-announcements'
+const CACHE_DURATION_MS = 30 * 60 * 1000
+const BANNER_HEIGHT = 33
 
 const AnnouncementContext = createContext({
-  close: () => {},
-  isVisible: false,
   bannerHeight: 0,
-  reportHeight: () => {},
+  announcements: undefined,
+  closeAnnouncement: () => {},
 })
 
-export function AnnouncementBannerProvider({ children }) {
-  let [mounted, setMounted] = useState(false)
-  let [closedAnnouncement, setClosedAnnouncement] = useLocalStorage(
-    'netbird-announcement',
-    undefined
-  )
-  let announcementId = announcement.text
-  let [bannerHeight, setBannerHeight] = useState(0)
+const getAnnouncements = async () => {
+  try {
+    let stored = null
+    try {
+      const data = localStorage.getItem(STORAGE_KEY)
+      stored = data ? JSON.parse(data) : null
+    } catch {}
 
-  let close = () => {
-    setClosedAnnouncement(announcementId)
-  }
+    const now = Date.now()
 
-  let isActive = useMemo(() => {
-    if (!mounted) return false
-    if (!BANNER_ENABLED) return false
-    return closedAnnouncement !== announcementId
-  }, [announcementId, closedAnnouncement, mounted])
+    let raw
 
-  let isVisible = isActive // Always visible when active, regardless of scroll
+    if (stored && now - stored.timestamp < CACHE_DURATION_MS) {
+      raw = stored.announcements
+    } else {
+      const response = await fetch(ANNOUNCEMENTS_URL)
+      if (!response.ok) return []
 
-  let reportHeight = useCallback((height) => {
-    setBannerHeight(height)
-  }, [])
-
-  useEffect(() => {
-    setMounted(true)
-    return () => setMounted(false)
-  }, [])
-
-  // Removed scroll-based hiding to make banner always sticky
-  // useEffect(() => {
-  //   if (typeof window === 'undefined') {
-  //     return
-  //   }
-
-  //   function handleScroll() {
-  //     setIsHiddenByScroll(window.scrollY > 30)
-  //   }
-
-  //   handleScroll()
-  //   window.addEventListener('scroll', handleScroll, { passive: true })
-  //   return () => window.removeEventListener('scroll', handleScroll)
-  // }, [])
-
-  useEffect(() => {
-    if (!isVisible && bannerHeight !== 0) {
-      setBannerHeight(0)
+      raw = await response.json()
     }
-  }, [bannerHeight, isVisible])
+
+    // Filter announcements - show all for docs site (not cloud-specific)
+    const filtered = raw.filter((a) => !a.isCloudOnly)
+    const hashes = new Set(filtered.map((a) => md5(a.text).toString()))
+    const closed = (stored?.closedAnnouncements ?? []).filter((h) =>
+      hashes.has(h)
+    )
+
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          timestamp: now,
+          announcements: raw,
+          closedAnnouncements: closed,
+        })
+      )
+    } catch {}
+
+    return filtered.map((a) => {
+      const hash = md5(a.text).toString()
+      return { ...a, hash, isOpen: !closed.includes(hash) }
+    })
+  } catch {
+    return []
+  }
+}
+
+const saveAnnouncements = (closedAnnouncements) => {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY)
+    const stored = data ? JSON.parse(data) : null
+    if (stored) {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ ...stored, closedAnnouncements })
+      )
+    }
+  } catch {}
+}
+
+export function AnnouncementBannerProvider({ children }) {
+  const [announcements, setAnnouncements] = useState(undefined)
+  const fetchingRef = useRef(false)
+
+  useEffect(() => {
+    if (announcements !== undefined || fetchingRef.current) return
+    fetchingRef.current = true
+    getAnnouncements()
+      .then((a) => setAnnouncements(a))
+      .finally(() => (fetchingRef.current = false))
+  }, [announcements])
+
+  const closeAnnouncement = useCallback(
+    (hash) => {
+      if (!announcements) return
+      const updated = announcements.map((a) =>
+        a.hash === hash ? { ...a, isOpen: false } : a
+      )
+      const closedAnnouncements = updated
+        .filter((a) => !a.isOpen)
+        .map((a) => a.hash)
+      saveAnnouncements(closedAnnouncements)
+      setAnnouncements(updated)
+    },
+    [announcements]
+  )
+
+  const bannerHeight = announcements?.some((a) => a.isOpen) ? BANNER_HEIGHT : 0
 
   return (
     <AnnouncementContext.Provider
-      value={{ close, isVisible, bannerHeight, reportHeight }}
+      value={{
+        bannerHeight,
+        announcements,
+        closeAnnouncement,
+      }}
     >
       {children}
     </AnnouncementContext.Provider>
