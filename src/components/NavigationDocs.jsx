@@ -282,12 +282,6 @@ export const docsNavigation = [
         ],
     },
     {
-        title: 'CLIENT',
-        links: [
-            { title: 'Profiles', href: '/client/profiles' },
-        ],
-    },
-    {
         title: 'SELF-HOST NETBIRD',
         links: [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
@@ -347,6 +341,12 @@ export const docsNavigation = [
 
                 ]
             },
+        ],
+    },
+    {
+        title: 'CLIENT',
+        links: [
+            { title: 'Profiles', href: '/client/profiles' },
         ],
     },
     {
