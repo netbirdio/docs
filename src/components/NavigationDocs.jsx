@@ -282,19 +282,26 @@ export const docsNavigation = [
         ],
     },
     {
-        title: 'CLIENT',
-        links: [
-            { title: 'Profiles', href: '/client/profiles' },
-        ],
-    },
-    {
         title: 'SELF-HOST NETBIRD',
         links: [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
-            { title: 'Configuration Files', href: '/selfhosted/configuration-files' },
+            {
+                title: 'Maintenance',
+                isOpen: false,
+                links: [
+                    { title: 'Configuration Files', href: '/selfhosted/configuration-files' },
+                    { title: 'Backup', href: '/selfhosted/maintenance/backup' },
+                    { title: 'Upgrade', href: '/selfhosted/maintenance/upgrade' },
+                    { title: 'Remove', href: '/selfhosted/maintenance/remove' },
+                    { title: 'Reverse Proxy', href: '/selfhosted/reverse-proxy' },
+                    { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store' },
+                    { title: 'Management Postgres Store', href: '/selfhosted/postgres-store' },
+                    { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store' },
+                ]
+            },
             {
                 title: 'Authentication',
-                isOpen: true,
+                isOpen: false,
                 links: [
                     { title: 'Authentication and IdPs', href: '/selfhosted/identity-providers' },
                     { title: 'Local User Management', href: '/selfhosted/identity-providers/local' },
@@ -323,11 +330,7 @@ export const docsNavigation = [
                     },
                 ]
             },
-            { title: 'Reverse Proxy', href: '/selfhosted/reverse-proxy' },
             { title: 'Advanced Guide', href: '/selfhosted/selfhosted-guide' },
-            { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store' },
-            { title: 'Management Postgres Store', href: '/selfhosted/postgres-store' },
-            { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store' },
             { title: 'Management geolocation', href: '/selfhosted/geo-support' },
             { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
             {
@@ -338,6 +341,12 @@ export const docsNavigation = [
 
                 ]
             },
+        ],
+    },
+    {
+        title: 'CLIENT',
+        links: [
+            { title: 'Profiles', href: '/client/profiles' },
         ],
     },
     {
