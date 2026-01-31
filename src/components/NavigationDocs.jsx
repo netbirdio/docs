@@ -305,6 +305,7 @@ export const docsNavigation = [
                 links: [
                     { title: 'Authentication and IdPs', href: '/selfhosted/identity-providers' },
                     { title: 'Local User Management', href: '/selfhosted/identity-providers/local' },
+                    { title: 'Disable Local Auth', href: '/selfhosted/identity-providers/disable-local-authentication' },
                     {
                         title: 'Self-hosted IdPs',
                         isOpen: true,
