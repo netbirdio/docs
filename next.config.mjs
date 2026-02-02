@@ -19,9 +19,6 @@ const nextConfig = {
     assetPrefix: undefined,
     reactStrictMode: true,
     pageExtensions: ['js', 'jsx', 'ts', 'tsx', 'mdx'],
-    experimental: {
-        scrollRestoration: true,
-    },
     redirects: async () => {
         return [
             {
