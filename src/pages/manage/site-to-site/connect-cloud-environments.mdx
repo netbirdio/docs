@@ -1,0 +1,287 @@
+import { Note, Warning } from '@/components/mdx'
+
+# Connect Cloud Environments
+
+This guide helps DevOps engineers set up secure connectivity between cloud environments, on-premise infrastructure, and hybrid deployments.
+
+## What You'll Achieve
+
+After following this guide, you'll be able to:
+- Connect cloud workloads to on-premise databases (VPN-to-Site)
+- Bridge multiple cloud providers (Site-to-Site)
+- Enable secure workload migration between environments
+
+## Prerequisites
+
+- A [NetBird account](https://app.netbird.io/)
+- Access to deploy VMs or containers in your cloud environment
+- Network configuration permissions in your cloud VPC
+
+## Scenario 1: Cloud Workload Accessing On-Premise Database
+
+A common hybrid cloud pattern: your application runs in the cloud but needs to access an on-premise database.
+
+### Architecture Overview
+
+```
+Cloud VM ────► NetBird Tunnel ────► Routing Peer ────► Database Server
+(peer)                               (peer)            (on-premise)
+```
+
+### Step 1: Deploy a Routing Peer On-Premise
+
+Install NetBird on a server in your data center that can reach the database:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+```
+
+Create a setup key in the dashboard and connect:
+
+```bash
+sudo netbird up --setup-key YOUR_SETUP_KEY
+```
+
+### Step 2: Create a Network for On-Premise Resources
+
+1. Go to **Networks** in the dashboard
+2. Click **Add Network** and name it "On-Premise Data Center"
+3. Click **Add Resource**
+4. Add your database subnet or specific IP (e.g., `10.100.0.0/24` or `10.100.0.50/32`)
+5. Assign to a group like "on-prem-databases"
+
+### Step 3: Add the Routing Peer
+
+1. In your network, click **Add Routing Peer**
+2. Select your on-premise server
+3. Click **Add Routing Peer**
+
+### Step 4: Deploy NetBird on Cloud Workloads
+
+**For VMs:**
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+sudo netbird up --setup-key YOUR_CLOUD_SETUP_KEY
+```
+
+**For containers (Docker Compose):**
+
+```yaml
+services:
+  netbird:
+    image: netbirdio/netbird:latest
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - NB_SETUP_KEY=YOUR_SETUP_KEY
+    volumes:
+      - netbird-config:/etc/netbird
+    restart: unless-stopped
+
+volumes:
+  netbird-config:
+```
+
+**For Kubernetes:**
+
+Use the [NetBird Kubernetes Operator](/manage/integrations/kubernetes) for production deployments.
+
+### Step 5: Create Access Policies
+
+1. Go to **Access Control > Policies**
+2. Create a policy:
+   - Source: Group containing your cloud workloads
+   - Destination: "on-prem-databases"
+   - Protocol: TCP
+   - Ports: 5432 (PostgreSQL), 3306 (MySQL), etc.
+
+### Step 6: Configure Your Application
+
+Update your application's database connection to use the on-premise IP:
+
+```python
+# Example: Python with PostgreSQL
+conn = psycopg2.connect(
+    host="10.100.0.50",  # On-premise database IP
+    dbname="production",
+    user="app_user",
+    password="secure_password"
+)
+```
+
+Your cloud application can now securely access the on-premise database.
+
+---
+
+## Scenario 2: Multi-Cloud Connectivity (Site-to-Site)
+
+Connect workloads across different cloud providers (AWS, GCP, Azure) without exposing them to the public internet.
+
+<Note>
+Multi-cloud site-to-site requires Network Routes because the Networks feature doesn't yet support this scenario.
+</Note>
+
+### Architecture Overview
+
+```
+AWS VPC ────► Routing Peer ────► NetBird ────► Routing Peer ────► GCP VPC
+(10.0.0.0/16)   (peer)                           (peer)         (10.1.0.0/16)
+```
+
+### Step 1: Deploy Routing Peers in Each Cloud
+
+**AWS:**
+
+Launch an EC2 instance in your VPC with NetBird installed. Use the following user data:
+
+```bash
+#!/bin/bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+netbird up --setup-key YOUR_AWS_SETUP_KEY
+```
+
+**GCP:**
+
+Launch a Compute Engine instance in your VPC:
+
+```bash
+#!/bin/bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+netbird up --setup-key YOUR_GCP_SETUP_KEY
+```
+
+### Step 2: Create Network Routes
+
+**For AWS VPC:**
+1. Go to **Network Routes**
+2. Add route: `10.0.0.0/16`
+3. Routing peer: Your AWS instance
+4. Enable Masquerade
+
+**For GCP VPC:**
+1. Add route: `10.1.0.0/16`
+2. Routing peer: Your GCP instance
+3. Enable Masquerade
+
+### Step 3: Create Access Policies
+
+Create policies allowing the routing peers to communicate:
+
+1. Go to **Access Control > Policies**
+2. Create bidirectional policies between the routing peer groups
+
+### Step 4: Configure VPC Routing
+
+**AWS VPC:**
+
+Add a route in your route table:
+- Destination: `10.1.0.0/16` (GCP CIDR)
+- Target: Your NetBird routing peer instance
+
+**GCP VPC:**
+
+Add a custom route:
+- Destination: `10.0.0.0/16` (AWS CIDR)
+- Next hop: Your NetBird routing peer instance
+
+### Step 5: Test Connectivity
+
+From an AWS instance:
+
+```bash
+ping 10.1.0.100  # GCP instance
+```
+
+---
+
+## Scenario 3: Secure Workload Migration
+
+Migrate workloads between environments while maintaining connectivity to dependencies.
+
+### Example: Migrating from On-Premise to Cloud
+
+1. **Before migration**: Application and database both on-premise
+2. **During migration**: Application in cloud, database still on-premise
+3. **After migration**: Both in cloud (NetBird connection can be removed or repurposed)
+
+### Step 1: Establish Connectivity First
+
+Before migrating the application, set up VPN-to-Site connectivity (Scenario 1) so the cloud application can reach the on-premise database.
+
+### Step 2: Deploy the Cloud Application
+
+Deploy your application in the cloud with NetBird configured. Test that it can reach the on-premise database.
+
+### Step 3: Cutover
+
+Switch traffic to the cloud application. The database connection works identically—just over NetBird instead of the local network.
+
+### Step 4: Complete Migration
+
+Once the database is also migrated to the cloud:
+1. Update the application's database connection to the new cloud IP
+2. Remove the on-premise network from NetBird
+3. Optionally remove NetBird from the application if no longer needed
+
+---
+
+## Cloud-Specific Considerations
+
+### AWS
+
+- Use VPC endpoints where possible for AWS services
+- Security groups must allow traffic from the NetBird routing peer
+- Consider using an Auto Scaling group for the routing peer with a static ENI
+
+### GCP
+
+- Firewall rules must allow traffic from the routing peer's internal IP
+- Use instance groups for high availability
+- Enable IP forwarding on the routing peer instance
+
+### Azure
+
+- Network security groups must allow traffic from the routing peer
+- Consider using a Virtual Machine Scale Set for HA
+- Enable IP forwarding on the routing peer NIC
+
+## Best Practices
+
+### Security
+
+- Use dedicated setup keys per environment (dev, staging, production)
+- Restrict access policies to specific ports and protocols
+- Enable [activity logging](/manage/activity) for compliance
+
+### High Availability
+
+- Deploy multiple routing peers and configure failover
+- Monitor routing peer health with your existing tools
+- Use cloud-native load balancing where appropriate
+
+### Performance
+
+- Place routing peers close to the resources they serve
+- Use direct peering where possible (NetBird will automatically optimize paths)
+- Monitor latency and throughput between environments
+
+## Troubleshooting
+
+**Cloud workload can't reach on-premise:**
+1. Verify the routing peer is online: `netbird status`
+2. Check the routing peer can reach the target: `ping 10.100.0.50`
+3. Verify access policies are configured correctly
+
+**Multi-cloud connectivity issues:**
+1. Confirm both routing peers are connected to NetBird
+2. Check VPC routing tables have correct entries
+3. Verify security groups/firewall rules allow traffic
+
+**High latency:**
+1. Check routing peer placement and network connectivity
+2. Verify traffic is using direct peer-to-peer connections (not relays)
+3. Review cloud network configuration for bottlenecks
+
+For advanced configuration including masquerade options and detailed access control, see [Advanced Configuration](/manage/site-to-site/advanced-configuration).

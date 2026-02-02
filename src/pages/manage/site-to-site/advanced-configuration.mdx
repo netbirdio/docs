@@ -1,0 +1,301 @@
+import { Note, Warning } from '@/components/mdx'
+
+# Advanced Configuration
+
+This guide covers technical details for site-to-site connectivity, including masquerade options, access control configuration, and troubleshooting.
+
+## Understanding Masquerade
+
+Masquerade determines how source IP addresses are handled when traffic passes through a routing peer.
+
+### With Masquerade (Default)
+
+When enabled, the routing peer performs NAT on forwarded traffic:
+- Source IP is replaced with the routing peer's NetBird IP
+- Return traffic is automatically translated back
+- Simpler setup—no additional routing configuration needed on remote networks
+
+```
+Device A (192.168.1.50) → Routing Peer → [Source becomes 100.64.0.10] → Remote Network
+```
+
+**Advantages:**
+- Works out of the box
+- No configuration needed on the remote network
+- Compatible with Networks and Network Routes
+
+**Disadvantages:**
+- Original source IP is hidden
+- Access control is limited to the routing peer level
+- Audit logs show routing peer IP, not original device
+
+### Without Masquerade
+
+When disabled, original source IPs are preserved:
+- Traffic appears to come from the original device
+- Remote network must have routes back to the source network
+- Required for some compliance and auditing scenarios
+
+```
+Device A (192.168.1.50) → Routing Peer → [Source stays 192.168.1.50] → Remote Network
+```
+
+**Advantages:**
+- Source IP preserved for auditing
+- More accurate traffic analysis
+- Required for certain network configurations
+
+**Disadvantages:**
+- Requires manual route configuration on both ends
+- NetBird access control cannot restrict individual source devices
+- More complex setup
+
+<Warning>
+Without masquerade, traffic from unknown source IPs will be rejected by NetBird's policy engine. You cannot use ACL Groups or Network Resources without masquerade enabled.
+</Warning>
+
+## Choosing the Right Approach
+
+| Requirement | Recommended Approach |
+|------------|---------------------|
+| Simple remote access | Networks with masquerade |
+| Site-to-site with access control | Network Routes with masquerade and ACL Groups |
+| Audit trail needs source IPs | Network Routes without masquerade + OS firewall |
+| Compliance requirements | Depends on specific requirements |
+
+## Network Routes with ACL Groups
+
+ACL Groups provide route-level access control when using Network Routes with masquerade.
+
+### How ACL Groups Work
+
+1. Create a Network Route with an ACL Group assigned
+2. Create access policies that grant access to the ACL Group
+3. Only peers with policies granting access to the ACL Group can use the route
+
+### Configuration Example
+
+**Step 1: Create the Network Route**
+
+1. Go to **Network Routes**
+2. Add route for `192.168.100.0/24`
+3. Select your routing peer
+4. Enable Masquerade
+5. Add ACL Group: "remote-resources"
+
+**Step 2: Create Access Policies**
+
+For the route to be active, you need at least one policy granting access to the routing peer:
+
+```
+Source: any-group → Destination: routing-peer-group (any protocol)
+```
+
+To grant access to the routed network:
+
+```
+Source: authorized-users → Destination: remote-resources (TCP, specific ports)
+```
+
+<Note>
+The routing peer must be accessible via some policy for the route to activate. The route itself is controlled by policies targeting the ACL Group.
+</Note>
+
+## Site-to-Site Configuration Details
+
+### Bidirectional Route Setup
+
+Site-to-site requires routes in both directions:
+
+**Site A → Site B:**
+- Network Route: Site B's subnet
+- Routing Peer: Site A's routing peer
+- Masquerade: Enable for simplicity
+
+**Site B → Site A:**
+- Network Route: Site A's subnet
+- Routing Peer: Site B's routing peer
+- Masquerade: Enable for simplicity
+
+### Access Policies for Site-to-Site
+
+At minimum, routing peers need connectivity:
+
+```
+Source: site-a-routing-peers → Destination: site-b-routing-peers (All)
+```
+
+For ACL Group-controlled access:
+
+```
+Source: site-a-resources → Destination: site-b-resources (specific protocols)
+Source: site-b-resources → Destination: site-a-resources (specific protocols)
+```
+
+### Configuring Clientless Devices
+
+Devices without NetBird need routes to remote networks through the local routing peer.
+
+**Linux:**
+
+```bash
+# Temporary route
+sudo ip route add 192.168.200.0/24 via 192.168.100.10
+
+# Persistent route (Ubuntu/Debian with Netplan)
+# Edit /etc/netplan/01-netcfg.yaml
+network:
+  ethernets:
+    eth0:
+      routes:
+        - to: 192.168.200.0/24
+          via: 192.168.100.10
+```
+
+**Windows (PowerShell as Administrator):**
+
+```powershell
+# Temporary route
+route add 192.168.200.0 mask 255.255.255.0 192.168.100.10
+
+# Persistent route
+route -p add 192.168.200.0 mask 255.255.255.0 192.168.100.10
+```
+
+**macOS:**
+
+```bash
+# Temporary route
+sudo route add -net 192.168.200.0/24 192.168.100.10
+
+# Persistent routes require a launch daemon or network configuration tool
+```
+
+**Router-level (recommended):**
+
+Configure your router to advertise routes via DHCP or add static routes that apply to all devices on the network.
+
+## Networks vs Network Routes Detailed Comparison
+
+| Aspect | Networks | Network Routes |
+|--------|----------|----------------|
+| Supported scenarios | VPN-to-Site only | All (VPN-to-Site, Site-to-VPN, Site-to-Site) |
+| Access control | Per-resource policies | Per-route with ACL Groups |
+| Masquerade | Always enabled | Configurable |
+| Setup complexity | Simpler UI workflow | More manual configuration |
+| Routing peer redundancy | Built-in | Manual configuration |
+| Policy requirement | Only resource policies | Routing peer + ACL Group policies |
+
+## Troubleshooting
+
+### Route Not Active
+
+**Symptoms:** Peers don't see the route; `netbird routes list` shows nothing
+
+**Causes:**
+1. No access policy grants access to the routing peer
+2. Routing peer is offline
+3. ACL Group has no policies granting access
+
+**Solution:**
+- Ensure at least one policy connects to the routing peer's group
+- Verify routing peer status in the dashboard
+- Check ACL Group policies exist
+
+### Traffic Times Out
+
+**Symptoms:** Ping or connections hang, no response
+
+**Causes:**
+1. Routing peer can't reach the destination network
+2. Masquerade disabled and no return route exists
+3. Firewall blocking traffic
+
+**Solution:**
+- Test from the routing peer: `ping <destination>` directly
+- If masquerade is off, verify return routes are configured
+- Check OS firewall on routing peer: `iptables -L -n` or equivalent
+
+### Connection Works One Way
+
+**Symptoms:** Can reach remote site but responses don't return
+
+**Causes:**
+1. Missing reverse route (site-to-site)
+2. Asymmetric policies
+3. Stateful firewall issues
+
+**Solution:**
+- Ensure routes exist in both directions
+- Verify policies allow return traffic
+- Check firewall state tracking
+
+### Wrong Traffic Routed
+
+**Symptoms:** Unexpected traffic going through NetBird
+
+**Causes:**
+1. Overlapping routes
+2. Route priority issues
+3. Incorrect subnet configuration
+
+**Solution:**
+- Review all Network Routes for overlaps
+- Use more specific routes where needed
+- Verify subnet CIDR notation is correct
+
+### Debugging Commands
+
+**On the routing peer:**
+
+```bash
+# Check NetBird status
+netbird status
+
+# List active routes
+netbird routes list
+
+# Check system routes
+ip route show
+
+# Monitor traffic (Linux)
+sudo tcpdump -i any -n host 192.168.200.50
+
+# Check forwarding is enabled
+cat /proc/sys/net/ipv4/ip_forward
+```
+
+**On a client peer:**
+
+```bash
+# Check which route is being used
+netbird networks ls
+
+# Trace the path
+traceroute 192.168.200.50
+```
+
+## Performance Considerations
+
+### Routing Peer Placement
+
+- Place routing peers on machines with good network connectivity
+- Avoid routing through bandwidth-constrained links
+- Consider dedicated hardware for high-traffic scenarios
+
+### Multiple Routing Peers
+
+For high availability or load distribution:
+- Deploy multiple routing peers for the same route
+- NetBird will distribute traffic across available peers
+- Monitor peer health and remove failed peers promptly
+
+### Monitoring
+
+Track these metrics for routing peers:
+- CPU and memory usage
+- Network throughput
+- Connection count
+- Packet loss and latency
+
+Use NetBird's [activity logging](/manage/activity) to monitor access patterns and troubleshoot issues.

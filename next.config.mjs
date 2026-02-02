@@ -510,6 +510,22 @@ const nextConfig = {
                 destination: '/manage/dns/custom-zones',
                 permanent: true,
             },
+            // Site-to-site documentation restructure redirects
+            {
+                source: '/use-cases/setup-site-to-site-access',
+                destination: '/manage/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/site-to-site/db-workload-migration',
+                destination: '/manage/site-to-site/connect-cloud-environments',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/homelab/access-home-network',
+                destination: '/manage/site-to-site/connect-home-networks',
+                permanent: true,
+            },
         ]
     },
     rewrites: async () => {

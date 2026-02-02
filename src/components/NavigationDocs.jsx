@@ -92,16 +92,6 @@ export const docsNavigation = [
                             },
                         ]
                     },
-                    {
-                        title: 'Connect Site-to-Site',
-                        isOpen: true,
-                        links: [
-                            {
-                                title: 'Simplify Workload Migrations',
-                                href: '/manage/peers/site-to-site/db-workload-migration'
-                            },
-                        ]
-                    },
                     { title: 'Auto Update', href: '/manage/peers/auto-update' },
                 ]
             },
@@ -140,13 +130,17 @@ export const docsNavigation = [
                     { title: 'Route Traffic to Multiple IP resources', href: '/manage/networks/routing-traffic-to-multiple-resources' },
                     { title: 'Access Restricted Website Domain Resources', href: '/manage/networks/accessing-restricted-domain-resources' },
                     { title: 'Access Entire Domains Within Networks', href: '/manage/networks/accessing-entire-domains-within-networks' },
-                    {
-                        title: 'Homelab',
-                        isOpen: true,
-                        links: [
-                            { title: 'Access Home Network', href: '/manage/networks/homelab/access-home-network' },
-                        ]
-                    },
+                ]
+            },
+            {
+                title: 'Site-to-Site',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/manage/site-to-site' },
+                    { title: 'Connect Home Networks', href: '/manage/site-to-site/connect-home-networks' },
+                    { title: 'Connect Office Networks', href: '/manage/site-to-site/connect-office-networks' },
+                    { title: 'Connect Cloud Environments', href: '/manage/site-to-site/connect-cloud-environments' },
+                    { title: 'Advanced Configuration', href: '/manage/site-to-site/advanced-configuration' },
                 ]
             },
             {
@@ -353,7 +347,6 @@ export const docsNavigation = [
     {
         title: 'USE CASES',
         links: [
-            { title: 'Site-to-Site and Site-to-VPN', href: '/use-cases/setup-site-to-site-access' },
             { title: 'Serverless and NetBird', href: '/use-cases/netbird-on-faas' },
             { title: 'Routing peers and Kubernetes', href: '/use-cases/routing-peers-and-kubernetes' },
             { title: 'Implement Zero Trust with NetBird', href: '/use-cases/implement-zero-trust' },     
