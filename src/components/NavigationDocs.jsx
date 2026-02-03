@@ -130,27 +130,38 @@ export const docsNavigation = [
                     { title: 'Route Traffic to Multiple IP resources', href: '/manage/networks/routing-traffic-to-multiple-resources' },
                     { title: 'Access Restricted Website Domain Resources', href: '/manage/networks/accessing-restricted-domain-resources' },
                     { title: 'Access Entire Domains Within Networks', href: '/manage/networks/accessing-entire-domains-within-networks' },
-                ]
-            },
-            {
-                title: 'Site-to-Site',
-                isOpen: false,
-                links: [
-                    { title: 'Overview', href: '/manage/site-to-site' },
-                    { title: 'Connect Home Networks', href: '/manage/site-to-site/connect-home-networks' },
-                    { title: 'Connect Office Networks', href: '/manage/site-to-site/connect-office-networks' },
-                    { title: 'Connect Cloud Environments', href: '/manage/site-to-site/connect-cloud-environments' },
-                    { title: 'Advanced Configuration', href: '/manage/site-to-site/advanced-configuration' },
+                    {
+                        title: 'Use Cases',
+                        isOpen: false,
+                        links: [
+                            { title: 'Overview', href: '/manage/networks/use-cases' },
+                            { title: 'Access Home Devices', href: '/manage/networks/use-cases/access-home-devices' },
+                            { title: 'Remote Worker Access', href: '/manage/networks/use-cases/remote-worker-access' },
+                            { title: 'Cloud to On-Premise', href: '/manage/networks/use-cases/cloud-to-on-premise' },
+                        ]
+                    }
                 ]
             },
             {
                 title: 'Network Routes',
                 isOpen: false,
                 links: [
+                    { title: 'Concept', href: '/manage/network-routes' },
                     { title: 'Route Traffic to Private Networks', href: '/manage/network-routes/routing-traffic-to-private-networks' },
                     { title: 'Configure Default Routes for Internet Traffic', href: '/manage/network-routes/configuring-default-routes-for-internet-traffic' },
                     { title: 'Configure Routes with Access control', href: '/manage/network-routes/configuring-routes-with-access-control' },
                     { title: 'Resolve Overlapping Routes', href: '/manage/network-routes/resolve-overlapping-routes' },
+                    {
+                        title: 'Use Cases',
+                        isOpen: false,
+                        links: [
+                            { title: 'Overview', href: '/manage/network-routes/use-cases' },
+                            { title: 'Site-to-Site: Home', href: '/manage/network-routes/use-cases/site-to-site-home' },
+                            { title: 'Site-to-Site: Office', href: '/manage/network-routes/use-cases/site-to-site-office' },
+                            { title: 'Site-to-Site: Cloud', href: '/manage/network-routes/use-cases/site-to-site-cloud' },
+                            { title: 'Advanced Configuration', href: '/manage/network-routes/use-cases/advanced-configuration' },
+                        ]
+                    }
                 ]
             },
             {
@@ -347,12 +358,35 @@ export const docsNavigation = [
     {
         title: 'USE CASES',
         links: [
-            { title: 'Serverless and NetBird', href: '/use-cases/netbird-on-faas' },
-            { title: 'Routing peers and Kubernetes', href: '/use-cases/routing-peers-and-kubernetes' },
-            { title: 'Implement Zero Trust with NetBird', href: '/use-cases/implement-zero-trust' },     
-            { title: 'NetBird Client on AWS ECS', href: '/use-cases/examples' },
-            { title: 'NetBird on Mikrotik Router', href: '/use-cases/client-on-mikrotik-router' },
-            { title: 'Distributed AI on Kubernetes', href: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm' },
+            { title: 'Overview', href: '/use-cases' },
+            {
+                title: 'Homelab',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/use-cases/homelab' },
+                    { title: 'NetBird on MikroTik Router', href: '/use-cases/homelab/client-on-mikrotik-router' },
+                ]
+            },
+            {
+                title: 'Cloud',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/use-cases/cloud' },
+                    { title: 'NetBird on AWS ECS', href: '/use-cases/cloud/aws-ecs-terraform' },
+                    { title: 'NetBird on Serverless (FaaS)', href: '/use-cases/cloud/netbird-on-faas' },
+                    { title: 'Routing Peers and Kubernetes', href: '/use-cases/cloud/routing-peers-and-kubernetes' },
+                    { title: 'Distributed Multi-Cloud AI', href: '/use-cases/cloud/distributed-multi-cloud-ai' },
+                ]
+            },
+            {
+                title: 'Security',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/use-cases/security' },
+                    { title: 'Implement Zero Trust', href: '/use-cases/security/implement-zero-trust' },
+                ]
+            },
+            { title: 'Site-to-Site Guide', href: '/use-cases/site-to-site' },
             { title: 'Self-hosted vs. Cloud-hosted NetBird', href: '/selfhosted/self-hosted-vs-cloud-netbird' },
         ],
     },

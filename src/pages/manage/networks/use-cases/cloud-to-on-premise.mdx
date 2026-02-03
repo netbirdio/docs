@@ -1,0 +1,162 @@
+import { Note } from '@/components/mdx'
+
+# Cloud to On-Premise Access (VPN-to-Site)
+
+This guide shows how to connect cloud workloads to on-premise databases and services using the Networks feature.
+
+## What You'll Achieve
+
+After following this guide, your cloud applications will be able to securely access on-premise databases, APIs, and services without exposing them to the public internet.
+
+```
+Cloud VM ────► NetBird Tunnel ────► Routing Peer ────► Database Server
+(peer)                               (on-prem)         (no NetBird)
+```
+
+## Prerequisites
+
+- A [NetBird account](https://app.netbird.io/)
+- Access to deploy VMs or containers in your cloud environment
+- Network configuration permissions in your cloud VPC
+
+## Step 1: Deploy a Routing Peer On-Premise
+
+Install NetBird on a server in your data center that can reach the database:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+```
+
+Create a setup key in the dashboard and connect:
+
+```bash
+sudo netbird up --setup-key YOUR_SETUP_KEY
+```
+
+## Step 2: Create a Network for On-Premise Resources
+
+1. Go to **Networks** in the dashboard
+2. Click **Add Network** and name it "On-Premise Data Center"
+3. Click **Add Resource**
+4. Add your database subnet or specific IP (e.g., `10.100.0.0/24` or `10.100.0.50/32`)
+5. Assign to a group like "on-prem-databases"
+
+## Step 3: Add the Routing Peer
+
+1. In your network, click **Add Routing Peer**
+2. Select your on-premise server
+3. Click **Add Routing Peer**
+
+## Step 4: Deploy NetBird on Cloud Workloads
+
+**For VMs:**
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+sudo netbird up --setup-key YOUR_CLOUD_SETUP_KEY
+```
+
+**For containers (Docker Compose):**
+
+```yaml
+services:
+  netbird:
+    image: netbirdio/netbird:latest
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - NB_SETUP_KEY=YOUR_SETUP_KEY
+    volumes:
+      - netbird-config:/etc/netbird
+    restart: unless-stopped
+
+volumes:
+  netbird-config:
+```
+
+**For Kubernetes:**
+
+Use the [NetBird Kubernetes Operator](/manage/integrations/kubernetes) for production deployments.
+
+## Step 5: Create Access Policies
+
+1. Go to **Access Control > Policies**
+2. Create a policy:
+   - Source: Group containing your cloud workloads
+   - Destination: "on-prem-databases"
+   - Protocol: TCP
+   - Ports: 5432 (PostgreSQL), 3306 (MySQL), etc.
+
+## Step 6: Configure Your Application
+
+Update your application's database connection to use the on-premise IP:
+
+```python
+# Example: Python with PostgreSQL
+conn = psycopg2.connect(
+    host="10.100.0.50",  # On-premise database IP
+    dbname="production",
+    user="app_user",
+    password="secure_password"
+)
+```
+
+Your cloud application can now securely access the on-premise database.
+
+## Cloud-Specific Considerations
+
+### AWS
+
+- Use VPC endpoints where possible for AWS services
+- Security groups must allow traffic from the NetBird routing peer
+- Consider using an Auto Scaling group for the routing peer with a static ENI
+
+### GCP
+
+- Firewall rules must allow traffic from the routing peer's internal IP
+- Use instance groups for high availability
+- Enable IP forwarding on the routing peer instance
+
+### Azure
+
+- Network security groups must allow traffic from the routing peer
+- Consider using a Virtual Machine Scale Set for HA
+- Enable IP forwarding on the routing peer NIC
+
+## Best Practices
+
+### Security
+
+- Use dedicated setup keys per environment (dev, staging, production)
+- Restrict access policies to specific ports and protocols
+- Enable [activity logging](/manage/activity) for compliance
+
+### High Availability
+
+- Deploy multiple routing peers and configure failover
+- Monitor routing peer health with your existing tools
+- Use cloud-native load balancing where appropriate
+
+### Performance
+
+- Place routing peers close to the resources they serve
+- Use direct peering where possible (NetBird will automatically optimize paths)
+- Monitor latency and throughput between environments
+
+## Troubleshooting
+
+**Cloud workload can't reach on-premise:**
+1. Verify the routing peer is online: `netbird status`
+2. Check the routing peer can reach the target: `ping 10.100.0.50`
+3. Verify access policies are configured correctly
+
+**High latency:**
+1. Check routing peer placement and network connectivity
+2. Verify traffic is using direct peer-to-peer connections (not relays)
+3. Review cloud network configuration for bottlenecks
+
+## Next Steps
+
+- **Need Multi-Cloud Site-to-Site?** If you need to connect cloud VPCs across providers, see [Site-to-Site: Cloud](/manage/network-routes/use-cases/site-to-site-cloud)
+- **Advanced configuration:** See [Advanced Configuration](/manage/network-routes/use-cases/advanced-configuration) for masquerade options and detailed access control

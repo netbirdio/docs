@@ -1,14 +1,17 @@
-import { Note, Warning } from '@/components/mdx'
+import { Note } from '@/components/mdx'
 
-# Connect Home Networks
+# Access Home Devices (VPN-to-Site)
 
-This guide helps homelabbers set up remote access to home network devices and optionally connect multiple home networks together.
+This guide shows how to access your home network devices from anywhere using the Networks feature.
 
 ## What You'll Achieve
 
-After following this guide, you'll be able to:
-- Access your NAS, media server, or home automation from anywhere (VPN-to-Site)
-- Optionally connect two home networks together so devices can communicate (Site-to-Site)
+After following this guide, you'll be able to access your home NAS, media server, home automation, or any device on your home network from your laptop or phone—anywhere in the world.
+
+```
+Your Laptop ──────► NetBird Tunnel ──────► Routing Peer ──────► Home NAS
+  (peer)                                    (at home)           (no NetBird)
+```
 
 ## Prerequisites
 
@@ -16,11 +19,7 @@ After following this guide, you'll be able to:
 - NetBird installed on your laptop or phone ([installation guide](/get-started/install))
 - An always-on device at home to serve as the routing peer (Raspberry Pi, NAS with Docker, old laptop, etc.)
 
-## Part 1: Access Home Devices from Anywhere (VPN-to-Site)
-
-This is the most common homelab scenario: you're traveling and want to access devices on your home network.
-
-### Step 1: Connect Your Laptop to NetBird
+## Step 1: Connect Your Laptop to NetBird
 
 If you haven't already, install NetBird on your laptop and connect:
 
@@ -29,7 +28,7 @@ If you haven't already, install NetBird on your laptop and connect:
 3. Complete the sign-up process in your browser
 4. Verify your device appears in the [NetBird dashboard](https://app.netbird.io/) under **Peers**
 
-### Step 2: Find Your Home Subnet
+## Step 2: Find Your Home Subnet
 
 Before configuring NetBird, identify your home network's subnet.
 
@@ -45,13 +44,13 @@ netstat -rn | grep default
 
 Look for your local subnet, typically something like `192.168.1.0/24` or `192.168.0.0/24`.
 
-### Step 3: Create a Network for Your Home LAN
+## Step 3: Create a Network for Your Home LAN
 
 1. Go to **Networks** in the NetBird dashboard
 2. Click **Add Network**
 3. Name it "Home LAN" and click **Save**
 
-### Step 4: Add Your Home Subnet as a Resource
+## Step 4: Add Your Home Subnet as a Resource
 
 1. In your new network, click **Add Resource**
 2. Enter a name like "Home Subnet"
@@ -63,7 +62,7 @@ Look for your local subnet, typically something like `192.168.1.0/24` or `192.16
 For more granular access, add specific device IPs instead of the entire subnet. For example, add `192.168.1.50/32` to only allow access to your NAS.
 </Note>
 
-### Step 5: Create an Access Policy
+## Step 5: Create an Access Policy
 
 1. After adding your resource, click **Create Policy**
 2. Set **Source** to a group containing your devices (e.g., "All Users" or create "Home Users")
@@ -71,7 +70,7 @@ For more granular access, add specific device IPs instead of the entire subnet. 
 4. Set **Protocol** to All
 5. Name it "Home LAN Access" and click **Add Policy**
 
-### Step 6: Set Up the Routing Peer
+## Step 6: Set Up the Routing Peer
 
 The routing peer forwards traffic from NetBird to your local network. Use any always-on device:
 - Raspberry Pi
@@ -93,7 +92,7 @@ sudo netbird up --setup-key YOUR_SETUP_KEY
 4. In the Networks view, click **Add Routing Peer** on your Home LAN network
 5. Select your new peer and click **Add Routing Peer**
 
-### Step 7: Test the Connection
+## Step 7: Test the Connection
 
 From your laptop (connected to a different network like mobile data or coffee shop WiFi):
 
@@ -103,79 +102,6 @@ ping 192.168.1.50 # Your NAS or other device
 ```
 
 You can now access your home devices from anywhere.
-
----
-
-## Part 2: Connect Two Home Networks (Site-to-Site)
-
-Want to connect your home network with a family member's? This requires Network Routes instead of Networks.
-
-<Note>
-Site-to-site requires Network Routes because the Networks feature doesn't yet support bidirectional routing between sites.
-</Note>
-
-### Example Scenario
-
-- **Your home**: `192.168.1.0/24` with routing peer "home-rpi"
-- **Parents' home**: `192.168.2.0/24` with routing peer "parents-rpi"
-
-### Step 1: Set Up Routing Peers at Both Locations
-
-Install NetBird on a device at each home following the same process as Part 1, Step 6.
-
-### Step 2: Create Network Routes
-
-1. Go to **Network Routes** in the dashboard
-2. Click **Add Route**
-
-**For your home network:**
-- Network: `192.168.1.0/24`
-- Routing Peer: Select "home-rpi"
-- Enable **Masquerade** (recommended)
-- Click **Save**
-
-**For parents' home network:**
-- Network: `192.168.2.0/24`
-- Routing Peer: Select "parents-rpi"
-- Enable **Masquerade** (recommended)
-- Click **Save**
-
-### Step 3: Create Access Policies
-
-Create policies that allow the routing peers to communicate:
-
-1. Go to **Access Control > Policies**
-2. Add a policy:
-   - Source: Group containing "home-rpi"
-   - Destination: Group containing "parents-rpi"
-   - Protocol: All (or restrict as needed)
-
-### Step 4: Configure Clientless Devices
-
-For devices without NetBird to reach the other network, add a static route pointing to the local routing peer.
-
-**Example on a Linux device at your home:**
-
-```bash
-# Route to parents' network through your routing peer
-sudo ip route add 192.168.2.0/24 via 192.168.1.100
-```
-
-Where `192.168.1.100` is your routing peer's local IP.
-
-<Note>
-For persistent routes, configure them in your router's DHCP settings or the device's network configuration.
-</Note>
-
-### Step 5: Test Cross-Network Access
-
-From a device at your home:
-
-```bash
-ping 192.168.2.1  # Parents' router
-```
-
----
 
 ## Common Home Devices to Access
 
@@ -199,9 +125,7 @@ ping 192.168.2.1  # Parents' router
 1. Ensure the routing peer has a stable internet connection
 2. Check if your ISP blocks VPN traffic (try a different port or protocol)
 
-**Site-to-site not working:**
-1. Verify both routing peers are online and connected
-2. Check that static routes are configured on clientless devices
-3. Ensure access policies allow traffic in both directions
+## Next Steps
 
-For advanced configuration options including masquerade settings and access control, see [Advanced Configuration](/manage/site-to-site/advanced-configuration).
+- **Need Site-to-Site?** If you want to connect two home networks together, see [Site-to-Site: Home Networks](/manage/network-routes/use-cases/site-to-site-home)
+- **Advanced configuration:** See [Advanced Configuration](/manage/network-routes/use-cases/advanced-configuration) for masquerade options and access control details

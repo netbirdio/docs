@@ -1,0 +1,187 @@
+import { Note } from '@/components/mdx'
+
+# Site-to-Site: Cloud Environments
+
+This guide shows how to connect cloud VPCs across providers or bridge cloud and on-premise networks using Network Routes.
+
+## What You'll Achieve
+
+After following this guide, workloads across different cloud providers (AWS, GCP, Azure) or between cloud and on-premise can communicate without exposing traffic to the public internet.
+
+```
+AWS VPC ────► Routing Peer ────► NetBird ────► Routing Peer ────► GCP VPC
+(10.0.0.0/16)   (peer)                           (peer)         (10.1.0.0/16)
+```
+
+<Note>
+Multi-cloud Site-to-Site requires Network Routes because the Networks feature doesn't yet support this scenario.
+</Note>
+
+## Prerequisites
+
+- A [NetBird account](https://app.netbird.io/)
+- Access to deploy VMs in your cloud environments
+- Network configuration permissions in your cloud VPCs
+
+## Example: Multi-Cloud Connectivity
+
+Connect workloads across AWS and GCP:
+
+- **AWS VPC**: `10.0.0.0/16`
+- **GCP VPC**: `10.1.0.0/16`
+
+## Step 1: Deploy Routing Peers in Each Cloud
+
+**AWS:**
+
+Launch an EC2 instance in your VPC with NetBird installed. Use the following user data:
+
+```bash
+#!/bin/bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+netbird up --setup-key YOUR_AWS_SETUP_KEY
+```
+
+**GCP:**
+
+Launch a Compute Engine instance in your VPC:
+
+```bash
+#!/bin/bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+netbird up --setup-key YOUR_GCP_SETUP_KEY
+```
+
+Create groups for the routing peers:
+- "aws-routing-peers"
+- "gcp-routing-peers"
+
+## Step 2: Create Network Routes
+
+**For AWS VPC:**
+1. Go to **Network Routes**
+2. Add route:
+   - Network identifier: `aws-vpc`
+   - Network range: `10.0.0.0/16`
+   - Routing peer: Your AWS instance
+   - Enable **Masquerade**
+   - Distribution Groups: "gcp-routing-peers"
+
+**For GCP VPC:**
+1. Add route:
+   - Network identifier: `gcp-vpc`
+   - Network range: `10.1.0.0/16`
+   - Routing peer: Your GCP instance
+   - Enable **Masquerade**
+   - Distribution Groups: "aws-routing-peers"
+
+## Step 3: Create Access Policies
+
+Create policies allowing the routing peers to communicate:
+
+1. Go to **Access Control > Policies**
+2. Create bidirectional policies between the routing peer groups:
+
+```
+Source: aws-routing-peers → Destination: gcp-routing-peers (All)
+Source: gcp-routing-peers → Destination: aws-routing-peers (All)
+```
+
+## Step 4: Configure VPC Routing
+
+**AWS VPC:**
+
+Add a route in your route table:
+- Destination: `10.1.0.0/16` (GCP CIDR)
+- Target: Your NetBird routing peer instance (ENI)
+
+**GCP VPC:**
+
+Add a custom route:
+- Destination: `10.0.0.0/16` (AWS CIDR)
+- Next hop: Your NetBird routing peer instance
+
+<Note>
+Enable IP forwarding on routing peer instances in both clouds.
+</Note>
+
+## Step 5: Test Connectivity
+
+From an AWS instance:
+
+```bash
+ping 10.1.0.100  # GCP instance
+```
+
+From a GCP instance:
+
+```bash
+ping 10.0.0.100  # AWS instance
+```
+
+## Cloud-Specific Considerations
+
+### AWS
+
+- Security groups must allow traffic from the NetBird routing peer
+- Enable source/destination check disabled on the routing peer instance
+- Consider using an Auto Scaling group for the routing peer with a static ENI
+
+### GCP
+
+- Firewall rules must allow traffic from the routing peer's internal IP
+- Enable IP forwarding on the routing peer instance
+- Use managed instance groups for high availability
+
+### Azure
+
+- Network security groups must allow traffic from the routing peer
+- Enable IP forwarding on the routing peer NIC
+- Consider using a Virtual Machine Scale Set for HA
+
+## Secure Workload Migration
+
+Use Site-to-Site connectivity for migrating workloads between environments:
+
+### Example: Migrating from On-Premise to Cloud
+
+1. **Before migration**: Application and database both on-premise
+2. **During migration**: Application in cloud, database still on-premise (use VPN-to-Site via [Networks](/manage/networks/use-cases/cloud-to-on-premise))
+3. **Cutover**: Switch traffic to the cloud application
+4. **After migration**: Once database is also migrated, update connection strings and remove NetBird if no longer needed
+
+## Best Practices
+
+### Security
+
+- Use dedicated setup keys per environment (dev, staging, production)
+- Restrict access policies to specific ports and protocols
+- Enable [activity logging](/manage/activity) for compliance
+
+### High Availability
+
+- Deploy multiple routing peers and configure failover
+- Monitor routing peer health with your existing tools
+- Use cloud-native load balancing where appropriate
+
+### Performance
+
+- Place routing peers close to the resources they serve
+- Use direct peering where possible (NetBird will automatically optimize paths)
+- Monitor latency and throughput between environments
+
+## Troubleshooting
+
+**Multi-cloud connectivity issues:**
+1. Confirm both routing peers are connected to NetBird
+2. Check VPC routing tables have correct entries
+3. Verify security groups/firewall rules allow traffic
+
+**High latency:**
+1. Check routing peer placement and network connectivity
+2. Verify traffic is using direct peer-to-peer connections (not relays)
+3. Review cloud network configuration for bottlenecks
+
+## Advanced Configuration
+
+For masquerade options, ACL Groups, and detailed troubleshooting, see [Advanced Configuration](/manage/network-routes/use-cases/advanced-configuration).

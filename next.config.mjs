@@ -252,27 +252,27 @@ const nextConfig = {
             // documentation redirects for use-cases
             {
                 source: '/how-to/examples',
-                destination: '/use-cases/examples',
+                destination: '/use-cases/cloud/aws-ecs-terraform',
                 permanent: true,
             },
             {
                 source: '/how-to/netbird-on-faas',
-                destination: '/use-cases/netbird-on-faas',
+                destination: '/use-cases/cloud/netbird-on-faas',
                 permanent: true,
             },
             {
                 source: '/how-to/routing-peers-and-kubernetes',
-                destination: '/use-cases/routing-peers-and-kubernetes',
+                destination: '/use-cases/cloud/routing-peers-and-kubernetes',
                 permanent: true,
             },
             {
                 source: '/how-to/client-on-mikrotik-router',
-                destination: '/use-cases/client-on-mikrotik-router',
+                destination: '/use-cases/homelab/client-on-mikrotik-router',
                 permanent: true,
             },
             {
                 source: '/how-to/distributed-multi-cloud-ai-argocd-microk8s-vllm',
-                destination: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm',
+                destination: '/use-cases/cloud/distributed-multi-cloud-ai',
                 permanent: true,
             },
             // documentation redirects for networks
@@ -513,17 +513,74 @@ const nextConfig = {
             // Site-to-site documentation restructure redirects
             {
                 source: '/use-cases/setup-site-to-site-access',
-                destination: '/manage/site-to-site',
+                destination: '/use-cases/site-to-site',
                 permanent: true,
             },
             {
                 source: '/manage/peers/site-to-site/db-workload-migration',
-                destination: '/manage/site-to-site/connect-cloud-environments',
+                destination: '/manage/network-routes/use-cases/site-to-site-cloud',
                 permanent: true,
             },
             {
                 source: '/manage/networks/homelab/access-home-network',
-                destination: '/manage/site-to-site/connect-home-networks',
+                destination: '/manage/networks/use-cases/access-home-devices',
+                permanent: true,
+            },
+            // Site-to-Site section redirects (overview and comprehensive guides)
+            {
+                source: '/manage/site-to-site',
+                destination: '/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/site-to-site/connect-home-networks',
+                destination: '/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/site-to-site/connect-office-networks',
+                destination: '/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/site-to-site/connect-cloud-environments',
+                destination: '/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/site-to-site/advanced-configuration',
+                destination: '/manage/network-routes/use-cases/advanced-configuration',
+                permanent: true,
+            },
+            // Use-cases flat pages -> categorized
+            {
+                source: '/use-cases/examples',
+                destination: '/use-cases/cloud/aws-ecs-terraform',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/netbird-on-faas',
+                destination: '/use-cases/cloud/netbird-on-faas',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/routing-peers-and-kubernetes',
+                destination: '/use-cases/cloud/routing-peers-and-kubernetes',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/implement-zero-trust',
+                destination: '/use-cases/security/implement-zero-trust',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/client-on-mikrotik-router',
+                destination: '/use-cases/homelab/client-on-mikrotik-router',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm',
+                destination: '/use-cases/cloud/distributed-multi-cloud-ai',
                 permanent: true,
             },
         ]

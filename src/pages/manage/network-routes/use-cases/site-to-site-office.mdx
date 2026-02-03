@@ -1,0 +1,200 @@
+import { Note } from '@/components/mdx'
+
+# Site-to-Site: Office Networks
+
+This guide shows how to connect multiple office locations so all devices can communicate—including those without NetBird installed.
+
+## What You'll Achieve
+
+After following this guide, devices at different office locations can communicate with each other:
+- Branch office servers can access headquarters databases
+- Printers and IoT devices can be managed from any location
+- Legacy systems can communicate across sites
+
+```
+HQ Server ──► Routing Peer ──► NetBird Tunnel ──► Routing Peer ──► Branch Server
+(no NetBird)    (peer)                              (peer)         (no NetBird)
+```
+
+<Note>
+Site-to-Site requires Network Routes because the Networks feature doesn't yet support bidirectional routing between sites.
+</Note>
+
+## Prerequisites
+
+- A [NetBird account](https://app.netbird.io/)
+- Admin access to network infrastructure at each location
+- A server or VM at each location to serve as routing peers
+
+## Example Setup
+
+- **Headquarters**: `10.0.0.0/24` with routing peer "hq-router"
+- **Branch Office**: `10.1.0.0/24` with routing peer "branch-router"
+
+## Step 1: Deploy Routing Peers
+
+Install NetBird on a server at each location:
+
+**At headquarters:**
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+sudo netbird up --setup-key YOUR_HQ_SETUP_KEY
+```
+
+**At branch office:**
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+sudo netbird up --setup-key YOUR_BRANCH_SETUP_KEY
+```
+
+Create dedicated groups for each routing peer:
+- "hq-routing-peers" containing "hq-router"
+- "branch-routing-peers" containing "branch-router"
+
+## Step 2: Create Network Routes
+
+**For headquarters:**
+1. Go to **Network Routes**
+2. Click **Add Route**
+3. Network identifier: `hq-network`
+4. Network range: `10.0.0.0/24`
+5. Routing Peer: Select "hq-router"
+6. Enable **Masquerade** (recommended)
+7. Distribution Groups: "branch-routing-peers"
+8. Optionally add ACL Groups for access control
+9. Click **Save**
+
+**For branch office:**
+1. Add route: `10.1.0.0/24`
+2. Routing peer: "branch-router"
+3. Enable Masquerade
+4. Distribution Groups: "hq-routing-peers"
+5. Optionally add ACL Groups
+6. Click **Save**
+
+## Step 3: Create Access Policies
+
+Create policies allowing the routing peers to communicate:
+
+```
+Source: hq-routing-peers → Destination: branch-routing-peers (All protocols)
+Source: branch-routing-peers → Destination: hq-routing-peers (All protocols)
+```
+
+For route-level access control (if ACL Groups configured):
+
+```
+Source: hq-resources → Destination: branch-resources (specific protocols)
+Source: branch-resources → Destination: hq-resources (specific protocols)
+```
+
+## Step 4: Configure Network Equipment
+
+**Option A: Router-level routes (recommended)**
+
+Configure your routers to advertise routes to the remote network via DHCP or add static routes:
+
+```
+# On HQ router, route to branch through routing peer
+Destination: 10.1.0.0/24
+Gateway: 10.0.0.50 (hq-router's IP)
+
+# On Branch router, route to HQ through routing peer
+Destination: 10.0.0.0/24
+Gateway: 10.1.0.50 (branch-router's IP)
+```
+
+**Option B: Per-device routes**
+
+Add routes on individual devices that need cross-site access:
+
+```bash
+# On HQ device (Linux)
+sudo ip route add 10.1.0.0/24 via 10.0.0.50
+
+# On Branch device (Linux)
+sudo ip route add 10.0.0.0/24 via 10.1.0.50
+```
+
+**Windows (PowerShell):**
+
+```powershell
+# On HQ device
+route -p add 10.1.0.0 mask 255.255.255.0 10.0.0.50
+
+# On Branch device
+route -p add 10.0.0.0 mask 255.255.255.0 10.1.0.50
+```
+
+## Step 5: Test Connectivity
+
+From a device at headquarters:
+
+```bash
+ping 10.1.0.1  # Branch router
+ping 10.1.0.100  # Branch server
+```
+
+From a device at branch office:
+
+```bash
+ping 10.0.0.1  # HQ router
+ping 10.0.0.100  # HQ server
+```
+
+## Site-to-VPN: Office Systems Reaching Remote Workers
+
+Some scenarios require office systems to initiate connections to remote workers (monitoring, management tools, etc.).
+
+### Configuration
+
+1. Create a network route for the office network (as above)
+2. On the office system that needs to reach remote workers, add a route to the NetBird network:
+
+```bash
+# Route to NetBird network through the routing peer
+sudo ip route add 100.64.0.0/10 via 10.0.0.50
+```
+
+Where `10.0.0.50` is the routing peer's office IP.
+
+3. Create bidirectional access policies allowing traffic in both directions
+
+## Best Practices for Business Deployments
+
+### Access Control
+
+- Create specific groups for different access levels (IT Admin, Sales, Engineering)
+- Use protocol restrictions (e.g., only allow RDP to certain servers)
+- Implement time-limited setup keys for contractor access
+
+### High Availability
+
+For critical connections:
+- Deploy multiple routing peers at each location
+- Use peer groups for automatic failover
+- Monitor routing peer health
+
+### Security
+
+- Enable [Posture Checks](/manage/access-control/posture-checks) to verify device compliance
+- Use [Activity Logging](/manage/activity) to audit access
+- Implement MFA through your identity provider
+
+## Troubleshooting
+
+**Branch office connectivity issues:**
+1. Confirm both routing peers show as connected in the dashboard
+2. Verify static routes are configured correctly
+3. Check firewall rules aren't blocking traffic
+
+**Slow performance:**
+1. Check routing peer placement—it should have good network connectivity
+2. Consider enabling [lazy connections](/manage/peers/lazy-connection) for large deployments
+3. Review network route priorities if multiple routes exist
+
+## Advanced Configuration
+
+For masquerade options, ACL Groups, and detailed troubleshooting, see [Advanced Configuration](/manage/network-routes/use-cases/advanced-configuration).
