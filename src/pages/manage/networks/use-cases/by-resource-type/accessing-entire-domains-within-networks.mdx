@@ -1,0 +1,212 @@
+# Accessing entire domains within networks
+
+This guide shows how to provide access to entire internal domains using NetBird [Networks](/manage/networks) with [wildcard domain resources](/manage/networks#resources). Wildcard domains simplify access management when teams need to reach multiple subdomains under a common parent domain.
+
+## Example scenario
+
+An AI software company needs to provide secure access to two internal environments:
+
+1. **Development environment** (`*.dev.example.com`): Shared workspace for code development, testing, and collaboration
+2. **AI model training environment** (`*.ai.example.com`): Sensitive AI models and datasets with restricted access
+
+Using wildcard domains, developers can access any subdomain under `*.dev.example.com`, while data scientists access `*.ai.example.com`. This separation ensures team members only reach resources relevant to their roles.
+
+### Prerequisites
+
+Before starting, ensure you have:
+- [NetBird clients](/get-started) installed on developer and data scientist devices
+- [Routing peers](/manage/networks#routing-peers) configured in your network using [setup keys](/manage/peers/access-infrastructure/setup-keys-add-servers-to-network)
+- [Nameservers](/manage/dns) configured in NetBird to resolve domain queries
+
+## Enable DNS wildcard routing
+
+DNS wildcard routing allows NetBird to resolve subdomain requests through routing peers. This must be enabled before using wildcard domain resources.
+
+<Note>
+DNS wildcard routing shifts DNS resolution from the local client to the routing peer, enabling access control rules and optimized traffic routing.
+</Note>
+
+To enable DNS wildcard routing:
+
+1. Navigate to `Settings` > `Networks` in NetBird
+2. Toggle `Enable DNS wildcard routing`
+
+![Enabling DNS wildcard routing](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/01-domains-within-networks.png)
+
+<Note>
+DNS wildcard routing requires routing peers and clients running version `0.35.0` or later. Restart your routing peers and clients after enabling this feature.
+</Note>
+
+<Note>
+DNS Forwarder port change: Starting with NetBird v0.59.0, the local DNS forwarder switches from port <code>5353</code> to <code>22054</code> to avoid collisions. For backward compatibility, the Management Service applies the new port only when <strong>all peers in the account</strong> run v0.59.0 or newer.
+</Note>
+
+## Set up the development network
+
+### Create the network
+
+1. Navigate to `Networks` > `Networks` in the NetBird dashboard
+2. Click `Add Network`
+3. Enter a name (e.g., `Development Network`) and optional description
+4. Click `Add Network`
+
+![Creating Developers Domain Network](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/02-domains-within-networks.png)
+
+### Add routing peers
+
+Click `Add Routing Peer` to enable access to resources in this network.
+
+![Add Routing Peers Window](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/03-domains-within-networks.png)
+
+Choose your routing configuration:
+- Select `Routing Peers` to add a single peer
+- Select `Peer Group` to add multiple peers for high availability
+- Click `Continue`
+
+![Local Routing Peers](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/04-domains-within-networks.png)
+
+In `Advanced Settings`:
+- Enable `Masquerade` to access private networks without configuring local routers
+- Set `Metric` to prioritize routers (lower values = higher priority)
+- Click `Add Routing Peer`
+
+![Masquerade and Metric](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/05-domains-within-networks.png)
+
+### Add a wildcard domain resource
+
+Click `Add Resource` to create the wildcard domain resource.
+
+![Add Domain Resource](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/06-domains-within-networks.png)
+
+Configure the resource:
+- **Name**: `Development Wildcard Domain`
+- **Address**: `*.dev.example.com`
+- **Assigned Groups**: Select or create a group (e.g., `Development Domain`)
+- Click `Add Resource`
+
+![Add Development Wildcard Resource](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/07-domains-within-networks.png)
+
+### Create an access policy
+
+Click `Create Policy` to grant developers access to `*.dev.example.com`.
+
+![Add Policy](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/08-domains-within-networks.png)
+
+Configure the policy:
+- **Protocol**: `ALL`
+- **Source**: `Developers`
+- **Destination**: `Development Domain` (auto-populated)
+
+![Developers Policy](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/09-domains-within-networks.png)
+
+Click `Continue` to optionally add posture checks, then `Continue` again. Enter a policy name (e.g., `Development Wildcard Domain Policy`) and click `Add Policy`.
+
+![Developers Policy Name](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/10-domains-within-networks.png)
+
+### Add the base domain resource
+
+Wildcard domains (`*.dev.example.com`) only match subdomains, not the base domain itself. To also allow access to `dev.example.com`, add it as a separate resource.
+
+1. Navigate to `Networks` > `Development Network` and click `Add Resource`
+
+![Development Network](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/11-domains-within-networks.png)
+
+2. Configure the resource:
+   - **Name**: `Development Regular Domain`
+   - **Address**: `dev.example.com`
+   - **Assigned Groups**: `Development Domain` (same group as the wildcard)
+   - Click `Add Resource`
+
+![Regular Domain Resource](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/12-domains-within-networks.png)
+
+Since you used the same group, NetBird automatically applies the existing routing peers and access policies.
+
+![Development Network Resources](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/13-domains-within-networks.png)
+
+Verify the configuration from a developer workstation:
+
+```bash
+$ netbird networks ls
+Available Networks:
+
+  - ID: Development Regular Domain
+    Domains: dev.example.com
+    Status: Selected
+    Resolved IPs:
+      [example.com]: 93.184.215.14, 2606:2800:21f:cb07:6820:80da:af6b:8b2c
+
+  - ID: Development Wildcard Domain
+    Domains: *.dev.example.com
+    Status: Selected
+    Resolved IPs: -
+```
+
+## Set up the AI model training network
+
+Follow the same steps to create a network for data scientists.
+
+Create a new network named `AI Model Training Network`:
+
+![AI Network](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/14-domains-within-networks.png)
+
+Add routing peers (single or group for high availability):
+
+![AI Routing Peers](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/15-domains-within-networks.png)
+
+Add the wildcard domain resource for `*.ai.example.com`:
+
+![AI Wildcard Domain Resource](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/16-domains-within-networks.png)
+
+Create an access policy for the `Data Scientists` group:
+
+![AI Team Access Policy](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/17-domains-within-networks.png)
+
+Add the base domain `ai.example.com` as a separate resource. The completed network:
+
+![AI Network](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/18-domains-within-networks.png)
+
+### Add specific subdomain resources
+
+You can add individual subdomain resources for more granular access control. For example, to add a specific AI model subdomain:
+
+Click `Add Resource`, enter the subdomain name and address, and assign it to the appropriate group:
+
+![New AI Model Resource](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/19-domains-within-networks.png)
+
+The network now shows all resources:
+
+![AI Training Model Network](/docs-static/img/manage/networks/by-resource-type/accessing-entire-domains-within-networks/20-domains-within-networks.png)
+
+Verify from a data scientist workstation:
+
+```bash
+$ netbird networks ls
+Available Networks:
+
+  - ID: AI Model Training Wildcard Domain
+    Domains: *.ai.example.com
+    Status: Selected
+    Resolved IPs: -
+
+  - ID: AI Regular Domain
+    Domains: ai.example.com
+    Status: Selected
+    Resolved IPs: -
+
+  - ID: DataSage Model
+    Domains: datasage.ai.example.com
+    Status: Selected
+    Resolved IPs: -
+
+  - ID: NeuroPulse Model
+    Domains: neuropulse.ai.example.com
+    Status: Selected
+    Resolved IPs: -
+
+  - ID: QuantumNet Model
+    Domains: quantumnet.ai.example.com
+    Status: Selected
+    Resolved IPs: -
+```
+
+Data scientists now have access to `ai.example.com` and all its subdomains. You can create additional access policies for individual subdomains or organize data scientists into teams with different permissions as needed.

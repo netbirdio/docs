@@ -22,16 +22,34 @@ Site-to-Site requires Network Routes because the Networks feature doesn't yet su
 
 ## Prerequisites
 
-- A [NetBird account](https://app.netbird.io/)
+- A [NetBird cloud account](https://app.netbird.io/) or [self-hosted instance](/selfhosted/selfhosted-quickstart)
 - An always-on device at each home to serve as routing peers (Raspberry Pi, NAS with Docker, etc.)
-- Different subnets at each location (if both use `192.168.1.0/24`, see [Resolve Overlapping Routes](/manage/network-routes/resolve-overlapping-routes))
+- Different subnets at each location (if both use `192.168.1.0/24`, see [Resolve Overlapping Routes](/manage/network-routes/use-cases/by-configuration/overlapping-routes))
 
 ## Example Scenario
 
 - **Your home**: `192.168.1.0/24` with routing peer "home-rpi"
 - **Parents' home**: `192.168.2.0/24` with routing peer "parents-rpi"
 
-## Step 1: Set Up Routing Peers at Both Locations
+## Step 1: Create Setup Keys with Groups
+
+Before installing NetBird on your routing peers, create setup keys with auto-assigned groups:
+
+1. Go to **Setup Keys** in the NetBird dashboard
+2. Click **Create Setup Key**
+3. For your home routing peer:
+   - Network Identifier: "Home Routing Peer"
+   - Auto-assigned groups: Create and add `home-routing-peers`
+   - Click **Create**
+4. Repeat for parents' home:
+   - Network Identifier: "Parents Routing Peer"
+   - Auto-assigned groups: Create and add `parents-routing-peers`
+
+<Note>
+You can also add groups to peers manually after setup. Go to **Peers**, select the peer, and add groups under **Assigned Groups**.
+</Note>
+
+## Step 2: Install NetBird on Routing Peers
 
 **At your home:**
 
@@ -47,49 +65,63 @@ curl -fsSL https://pkgs.netbird.io/install.sh | sh
 sudo netbird up --setup-key YOUR_PARENTS_SETUP_KEY
 ```
 
-Create groups for each routing peer in the NetBird dashboard:
-- "home-routing-peers" containing "home-rpi"
-- "parents-routing-peers" containing "parents-rpi"
-
-## Step 2: Create Network Routes
+## Step 3: Create Network Routes
 
 1. Go to **Network Routes** in the dashboard
 2. Click **Add Route**
 
 **For your home network:**
-- Network identifier: `home-lan`
 - Network range: `192.168.1.0/24`
-- Routing Peer: Select "home-rpi"
-- Enable **Masquerade** (recommended for simplicity)
-- Distribution Groups: Add groups that need access (e.g., "parents-routing-peers")
-- Click **Save**
+- Routing Peer: Select "home-rpi" (or use "home-routing-peers" Peer Group)
+- Distribution Groups: "parents-routing-peers"
+- Access Control Groups: "home-routing-peers" (optional—for route-level policies, this group becomes the destination in access policies; without it, policies targeting this route won't apply)
+- Network Identifier: `home-lan`
+- Enable **Masquerade** in Additional Settings (recommended for simplicity)
+- Click **Add Route**
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-home/add-new-route-home-rpi.png" alt="Create route for home network" className="imagewrapper"/>
+</p>
 
 **For parents' home network:**
-- Network identifier: `parents-lan`
 - Network range: `192.168.2.0/24`
-- Routing Peer: Select "parents-rpi"
-- Enable **Masquerade** (recommended)
-- Distribution Groups: Add groups that need access (e.g., "home-routing-peers")
-- Click **Save**
+- Routing Peer: Select "parents-rpi" (or use "parents-routing-peers" Peer Group)
+- Distribution Groups: "home-routing-peers"
+- Access Control Groups: "parents-routing-peers" (optional—for route-level policies, this group becomes the destination in access policies; without it, policies targeting this route won't apply)
+- Network Identifier: `parents-lan`
+- Enable **Masquerade** in Additional Settings (recommended)
+- Click **Add Route**
 
-## Step 3: Create Access Policies
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-home/add-new-route-parents-rpi.png" alt="Create route for parents network" className="imagewrapper"/>
+</p>
 
-Create policies that allow the routing peers to communicate:
+## Step 4: Create Access Policies
+
+Create two policies that allow the routing peers to communicate in both directions:
 
 1. Go to **Access Control > Policies**
-2. Add a policy:
-   - Name: "Home to Parents"
+2. Add first policy:
+   - Network Identifier: "Home to Parents"
    - Source: "home-routing-peers"
    - Destination: "parents-routing-peers"
    - Protocol: All (or restrict as needed)
 
-3. Add another policy for the reverse direction:
-   - Name: "Parents to Home"
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-home/add-policy-home-to-parents.png" alt="Create policy for home to parents" className="imagewrapper"/>
+</p>
+
+3. Add second policy:
+   - Network Identifier: "Parents to Home"
    - Source: "parents-routing-peers"
    - Destination: "home-routing-peers"
-   - Protocol: All
+   - Protocol: All (or restrict as needed)
 
-## Step 4: Configure Clientless Devices
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-home/add-policy-parents-to-home.png" alt="Create policy for parents to home" className="imagewrapper"/>
+</p>
+
+## Step 5: Configure Clientless Devices
 
 For devices without NetBird to reach the other network, add a static route pointing to the local routing peer.
 
@@ -122,7 +154,7 @@ Destination: 192.168.2.0/24
 Gateway: 192.168.1.100 (your routing peer's IP)
 ```
 
-## Step 5: Test Cross-Network Access
+## Step 6: Test Cross-Network Access
 
 From a device at your home:
 
@@ -152,7 +184,7 @@ ping 192.168.1.50 # Your NAS
 
 **Traffic works one way but not the other:**
 1. Check that both network routes exist
-2. Verify access policies are bidirectional
+2. Verify access policies exist for both directions
 3. Ensure static routes are configured at both ends
 
 ## Advanced Configuration

@@ -19,7 +19,7 @@ Multi-cloud Site-to-Site requires Network Routes because the Networks feature do
 
 ## Prerequisites
 
-- A [NetBird account](https://app.netbird.io/)
+- A [NetBird cloud account](https://app.netbird.io/) or [self-hosted instance](/selfhosted/selfhosted-quickstart)
 - Access to deploy VMs in your cloud environments
 - Network configuration permissions in your cloud VPCs
 
@@ -30,7 +30,25 @@ Connect workloads across AWS and GCP:
 - **AWS VPC**: `10.0.0.0/16`
 - **GCP VPC**: `10.1.0.0/16`
 
-## Step 1: Deploy Routing Peers in Each Cloud
+## Step 1: Create Setup Keys with Groups
+
+Before deploying routing peers, create setup keys with auto-assigned groups:
+
+1. Go to **Setup Keys** in the NetBird dashboard
+2. Click **Create Setup Key**
+3. For AWS:
+   - Name: "AWS Routing Peer"
+   - Auto-assigned groups: Create and add `aws-routing-peers`
+   - Click **Create**
+4. For GCP:
+   - Name: "GCP Routing Peer"
+   - Auto-assigned groups: Create and add `gcp-routing-peers`
+
+<Note>
+You can also add groups to peers manually after setup. Go to **Peers**, select the peer, and add groups under **Assigned Groups**.
+</Note>
+
+## Step 2: Deploy Routing Peers in Each Cloud
 
 **AWS:**
 
@@ -52,42 +70,81 @@ curl -fsSL https://pkgs.netbird.io/install.sh | sh
 netbird up --setup-key YOUR_GCP_SETUP_KEY
 ```
 
-Create groups for the routing peers:
-- "aws-routing-peers"
-- "gcp-routing-peers"
-
-## Step 2: Create Network Routes
+## Step 3: Create Network Routes
 
 **For AWS VPC:**
 1. Go to **Network Routes**
-2. Add route:
-   - Network identifier: `aws-vpc`
-   - Network range: `10.0.0.0/16`
-   - Routing peer: Your AWS instance
-   - Enable **Masquerade**
-   - Distribution Groups: "gcp-routing-peers"
+2. Click **Add Route**
+3. Network range: `10.0.0.0/16`
+4. Routing Peer: Select your AWS instance (or use "aws-routing-peers" Peer Group)
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-cloud/add-route-aws-vpc.png" alt="Create route for AWS VPC" className="imagewrapper"/>
+</p>
+
+5. Distribution Groups: "gcp-routing-peers"
+6. Access Control Groups: "aws-routing-peers" (required for route-level policies—this group becomes the destination in access policies; without it, policies targeting this route won't apply)
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-cloud/add-route-aws-groups.png" alt="AWS route distribution and access control groups" className="imagewrapper"/>
+</p>
+
+7. Network Identifier: `aws-vpc`
+8. Enable **Masquerade** (in Additional Settings)
+9. Click **Add Route**
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-cloud/add-route-masquerade.png" alt="Enable masquerade in additional settings" className="imagewrapper"/>
+</p>
 
 **For GCP VPC:**
-1. Add route:
-   - Network identifier: `gcp-vpc`
-   - Network range: `10.1.0.0/16`
-   - Routing peer: Your GCP instance
-   - Enable **Masquerade**
-   - Distribution Groups: "aws-routing-peers"
+1. Click **Add Route**
+2. Network range: `10.1.0.0/16`
+3. Routing Peer: Select your GCP instance (or use "gcp-routing-peers" Peer Group)
 
-## Step 3: Create Access Policies
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-cloud/add-route-gcp-vpc.png" alt="Create route for GCP VPC" className="imagewrapper"/>
+</p>
 
-Create policies allowing the routing peers to communicate:
+4. Distribution Groups: "aws-routing-peers"
+5. Access Control Groups: "gcp-routing-peers" (required for route-level policies—this group becomes the destination in access policies; without it, policies targeting this route won't apply)
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-cloud/add-route-gcp-groups.png" alt="GCP route distribution and access control groups" className="imagewrapper"/>
+</p>
+
+6. Network Identifier: `gcp-vpc`
+7. Enable **Masquerade** (in Additional Settings)
+8. Click **Add Route**
+
+## Step 4: Create Access Policies
+
+Create two policies allowing the routing peers to communicate in both directions:
 
 1. Go to **Access Control > Policies**
-2. Create bidirectional policies between the routing peer groups:
+2. Create policies between the routing peer groups:
 
 ```
 Source: aws-routing-peers → Destination: gcp-routing-peers (All)
 Source: gcp-routing-peers → Destination: aws-routing-peers (All)
 ```
 
-## Step 4: Configure VPC Routing
+For route-level access control (if Access Control Groups configured), you can restrict by protocol and port:
+
+```
+Source: aws-routing-peers → Destination: gcp-routing-peers (specific protocols)
+Source: gcp-routing-peers → Destination: aws-routing-peers (specific protocols)
+```
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-cloud/add-policy-aws-to-gcp-tcp.png" alt="AWS to GCP policy with TCP port 443" className="imagewrapper"/>
+</p>
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-cloud/add-policy-gcp-to-aws-udp.png" alt="GCP to AWS policy with UDP port 53" className="imagewrapper"/>
+</p>
+
+## Step 5: Configure VPC Routing
 
 **AWS VPC:**
 
@@ -105,7 +162,7 @@ Add a custom route:
 Enable IP forwarding on routing peer instances in both clouds.
 </Note>
 
-## Step 5: Test Connectivity
+## Step 6: Test Connectivity
 
 From an AWS instance:
 

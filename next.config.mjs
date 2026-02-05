@@ -58,7 +58,7 @@ const nextConfig = {
             },
             {
                 source: '/docs/how-to-guides/network-routes',
-                destination: '/manage/network-routes/routing-traffic-to-private-networks',
+                destination: '/manage/network-routes',
                 permanent: true,
             },
             {
@@ -95,6 +95,12 @@ const nextConfig = {
                 source: '/ipa/:path*',
                 destination: '/api/:path*',
                 permanent: true
+            },
+            // documentation redirects for about
+            {
+                source: '/selfhosted/self-hosted-vs-cloud-netbird',
+                destination: '/about-netbird/self-hosted-vs-cloud',
+                permanent: true,
             },
             // documentation redirects for access control
             {
@@ -304,7 +310,7 @@ const nextConfig = {
             // documentation redirects for network-routes
             {
                 source: '/how-to/routing-traffic-to-private-networks',
-                destination: '/manage/network-routes/routing-traffic-to-private-networks',
+                destination: '/manage/network-routes',
                 permanent: true,
             },
             {
@@ -524,6 +530,48 @@ const nextConfig = {
             {
                 source: '/manage/networks/homelab/access-home-network',
                 destination: '/manage/networks/use-cases/access-home-devices',
+                permanent: true,
+            },
+            // Networks guides moved to use-cases
+            {
+                source: '/manage/networks/routing-traffic-to-multiple-resources',
+                destination: '/manage/networks/use-cases/routing-traffic-to-multiple-resources',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/accessing-restricted-domain-resources',
+                destination: '/manage/networks/use-cases/accessing-restricted-domain-resources',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/accessing-entire-domains-within-networks',
+                destination: '/manage/networks/use-cases/accessing-entire-domains-within-networks',
+                permanent: true,
+            },
+            // Network Routes guides moved to use-cases
+            {
+                source: '/manage/network-routes/routing-traffic-to-private-networks',
+                destination: '/manage/network-routes',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/routing-traffic-to-private-networks',
+                destination: '/manage/network-routes',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/configuring-default-routes-for-internet-traffic',
+                destination: '/manage/network-routes/use-cases/exit-nodes',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/configuring-routes-with-access-control',
+                destination: '/manage/network-routes/use-cases/access-control',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/resolve-overlapping-routes',
+                destination: '/manage/network-routes/use-cases/overlapping-routes',
                 permanent: true,
             },
             // Site-to-Site section redirects (overview and comprehensive guides)

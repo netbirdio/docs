@@ -1,54 +1,80 @@
 import { Tiles } from '@/components/Tiles'
-import { Note } from '@/components/mdx'
+import { Note, Warning } from '@/components/mdx'
 
 # Network Routes Use Cases
 
 These guides show how to use [Network Routes](/manage/network-routes) for Site-to-Site and Site-to-VPN connectivity—scenarios where clientless devices need to communicate across networks.
 
-## Understanding the Scenarios
+## What Are Site-to-Site and Site-to-VPN?
 
-### Site-to-Site
+Network Routes enables two connectivity patterns that go beyond standard VPN-to-Site access:
 
-Two networks communicate with each other, with neither end-device running NetBird directly. Each network has a routing peer that handles traffic.
+**Site-to-Site** connects two networks together, with neither end-device running NetBird. Each network has a routing peer that handles traffic forwarding.
 
 ```
 Home NAS ──► Routing Peer ──► NetBird Tunnel ──► Routing Peer ──► Office Server
 (no NetBird)    (peer)                              (peer)         (no NetBird)
 ```
 
-**Example scenarios:**
-- Connect branch offices to headquarters
-- Link home networks of family members
-- Bridge on-premise data centers with cloud VPCs
-
-### Site-to-VPN
-
-A device without NetBird initiates connections to NetBird peers. This is the reverse of VPN-to-Site.
+**Site-to-VPN** allows clientless devices to initiate connections to NetBird peers—the reverse of VPN-to-Site.
 
 ```
 Office Server ──────► Routing Peer ──────► NetBird Tunnel ──────► Your Laptop
  (no NetBird)           (peer)                                      (peer)
 ```
 
-**Example scenarios:**
-- Monitoring systems pushing data to remote analysts
-- On-premise servers initiating backups to cloud peers
-- Legacy systems that must initiate outbound connections
-
 <Note>
 For VPN-to-Site (NetBird peers accessing clientless devices), you can use either [Networks](/manage/networks/use-cases) (recommended for simplicity) or Network Routes.
 </Note>
 
+## Understanding Key Concepts
+
+Network Routes provides several features that differentiate it from Networks and enable more advanced scenarios:
+
+### Masquerade
+
+Masquerade controls whether the routing peer hides the original source IP address when forwarding traffic:
+
+- **Enabled (default)** — The routing peer performs NAT, making traffic appear to originate from its own IP. Simpler setup since remote networks don't need return routes.
+- **Disabled** — Original source IPs are preserved, enabling accurate audit trails. Requires manual route configuration on both ends.
+
+Use masquerade when you want simple setup. Disable it when compliance or auditing requires source IP visibility.
+
+### Distribution Groups
+
+Distribution Groups determine which peers receive the network route configuration. When you add peers to a distribution group, they automatically get the route—no manual configuration on each client.
+
+For site-to-site scenarios, each site's routing peer should be in the other site's distribution group to receive routes back.
+
+### ACL Groups
+
+ACL Groups provide route-level access control. When you assign an ACL Group to a Network Route:
+
+1. The route inherits access restrictions from policies targeting that group
+2. Only peers with policies granting access to the ACL Group can use the route
+3. Without an ACL Group, routes allow unrestricted access
+
+<Warning>
+If an ACL Group is assigned but no policies grant access to it, all routed traffic will be dropped.
+</Warning>
+
+### High Availability
+
+Deploy multiple routing peers for the same route to provide failover. NetBird clients automatically select the best available peer based on:
+- Connection type (direct vs relayed)
+- Defined metric priority (lower = higher priority)
+- Connection quality
+
 ## Why Use Network Routes?
 
 Network Routes is required when you need:
-- **Site-to-Site connectivity** - Connect two networks together
-- **Site-to-VPN connectivity** - Clientless devices initiating connections
-- **Masquerade control** - Preserve source IPs for auditing
-- **ACL Groups** - Route-level access control
+- **Site-to-Site connectivity** — Connect two networks together
+- **Site-to-VPN connectivity** — Clientless devices initiating connections
+- **Masquerade control** — Preserve source IPs for auditing
+- **ACL Groups** — Route-level access control
 
 <Tiles
-    title="Choose Your Scenario"
+    title="By Scenario"
     items={[
         {
             href: '/manage/network-routes/use-cases/site-to-site-home',
@@ -65,15 +91,36 @@ Network Routes is required when you need:
             name: 'Site-to-Site: Cloud Environments',
             description: 'Bridge cloud VPCs across providers or connect cloud to on-premise',
         },
+    ]}
+/>
+
+<Tiles
+    title="By Configuration"
+    items={[
+        {
+            href: '/manage/network-routes/use-cases/exit-nodes',
+            name: 'Exit Nodes',
+            description: 'Route all internet traffic through a specific peer',
+        },
+        {
+            href: '/manage/network-routes/use-cases/access-control',
+            name: 'Access Control',
+            description: 'Use ACL Groups to control who can access routed networks',
+        },
+        {
+            href: '/manage/network-routes/use-cases/overlapping-routes',
+            name: 'Overlapping Routes',
+            description: 'Handle scenarios where multiple routes share the same CIDR',
+        },
         {
             href: '/manage/network-routes/use-cases/advanced-configuration',
             name: 'Advanced Configuration',
-            description: 'Masquerade options, ACL Groups, troubleshooting, and detailed configuration',
+            description: 'Masquerade options, troubleshooting, and detailed configuration',
         },
     ]}
 />
 
-## Key Configuration Steps
+## Configuration Pattern
 
 All Site-to-Site and Site-to-VPN scenarios follow this pattern:
 
@@ -82,4 +129,8 @@ All Site-to-Site and Site-to-VPN scenarios follow this pattern:
 3. **Create access policies** allowing routing peers to communicate
 4. **Configure clientless devices** to route traffic through the local routing peer
 
-For detailed configuration guidance, see [Advanced Configuration](/manage/network-routes/use-cases/advanced-configuration).
+For step-by-step instructions, choose your scenario above. For technical details and troubleshooting, see [Advanced Configuration](/manage/network-routes/use-cases/advanced-configuration).
+
+## Need Simpler VPN-to-Site Access?
+
+If you only need NetBird peers to access remote resources (not site-to-site or site-to-vpn), the [Networks](/manage/networks/use-cases) feature offers a simpler setup experience with per-resource access control.

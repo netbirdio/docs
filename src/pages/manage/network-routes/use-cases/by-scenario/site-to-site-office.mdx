@@ -22,7 +22,7 @@ Site-to-Site requires Network Routes because the Networks feature doesn't yet su
 
 ## Prerequisites
 
-- A [NetBird account](https://app.netbird.io/)
+- A [NetBird cloud account](https://app.netbird.io/) or [self-hosted instance](/selfhosted/selfhosted-quickstart)
 - Admin access to network infrastructure at each location
 - A server or VM at each location to serve as routing peers
 
@@ -31,7 +31,25 @@ Site-to-Site requires Network Routes because the Networks feature doesn't yet su
 - **Headquarters**: `10.0.0.0/24` with routing peer "hq-router"
 - **Branch Office**: `10.1.0.0/24` with routing peer "branch-router"
 
-## Step 1: Deploy Routing Peers
+## Step 1: Create Setup Keys with Groups
+
+Before installing NetBird on your routing peers, create setup keys with auto-assigned groups:
+
+1. Go to **Setup Keys** in the NetBird dashboard
+2. Click **Create Setup Key**
+3. For headquarters:
+   - Name: "HQ Routing Peer"
+   - Auto-assigned groups: Create and add `hq-routing-peers`
+   - Click **Create**
+4. For branch office:
+   - Name: "Branch Routing Peer"
+   - Auto-assigned groups: Create and add `branch-routing-peers`
+
+<Note>
+You can also add groups to peers manually after setup. Go to **Peers**, select the peer, and add groups under **Assigned Groups**.
+</Note>
+
+## Step 2: Deploy Routing Peers
 
 Install NetBird on a server at each location:
 
@@ -49,48 +67,62 @@ curl -fsSL https://pkgs.netbird.io/install.sh | sh
 sudo netbird up --setup-key YOUR_BRANCH_SETUP_KEY
 ```
 
-Create dedicated groups for each routing peer:
-- "hq-routing-peers" containing "hq-router"
-- "branch-routing-peers" containing "branch-router"
-
-## Step 2: Create Network Routes
+## Step 3: Create Network Routes
 
 **For headquarters:**
 1. Go to **Network Routes**
 2. Click **Add Route**
-3. Network identifier: `hq-network`
-4. Network range: `10.0.0.0/24`
-5. Routing Peer: Select "hq-router"
-6. Enable **Masquerade** (recommended)
-7. Distribution Groups: "branch-routing-peers"
-8. Optionally add ACL Groups for access control
-9. Click **Save**
+3. Network range: `10.0.0.0/24`
+4. Routing Peer: Select "hq-router" (or use "hq-routing-peers" Peer Group)
+5. Distribution Groups: "branch-routing-peers"
+6. Access Control Groups: "hq-routing-peers" (required for route-level policies—this group becomes the destination in access policies; without it, policies targeting this route won't apply)
+7. Network Identifier: `hq-network`
+8. Enable **Masquerade** (in Additional Settings)
+9. Click **Add Route**
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-office/add-route-hq-network.png" alt="Create route for headquarters network" className="imagewrapper"/>
+</p>
 
 **For branch office:**
-1. Add route: `10.1.0.0/24`
-2. Routing peer: "branch-router"
-3. Enable Masquerade
+1. Click **Add Route**
+2. Network range: `10.1.0.0/24`
+3. Routing Peer: Select "branch-router" (or use "branch-routing-peers" Peer Group)
 4. Distribution Groups: "hq-routing-peers"
-5. Optionally add ACL Groups
-6. Click **Save**
+5. Access Control Groups: "branch-routing-peers" (required for route-level policies—this group becomes the destination in access policies; without it, policies targeting this route won't apply)
+6. Network Identifier: `branch-network`
+7. Enable **Masquerade** (in Additional Settings)
+8. Click **Add Route**
 
-## Step 3: Create Access Policies
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-office/add-route-branch-network.png" alt="Create route for branch network" className="imagewrapper"/>
+</p>
 
-Create policies allowing the routing peers to communicate:
+## Step 4: Create Access Policies
+
+Create two policies allowing the routing peers to communicate in both directions:
 
 ```
 Source: hq-routing-peers → Destination: branch-routing-peers (All protocols)
 Source: branch-routing-peers → Destination: hq-routing-peers (All protocols)
 ```
 
-For route-level access control (if ACL Groups configured):
+For route-level access control (if ACL Groups configured), you can restrict by protocol and port:
 
 ```
-Source: hq-resources → Destination: branch-resources (specific protocols)
-Source: branch-resources → Destination: hq-resources (specific protocols)
+Source: hq-routing-peers → Destination: branch-routing-peers (specific protocols)
+Source: branch-routing-peers → Destination: hq-routing-peers (specific protocols)
 ```
 
-## Step 4: Configure Network Equipment
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-office/add-policy-hq-to-branch-tcp.png" alt="HQ to branch policy with TCP ports 8080 and 53" className="imagewrapper"/>
+</p>
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/by-scenario/site-to-site-office/add-policy-branch-to-hq-tcp.png" alt="Branch to HQ policy with TCP port 443" className="imagewrapper"/>
+</p>
+
+## Step 5: Configure Network Equipment
 
 **Option A: Router-level routes (recommended)**
 
@@ -128,7 +160,7 @@ route -p add 10.1.0.0 mask 255.255.255.0 10.0.0.50
 route -p add 10.0.0.0 mask 255.255.255.0 10.1.0.50
 ```
 
-## Step 5: Test Connectivity
+## Step 6: Test Connectivity
 
 From a device at headquarters:
 
@@ -160,7 +192,7 @@ sudo ip route add 100.64.0.0/10 via 10.0.0.50
 
 Where `10.0.0.50` is the routing peer's office IP.
 
-3. Create bidirectional access policies allowing traffic in both directions
+3. Create two access policies allowing traffic in both directions
 
 ## Best Practices for Business Deployments
 

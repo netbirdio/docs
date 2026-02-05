@@ -1,0 +1,186 @@
+import { Note } from '@/components/mdx'
+
+# Remote Worker Access (VPN-to-Site)
+
+This guide shows how to enable remote workers to securely access office resources using the Networks feature.
+
+## What You'll Achieve
+
+After following this guide, employees will be able to access office servers, applications, and services while working remotely—without exposing those resources to the internet.
+
+```
+Remote Laptop ──────► NetBird Tunnel ──────► Routing Peer ──────► Office Server
+   (peer)                                    (at office)          (no NetBird)
+```
+
+## Prerequisites
+
+- A [NetBird cloud account](https://app.netbird.io/) or [self-hosted instance](/selfhosted/selfhosted-quickstart)
+- Admin access to office network infrastructure
+- A server or VM at the office to serve as the routing peer
+
+## Step 1: Connect a Remote Worker Device to NetBird
+
+If you haven't already, install NetBird on a remote worker's laptop and connect:
+
+1. Download NetBird from [app.netbird.io/install](https://app.netbird.io/install)
+2. Run the application and click **Connect** in the system tray
+3. Complete the sign-up process in your browser
+4. Verify the device appears in the [NetBird dashboard](https://app.netbird.io/) under **Peers**
+
+## Step 2: Add the Remote Worker to a User Group
+
+1. In the **Peers** section of the dashboard, select the remote worker's device
+2. Under **Assigned Groups**, add a new group: `remote-workers`
+
+<p>
+    <img src="/docs-static/img/manage/networks/by-scenario/remote-worker-access/peer-remote-worker-assigned-group.png" alt="Add remote worker to group" className="imagewrapper"/>
+</p>
+
+## Step 3: Find Your Office Subnet
+
+Before configuring NetBird, identify your office network's subnet.
+
+**On your routing peer device, run:**
+
+```bash
+# Linux
+ip route | grep -E "^[0-9]"
+
+# Windows (PowerShell)
+Get-NetRoute | Where-Object { $_.DestinationPrefix -like "*.*.*.*/*" }
+```
+
+Look for your local subnet, typically something like `10.0.0.0/24` or `192.168.1.0/24`.
+
+## Step 4: Create a Network for Office Resources
+
+1. Go to **Networks** in the NetBird dashboard
+2. Click **Add Network**
+3. Name it "Office LAN" and click **Save**
+
+<p>
+    <img src="/docs-static/img/manage/networks/by-scenario/remote-worker-access/add-network-office-lan.png" alt="Add network" className="imagewrapper"/>
+</p>
+
+## Step 5: Add Your Office Subnet as a Resource
+
+1. In your new network, click **Add Resource**
+2. Enter a name like "Office Subnet"
+3. Enter your office subnet (e.g., `10.0.0.0/24`)
+4. Create a group called `office-lan` for the destination
+5. Click **Add Resource**
+
+<p>
+    <img src="/docs-static/img/manage/networks/by-scenario/remote-worker-access/add-resource-office-subnet.png" alt="Add resource" className="imagewrapper"/>
+</p>
+
+<Note>
+For more granular access, add specific server IPs instead of the entire subnet. For example, add `10.0.0.50/32` to only allow access to a specific file server.
+</Note>
+
+## Step 6: Create an Access Policy
+
+1. After adding your resource, click **Create Policy**
+2. Set **Source** to "`remote-workers`"
+3. Set **Destination** to `office-lan`
+4. Set **Protocol** based on needs (TCP for most apps, All for full access)
+5. Name it "Remote Worker Office Access" and click **Add Policy**
+
+<p>
+    <img src="/docs-static/img/manage/networks/by-scenario/remote-worker-access/add-policy-remote-worker-office-access.png" alt="Create policy for remote worker office access" className="imagewrapper"/>
+</p>
+
+## Step 7: Set Up the Routing Peer
+
+The routing peer forwards traffic from NetBird to your office network. Choose an always-on server at your office:
+- A dedicated Linux VM
+- A Windows Server
+- A Docker container on an existing server
+
+**Install NetBird on your routing peer:**
+
+1. In the NetBird dashboard, go to **Setup Keys**
+2. Create a new setup key (one-time use recommended). Add `office-lan` to **Auto-assigned groups** and click **Create Setup Key**.
+
+<p>
+    <img src="/docs-static/img/manage/networks/by-scenario/remote-worker-access/create-new-setup-key-office-lan.png" alt="Create setup key" className="imagewrapper"/>
+</p>
+
+<Note>
+You can also add groups to peers manually after setup. Go to **Peers**, select the peer, and add groups under **Assigned Groups**.
+</Note>
+
+3. On your routing peer, run:
+
+```bash
+# Linux
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+sudo netbird up --setup-key YOUR_SETUP_KEY
+
+# Windows (PowerShell as Administrator)
+Invoke-WebRequest -Uri "https://pkgs.netbird.io/install.ps1" -OutFile "install.ps1"; .\install.ps1
+netbird up --setup-key YOUR_SETUP_KEY
+```
+
+4. In the Networks view, click **Add Routing Peer** on your Office LAN network
+5. Select your new peer and click **Add Routing Peer**
+
+## Step 8: Test the Connection
+
+From the remote worker's laptop (connected outside the office network):
+
+```bash
+ping 10.0.0.1  # Your office router
+ping 10.0.0.50 # Your file server or other device
+```
+
+Remote workers can now access office resources from any location.
+
+## Step 9: Onboard Additional `remote-workers`
+
+For additional remote workers:
+
+1. Have employees install NetBird from [app.netbird.io/install](https://app.netbird.io/install)
+2. After they connect, go to **Peers** and select their device
+3. Under **Assigned Groups**, add them to the "`remote-workers`" group
+
+Alternatively, create a setup key with "`remote-workers`" as an auto-assigned group for streamlined onboarding.
+
+## Best Practices for Business Deployments
+
+### Access Control
+
+- Create specific groups for different access levels (e.g., `it-admins`, `sales`, `engineering`)
+- Use protocol restrictions (e.g., only allow RDP to certain servers)
+- Implement time-limited setup keys for contractor access
+
+### High Availability
+
+For critical connections, consider:
+- Multiple routing peers at each location
+- Monitoring routing peer health
+- Automatic failover configuration
+
+### Security
+
+- Enable [Posture Checks](/manage/access-control/posture-checks) to verify device compliance
+- Use [Activity Logging](/manage/activity) to audit access
+- Implement MFA through your identity provider
+
+## Troubleshooting
+
+**Remote workers can't access office resources:**
+1. Verify the routing peer is online and connected
+2. Check access policies include the user's group
+3. Ensure the routing peer can reach office resources locally
+
+**Slow performance:**
+1. Check routing peer placement—it should have good network connectivity
+2. Consider enabling [lazy connections](/manage/peers/lazy-connection) for large deployments
+3. Review network route priorities if multiple routes exist
+
+## Next Steps
+
+- **Need Site-to-VPN or Site-to-Site?** If office systems need to initiate connections to remote workers, or you need to connect branch offices, see [Network Routes Use Cases](/manage/network-routes/use-cases)
+- **Advanced configuration:** See [Advanced Configuration](/manage/network-routes/use-cases/by-configuration/advanced-configuration) for masquerade options and detailed access control
