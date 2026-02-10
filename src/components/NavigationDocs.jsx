@@ -291,6 +291,7 @@ export const docsNavigation = [
                 isOpen: false,
                 links: [
                     { title: 'Configuration Files', href: '/selfhosted/configuration-files' },
+                    { title: 'Scaling Your Deployment', href: '/selfhosted/scaling-your-self-hosted-deployment' },
                     { title: 'Backup', href: '/selfhosted/maintenance/backup' },
                     { title: 'Upgrade', href: '/selfhosted/maintenance/upgrade' },
                     { title: 'Remove', href: '/selfhosted/maintenance/remove' },

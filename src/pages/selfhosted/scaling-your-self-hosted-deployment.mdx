@@ -1,0 +1,384 @@
+# Splitting Your Self-Hosted Deployment
+
+import {Note, Warning} from "@/components/mdx";
+
+This guide explains how to split your NetBird self-hosted deployment from a single-server setup into a distributed architecture for better reliability and performance.
+
+The most common approach is extracting the relay service (with its embedded STUN server) to separate servers and moving the PostgreSQL database to a dedicated machine.
+In most cases, you won't need to extract the Signal server, but for completeness, this guide covers that as well.
+
+NetBird clients can tolerate a Management server outage as long as connections are already established through relays or peer-to-peer.
+This makes a stable relay infrastructure especially important.
+
+This guide assumes you have already [deployed a single-server NetBird](/selfhosted/selfhosted-quickstart) and have a working configuration.
+
+<Note>
+    If you are looking for a high-availability setup for the Management and Signal services, this is available through an enterprise
+    commercial license [here](https://netbird.io/pricing#on-prem).
+</Note>
+
+## Architecture Overview
+
+### Before: Single Server
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│                    Main Server (combined)                     │
+│                                                               │
+│  ┌─────────┐  ┌────────────┐  ┌──────────┐  ┌─────────────┐   │
+│  │Dashboard│  │ Management │  │  Signal  │  │    Relay    │   │
+│  │(Web UI) │  │            │  │          │  │   + STUN    │   │
+│  │         │  │            │  │          │  │             │   │
+│  └─────────┘  └────────────┘  └──────────┘  └─────────────┘   │
+│                                              Port 3478/udp    │
+│               ┌─────────────┐                                 │
+│               │  Caddy      │                                 │
+│               │             │                                 │
+│               └─────────────┘                                 │
+│                                                               │
+│               Port 443,80/tcp                                 │
+└───────────────────────────────────────────────────────────────┘
+```
+
+### After: Distributed Relays
+
+```
+┌────────────────────────────────────────────────┐
+│                    Main Server (combined)      │
+│                                                │
+│  ┌─────────┐  ┌────────────┐  ┌──────────┐     │
+│  │Dashboard│  │ Management │  │  Signal  │     │
+│  │(Web UI) │  │            │  │          │     │
+│  │         │  │            │  │          │     │
+│  └─────────┘  └────────────┘  └──────────┘     │
+│                                                │
+│               ┌─────────────┐                  │
+│               │  Caddy      │                  │
+│               │             │                  │
+│               └─────────────┘                  │
+│                                                │
+│               Port 443,80/tcp                  │
+└────────────────────────────────────────────────┘
+              │
+              │ Peers get relay addresses
+              ▼
+┌──────────────────────┐  ┌──────────────────────┐
+│   Relay Server 1     │  │   Relay Server 2     │
+│                      │  │                      │
+│  ┌────────────────┐  │  │  ┌────────────────┐  │
+│  │     Relay      │  │  │  │     Relay      │  │
+│  │    + STUN      │  │  │  │    + STUN      │  │
+│  └────────────────┘  │  │  └────────────────┘  │
+│                      │  │                      │
+│  Port 443, 3478/udp  │  │  Port 443, 3478/udp  │
+└──────────────────────┘  └──────────────────────┘
+```
+
+## Step 1: Set Up External Relay Servers
+
+For each relay server you want to deploy:
+
+### 1.1 Server Requirements
+
+- A Linux VM with at least **1 CPU** and **1GB RAM**
+- Public IP address
+- Open ports: **443/tcp** (relay) and **3478/udp** (STUN)
+- A domain name pointing to the server (e.g., `relay-us.example.com`)
+- Docker installed
+
+### 1.2 Generate Authentication Secret
+
+All relay servers must share the same authentication secret with your main server. You can generate one with:
+
+```bash
+# Generate a secure random secret
+openssl rand -base64 32
+```
+
+Save this secret - you'll need it for both the relay servers and your main server's config.
+
+### 1.3 Create Relay Configuration
+
+On your relay server, create a directory and configuration:
+
+```bash
+mkdir -p ~/netbird-relay
+cd ~/netbird-relay
+```
+
+Create `docker-compose.yml`:
+
+```yaml
+services:
+  relay:
+    image: netbirdio/relay:latest
+    container_name: netbird-relay
+    restart: unless-stopped
+    ports:
+      - '443:443'
+      - '3478:3478/udp'
+    environment:
+      - NB_LOG_LEVEL=info
+      - NB_LISTEN_ADDRESS=:443
+      - NB_EXPOSED_ADDRESS=rels://relay-us.example.com:443
+      - NB_AUTH_SECRET=your-shared-secret-here
+      # TLS - Option 1: Let's Encrypt (recommended)
+      - NB_LETSENCRYPT_DOMAINS=relay-us.example.com
+      - NB_LETSENCRYPT_EMAIL=admin@example.com
+      - NB_LETSENCRYPT_DATA_DIR=/data/letsencrypt
+      # Embedded STUN
+      - NB_ENABLE_STUN=true
+      - NB_STUN_PORTS=3478
+    volumes:
+      - relay_data:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "2"
+
+volumes:
+  relay_data:
+```
+
+<Note>
+Replace `relay-us.example.com` with your relay server's domain and `your-shared-secret-here` with the secret you generated.
+</Note>
+
+### 1.4 Alternative: TLS with Existing Certificates
+
+If you have existing TLS certificates (e.g., from your own CA or a wildcard cert):
+
+```yaml
+    environment:
+      - NB_LOG_LEVEL=info
+      - NB_LISTEN_ADDRESS=:443
+      - NB_EXPOSED_ADDRESS=rels://relay-us.example.com:443
+      - NB_AUTH_SECRET=your-shared-secret-here
+      - NB_TLS_CERT_FILE=/certs/fullchain.pem
+      - NB_TLS_KEY_FILE=/certs/privkey.pem
+      - NB_ENABLE_STUN=true
+      - NB_STUN_PORTS=3478
+    volumes:
+      - /path/to/certs:/certs:ro
+      - relay_data:/data
+```
+
+### 1.5 Start the Relay Server
+
+```bash
+docker compose up -d
+```
+
+Verify it's running:
+
+```bash
+docker compose logs -f
+```
+
+You should see:
+```
+level=info msg="Starting relay server on :443"
+level=info msg="Starting STUN server on port 3478"
+```
+
+### 1.6 Repeat for Additional Relay Servers
+
+If deploying multiple relays (e.g., for different regions), repeat steps 1.1-1.5 on each server. Use the **same `NB_AUTH_SECRET`** but update the domain name for each.
+
+## Step 2: Update Main Server Configuration
+
+Now update your main NetBird server to use the external relays instead of the embedded one.
+
+### 2.1 Edit config.yaml
+
+On your main server, edit the `config.yaml` file:
+
+```bash
+cd ~/netbird  # or wherever your deployment is
+nano config.yaml
+```
+
+Add the external relay and STUN configuration under the `server` section:
+
+```yaml
+server:
+  listenAddress: ":80"
+  exposedAddress: "https://netbird.example.com:443"
+  # Remove or comment out stunPorts since we're using external STUN
+  # stunPorts:
+  #   - 3478
+  metricsPort: 9090
+  healthcheckAddress: ":9000"
+  logLevel: "info"
+  logFile: "console"
+
+  authSecret: "your-shared-secret-here"  # Same secret as relay servers
+  dataDir: "/var/lib/netbird"
+
+  # External STUN servers (your relay servers)
+  stuns:
+    - uri: "stun:relay-us.example.com:3478"
+      proto: "udp"
+    - uri: "stun:relay-eu.example.com:3478"
+      proto: "udp"
+
+  # External relay servers
+  relays:
+    addresses:
+      - "rels://relay-us.example.com:443"
+      - "rels://relay-eu.example.com:443"
+    secret: "your-shared-secret-here"
+    credentialsTTL: "24h"
+
+  auth:
+    enabled: true
+    issuer: "https://netbird.example.com/oauth2"
+    # ... rest of auth config
+```
+
+<Warning>
+The `authSecret` in the main server config and `NB_AUTH_SECRET` on all relay servers **must be identical**. Mismatched secrets will cause relay connections to fail silently.
+</Warning>
+
+### 2.2 Update docker-compose.yml (Optional)
+
+If your main server was exposing STUN port 3478, you can remove it since STUN is now handled by external relays:
+
+```yaml
+  netbird-server:
+    image: netbirdio/netbird-server:latest
+    container_name: netbird-server
+    restart: unless-stopped
+    networks: [netbird]
+    # Remove the STUN port - no longer needed
+    # ports:
+    #   - '3478:3478/udp'
+    volumes:
+      - netbird_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml
+    command: ["--config", "/etc/netbird/config.yaml"]
+```
+
+### 2.3 Restart the Main Server
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+## Step 3: Verify the Configuration
+
+### 3.1 Check Main Server Logs
+
+```bash
+docker compose logs netbird-server | grep -i relay
+```
+
+You should see the relay addresses being loaded.
+
+### 3.2 Check Peer Configuration
+
+Connect a NetBird client and check its status:
+
+```bash
+netbird status
+```
+
+The output should show your external relay servers:
+
+```
+Relays:
+  [relay-us.example.com:443] is Available
+  [relay-eu.example.com:443] is Available
+```
+
+### 3.3 Test Relay Connectivity
+
+Force a connection through relay to verify it works:
+
+1. Connect two peers that cannot establish direct connections (e.g., both behind symmetric NAT)
+2. Check if they can communicate
+3. Verify in the dashboard that the connection is using relay
+
+### 3.4 Test STUN
+
+The NetBird client automatically uses STUN for NAT detection. You can verify STUN is working by checking the client logs:
+
+```bash
+netbird status -d
+```
+
+Look for NAT type detection results.
+
+## Configuration Reference
+
+### Relay Server Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NB_LISTEN_ADDRESS` | Yes | Address to listen on (e.g., `:443`) |
+| `NB_EXPOSED_ADDRESS` | Yes | Public relay URL (`rels://` for TLS, `rel://` for plain) |
+| `NB_AUTH_SECRET` | Yes | Shared authentication secret |
+| `NB_ENABLE_STUN` | No | Enable embedded STUN server (`true`/`false`) |
+| `NB_STUN_PORTS` | No | STUN UDP port(s), default `3478` |
+| `NB_LETSENCRYPT_DOMAINS` | No | Domain(s) for automatic Let's Encrypt certificates |
+| `NB_LETSENCRYPT_EMAIL` | No | Email for Let's Encrypt notifications |
+| `NB_TLS_CERT_FILE` | No | Path to TLS certificate (alternative to Let's Encrypt) |
+| `NB_TLS_KEY_FILE` | No | Path to TLS private key |
+| `NB_LOG_LEVEL` | No | Log level: `debug`, `info`, `warn`, `error` |
+
+### Main Server config.yaml - External Services
+
+```yaml
+server:
+  # External STUN servers
+  stuns:
+    - uri: "stun:hostname:port"
+      proto: "udp"  # or "tcp"
+
+  # External relay servers
+  relays:
+    addresses:
+      - "rels://hostname:port"  # TLS
+      - "rel://hostname:port"   # Plain (not recommended)
+    secret: "shared-secret"
+    credentialsTTL: "24h"  # How long relay credentials are valid
+
+  # External signal server (optional, usually keep embedded)
+  # signalUri: "https://signal.example.com:443"
+```
+
+## Troubleshooting
+
+### Peers Can't Connect via Relay
+
+1. **Check secrets match**: The `authSecret`/`NB_AUTH_SECRET` must be identical everywhere
+2. **Check firewall**: Ensure port 443/tcp is open on relay servers
+3. **Check TLS**: If using `rels://`, ensure TLS is properly configured
+4. **Check logs**: `docker compose logs relay` on the relay server
+
+### STUN Not Working
+
+1. **Check UDP port**: Ensure port 3478/udp is open and not blocked by firewall
+2. **Check NAT**: Some carrier-grade NATs block STUN; try a different network
+3. **Verify STUN is enabled**: `NB_ENABLE_STUN=true` on relay servers
+
+### Relay Shows as Unavailable
+
+1. **DNS resolution**: Ensure the relay domain resolves correctly
+2. **Port reachability**: Test with `nc -zv relay-us.example.com 443`
+3. **Certificate issues**: Check Let's Encrypt logs or certificate validity
+
+## Next Steps
+
+- Add monitoring with Prometheus metrics (`NB_METRICS_PORT`)
+- Set up health checks for container orchestration
+- Consider geographic DNS for automatic relay selection
+- Review [Reverse Proxy Configuration](/selfhosted/reverse-proxy) if placing relays behind a proxy
+
+## See Also
+
+- [Configuration Files Reference](/selfhosted/configuration-files) - Full config.yaml documentation
+- [Self-hosting Quickstart](/selfhosted/selfhosted-quickstart) - Initial deployment guide
+- [Troubleshooting](/selfhosted/troubleshooting) - Common issues and solutions
