@@ -352,6 +352,132 @@ Once confirmed, switch back to normal mode. The client will attempt peer-to-peer
 sudo netbird service reconfigure --service-env NB_FORCE_RELAY=false
 ```
 
+## Step 4: Extract the Signal Server (Optional)
+
+In most deployments, the embedded Signal server works well and does not need to be extracted. Consider running an external Signal server if you want to separate it from the Management server for organizational or infrastructure reasons.
+
+<Warning>
+Changing the Signal server URL requires all clients to restart. After updating the configuration, each client must run `netbird down` followed by `netbird up` to reconnect to the new Signal server. This limitation will be addressed in a future client release.
+</Warning>
+
+### 4.1 Server Requirements
+
+- A Linux VM with at least **1 CPU** and **1GB RAM**
+- Public IP address
+- A domain name pointing to the server (e.g., `signal.example.com`)
+- Docker installed
+- Firewall ports open: **80/tcp** (Let's Encrypt HTTP challenge) and **443/tcp** (gRPC/WebSocket client communication)
+
+### 4.2 Create Signal Configuration
+
+On your signal server, create a directory and configuration:
+
+```bash
+mkdir -p ~/netbird-signal
+cd ~/netbird-signal
+```
+
+Like the relay, the signal server can automatically obtain TLS certificates via Let's Encrypt. Unlike the relay, the signal server requires CLI flags for configuration.
+
+<Note>
+Replace `signal.example.com` with your signal server's domain.
+</Note>
+
+Create `docker-compose.yml`:
+
+```yaml
+services:
+  signal:
+    image: netbirdio/signal:latest
+    container_name: netbird-signal
+    restart: unless-stopped
+    ports:
+      - '443:443'
+      - '80:80'
+    command: ["--port", "443", "--letsencrypt-domain", "signal.example.com"]
+    volumes:
+      - signal_data:/var/lib/netbird
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "2"
+
+volumes:
+  signal_data:
+```
+
+### 4.3 Alternative: TLS with Existing Certificates
+
+If you have existing TLS certificates, replace the `--letsencrypt-domain` flag with certificate paths:
+
+```yaml
+    command: ["--port", "443", "--cert-file", "/certs/fullchain.pem", "--cert-key", "/certs/privkey.pem"]
+    volumes:
+      - /path/to/certs:/certs:ro
+      - signal_data:/var/lib/netbird
+```
+
+### 4.4 Start the Signal Server
+
+```bash
+docker compose up -d
+```
+
+Verify it's running:
+
+```bash
+docker compose logs -f
+```
+
+If you configured Let's Encrypt, trigger certificate provisioning with an HTTPS request:
+
+```bash
+curl -v https://signal.example.com/
+```
+
+Confirm the certificate was issued:
+
+```
+* Server certificate:
+*  subject: CN=signal.example.com
+*  issuer: C=US; O=Let's Encrypt; CN=E8
+*  SSL certificate verify ok.
+```
+
+### 4.5 Update Main Server Configuration
+
+On your main server, add `signalUri` to `config.yaml`. This disables the embedded Signal server:
+
+```yaml
+server:
+  # ... existing settings ...
+
+  # External signal server
+  signalUri: "https://signal.example.com:443"
+```
+
+Restart the main server:
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+### 4.6 Verify Signal Extraction
+
+Check the main server logs to confirm the embedded Signal is disabled:
+
+```bash
+docker compose logs netbird-server
+```
+
+```
+INFO combined/cmd/root.go:   Management: true (log level: info)
+INFO combined/cmd/root.go:   Signal: false (log level: )
+INFO combined/cmd/root.go:   Relay: false (log level: )
+```
+
 ## Configuration Reference
 
 ### Relay Server Environment Variables
