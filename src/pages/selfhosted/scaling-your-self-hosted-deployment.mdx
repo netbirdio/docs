@@ -352,7 +352,127 @@ Once confirmed, switch back to normal mode. The client will attempt peer-to-peer
 sudo netbird service reconfigure --service-env NB_FORCE_RELAY=false
 ```
 
-## Step 4: Extract the Signal Server (Optional)
+## Step 4: Migrate from SQLite to PostgreSQL (Optional)
+
+The default NetBird deployment uses SQLite, which stores all data in a single file. This works well for smaller setups, but you may want to migrate to PostgreSQL if:
+- You want the database on a separate, dedicated machine
+- You need better concurrency handling for larger deployments
+- You prefer the operational tooling and backup options that PostgreSQL provides
+
+For smaller teams, SQLite is perfectly capable and migration is not required.
+
+### 4.1 Set Up PostgreSQL
+
+If you don't already have a PostgreSQL instance, you can run one in Docker:
+
+```bash
+docker run -d \
+  --name postgres-server \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=password \
+  -p 5432:5432 \
+  -v postgres_data:/var/lib/postgresql/data \
+  postgres:16
+```
+
+<Warning>
+Replace the default `password` with a strong, unique password for production deployments.
+</Warning>
+
+### 4.2 Back Up the SQLite Store
+
+Before migrating, create a backup of your SQLite database:
+
+```bash
+mkdir backup
+docker compose cp -a netbird-server:/var/lib/netbird/. backup/
+```
+
+### 4.3 Install pgloader
+
+The migration uses [pgloader](https://github.com/dimitri/pgloader) to transfer data from SQLite to PostgreSQL:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install pgloader
+
+# macOS
+brew install pgloader
+```
+
+### 4.4 Create the Migration File
+
+Create a file called `sqlite.load` with the following content:
+
+```
+LOAD DATABASE
+     FROM sqlite:///root/combined/backup/store.db
+     INTO postgresql://postgres:password@localhost:5432/postgres
+
+WITH include drop, create tables, create indexes, reset sequences
+
+CAST
+     column accounts.is_domain_primary_account                    to boolean,
+     column accounts.settings_peer_login_expiration_enabled       to boolean,
+     column accounts.settings_peer_inactivity_expiration_enabled  to boolean,
+     column accounts.settings_regular_users_view_blocked          to boolean,
+     column accounts.settings_groups_propagation_enabled          to boolean,
+     column accounts.settings_jwt_groups_enabled                  to boolean,
+     column accounts.settings_routing_peer_dns_resolution_enabled to boolean,
+     column accounts.settings_extra_peer_approval_enabled         to boolean,
+     column accounts.settings_extra_user_approval_required        to boolean,
+     column accounts.settings_lazy_connection_enabled             to boolean
+;
+```
+
+<Note>
+Update the SQLite path and PostgreSQL connection string to match your environment.
+</Note>
+
+### 4.5 Run the Migration
+
+```bash
+pgloader sqlite.load
+```
+
+### 4.6 Update config.yaml
+
+On your main server, update the `store` section in `config.yaml` to use PostgreSQL:
+
+```yaml
+server:
+  # ... existing settings ...
+
+  store:
+    engine: "postgres"
+```
+
+Then pass the PostgreSQL connection string as an environment variable in your `docker-compose.yml`:
+
+```yaml
+  netbird-server:
+    environment:
+      - NETBIRD_STORE_ENGINE_POSTGRES_DSN=postgres://postgres:password@postgres-server:5432/postgres
+```
+
+### 4.7 Restart and Verify
+
+```bash
+docker compose up -d
+```
+
+Check the logs to confirm PostgreSQL is being used:
+
+```bash
+docker compose logs netbird-server | grep store
+```
+
+You should see:
+```
+using Postgres store engine
+```
+
+## Step 5: Extract the Signal Server (Optional)
 
 In most deployments, the embedded Signal server works well and does not need to be extracted. Consider running an external Signal server if you want to separate it from the Management server for organizational or infrastructure reasons.
 
@@ -362,7 +482,7 @@ Unlike relay servers, the Signal server cannot be replicated as it maintains in-
 Changing the Signal server URL requires all clients to restart. After updating the configuration, each client must run `netbird down` followed by `netbird up` to reconnect to the new Signal server. This limitation will be addressed in a future client release.
 </Warning>
 
-### 4.1 Server Requirements
+### 5.1 Server Requirements
 
 - A Linux VM with at least **1 CPU** and **1GB RAM**
 - Public IP address
@@ -370,7 +490,7 @@ Changing the Signal server URL requires all clients to restart. After updating t
 - Docker installed
 - Firewall ports open: **80/tcp** (Let's Encrypt HTTP challenge) and **443/tcp** (gRPC/WebSocket client communication)
 
-### 4.2 Create Signal Configuration
+### 5.2 Create Signal Configuration
 
 On your signal server, create a directory and configuration:
 
@@ -409,7 +529,7 @@ volumes:
   signal_data:
 ```
 
-### 4.3 Alternative: TLS with Existing Certificates
+### 5.3 Alternative: TLS with Existing Certificates
 
 If you have existing TLS certificates, replace the `--letsencrypt-domain` flag with certificate paths:
 
@@ -420,7 +540,7 @@ If you have existing TLS certificates, replace the `--letsencrypt-domain` flag w
       - signal_data:/var/lib/netbird
 ```
 
-### 4.4 Start the Signal Server
+### 5.4 Start the Signal Server
 
 ```bash
 docker compose up -d
@@ -447,7 +567,7 @@ Confirm the certificate was issued:
 *  SSL certificate verify ok.
 ```
 
-### 4.5 Update Main Server Configuration
+### 5.5 Update Main Server Configuration
 
 On your main server, add `signalUri` to `config.yaml`. This disables the embedded Signal server:
 
@@ -466,7 +586,7 @@ docker compose down
 docker compose up -d
 ```
 
-### 4.6 Verify Signal Extraction
+### 5.6 Verify Signal Extraction
 
 Check the main server logs to confirm the embedded Signal is disabled:
 
