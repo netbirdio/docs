@@ -1,0 +1,96 @@
+# Splitting Your Self-Hosted Deployment
+
+import {Note, Warning} from "@/components/mdx";
+
+This guide explains how to split your NetBird self-hosted deployment from a single-server setup into a distributed architecture for better reliability and performance.
+
+The most common approach is extracting the relay service (with its embedded STUN server) to separate servers and moving the PostgreSQL database to a dedicated machine.
+In most cases, you won't need to extract the Signal server, but for completeness, this guide covers that as well.
+
+NetBird clients can tolerate a Management server outage as long as connections are already established through relays or peer-to-peer.
+This makes a stable relay infrastructure especially important.
+
+This guide assumes you have already [deployed a single-server NetBird](/selfhosted/selfhosted-quickstart) and have a working configuration.
+
+<Note>
+    If you are looking for a high-availability setup for the Management and Signal services, this is available through an enterprise
+    commercial license [here](https://netbird.io/pricing#on-prem).
+</Note>
+
+## Architecture Overview
+
+The default single-server deployment runs all services on one machine: **Caddy** (reverse proxy), **Dashboard** (web UI),
+and a **combined netbird-server** container that includes Management, Signal, and Relay + STUN as components. Caddy handles TLS termination on ports 80/443, while STUN listens on UDP port 3478. The Management server uses a **SQLite** database by default.
+
+After splitting, the **main server** keeps Caddy, Dashboard, Management, and optionally Signal.
+The **relay servers** run independently on different machines, each handling relay (port 443) and STUN (port 3478) traffic. Peers receive relay addresses from the Management server and connect to them directly. Optionally, the SQLite database can be migrated to **PostgreSQL** on a dedicated server, and Signal can also be extracted to its own machine.
+
+## Guides
+
+- [Set Up External Relay Servers](/selfhosted/maintenance/scaling/set-up-external-relays) — Deploy relay and STUN servers on separate machines and configure the main server to use them
+- [Migrate from SQLite to PostgreSQL](/selfhosted/maintenance/scaling/migrate-sqlite-to-postgresql) — Move the Management database to a dedicated PostgreSQL instance (optional)
+- [Set Up External Signal Server](/selfhosted/maintenance/scaling/set-up-external-signal) — Extract the Signal server to its own machine (optional)
+
+## Configuration Reference
+
+### Relay Server Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NB_LISTEN_ADDRESS` | Yes | Address to listen on (e.g., `:443`) |
+| `NB_EXPOSED_ADDRESS` | Yes | Public relay URL (`rels://` for TLS, `rel://` for plain) |
+| `NB_AUTH_SECRET` | Yes | Shared authentication secret |
+| `NB_ENABLE_STUN` | No | Enable embedded STUN server (`true`/`false`) |
+| `NB_STUN_PORTS` | No | STUN UDP port(s), default `3478` |
+| `NB_LETSENCRYPT_DOMAINS` | No | Domain(s) for automatic Let's Encrypt certificates |
+| `NB_LETSENCRYPT_EMAIL` | No | Email for Let's Encrypt notifications |
+| `NB_TLS_CERT_FILE` | No | Path to TLS certificate (alternative to Let's Encrypt) |
+| `NB_TLS_KEY_FILE` | No | Path to TLS private key |
+| `NB_LOG_LEVEL` | No | Log level: `debug`, `info`, `warn`, `error` |
+
+### Main Server config.yaml - External Services
+
+```yaml
+server:
+  # External STUN servers
+  stuns:
+    - uri: "stun:hostname:port"
+      proto: "udp"  # or "tcp"
+
+  # External relay servers
+  relays:
+    addresses:
+      - "rels://hostname:port"  # TLS
+      - "rel://hostname:port"   # Plain (not recommended)
+    secret: "shared-secret"
+    credentialsTTL: "24h"  # How long relay credentials are valid
+
+  # External signal server (optional, usually keep embedded)
+  # signalUri: "https://signal.example.com:443"
+```
+
+## Troubleshooting
+
+### Peers Can't Connect via Relay
+
+1. **Check secrets match**: The `authSecret`/`NB_AUTH_SECRET` must be identical everywhere
+2. **Check firewall**: Ensure port 443/tcp is open on relay servers
+3. **Check TLS**: If using `rels://`, ensure TLS is properly configured
+4. **Check logs**: `docker compose logs relay` on the relay server
+
+### STUN Not Working
+
+1. **Check UDP port**: Ensure port 3478/udp is open and not blocked by firewall
+2. **Check NAT**: Some carrier-grade NATs block STUN; try a different network
+3. **Verify STUN is enabled**: `NB_ENABLE_STUN=true` on relay servers
+
+### Relay Shows as Unavailable
+
+1. **DNS resolution**: Ensure the relay domain resolves correctly
+2. **Port reachability**: Test with `nc -zv relay-us.example.com 443`
+3. **Certificate issues**: Check Let's Encrypt logs or certificate validity
+
+## See Also
+
+- [Configuration Files Reference](/selfhosted/configuration-files) - Full config.yaml documentation
+- [Self-hosting Quickstart](/selfhosted/selfhosted-quickstart) - Initial deployment guide

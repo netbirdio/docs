@@ -291,7 +291,15 @@ export const docsNavigation = [
                 isOpen: false,
                 links: [
                     { title: 'Configuration Files', href: '/selfhosted/configuration-files' },
-                    { title: 'Scaling Your Deployment', href: '/selfhosted/scaling-your-self-hosted-deployment' },
+                    {
+                        title: 'Scaling Your Deployment', href: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
+                        isOpen: false,
+                        links: [
+                            { title: 'Set Up External Relays', href: '/selfhosted/maintenance/scaling/set-up-external-relays' },
+                            { title: 'Migrate SQLite to PostgreSQL', href: '/selfhosted/maintenance/scaling/migrate-sqlite-to-postgresql' },
+                            { title: 'Set Up External Signal', href: '/selfhosted/maintenance/scaling/set-up-external-signal' },
+                        ]
+                    },
                     { title: 'Backup', href: '/selfhosted/maintenance/backup' },
                     { title: 'Upgrade', href: '/selfhosted/maintenance/upgrade' },
                     { title: 'Remove', href: '/selfhosted/maintenance/remove' },

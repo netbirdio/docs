@@ -1,0 +1,281 @@
+# Set Up External Relay Servers
+
+import {Note, Warning} from "@/components/mdx";
+
+This guide is part of the [Splitting Your Self-Hosted Deployment](/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment) guide. It covers deploying external relay and STUN servers and configuring your main server to use them.
+
+For each relay server you want to deploy:
+
+## Server Requirements
+
+- A Linux VM with at least **1 CPU** and **1GB RAM**
+- Public IP address
+- A domain name pointing to the server (e.g., `relay-us.example.com`)
+- Docker installed
+- Firewall ports open: **80/tcp** (Let's Encrypt HTTP challenge), **443/tcp** (relay), and **3478/udp** (STUN). If you configure multiple STUN ports, open all of them
+
+## Generate Authentication Secret
+
+All relay servers must share the same authentication secret with your main server. You can generate one with:
+
+```bash
+# Generate a secure random secret
+openssl rand -base64 32
+```
+
+Save this secret - you'll need it for both the relay servers and your main server's config.
+
+## Create Relay Configuration
+
+On your relay server, create a directory and configuration:
+
+```bash
+mkdir -p ~/netbird-relay
+cd ~/netbird-relay
+```
+
+Create `relay.env` with your relay settings. The relay server can automatically obtain and renew TLS certificates via Let's Encrypt:
+
+```bash
+NB_LOG_LEVEL=info
+NB_LISTEN_ADDRESS=:443
+NB_EXPOSED_ADDRESS=rels://relay-us.example.com:443
+NB_AUTH_SECRET=your-shared-secret-here
+
+# TLS via Let's Encrypt (automatic certificate provisioning)
+NB_LETSENCRYPT_DOMAINS=relay-us.example.com
+NB_LETSENCRYPT_EMAIL=admin@example.com
+NB_LETSENCRYPT_DATA_DIR=/data/letsencrypt
+
+# Embedded STUN (comma-separated for multiple ports, e.g., 3478,3479)
+NB_ENABLE_STUN=true
+NB_STUN_PORTS=3478
+```
+
+<Note>
+Replace `relay-us.example.com` with your relay server's domain and `your-shared-secret-here` with the secret you generated.
+</Note>
+
+Create `docker-compose.yml`:
+
+```yaml
+services:
+  relay:
+    image: netbirdio/relay:latest
+    container_name: netbird-relay
+    restart: unless-stopped
+    ports:
+      - '443:443'
+      # Expose all ports listed in NB_STUN_PORTS
+      - '3478:3478/udp'
+    env_file:
+      - relay.env
+    volumes:
+      - relay_data:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "2"
+
+volumes:
+  relay_data:
+```
+
+## Alternative: TLS with Existing Certificates
+
+If you have existing TLS certificates (e.g., from your own CA or a wildcard cert), replace the Let's Encrypt variables in `relay.env` with:
+
+```bash
+# Replace the NB_LETSENCRYPT_* lines with:
+NB_TLS_CERT_FILE=/certs/fullchain.pem
+NB_TLS_KEY_FILE=/certs/privkey.pem
+```
+
+And add a certificate volume to `docker-compose.yml`:
+
+```yaml
+    volumes:
+      - /path/to/certs:/certs:ro
+      - relay_data:/data
+```
+
+## Start the Relay Server
+
+```bash
+docker compose up -d
+```
+
+Verify it's running:
+
+```bash
+docker compose logs -f
+```
+
+You should see:
+```
+level=info msg="Starting relay server on :443"
+level=info msg="Starting STUN server on port 3478"
+```
+
+If you configured Let's Encrypt, the relay generates TLS certificates lazily on the first incoming request. Trigger certificate provisioning and verify it by running:
+
+```bash
+curl -v https://relay-us.example.com/
+```
+
+A `404 page not found` response is expected — what matters is that the TLS handshake succeeds. Look for a valid Let's Encrypt certificate in the output:
+
+```
+* Server certificate:
+*  subject: CN=relay-us.example.com
+*  issuer: C=US; O=Let's Encrypt; CN=E8
+*  SSL certificate verify ok.
+```
+
+## Repeat for Additional Relay Servers
+
+If deploying multiple relays (e.g., for different regions), repeat the steps above on each server. Use the **same `NB_AUTH_SECRET`** but update the domain name for each.
+
+## Update Main Server Configuration
+
+Now update your main NetBird server to use the external relays instead of the embedded one.
+
+### Edit config.yaml
+
+On your main server, edit the `config.yaml` file:
+
+```bash
+cd ~/netbird  # or wherever your deployment is
+nano config.yaml
+```
+
+Remove the `authSecret` from the `server` section and add `relays` and `stuns` sections pointing to your external servers. The presence of the `relays` section disables both the embedded relay and the embedded STUN server, so the `stuns` section is required to provide external STUN addresses:
+
+```yaml
+server:
+  listenAddress: ":80"
+  exposedAddress: "https://netbird.example.com:443"
+  # Remove authSecret to disable the embedded relay
+  # authSecret: ...
+  # Remove or comment out stunPorts since we're using external STUN
+  # stunPorts:
+  #   - 3478
+  metricsPort: 9090
+  healthcheckAddress: ":9000"
+  logLevel: "info"
+  logFile: "console"
+  dataDir: "/var/lib/netbird"
+
+  # External STUN servers (your relay servers)
+  stuns:
+    - uri: "stun:relay-us.example.com:3478"
+      proto: "udp"
+    - uri: "stun:relay-eu.example.com:3478"
+      proto: "udp"
+
+  # External relay servers
+  relays:
+    addresses:
+      - "rels://relay-us.example.com:443"
+      - "rels://relay-eu.example.com:443"
+    secret: "your-shared-secret-here"
+    credentialsTTL: "24h"
+
+  auth:
+    enabled: true
+    issuer: "https://netbird.example.com/oauth2"
+    # ... rest of auth config
+```
+
+<Warning>
+The `secret` under `relays` and the `NB_AUTH_SECRET` on all relay servers **must be identical**. Mismatched secrets will cause relay connections to fail silently.
+</Warning>
+
+### Update docker-compose.yml (Optional)
+
+If your main server was exposing STUN port 3478, you can remove it since STUN is now handled by external relays:
+
+```yaml
+  netbird-server:
+    image: netbirdio/netbird-server:latest
+    container_name: netbird-server
+    restart: unless-stopped
+    networks: [netbird]
+    # Remove the STUN port - no longer needed
+    # ports:
+    #   - '3478:3478/udp'
+    volumes:
+      - netbird_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml
+    command: ["--config", "/etc/netbird/config.yaml"]
+```
+
+### Restart the Main Server
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+## Verify the Configuration
+
+### Check Main Server Logs
+
+```bash
+docker compose logs netbird-server
+```
+
+Verify that the embedded relay is disabled and your external relay addresses are listed:
+
+```
+INFO combined/cmd/root.go:   Management: true (log level: info)
+INFO combined/cmd/root.go:   Signal: true (log level: info)
+INFO combined/cmd/root.go:   Relay: false (log level: )
+```
+
+```
+Relay addresses: [rels://relay-us.example.com:443 rels://relay-eu.example.com:443]
+```
+
+### Check Peer Status
+
+Connect a NetBird client and verify that both STUN and relay services are available:
+
+```bash
+netbird status -d
+```
+
+The output should list your external STUN and relay servers. All configured STUN servers will appear, but only one randomly chosen relay is used per client:
+
+```
+Relays:
+  [stun:relay-us.example.com:3478] is Available
+  [stun:relay-eu.example.com:3478] is Available
+  [rels://relay-eu.example.com:443] is Available
+```
+
+You can also test failover by stopping one of the relay servers and checking the status again. The client will detect the unavailable server and use the remaining one:
+
+```
+Relays:
+  [stun:relay-us.example.com:3478] is Available
+  [stun:relay-eu.example.com:3478] is Unavailable, reason: stun request: context deadline exceeded
+  [rels://relay-us.example.com:443] is Available
+```
+
+### Test Relay Connectivity
+
+You can force all peer connections through relay to verify it works end-to-end. On a client, run:
+
+```bash
+sudo netbird service reconfigure --service-env NB_FORCE_RELAY=true
+```
+
+Then test connectivity to another peer (e.g., with `ping`).
+
+Once confirmed, switch back to normal mode. The client will attempt peer-to-peer connections first and fall back to relay only when direct connectivity isn't possible:
+
+```bash
+sudo netbird service reconfigure --service-env NB_FORCE_RELAY=false
+```
