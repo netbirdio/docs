@@ -19,60 +19,11 @@ This guide assumes you have already [deployed a single-server NetBird](/selfhost
 
 ## Architecture Overview
 
-### Before: Single Server
+The default single-server deployment runs all services on one machine: **Caddy** (reverse proxy), **Dashboard** (web UI),
+and a **combined netbird-server** container that includes Management, Signal, and Relay + STUN as components. Caddy handles TLS termination on ports 80/443, while STUN listens on UDP port 3478. The Management server uses a **SQLite** database by default.
 
-```
-┌───────────────────────────────────────────────────────────────┐
-│                                                               │
-│                    ┌────  Main Server (combined) ────┐        │
-│  ┌─────────┐  ┌────────────┐  ┌──────────┐  ┌─────────────┐   │
-│  │Dashboard│  │ Management │  │  Signal  │  │    Relay    │   │
-│  │(Web UI) │  │            │  │          │  │   + STUN    │   │
-│  │         │  │            │  │          │  │             │   │
-│  └─────────┘  └────────────┘  └──────────┘  └─────────────┘   │
-│                                              Port 3478/udp    │
-│               ┌─────────────┐                                 │
-│               │  Caddy      │                                 │
-│               │             │                                 │
-│               └─────────────┘                                 │
-│                                                               │
-│               Port 443,80/tcp                                 │
-└───────────────────────────────────────────────────────────────┘
-```
-
-### After: Distributed Relays
-
-```
-┌────────────────────────────────────────────────┐
-│                                                │
-│                ┌ Main Server (combined) ┐      │
-│  ┌─────────┐  ┌────────────┐  ┌──────────┐     │
-│  │Dashboard│  │ Management │  │  Signal  │     │
-│  │(Web UI) │  │            │  │          │     │
-│  │         │  │            │  │          │     │
-│  └─────────┘  └────────────┘  └──────────┘     │
-│                                                │
-│               ┌─────────────┐                  │
-│               │  Caddy      │                  │
-│               │             │                  │
-│               └─────────────┘                  │
-│                                                │
-│               Port 443,80/tcp                  │
-└────────────────────────────────────────────────┘
-              │
-              │ Peers get relay addresses
-              ▼
-┌──────────────────────┐  ┌──────────────────────┐
-│   Relay Server 1     │  │   Relay Server 2     │
-│                      │  │                      │
-│  ┌────────────────┐  │  │  ┌────────────────┐  │
-│  │     Relay      │  │  │  │     Relay      │  │
-│  │    + STUN      │  │  │  │    + STUN      │  │
-│  └────────────────┘  │  │  └────────────────┘  │
-│                      │  │                      │
-│  Port 443, 3478/udp  │  │  Port 443, 3478/udp  │
-└──────────────────────┘  └──────────────────────┘
-```
+After splitting, the **main server** keeps Caddy, Dashboard, Management, and optionally Signal.
+The **relay servers** run independently on different machines, each handling relay (port 443) and STUN (port 3478) traffic. Peers receive relay addresses from the Management server and connect to them directly. Optionally, the SQLite database can be migrated to **PostgreSQL** on a dedicated server, and Signal can also be extracted to its own machine.
 
 ## Step 1: Set Up External Relay Servers
 
