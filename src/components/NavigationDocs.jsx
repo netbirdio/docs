@@ -151,6 +151,16 @@ export const docsNavigation = [
                 ]
             },
             {
+                title: 'Reverse Proxy',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/manage/reverse-proxy' },
+                    { title: 'Custom Domains', href: '/manage/reverse-proxy/custom-domains' },
+                    { title: 'Authentication', href: '/manage/reverse-proxy/authentication' },
+                    { title: 'Access Logs', href: '/manage/reverse-proxy/access-logs' },
+                ]
+            },
+            {
                 title: 'Network Routes',
                 isOpen: false,
                 links: [

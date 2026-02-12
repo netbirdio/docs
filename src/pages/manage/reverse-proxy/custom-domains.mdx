@@ -1,0 +1,166 @@
+import {Note} from "@/components/mdx"
+
+export const description =
+    'Configure free and custom domains for NetBird Reverse Proxy services, including CNAME validation and DNS setup.'
+
+# Custom Domains
+
+When you create a reverse proxy service, you need to assign it a domain. NetBird provides built-in domains that are automatically available for every account, and also supports custom domains where you bring your own domain name. This page explains how both types work and walks you through adding and validating a custom domain.
+
+## Built-in domains
+
+Every NetBird deployment comes with built-in domains that you can use immediately - no DNS configuration required. The format and labeling of these domains differ between cloud and self-hosted deployments.
+
+### Cloud deployments (Free domains)
+
+Cloud accounts receive free domains in the format:
+
+```
+{subdomain}.{nonce}.{cluster}.proxy.netbird.io
+```
+
+For example: `myapp.abc123.eu.proxy.netbird.io` where `myapp` is your chosen subdomain, `abc123` is a nonce unique to your account, and `eu` is the proxy cluster region.
+
+NetBird operates multiple proxy clusters in different regions, and your available free domains correspond to these clusters. In the domain selector, free domains appear with a **Free** badge.
+
+### Self-hosted deployments (Cluster domains)
+
+Self-hosted deployments provide cluster domains in the format:
+
+```
+{subdomain}.{proxy-domain}
+```
+
+For example: `myapp.proxy.mycompany.com` where `myapp` is your chosen subdomain and `proxy.mycompany.com` is the domain configured on your proxy instance(s) via the `NB_PROXY_DOMAIN` environment variable.
+
+There is no nonce in self-hosted domains. In the domain selector, these domains appear with a **Cluster** badge.
+
+### How built-in domains are derived
+
+In both deployment types, built-in domains are dynamically derived from the proxy instances currently connected to the management server. They are not pre-provisioned - they reflect whichever proxy servers are actively registered via gRPC. If a proxy instance disconnects, its associated domain may no longer appear in the selector until the instance reconnects.
+
+Built-in domains are a quick way to get started. They receive automatic TLS certificates and work the same as custom domains in every other respect.
+
+## Custom domains
+
+Custom domains let you use your own domain name (e.g., `app.example.com`) for reverse proxy services. Custom domains work identically in both cloud and self-hosted deployments. Before a custom domain can be used, you must validate ownership by creating a CNAME record in your DNS provider.
+
+To manage custom domains, navigate to **Reverse Proxy** > **Custom Domains** in the NetBird dashboard.
+
+## Adding a custom domain
+
+Follow these steps to add a custom domain to your account:
+
+1. Navigate to **Reverse Proxy** > **Custom Domains** in the NetBird dashboard.
+2. Click **Add Domain**.
+3. Enter your domain name (e.g., `proxy.example.com`).
+4. Select the target **proxy cluster** that will handle traffic for this domain.
+5. Click **Save**.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/custom-domains-add.png" alt="Add Domain modal showing domain name and proxy cluster fields" className="imagewrapper"/>
+</p>
+
+After saving, the domain appears in your list with an **unvalidated** status. You must complete CNAME validation before you can use the domain with a service.
+
+## Validating a custom domain
+
+To prove that you own the domain, NetBird requires you to create a specific CNAME record in your DNS provider.
+
+### Step 1: Create the CNAME record
+
+In your DNS provider, create a CNAME record for the `validation` subdomain of your custom domain, pointing to the proxy cluster address. The CNAME target depends on your deployment type:
+
+- **Cloud deployments** - point to a NetBird-hosted cluster address (e.g., `eu.proxy.netbird.io`)
+- **Self-hosted deployments** - point to your own proxy URL (e.g., `proxy.mycompany.com`)
+
+For example, on a cloud deployment:
+
+| Record Type | Name | Value |
+|-------------|------|-------|
+| `CNAME` | `validation.proxy.example.com` | `eu.proxy.netbird.io` |
+
+On a self-hosted deployment:
+
+| Record Type | Name | Value |
+|-------------|------|-------|
+| `CNAME` | `validation.proxy.example.com` | `proxy.mycompany.com` |
+
+The exact target value depends on the proxy cluster you selected when adding the domain. The NetBird dashboard displays the required CNAME target after you save the domain.
+
+### Step 2: Validate in the dashboard
+
+After creating the DNS record, return to the **Reverse Proxy** > **Custom Domains** page and click **Validate** next to the domain.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/custom-domains-validation.png" alt="Domain validation status showing CNAME record details" className="imagewrapper"/>
+</p>
+
+NetBird performs a CNAME lookup on `validation.<your-domain>` and verifies that it resolves to a known proxy cluster. Once validation succeeds, the domain status changes to **validated** and it becomes available in the domain selector when creating or editing services.
+
+<Note>
+    DNS changes can take time to propagate. If validation fails immediately after creating the CNAME record, wait a few minutes and try again. In some cases, DNS propagation can take up to 48 hours depending on your provider and TTL settings.
+</Note>
+
+## Managing custom domains
+
+The **Custom Domains** page lists all domains associated with your account, including both built-in and custom domains.
+
+### Viewing domains
+
+The domain list shows each domain along with its type (Free, Cluster, or Custom), the associated proxy cluster, and the current validation status.
+
+### Re-validating a domain
+
+If a custom domain becomes unvalidated - for example, after a DNS configuration change - you can click **Validate** to trigger a new CNAME lookup.
+
+### Deleting a custom domain
+
+To remove a custom domain, click the delete action next to the domain in the list. Deleting a custom domain removes it from your account and makes it unavailable for any new services. Built-in domains (Free or Cluster) cannot be deleted.
+
+<Note>
+    Before deleting a custom domain, make sure no active services are using it. Services referencing a deleted domain will no longer route traffic correctly.
+</Note>
+
+## Using domains with services
+
+When you create or edit a reverse proxy service, the domain selector presents all available domains:
+
+- All **validated** custom domains
+- All built-in domains - **Free** domains (cloud) or **Cluster** domains (self-hosted)
+
+To assign a domain to a service, enter a **subdomain** on the left side of the selector and choose a **base domain** on the right side. The full public URL for your service is the combination of both:
+
+```
+{subdomain}.{base-domain}
+```
+
+For example, if you enter `dashboard` as the subdomain and select `proxy.example.com` as the base domain, the service is accessible at `dashboard.proxy.example.com`.
+
+All domain types receive automatic TLS certificates managed by the proxy.
+
+## Troubleshooting
+
+### Domain shows as unvalidated
+
+Verify that the CNAME record for `validation.<your-domain>` is correctly configured and points to the right proxy cluster address. For cloud deployments, this is a NetBird-hosted address (e.g., `eu.proxy.netbird.io`). For self-hosted deployments, this is your own proxy URL (e.g., `proxy.mycompany.com`). Use a DNS lookup tool to confirm the record has propagated:
+
+```bash
+dig CNAME validation.proxy.example.com
+```
+
+If the record does not appear, check your DNS provider for typos or wait for propagation to complete.
+
+### CNAME pointing to the wrong cluster
+
+The CNAME record must resolve to one of your available proxy clusters. If you selected a different cluster when adding the domain, the validation lookup will fail. Verify the expected target value on the Custom Domains page in the dashboard and update your DNS record accordingly.
+
+### Domain already in use
+
+Each custom domain must be unique across all NetBird accounts. If you receive an error that the domain is already in use, it may be registered by another account. Verify that you are entering the correct domain name. If you believe this is an error, contact [NetBird support](/slack-url).
+
+## Related pages
+
+- [Reverse Proxy Overview](/manage/reverse-proxy) - learn how the reverse proxy feature works
+- [Authentication](/manage/reverse-proxy/authentication) - configure SSO, password, and PIN authentication for services
+- [Access Logs](/manage/reverse-proxy/access-logs) - monitor traffic to your reverse proxy services
