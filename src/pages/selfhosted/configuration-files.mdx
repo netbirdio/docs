@@ -15,10 +15,9 @@ A standard NetBird self-hosted deployment uses the following configuration files
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` | Defines all NetBird services (dashboard, netbird-server), their Docker images, port mappings, volumes, and startup order. Modify this to change resource limits, add services, or adjust networking. |
+| `docker-compose.yml` | Defines all NetBird services (dashboard, netbird-server, traefik), their Docker images, port mappings, volumes, and startup order. Modify this to change resource limits, add services, or adjust networking. |
 | `config.yaml` | Central configuration for the NetBird server including listen addresses, authentication settings, STUN ports, and database configuration. Changes here affect how peers connect and authenticate. |
 | `dashboard.env` | Configures the web dashboard including API endpoints, OAuth2/OIDC settings, and optional SSL settings for standalone deployments without a reverse proxy. |
-| `Caddyfile` | Configures the built-in Caddy reverse proxy for SSL termination and routing requests to NetBird services. Only present when using the default `getting-started.sh` deployment with Caddy. |
 
 ### File Locations
 
@@ -28,8 +27,7 @@ After running the installation script, configuration files are located in the di
 ./
 ├── docker-compose.yml
 ├── config.yaml
-├── dashboard.env
-└── Caddyfile          # Only when using built-in Caddy
+└── dashboard.env
 ```
 
 ---
@@ -44,138 +42,157 @@ The Docker Compose file defines all NetBird services, their dependencies, networ
 |---------|-------|---------------|-------------------|-------------|
 | `dashboard` | `netbirdio/dashboard` | 80 | 8080:80 | The web-based management console where administrators configure networks, manage peers, create access policies, and view activity logs. Includes an embedded nginx server for serving the UI. |
 | `netbird-server` | `netbirdio/netbird-server` | 80, 3478/udp | 8081:80, 3478:3478/udp | The combined NetBird server that includes management, signal, and relay services in a single container. Also provides embedded STUN on UDP 3478 for NAT type detection. |
-| `caddy` | `caddy` | 80, 443 | 80:80, 443:443 | Handles TLS termination and routes incoming HTTPS requests to the appropriate NetBird services. Only included in default `getting-started.sh` deployments; can be replaced with your own reverse proxy. |
+| `traefik` | `traefik:v3.6` | 80, 443 | 80:80, 443:443 | Handles TLS termination via Let's Encrypt and routes incoming HTTPS requests to the appropriate NetBird services. Only included in default `getting-started.sh` deployments; can be replaced with your own reverse proxy. |
 
 <Note>
-**Internal vs External ports**: Internal ports are what services listen on inside their containers. External (Exposed) ports show the host-to-container mapping used when running without the built-in Caddy (e.g., with Nginx, Traefik, or other reverse proxies). When using the default Caddy deployment, only Caddy exposes ports externally.
+**Internal vs External ports**: Internal ports are what services listen on inside their containers. External (Exposed) ports show the host-to-container mapping used when running without the built-in Traefik (e.g., with Nginx or other reverse proxies). When using the default Traefik deployment, only Traefik exposes ports externally.
 </Note>
 
 <Note>
 The combined server includes an embedded STUN server, eliminating the need for a separate coturn container. STUN functionality is configured via the `stunPorts` setting in `config.yaml`.
 </Note>
 
-### Default Settings
+### Default Deployment (Built-in Traefik)
 
-The compose file includes these defaults applied to all services:
+The default `getting-started.sh` deployment generates a Docker Compose file with three services: Traefik (reverse proxy with automatic TLS), the dashboard, and the combined NetBird server. Traefik uses Docker labels on each service to configure routing.
 
 ```yaml
-x-default: &default
-  restart: 'unless-stopped'
-  logging:
-    driver: 'json-file'
-    options:
-      max-size: '500m'
-      max-file: '2'
-```
+services:
+  # Traefik reverse proxy (automatic TLS via Let's Encrypt)
+  traefik:
+    image: traefik:v3.6
+    container_name: netbird-traefik
+    restart: unless-stopped
+    networks: [netbird]
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=netbird"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=0"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - '443:443'
+      - '80:80'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - netbird_traefik_letsencrypt:/letsencrypt
 
-### Dashboard Service
+  # UI dashboard
+  dashboard:
+    image: netbirdio/dashboard:latest
+    container_name: netbird-dashboard
+    restart: unless-stopped
+    networks: [netbird]
+    env_file:
+      - ./dashboard.env
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.netbird-dashboard.rule=Host(`netbird.example.com`)
+      - traefik.http.routers.netbird-dashboard.entrypoints=websecure
+      - traefik.http.routers.netbird-dashboard.tls=true
+      - traefik.http.routers.netbird-dashboard.tls.certresolver=letsencrypt
+      - traefik.http.routers.netbird-dashboard.priority=1
+      - traefik.http.services.netbird-dashboard.loadbalancer.server.port=80
 
-The dashboard provides the web interface for NetBird management.
+  # Combined server (Management + Signal + Relay + STUN)
+  netbird-server:
+    image: netbirdio/netbird-server:latest
+    container_name: netbird-server
+    restart: unless-stopped
+    networks: [netbird]
+    ports:
+      - '3478:3478/udp'
+    volumes:
+      - netbird_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml
+    command: ["--config", "/etc/netbird/config.yaml"]
+    labels:
+      - traefik.enable=true
+      # gRPC router (needs h2c backend for HTTP/2 cleartext)
+      - traefik.http.routers.netbird-grpc.rule=Host(`netbird.example.com`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`))
+      - traefik.http.routers.netbird-grpc.entrypoints=websecure
+      - traefik.http.routers.netbird-grpc.tls=true
+      - traefik.http.routers.netbird-grpc.tls.certresolver=letsencrypt
+      - traefik.http.routers.netbird-grpc.service=netbird-server-h2c
+      # Backend router (relay, WebSocket, API, OAuth2)
+      - traefik.http.routers.netbird-backend.rule=Host(`netbird.example.com`) && (PathPrefix(`/relay`) || PathPrefix(`/ws-proxy/`) || PathPrefix(`/api`) || PathPrefix(`/oauth2`))
+      - traefik.http.routers.netbird-backend.entrypoints=websecure
+      - traefik.http.routers.netbird-backend.tls=true
+      - traefik.http.routers.netbird-backend.tls.certresolver=letsencrypt
+      - traefik.http.routers.netbird-backend.service=netbird-server
+      # Services
+      - traefik.http.services.netbird-server.loadbalancer.server.port=80
+      - traefik.http.services.netbird-server-h2c.loadbalancer.server.port=80
+      - traefik.http.services.netbird-server-h2c.loadbalancer.server.scheme=h2c
 
-**With built-in Caddy (default):**
-```yaml
-dashboard:
-  image: netbirdio/dashboard:latest
-  container_name: netbird-dashboard
-  restart: unless-stopped
-  networks: [netbird]
-  env_file:
-    - ./dashboard.env
-  logging:
-    driver: "json-file"
-    options:
-      max-size: "500m"
-      max-file: "2"
-```
+volumes:
+  netbird_data:
+  netbird_traefik_letsencrypt:
 
-**With external reverse proxy (exposed ports):**
-```yaml
-dashboard:
-  image: netbirdio/dashboard:latest
-  container_name: netbird-dashboard
-  restart: unless-stopped
-  networks: [netbird]
-  ports:
-    - '127.0.0.1:8080:80'
-  env_file:
-    - ./dashboard.env
-  logging:
-    driver: "json-file"
-    options:
-      max-size: "500m"
-      max-file: "2"
+networks:
+  netbird:
 ```
 
 <Note>
-The dashboard service is configured via the `dashboard.env` file. See the [dashboard.env section](#dashboard-env) for the full list of environment variables. When using the built-in Caddy, no ports are exposed directly from the dashboard container; Caddy routes traffic to it internally.
+The `readTimeout=0` on the websecure entrypoint is required for gRPC long-lived streams (Management sync and Signal). Without it, Traefik's default 60-second timeout disconnects clients periodically.
 </Note>
-
-### Combined NetBird Server Service
-
-The combined NetBird server is the core of NetBird, handling peer registration, authentication, signaling, and relay in a single container.
-
-**With built-in Caddy (default):**
-```yaml
-netbird-server:
-  image: netbirdio/netbird-server:latest
-  container_name: netbird-server
-  restart: unless-stopped
-  networks: [netbird]
-  ports:
-    - '3478:3478/udp'   # Embedded STUN server (must be exposed publicly)
-  volumes:
-    - netbird_data:/var/lib/netbird
-    - ./config.yaml:/etc/netbird/config.yaml
-  command: ["--config", "/etc/netbird/config.yaml"]
-  logging:
-    driver: "json-file"
-    options:
-      max-size: "500m"
-      max-file: "2"
-```
-
-**With external reverse proxy (exposed ports):**
-```yaml
-netbird-server:
-  image: netbirdio/netbird-server:latest
-  container_name: netbird-server
-  restart: unless-stopped
-  networks: [netbird]
-  ports:
-    - '127.0.0.1:8081:80'   # HTTP (for reverse proxy)
-    - '3478:3478/udp'       # Embedded STUN server (must be exposed publicly)
-  volumes:
-    - netbird_data:/var/lib/netbird
-    - ./config.yaml:/etc/netbird/config.yaml
-  command: ["--config", "/etc/netbird/config.yaml"]
-  logging:
-    driver: "json-file"
-    options:
-      max-size: "500m"
-      max-file: "2"
-```
 
 <Note>
 The STUN port (3478/udp) must always be exposed publicly, regardless of reverse proxy configuration. STUN uses UDP for NAT detection and cannot be proxied through HTTP reverse proxies.
 </Note>
 
-To use an external database, add environment variables:
+### With External Reverse Proxy (Exposed Ports)
+
+When using your own reverse proxy (Nginx, external Traefik, etc.), the script generates a simpler compose file without the Traefik container, exposing service ports on localhost instead:
+
 ```yaml
-  environment:
-    - NETBIRD_STORE_ENGINE_POSTGRES_DSN=postgres://user:password@host:5432/netbird
-    # Or for MySQL:
-    # - NETBIRD_STORE_ENGINE_MYSQL_DSN=user:password@tcp(host:3306)/netbird
+services:
+  dashboard:
+    image: netbirdio/dashboard:latest
+    container_name: netbird-dashboard
+    restart: unless-stopped
+    networks: [netbird]
+    ports:
+      - '127.0.0.1:8080:80'
+    env_file:
+      - ./dashboard.env
+
+  netbird-server:
+    image: netbirdio/netbird-server:latest
+    container_name: netbird-server
+    restart: unless-stopped
+    networks: [netbird]
+    ports:
+      - '127.0.0.1:8081:80'
+      - '3478:3478/udp'
+    volumes:
+      - netbird_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml
+    command: ["--config", "/etc/netbird/config.yaml"]
+
+volumes:
+  netbird_data:
+
+networks:
+  netbird:
 ```
+
+Your reverse proxy should forward traffic to `127.0.0.1:8081` for the NetBird server and `127.0.0.1:8080` for the dashboard. gRPC routes require HTTP/2 (h2c) upstream support.
 
 ### Volume Configuration
 
 | Volume | Mount Point | Purpose |
 |--------|-------------|---------|
 | `netbird_data` | `/var/lib/netbird` | Stores the management database (SQLite by default), encryption keys, and persistent state. Back up this volume regularly to preserve your accounts, peers, policies, and setup keys. |
-| `netbird_caddy_data` | `/data` | Stores Caddy's TLS certificates and other persistent data. Only used when deploying with the built-in Caddy reverse proxy. Preserve this volume to maintain TLS certificates across restarts. |
+| `netbird_traefik_letsencrypt` | `/letsencrypt` | Stores Traefik's Let's Encrypt TLS certificates. Only used when deploying with the built-in Traefik reverse proxy. Preserve this volume to maintain TLS certificates across restarts. |
 
 <Note>
-The `getting-started.sh` deployment uses only two volumes: `netbird_data` for the server database and `netbird_caddy_data` for Caddy's certificate storage.
+The `getting-started.sh` deployment uses only two volumes: `netbird_data` for the server database and `netbird_traefik_letsencrypt` for Traefik's certificate storage.
 </Note>
 
 ---
@@ -201,11 +218,8 @@ server:
   dataDir: "/var/lib/netbird"
 
   auth:
-    enabled: true
     issuer: "https://netbird.example.com/oauth2"
     signKeyRefreshEnabled: true
-    storage:
-      type: "sqlite3"
     dashboardRedirectURIs:
       - "https://netbird.example.com/nb-auth"
       - "https://netbird.example.com/nb-silent-auth"
@@ -213,7 +227,8 @@ server:
       - "http://localhost:53000/"
 
   store:
-    engine: "sqlite"
+    engine: "sqlite"  # sqlite, postgres, or mysql
+    dsn: ""  # Connection string for postgres or mysql
     encryptionKey: "your-encryption-key"
 ```
 
@@ -254,17 +269,11 @@ server:
 Configures the built-in identity provider that handles user authentication and management.
 
 <Properties>
-  <Property name="auth.enabled" type="boolean">
-    Enable the embedded identity provider. When `true`, the server hosts OAuth2/OIDC endpoints at `/oauth2/`.
-  </Property>
   <Property name="auth.issuer" type="string">
     The OAuth2/OIDC issuer URL (e.g., `https://netbird.example.com/oauth2`). This URL is used to validate JWT tokens.
   </Property>
   <Property name="auth.signKeyRefreshEnabled" type="boolean">
     Enables automatic refresh of IdP signing keys. Recommended for production.
-  </Property>
-  <Property name="auth.storage.type" type="string">
-    Storage backend for IdP data. Default: `sqlite3`
   </Property>
   <Property name="auth.dashboardRedirectURIs" type="array">
     OAuth2 redirect URIs for the dashboard application.
@@ -274,7 +283,7 @@ Configures the built-in identity provider that handles user authentication and m
   </Property>
 </Properties>
 
-When `auth.enabled` is `true`, the server automatically:
+The embedded identity provider is always enabled in the combined server. It automatically:
 - Hosts OIDC discovery at `https://your-domain/oauth2/.well-known/openid-configuration`
 - Provides JWKS (signing keys) at `https://your-domain/oauth2/keys`
 - Handles token issuance at `https://your-domain/oauth2/token`
@@ -288,6 +297,9 @@ Configures the database backend for storing all NetBird data.
 <Properties>
   <Property name="store.engine" type="string">
     Database engine. Options: `sqlite`, `postgres`, `mysql`. Default: `sqlite`
+  </Property>
+  <Property name="store.dsn" type="string">
+    Connection string for postgres or mysql engines. For postgres: `host=localhost user=netbird password=secret dbname=netbird port=5432`. Alternatively, use the `NETBIRD_STORE_ENGINE_POSTGRES_DSN` or `NETBIRD_STORE_ENGINE_MYSQL_DSN` environment variables.
   </Property>
   <Property name="store.encryptionKey" type="string">
     Key used to encrypt sensitive data in the database. Keep this secure and backed up.
@@ -354,13 +366,13 @@ AUTH_SUPPORTED_SCOPES=openid profile email groups
 AUTH_REDIRECT_URI=/nb-auth
 AUTH_SILENT_REDIRECT_URI=/nb-silent-auth
 
-# SSL - disabled when behind reverse proxy (Caddy handles TLS)
+# SSL - disabled when behind reverse proxy (Traefik handles TLS)
 NGINX_SSL_PORT=443
 LETSENCRYPT_DOMAIN=none
 ```
 
 <Note>
-When using the built-in Caddy or an external reverse proxy, set `LETSENCRYPT_DOMAIN=none` because the reverse proxy handles TLS termination. Only set a domain here if running the dashboard standalone without a reverse proxy.
+When using the built-in Traefik or an external reverse proxy, set `LETSENCRYPT_DOMAIN=none` because the reverse proxy handles TLS termination. Only set a domain here if running the dashboard standalone without a reverse proxy.
 </Note>
 
 ### Endpoint Configuration
@@ -398,7 +410,7 @@ The dashboard container's embedded nginx server can be configured using these en
 
 The `NGINX_SSL_PORT` and Let's Encrypt variables are **only necessary when running the dashboard standalone** without an external reverse proxy. In standalone mode, the dashboard's embedded nginx handles SSL/TLS termination directly.
 
-**For most installations** that use the built-in Caddy reverse proxy (the default `getting-started.sh` deployment) or an external reverse proxy like Traefik or Nginx, **you do not need to configure these nginx variables**. The reverse proxy handles SSL termination and routes traffic to the dashboard container, which serves content over HTTP internally.
+**For most installations** that use the built-in Traefik reverse proxy (the default `getting-started.sh` deployment) or an external reverse proxy like Nginx, **you do not need to configure these nginx variables**. The reverse proxy handles SSL termination and routes traffic to the dashboard container, which serves content over HTTP internally.
 
 When behind a reverse proxy:
 - Set `LETSENCRYPT_DOMAIN=none` to disable the dashboard's internal Let's Encrypt
@@ -414,18 +426,19 @@ When behind a reverse proxy:
 
 To use PostgreSQL instead of SQLite:
 
-1. Update `config.yaml`:
+Update `config.yaml`:
 ```yaml
 server:
   store:
     engine: "postgres"
+    dsn: "host=db-server user=netbird password=secret dbname=netbird port=5432"
 ```
 
-2. Set the connection string in `docker-compose.yml`:
+Alternatively, you can use an environment variable instead of putting the DSN in the config file:
 ```yaml
 netbird-server:
   environment:
-    - NETBIRD_STORE_ENGINE_POSTGRES_DSN=postgres://user:password@host:5432/netbird?sslmode=disable
+    - NETBIRD_STORE_ENGINE_POSTGRES_DSN=host=db-server user=netbird password=secret dbname=netbird port=5432
 ```
 
 See [Management Postgres Store](/selfhosted/postgres-store) for detailed setup.
@@ -454,7 +467,7 @@ netbird-server:
 When running behind your own reverse proxy (Traefik, Nginx, etc.):
 
 1. Set `LETSENCRYPT_DOMAIN=none` in `dashboard.env`
-2. The combined server handles trusted proxy detection automatically when running behind Caddy or other proxies.
+2. The combined server handles trusted proxy detection automatically when running behind Traefik or other proxies.
 
 See [Reverse Proxy Configuration](/selfhosted/reverse-proxy) for detailed templates.
 
