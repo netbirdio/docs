@@ -21,7 +21,8 @@ If your current deployment uses a reverse proxy other than Traefik, you'll need 
 
 ### What you're adding
 
-- **`netbird-proxy` container** - a new service in your Docker Compose stack that handles TLS termination, certificate provisioning, and traffic forwarding for reverse proxy services
+- **`proxy` service (container: `netbird-proxy`)** - a new service in your Docker Compose stack that handles TLS termination, certificate provisioning, and traffic forwarding for reverse proxy services
+- **`proxy.env` file** - environment variables for the proxy container, including domain, token, and ACME configuration
 - **Traefik TCP labels** - routing rules that tell Traefik to pass TLS connections through to the proxy container
 - **Wildcard DNS record** - so that all service subdomains (e.g., `myapp.proxy.example.com`) resolve to your server
 - **Proxy access token** - generated via the management CLI, used by the proxy to authenticate with the management server
@@ -57,7 +58,7 @@ cd netbird-backup-$(date +%Y%m%d)
 
 # Backup configuration files
 cp ../docker-compose.yml .
-cp ../management.json .
+cp ../management.json . 2>/dev/null
 cp ../*.env . 2>/dev/null || echo "No .env files found"
 ```
 
@@ -83,26 +84,30 @@ docker exec -it netbird-server netbird-mgmt token revoke <token-id>
 
 ### Step 3: Add the proxy service to docker-compose.yml
 
-Add the following service to your `docker-compose.yml`. Replace the placeholder values with your actual token and domains:
+Add the following service to your `docker-compose.yml`. Replace the placeholder values with your actual domains:
 
 ```yaml
-netbird-proxy:
-  image: netbirdio/netbird-proxy:latest
+proxy:
+  image: netbirdio/reverse-proxy:latest
   container_name: netbird-proxy
+  extra_hosts:
+    - "netbird.example.com:172.30.0.10"
   restart: unless-stopped
   networks: [netbird]
-  environment:
-    - NB_PROXY_TOKEN=nbx_your_token_here
-    - NB_PROXY_DOMAIN=proxy.example.com
-    - NB_PROXY_MANAGEMENT_ADDRESS=https://netbird.example.com:443
-    - NB_PROXY_ACME_CERTIFICATES=true
+  depends_on:
+    - netbird-server
+  env_file:
+    - ./proxy.env
+  volumes:
+    - netbird_proxy_certs:/certs
   labels:
     - traefik.enable=true
-    - traefik.tcp.routers.netbird-proxy.rule=HostSNI(`*.proxy.example.com`)
-    - traefik.tcp.routers.netbird-proxy.entrypoints=websecure
-    - traefik.tcp.routers.netbird-proxy.tls.passthrough=true
-    - traefik.tcp.routers.netbird-proxy.priority=1
-    - traefik.tcp.services.netbird-proxy.loadbalancer.server.port=8443
+    - traefik.tcp.routers.proxy-passthrough.entrypoints=websecure
+    - traefik.tcp.routers.proxy-passthrough.rule=HostSNI(`*`)
+    - traefik.tcp.routers.proxy-passthrough.tls.passthrough=true
+    - traefik.tcp.routers.proxy-passthrough.service=proxy-tls
+    - traefik.tcp.routers.proxy-passthrough.priority=1
+    - traefik.tcp.services.proxy-tls.loadbalancer.server.port=8443
   logging:
     driver: "json-file"
     options:
@@ -110,15 +115,39 @@ netbird-proxy:
       max-file: "2"
 ```
 
+Also add the `netbird_proxy_certs` volume to your `volumes:` section:
+
+```yaml
+volumes:
+  # ...existing volumes...
+  netbird_proxy_certs:
+```
+
+Replace `netbird.example.com` in the `extra_hosts` entry with your actual NetBird management domain. This hairpin NAT fix ensures the proxy can reach Traefik's static IP within the Docker network.
+
+Then create a `proxy.env` file with the proxy configuration:
+
+```bash
+NB_PROXY_DOMAIN=proxy.example.com
+NB_PROXY_TOKEN=nbx_your_token_here
+NB_PROXY_MANAGEMENT_ADDRESS=https://netbird.example.com:443
+NB_PROXY_ADDRESS=:8443
+NB_PROXY_ACME_CERTIFICATES=true
+NB_PROXY_ACME_CHALLENGE_TYPE=tls-alpn-01
+NB_PROXY_CERTIFICATE_DIRECTORY=/certs
+```
+
+Replace `proxy.example.com` with your proxy domain and `netbird.example.com` with your management domain.
+
 The Traefik labels configure a **TCP router** that:
-- Matches any request to `*.proxy.example.com` via SNI (Server Name Indication)
+- Catches any request not matched by higher-priority HTTP routers via `HostSNI(*)` (wildcard)
 - Uses the `websecure` entrypoint (port 443)
 - Passes the TLS connection through **without termination** (`tls.passthrough=true`)
 - Uses `priority=1` to avoid intercepting traffic meant for the main NetBird HTTP routers on the same entrypoint
 - Forwards traffic to the proxy container on port 8443
 
 <Note>
-Replace `proxy.example.com` in both the `NB_PROXY_DOMAIN` environment variable and the Traefik `HostSNI` rule with your actual proxy domain. These must match.
+The `HostSNI(*)` rule acts as a catch-all for any domain not matched by the existing NetBird HTTP routers. The `priority=1` ensures this TCP router only handles traffic that no other router claims. Any domain pointing to your server that isn't `netbird.example.com` will be forwarded to the proxy.
 </Note>
 
 ### Step 4: Set up wildcard DNS
@@ -135,7 +164,7 @@ This ensures that all service subdomains (e.g., `myapp.proxy.example.com`, `dash
 
 ```bash
 # Pull the new image
-docker compose pull netbird-proxy
+docker compose pull proxy
 
 # Start the proxy alongside existing services
 docker compose up -d
@@ -144,7 +173,7 @@ docker compose up -d
 docker compose ps
 
 # Check proxy logs
-docker compose logs -f netbird-proxy
+docker compose logs -f proxy
 ```
 
 You should see log messages indicating the proxy has connected to the management server and is ready to serve traffic.
@@ -255,6 +284,12 @@ If your self-hosted deployment currently uses Nginx, Caddy, or another reverse p
 | `NB_PROXY_CERTIFICATE_FILE` | No | TLS certificate filename within the certificate directory (for static certificate mode). | `tls.crt` |
 | `NB_PROXY_CERTIFICATE_KEY_FILE` | No | TLS private key filename within the certificate directory (for static certificate mode). | `tls.key` |
 | `NB_PROXY_CERTIFICATE_DIRECTORY` | No | Directory where static certificate files are stored. | `./certs` |
+| `NB_PROXY_ALLOW_INSECURE` | No | Allow insecure (non-TLS) gRPC connection to the management server. Set to `true` when connecting over an internal Docker network. | `false` |
+| `NB_PROXY_FORWARDED_PROTO` | No | Protocol to report in the `X-Forwarded-Proto` header. Set to `https` when TLS is terminated at the proxy. | - |
+| `NB_PROXY_OIDC_CLIENT_ID` | No | OIDC client ID for proxy SSO authentication. | - |
+| `NB_PROXY_OIDC_ENDPOINT` | No | OIDC discovery endpoint URL for proxy SSO authentication. | - |
+| `NB_PROXY_OIDC_SCOPES` | No | Comma-separated list of OIDC scopes to request (e.g., `openid,profile,email`). | - |
+| `NB_PROXY_DEBUG_LOGS` | No | Enable debug-level logging. | `false` |
 
 ## Troubleshooting
 
@@ -265,7 +300,7 @@ If your self-hosted deployment currently uses Nginx, Caddy, or another reverse p
 **Checklist**:
 1. Verify port 443 is accessible from the internet (required for `tls-alpn-01` challenge)
 2. Ensure the wildcard DNS record resolves correctly: `dig myapp.proxy.example.com`
-3. Check proxy logs for ACME errors: `docker compose logs netbird-proxy | grep -i acme`
+3. Check proxy logs for ACME errors: `docker compose logs proxy | grep -i acme`
 4. If using `http-01` challenge type, ensure port 80 is also accessible
 
 ### TLS passthrough not working
@@ -275,7 +310,7 @@ If your self-hosted deployment currently uses Nginx, Caddy, or another reverse p
 **Checklist**:
 1. Verify Traefik labels include `tls.passthrough=true`
 2. Confirm the router is configured as a **TCP** router (not HTTP) - labels should use `traefik.tcp.routers`, not `traefik.http.routers`
-3. Check that the `HostSNI` rule matches your proxy domain with the wildcard (`*.proxy.example.com`)
+3. Check that the `HostSNI` rule is set to `HostSNI(*)` (wildcard catch-all)
 4. Verify the TCP router has `priority=1` to prevent it from intercepting traffic meant for the main NetBird HTTP routers
 5. Ensure the `websecure` entrypoint is configured in your Traefik configuration
 6. Restart Traefik after adding the proxy container: `docker compose restart traefik`
