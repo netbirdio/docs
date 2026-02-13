@@ -18,7 +18,7 @@ NetBird Reverse Proxy lets you expose internal services running on peers or behi
 
 When you create a reverse proxy service, NetBird provisions a public domain with an automatic TLS certificate. Incoming HTTPS requests to that domain are terminated at the NetBird proxy cluster, then forwarded through an encrypted WireGuard tunnel to the target peer or network resource running your application. The target service only needs to be reachable within your NetBird network - it does not need a public IP address or open ports.
 
-You can optionally require authentication (SSO, password, or PIN) before users can reach the service, ensuring that even publicly accessible URLs remain protected.
+You can optionally require authentication (SSO via your configured IdP, password, or PIN) before users can reach the service, ensuring that even publicly accessible URLs remain protected.
 
 ## Concepts
 
@@ -108,64 +108,13 @@ After creating a service, it progresses through several statuses as NetBird prov
 
 ## Self-hosted proxy setup
 
-Self-hosted deployments require you to deploy a separate NetBird proxy instance. The proxy is a standalone container (`netbirdio/netbird-proxy`) that connects to your management server via gRPC and handles TLS termination and traffic forwarding for your reverse proxy services.
+Self-hosted deployments require a separate NetBird proxy instance (`netbirdio/netbird-proxy`) that connects to your management server via gRPC and handles TLS termination and traffic forwarding for your reverse proxy services.
 
-### Step 1: Generate a proxy access token
+<Note>
+**Already set up?** If you deployed NetBird using the setup script (`getting-started.sh`) starting from **v0.65.0** and selected the **built-in Traefik** option, the proxy container is already included in your Docker Compose stack. You can skip straight to [creating your first service](#quick-start).
+</Note>
 
-The proxy authenticates with the management server using an access token. Generate one using the management CLI inside your `netbird-server` container:
-
-```bash
-docker exec -it <netbird-server-container> netbird-mgmt token create --name "my-proxy"
-```
-
-This outputs a token in the format `nbx_...` (40 characters). **Save the token immediately** - it is only displayed once. The management server stores only a SHA-256 hash.
-
-You can also manage tokens with:
-
-```bash
-# List all tokens
-docker exec -it <netbird-server-container> netbird-mgmt token list
-
-# Revoke a token by ID
-docker exec -it <netbird-server-container> netbird-mgmt token revoke <token-id>
-```
-
-### Step 2: Deploy the proxy container
-
-Run the proxy container with the token and your desired domain:
-
-```bash
-docker run -d \
-  -e NB_PROXY_TOKEN=nbx_... \
-  -e NB_PROXY_DOMAIN=proxy.example.com \
-  -e NB_PROXY_MANAGEMENT_ADDRESS=https://netbird.example.com:443 \
-  -e NB_PROXY_ACME_CERTIFICATES=true \
-  -p 443:8443 \
-  netbirdio/netbird-proxy
-```
-
-Key environment variables:
-
-| Environment variable | Description |
-|---------------------|-------------|
-| `NB_PROXY_TOKEN` | **(Required)** The access token generated in Step 1. The proxy refuses to start without it. |
-| `NB_PROXY_DOMAIN` | **(Required)** The domain name for this proxy instance (e.g., `proxy.example.com`). This determines the base domain available for services. |
-| `NB_PROXY_MANAGEMENT_ADDRESS` | The URL of your NetBird management server (default: `https://api.netbird.io:443`). The proxy connects via gRPC to register itself. |
-| `NB_PROXY_ADDRESS` | The address the proxy listens on (default: `:8443` in Docker, `:443` otherwise). |
-
-### Step 3: Set up wildcard DNS
-
-Create a wildcard DNS record pointing to the server running the proxy:
-
-```
-*.proxy.example.com  →  <proxy-server-IP>
-```
-
-This ensures that all service subdomains (e.g., `myapp.proxy.example.com`, `dashboard.proxy.example.com`) resolve to the proxy.
-
-### Step 4: Verify
-
-Once the proxy connects, `proxy.example.com` appears as a **Cluster** domain in the dashboard domain selector. You can now create services using it.
+**Existing deployments** - If you have an existing self-hosted deployment and want to add the proxy, follow the [Enable Reverse Proxy migration guide](/selfhosted/migration/enable-reverse-proxy). It covers generating an access token, adding the proxy container with Traefik TLS passthrough labels, setting up wildcard DNS, and verifying the setup.
 
 ### TLS certificate configuration
 
@@ -204,7 +153,7 @@ Before creating a reverse proxy service, make sure you have:
 
 - At least one **peer** connected to your NetBird network, OR at least one **network** with resources and routing peers configured. See [Networks](/manage/networks) for details.
 - A domain to use. Free (cloud) or cluster (self-hosted) domains are available automatically, or you can [add a custom domain](/manage/reverse-proxy/custom-domains).
-- **Self-hosted only:** At least one proxy instance deployed and connected to your management server. See [Self-hosted proxy setup](#self-hosted-proxy-setup) above.
+- **Self-hosted only:** At least one proxy instance deployed and connected to your management server. See [Self-hosted proxy setup](#self-hosted-proxy-setup) above, or follow the [Enable Reverse Proxy migration guide](/selfhosted/migration/enable-reverse-proxy) to add it to an existing deployment.
 - Access to a NetBird account with the 'Services' permission module ('Network Admin' role or higher).
 
 ## Quick start

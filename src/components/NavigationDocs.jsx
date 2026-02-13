@@ -359,7 +359,7 @@ export const docsNavigation = [
                 isOpen: false,
                 links: [
                     { title: 'Coturn to Embedded STUN', href: '/selfhosted/migration/coturn-to-stun-migration' },
-
+                    { title: 'Enable Reverse Proxy', href: '/selfhosted/migration/enable-reverse-proxy' },
                 ]
             },
         ],
