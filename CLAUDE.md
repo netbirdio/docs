@@ -4,63 +4,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is the documentation website for [NetBird](https://netbird.io), an open-source WireGuard-based Zero Trust Networking platform. The site is built with Next.js 14 and MDX support.
+Documentation website for [NetBird](https://netbird.io), an open-source WireGuard-based Zero Trust Networking platform. Built with Next.js 16 (Pages Router), React 19, MDX, and Tailwind CSS 3.
+
+There is no test suite in this project. Validate changes with `npm run build`.
 
 ## Common Commands
 
 ```bash
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
-
-# Build for production
-npm run build
-
-# Run linting
-npm run lint
-
-# Regenerate API documentation from OpenAPI spec
-npm run gen
-
-# Regenerate LLM-friendly markdown docs (runs automatically with dev/build)
-npm run gen:llm
+npm install          # Install dependencies
+npm run dev          # Start dev server (also runs gen:llm)
+npm run build        # Production build (also runs gen:llm)
+npm run lint         # ESLint (next/core-web-vitals) on src/
+npm run gen          # Regenerate API docs from NetBird OpenAPI spec
+npm run gen:llm      # Regenerate LLM-friendly markdown (auto-runs with dev/build)
 ```
 
 ## Architecture
 
 ### Content Structure
-- Documentation pages are MDX files in `src/pages/` organized by topic:
-  - `about-netbird/` - Conceptual docs
-  - `get-started/` - Installation and quickstart guides
-  - `manage/` - Feature documentation (peers, networks, DNS, access control, etc.)
-  - `selfhosted/` - Self-hosting deployment guides
-  - `ipa/` - API documentation (mapped to `/api` route via rewrite)
-  - `use-cases/` - Tutorials and examples
-  - `client/` - Client configuration
-  - `help/` - Troubleshooting
+Documentation pages are MDX files in `src/pages/` using the Next.js Pages Router (not App Router). Key directories:
+- `about-netbird/` - Conceptual docs
+- `get-started/` - Installation and quickstart guides
+- `manage/` - Feature documentation (peers, networks, DNS, access control, etc.)
+- `selfhosted/` - Self-hosting deployment guides
+- `ipa/` - API documentation (served at `/api` via rewrite)
+- `use-cases/` - Tutorials and examples
+- `client/` - Client configuration
+- `help/` - Troubleshooting
+
+### MDX Page Conventions
+- Page title comes from the first `# Heading` in the MDX file
+- Optional `export const description = '...'` for meta description
+- Import components as needed: `import {Note} from "@/components/mdx"`
+- Images go in `public/docs-static/img/<section>/` and are referenced as `/docs-static/img/<section>/filename.png`
 
 ### Navigation
-- `src/components/NavigationDocs.jsx` - Contains `docsNavigation` array that defines the sidebar structure. Update this when adding new pages.
+`src/components/NavigationDocs.jsx` contains the `docsNavigation` array defining the sidebar. **Must be updated when adding or moving pages.** Supports nested `links` arrays for sub-navigation.
 
 ### MDX Components
-Custom components available in MDX files (import from `@/components/mdx` or their respective files):
-
-- `<Note>` - Orange info box for important notes
-- `<Warning>` - Red warning box
-- `<Success>` - Green success message
-- `<Tiles>` - Grid of clickable cards for related links
-- `<YouTube videoId="...">` - Embedded YouTube videos
-- `<Button>` - Styled buttons/links
-- `<Row>` and `<Col>` - Two-column layouts
-- `<Properties>` and `<Property>` - API property documentation
-- `<CodeGroup>` - Tabbed code blocks for multiple languages
+Custom components available in MDX files (see `README.md` for full usage examples):
+- Alert boxes: `<Note>`, `<Warning>`, `<Success>` (from `@/components/mdx`)
+- Layout: `<Row>`, `<Col>`, `<Tiles>` (from `@/components/Tiles`), `<CodeGroup>`
+- Media: `<YouTube videoId="...">` (from `@/components/YouTube`)
+- UI: `<Button>` (from `@/components/Button`), `<Badge>`
+- API docs: `<Properties>`, `<Property>`
 
 ### API Documentation Generator
-- `generator/` - TypeScript-based generator that creates MDX pages from the NetBird OpenAPI spec
-- `generator/templates/ApiTemplate.ts` - Template for generated API pages
-- Generated pages go to `src/pages/ipa/resources/`
+- `generator/` - TypeScript generator that creates MDX pages from the NetBird OpenAPI spec
+- `generator/templates/ApiTemplate.ts` - Template for generated pages
+- Output: `src/pages/ipa/resources/` (don't edit these files manually)
 
 ### MDX Processing Pipeline
 - `mdx/remark.mjs` - Remark plugins
@@ -68,12 +60,11 @@ Custom components available in MDX files (import from `@/components/mdx` or thei
 - `mdx/recma.mjs` - Recma plugins
 
 ### LLM Documentation
-- `scripts/generate-llm-docs.mjs` - Generates clean markdown versions of all pages
-- Output goes to `public/llms/` with index at `public/llms.txt`
-- Runs automatically on `npm run dev` and `npm run build`
+- `scripts/generate-llm-docs.mjs` generates clean markdown to `public/llms/` (gitignored)
+- Runs automatically with `dev` and `build`
 
 ## URL Routing
 
 - Root `/` rewrites to `/introduction`
-- `/api/*` rewrites to `/ipa/*` (API docs)
-- Many legacy `/docs/*` and `/how-to/*` paths redirect to new locations (see `next.config.mjs`)
+- `/api/*` rewrites to `/ipa/*` (API docs live in `src/pages/ipa/` but are served under `/api`)
+- Extensive legacy redirects from `/docs/*` and `/how-to/*` paths in `next.config.mjs`
