@@ -524,28 +524,33 @@ const nextConfig = {
             },
             {
                 source: '/manage/peers/site-to-site/db-workload-migration',
-                destination: '/manage/network-routes/use-cases/site-to-site-cloud',
+                destination: '/manage/network-routes/use-cases/by-scenario/site-to-site-cloud',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/site-to-site-cloud',
+                destination: '/manage/network-routes/use-cases/by-scenario/site-to-site-cloud',
                 permanent: true,
             },
             {
                 source: '/manage/networks/homelab/access-home-network',
-                destination: '/manage/networks/use-cases/access-home-devices',
+                destination: '/manage/networks/use-cases/by-scenario/access-home-devices',
                 permanent: true,
             },
             // Networks guides moved to use-cases
             {
                 source: '/manage/networks/routing-traffic-to-multiple-resources',
-                destination: '/manage/networks/use-cases/routing-traffic-to-multiple-resources',
+                destination: '/manage/networks/use-cases/by-resource-type/routing-traffic-to-multiple-resources',
                 permanent: true,
             },
             {
                 source: '/manage/networks/accessing-restricted-domain-resources',
-                destination: '/manage/networks/use-cases/accessing-restricted-domain-resources',
+                destination: '/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources',
                 permanent: true,
             },
             {
                 source: '/manage/networks/accessing-entire-domains-within-networks',
-                destination: '/manage/networks/use-cases/accessing-entire-domains-within-networks',
+                destination: '/manage/networks/use-cases/by-resource-type/accessing-entire-domains-within-networks',
                 permanent: true,
             },
             // Network Routes guides moved to use-cases
@@ -561,17 +566,17 @@ const nextConfig = {
             },
             {
                 source: '/manage/network-routes/configuring-default-routes-for-internet-traffic',
-                destination: '/manage/network-routes/use-cases/exit-nodes',
+                destination: '/manage/network-routes/use-cases/by-scenario/exit-nodes',
                 permanent: true,
             },
             {
                 source: '/manage/network-routes/configuring-routes-with-access-control',
-                destination: '/manage/network-routes/use-cases/access-control',
+                destination: '/manage/network-routes/use-cases/by-configuration/access-control',
                 permanent: true,
             },
             {
                 source: '/manage/network-routes/resolve-overlapping-routes',
-                destination: '/manage/network-routes/use-cases/overlapping-routes',
+                destination: '/manage/network-routes/use-cases/by-configuration/overlapping-routes',
                 permanent: true,
             },
             // Site-to-Site section redirects (overview and comprehensive guides)
@@ -597,7 +602,7 @@ const nextConfig = {
             },
             {
                 source: '/manage/site-to-site/advanced-configuration',
-                destination: '/manage/network-routes/use-cases/advanced-configuration',
+                destination: '/manage/network-routes/use-cases/by-configuration/advanced-configuration',
                 permanent: true,
             },
             // Use-cases flat pages -> categorized
