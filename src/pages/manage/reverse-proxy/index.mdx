@@ -1,0 +1,281 @@
+import {Note} from "@/components/mdx"
+
+export const description =
+    'Expose internal services to the public internet with automatic TLS, authentication, and traffic routing through the NetBird mesh network.'
+
+# Reverse Proxy
+
+NetBird Reverse Proxy lets you expose internal services running on peers or behind network resources to the public internet. NetBird handles TLS termination, optional authentication, and proxies incoming traffic through the WireGuard mesh to reach the target service - all without opening ports or configuring firewalls on your internal machines.
+
+<Note>
+    **Availability:** Reverse Proxy is currently only available for **self-hosted** deployments and is currently in **beta**. **Cloud** support is coming soon.
+</Note>
+<Note>
+    **Self-hosted requirement:** Self-hosted deployments **must** use [Traefik](/selfhosted/reverse-proxy) as their reverse proxy. Traefik is the only supported reverse proxy that provides TLS passthrough, which is required for the Reverse Proxy feature to function correctly.
+</Note>
+
+## How it works
+
+When you create a reverse proxy service, NetBird provisions a public domain with an automatic TLS certificate. Incoming HTTPS requests to that domain are terminated at the NetBird proxy cluster, then forwarded through an encrypted WireGuard tunnel to the target peer or network resource running your application. The target service only needs to be reachable within your NetBird network - it does not need a public IP address or open ports.
+
+You can optionally require authentication (SSO via your configured IdP, password, or PIN) before users can reach the service, ensuring that even publicly accessible URLs remain protected.
+
+## Concepts
+
+### Services
+
+A service is the core configuration unit of the Reverse Proxy. Each service maps a public domain to one or more internal targets and defines how traffic is authenticated and forwarded. A service consists of:
+
+- **Domain** - the public URL where the service is reachable
+- **Targets** - one or more backend destinations that handle incoming requests
+- **Authentication** - optional SSO, password, or PIN protection
+- **Settings** - advanced options for host header forwarding and redirect rewriting
+- **Enabled/Disabled toggle** - turn the service on or off without deleting it
+
+### Targets
+
+A target defines where proxied traffic is sent within your NetBird network. Each service can have multiple targets for path-based routing. Every target specifies a type, protocol, port, and optional path.
+
+| Type | Description | How to select |
+|------|-------------|---------------|
+| **Peer** | A machine running the NetBird agent directly | Select from the peer list |
+| **Host** | A network resource identified by an IP address | Select from your network resources |
+| **Domain** | A network resource identified by a domain name | Select from your network resources |
+| **Subnet** | A network resource within a CIDR range | Select from your network resources, then specify an IP within the range |
+
+Each target also has the following properties:
+
+- **Path** (optional) - a URL path prefix for path-based routing (e.g., `/api`). See [Path-based routing](#path-based-routing) below.
+- **Protocol** - `HTTP` or `HTTPS`, depending on what the backend service speaks
+- **Port** - the port on the target machine (defaults to `80` for HTTP, `443` for HTTPS)
+- **Enabled/Disabled toggle** - individually enable or disable targets without removing them
+
+### Domains
+
+Every service needs a domain. The available domain types depend on whether you are using NetBird Cloud or a self-hosted deployment.
+
+**Cloud deployments** provide free domains in the format:
+
+```
+{subdomain}.{nonce}.{cluster}.proxy.netbird.io
+```
+
+For example: `myapp.abc123.eu.proxy.netbird.io` where `myapp` is your chosen subdomain, `abc123` is a nonce unique to your account, and `eu` is the proxy cluster region. These domains appear in the domain selector with a **Free** badge and are available immediately with no additional configuration.
+
+**Self-hosted deployments** provide cluster domains in the format:
+
+```
+{subdomain}.{proxy-domain}
+```
+
+For example: `myapp.proxy.mycompany.com` where `myapp` is your chosen subdomain and `proxy.mycompany.com` is the domain configured on your proxy instance(s) via the `NB_PROXY_DOMAIN` environment variable. These domains appear in the domain selector with a **Cluster** badge.
+
+In both deployment types, the available domains are dynamically derived from the proxy instances currently connected to the management server. They are not pre-provisioned - they reflect whichever proxy servers are actively registered.
+
+**Custom domains** work identically in both cloud and self-hosted deployments. You can use your own domain name (e.g., `app.example.com`) by creating a CNAME record that points to your proxy cluster address. See [Custom Domains](/manage/reverse-proxy/custom-domains) for setup instructions.
+
+All domain types receive automatic TLS certificates managed by the proxy.
+
+### Authentication
+
+You can protect a service with one or more authentication methods. When multiple methods are enabled, users can choose which one to use when accessing the service.
+
+| Method | Description |
+|--------|-------------|
+| **SSO (Single Sign-On)** | Authenticate via your identity provider using OIDC. You can optionally restrict access to specific user groups. |
+| **Password** | Protect with a shared password that you define when configuring the service. |
+| **PIN Code** | Protect with a numeric PIN code. |
+| **No authentication** | The service is publicly accessible without any authentication. |
+
+<Note>
+    If you save a service with no authentication configured, the dashboard will display a warning. Public services are accessible to anyone on the internet who knows the URL.
+</Note>
+
+For detailed configuration instructions, see [Authentication](/manage/reverse-proxy/authentication).
+
+### Service statuses
+
+After creating a service, it progresses through several statuses as NetBird provisions the domain and establishes connectivity:
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | The service has been created and is being provisioned. |
+| `certificate_pending` | A TLS certificate is being issued for the domain. This applies when the proxy uses ACME (Let's Encrypt) to automatically provision certificates. |
+| `active` | The service is live and routing traffic to its targets. |
+| `tunnel_not_created` | The proxy cluster has not yet established a WireGuard tunnel to the target. |
+| `certificate_failed` | TLS certificate issuance failed. If the proxy uses ACME, verify that the ACME challenge port is accessible (port 443 for `tls-alpn-01`, port 80 for `http-01`) and that the domain resolves correctly. For static certificates, check that the certificate and key files are valid. |
+| `error` | A generic error occurred. Check the service configuration and target availability. |
+
+## Self-hosted proxy setup
+
+Self-hosted deployments require a separate NetBird proxy instance (`netbirdio/netbird-proxy`) that connects to your management server via gRPC and handles TLS termination and traffic forwarding for your reverse proxy services.
+
+<Note>
+**Already set up?** If you deployed NetBird using the setup script (`getting-started.sh`) starting from **v0.65.0** and selected the **built-in Traefik** option, the proxy container is already included in your Docker Compose stack. You can skip straight to [creating your first service](#quick-start).
+</Note>
+
+**Existing deployments** - If you have an existing self-hosted deployment and want to add the proxy, follow the [Enable Reverse Proxy migration guide](/selfhosted/migration/enable-reverse-proxy). It covers generating an access token, adding the proxy container with Traefik TLS passthrough labels, setting up wildcard DNS, and verifying the setup.
+
+### TLS certificate configuration
+
+The proxy supports two modes for TLS certificate management:
+
+**ACME mode (Let's Encrypt)** - The proxy automatically provisions TLS certificates for each domain using Let's Encrypt. Enable this mode with:
+
+| Environment variable | Description |
+|---------------------|-------------|
+| `NB_PROXY_ACME_CERTIFICATES` | Set to `true` to enable automatic certificate provisioning. |
+| `NB_PROXY_ACME_CHALLENGE_TYPE` | ACME challenge type (default: `tls-alpn-01`). The `tls-alpn-01` challenge uses port 443 and does not require port 80. Alternatively, set to `http-01` which requires port 80 to be accessible. |
+
+When a certificate is successfully issued, the proxy notifies the management server and the service status changes to `active`.
+
+**Static certificate mode** - Provide your own certificate and key files. This is useful for wildcard certificates or certificates from a corporate CA. Configure with:
+
+| Environment variable | Description |
+|---------------------|-------------|
+| `NB_PROXY_CERTIFICATE_FILE` | TLS certificate filename within the certificate directory (default: `tls.crt`) |
+| `NB_PROXY_CERTIFICATE_KEY_FILE` | TLS private key filename within the certificate directory (default: `tls.key`) |
+| `NB_PROXY_CERTIFICATE_DIRECTORY` | Directory where certificate files are stored (default: `./certs`) |
+
+Static certificates support hot-reload through file watching. When the certificate or key file changes on disk, the proxy picks up the new files automatically without requiring a restart.
+
+### High availability
+
+Multiple proxy instances configured with the same `NB_PROXY_DOMAIN` value form a single proxy cluster. This provides high availability - if one instance goes down, the remaining instances in the cluster continue serving traffic. Each instance independently connects to the management server via gRPC and registers under the shared cluster address.
+
+### Traefik requirement
+
+Self-hosted deployments must use [Traefik](/selfhosted/reverse-proxy) as the reverse proxy in front of the NetBird management server. Traefik is required because it supports TLS passthrough, which allows the NetBird proxy to handle TLS termination directly. Other reverse proxies that do not support TLS passthrough are not compatible with this feature.
+
+## Prerequisites
+
+Before creating a reverse proxy service, make sure you have:
+
+- At least one **peer** connected to your NetBird network, OR at least one **network** with resources and routing peers configured. See [Networks](/manage/networks) for details.
+- A domain to use. Free (cloud) or cluster (self-hosted) domains are available automatically, or you can [add a custom domain](/manage/reverse-proxy/custom-domains).
+- **Self-hosted only:** At least one proxy instance deployed and connected to your management server. See [Self-hosted proxy setup](#self-hosted-proxy-setup) above, or follow the [Enable Reverse Proxy migration guide](/selfhosted/migration/enable-reverse-proxy) to add it to an existing deployment.
+- Access to a NetBird account with the 'Services' permission module ('Network Admin' role or higher).
+
+## Quick start
+
+Follow these steps to create your first reverse proxy service and expose an internal application to the internet.
+
+### Step 1: Open the Reverse Proxy page
+
+Navigate to **Reverse Proxy** > **Services** in the NetBird dashboard and click **Add Service**.
+
+### Step 2: Configure service details
+
+In the **Details** tab:
+
+1. Enter a **subdomain** for your service (e.g., `myapp`).
+2. Select a **base domain**. Cloud users see domains with a **Free** badge (e.g., `abc123.eu.proxy.netbird.io`). Self-hosted users see domains with a **Cluster** badge (e.g., `proxy.mycompany.com`, based on their deployed proxy instances). You can also select a custom domain you have already configured.
+3. Click **Add Target** to define where traffic should be sent.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-service-details.png" alt="Add Service modal showing the Details tab" className="imagewrapper"/>
+</p>
+
+4. In the target configuration, select the **type** (Peer, Host, Domain, or Subnet), then choose the specific peer or resource.
+5. Set the **protocol** (HTTP or HTTPS) and **port** for the target.
+6. Optionally, enter a **path** if you are using path-based routing.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-target.png" alt="Add Target configuration modal" className="imagewrapper"/>
+</p>
+
+You can add multiple targets to route different URL paths to different backend services.
+
+### Step 3: Configure authentication
+
+Switch to the **Authentication** tab to configure how users are authenticated before reaching your service.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-service-auth.png" alt="Add Service modal showing the Authentication tab" className="imagewrapper"/>
+</p>
+
+- Enable **SSO** to require users to authenticate through your identity provider. Optionally restrict access to specific groups.
+- Enable **Password** and set a shared password.
+- Enable **PIN Code** and set a numeric code.
+- Leave all methods disabled for public (unauthenticated) access.
+
+<Note>
+    You can enable multiple authentication methods simultaneously. Users will be able to choose their preferred method when accessing the service.
+</Note>
+
+### Step 4: Configure advanced settings
+
+Switch to the **Settings** tab to adjust advanced proxy behavior.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-service-settings.png" alt="Add Service modal showing the Settings tab" className="imagewrapper"/>
+</p>
+
+- **Pass Host Header** - when enabled, the original `Host` header from the client request is forwarded to the backend service instead of the target's hostname. This is useful when the backend application needs to know the public domain it is being accessed through.
+- **Rewrite Redirects** - when enabled, `Location` headers in backend responses (used for HTTP redirects) are rewritten to use the public domain. This prevents users from being redirected to internal URLs that they cannot reach.
+
+### Step 5: Create the service
+
+Click **Add Service** to create the reverse proxy service. NetBird will begin provisioning the TLS certificate and establishing the tunnel. Monitor the service status on the services list page until it shows `active`.
+
+## Managing services
+
+### Edit a service
+
+Click on any service in the services list to open the edit modal. Make your changes across the Details, Authentication, or Settings tabs, then click **Save Changes**.
+
+### Enable or disable a service
+
+Toggle the service on or off using the enabled/disabled switch. Disabling a service stops routing traffic to it without deleting the configuration, allowing you to quickly re-enable it later.
+
+### Delete a service
+
+Delete a service to permanently remove it along with its domain and TLS certificate. This action cannot be undone.
+
+### Manage targets
+
+Within a service, you can:
+
+- **Add targets** - click **Add Target** to route traffic to additional backend services
+- **Remove targets** - remove a target to stop routing traffic to that backend
+- **Enable or disable targets** - toggle individual targets on or off without removing them from the service
+
+## Path-based routing
+
+When a service has multiple targets, you can assign each target a unique path prefix to route different URL paths to different backends. For example:
+
+| Path | Target | Description |
+|------|--------|-------------|
+| `/` | Peer A (port 3000) | Main web application |
+| `/api` | Peer B (port 8080) | API service |
+| `/docs` | Resource C (port 80) | Documentation server |
+
+Incoming requests are matched against the configured path prefixes and forwarded to the corresponding target. Each path must be unique within a service.
+
+This is useful for consolidating multiple internal services under a single public domain, reducing the number of domains and TLS certificates you need to manage.
+
+## Integration with Networks
+
+If you have already configured [Networks](/manage/networks) with resources and routing peers, you can expose a network resource directly from the Networks page.
+
+Click the **Expose Service** button on any resource to open the reverse proxy creation modal with that resource pre-populated as a target. This provides a quick way to make an existing internal resource available on the public internet.
+
+The Networks page also displays a badge on each resource indicating how many reverse proxy services reference it, giving you visibility into which resources are publicly exposed.
+
+## Related pages
+
+- [Custom Domains](/manage/reverse-proxy/custom-domains) - configure your own domain names for reverse proxy services
+- [Authentication](/manage/reverse-proxy/authentication) - detailed guide on SSO, password, and PIN authentication options
+- [Access Logs](/manage/reverse-proxy/access-logs) - monitor and audit traffic to your reverse proxy services
+- [Networks](/manage/networks) - configure internal networks and resources
+- [Access Control](/manage/access-control/manage-network-access) - manage policies that control access to your network
+
+## Get started
+<div float="center" >
+    <Button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</Button>
+</div>
+
+- Make sure to [star us on GitHub](https://github.com/netbirdio/netbird)
+- Follow us [on X](https://x.com/netbird)
+- Join our [Slack Channel](/slack-url)
+- NetBird [latest release](https://github.com/netbirdio/netbird/releases) on GitHub

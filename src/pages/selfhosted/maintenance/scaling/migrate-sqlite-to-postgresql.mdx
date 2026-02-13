@@ -1,0 +1,124 @@
+# Migrate from SQLite to PostgreSQL
+
+import {Note, Warning} from "@/components/mdx";
+
+This guide is part of the [Splitting Your Self-Hosted Deployment](/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment) guide. It covers migrating your Management server database from SQLite to PostgreSQL.
+
+The default NetBird deployment uses SQLite, which stores all data in a single file. This works well for smaller setups, but you may want to migrate to PostgreSQL if:
+- You want the database on a separate, dedicated machine
+- You need better concurrency handling for larger deployments
+- You prefer the operational tooling and backup options that PostgreSQL provides
+
+For smaller teams, SQLite is perfectly capable and migration is not required.
+
+## Set Up PostgreSQL
+
+If you don't already have a PostgreSQL instance, you can run one in Docker:
+
+```bash
+docker run -d \
+  --name postgres-server \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=password \
+  -p 5432:5432 \
+  -v postgres_data:/var/lib/postgresql/data \
+  postgres:16
+```
+
+<Warning>
+Replace the default `password` with a strong, unique password for production deployments.
+</Warning>
+
+## Back Up the SQLite Store
+
+Before migrating, create a backup of your SQLite database:
+
+```bash
+mkdir backup
+docker compose cp -a netbird-server:/var/lib/netbird/. backup/
+```
+
+## Install pgloader
+
+The migration uses [pgloader](https://github.com/dimitri/pgloader) to transfer data from SQLite to PostgreSQL:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install pgloader
+
+# macOS
+brew install pgloader
+```
+
+## Create the Migration File
+
+Create a file called `sqlite.load` with the following content:
+
+```
+LOAD DATABASE
+     FROM sqlite:///root/combined/backup/store.db
+     INTO postgresql://postgres:password@localhost:5432/postgres
+
+WITH include drop, create tables, create indexes, reset sequences
+
+CAST
+     column accounts.is_domain_primary_account                    to boolean,
+     column accounts.settings_peer_login_expiration_enabled       to boolean,
+     column accounts.settings_peer_inactivity_expiration_enabled  to boolean,
+     column accounts.settings_regular_users_view_blocked          to boolean,
+     column accounts.settings_groups_propagation_enabled          to boolean,
+     column accounts.settings_jwt_groups_enabled                  to boolean,
+     column accounts.settings_routing_peer_dns_resolution_enabled to boolean,
+     column accounts.settings_extra_peer_approval_enabled         to boolean,
+     column accounts.settings_extra_user_approval_required        to boolean,
+     column accounts.settings_lazy_connection_enabled             to boolean
+;
+```
+
+<Note>
+Update the SQLite path and PostgreSQL connection string to match your environment.
+</Note>
+
+## Run the Migration
+
+```bash
+pgloader sqlite.load
+```
+
+## Update config.yaml
+
+On your main server, update the `store` section in `config.yaml` to use PostgreSQL:
+
+```yaml
+server:
+  # ... existing settings ...
+
+  store:
+    engine: "postgres"
+    dsn: "host=postgres-server user=postgres password=password dbname=postgres port=5432"
+```
+
+Alternatively, you can pass the connection string as an environment variable instead of putting it in the config file:
+
+```yaml
+  netbird-server:
+    environment:
+      - NETBIRD_STORE_ENGINE_POSTGRES_DSN=host=postgres-server user=postgres password=password dbname=postgres port=5432
+```
+
+## Restart and Verify
+
+```bash
+docker compose up -d
+```
+
+Check the logs to confirm PostgreSQL is being used:
+
+```bash
+docker compose logs netbird-server | grep store
+```
+
+You should see:
+```
+using Postgres store engine
+```
