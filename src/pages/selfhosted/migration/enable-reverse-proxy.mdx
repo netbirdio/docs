@@ -29,7 +29,7 @@ If your current deployment uses a reverse proxy other than Traefik, you'll need 
 ### What stays the same
 
 - Your existing `netbird-server`, `dashboard`, `signal`, and `relay` services are unchanged
-- Your `management.json` and other configuration files require no modifications
+- Your `management.json` and other configuration files require no modifications — **unless** you use an external identity provider (not the embedded IdP). See [Configure SSO for external identity providers](#configure-sso-for-external-identity-providers) below.
 - Existing peers, networks, and access policies are unaffected
 
 ## Prerequisites
@@ -97,6 +97,7 @@ netbird-proxy:
     - traefik.tcp.routers.netbird-proxy.rule=HostSNI(`*.proxy.example.com`)
     - traefik.tcp.routers.netbird-proxy.entrypoints=websecure
     - traefik.tcp.routers.netbird-proxy.tls.passthrough=true
+    - traefik.tcp.routers.netbird-proxy.priority=1
     - traefik.tcp.services.netbird-proxy.loadbalancer.server.port=8443
   logging:
     driver: "json-file"
@@ -109,6 +110,7 @@ The Traefik labels configure a **TCP router** that:
 - Matches any request to `*.proxy.example.com` via SNI (Server Name Indication)
 - Uses the `websecure` entrypoint (port 443)
 - Passes the TLS connection through **without termination** (`tls.passthrough=true`)
+- Uses `priority=1` to avoid intercepting traffic meant for the main NetBird HTTP routers on the same entrypoint
 - Forwards traffic to the proxy container on port 8443
 
 <Note>
@@ -154,6 +156,84 @@ Once the proxy connects to the management server:
 
 If the domain appears, the proxy is connected and ready. You can now [create your first service](/manage/reverse-proxy#quick-start).
 
+## Configure SSO for external identity providers
+
+### Who this applies to
+
+This section applies to deployments using a **standalone external identity provider** (Auth0, Okta, Keycloak, Zitadel, etc.) instead of the built-in embedded IdP (Dex). If you deployed using the quickstart script with default settings, you are using the embedded IdP and can skip this section.
+
+### Why this is needed
+
+The reverse proxy SSO feature authenticates users through an OAuth2/OIDC flow that redirects through a callback endpoint on the management server (`/api/reverse-proxy/callback`). The embedded IdP registers this callback automatically, but external IdPs need it configured manually. Without this configuration, SSO authentication on reverse proxy services will silently fail.
+
+### Option A: Quick fix (keep your external IdP)
+
+If you want to keep using your current external identity provider, follow these three steps:
+
+#### Step 1: Add callback URL to management.json
+
+Add the `AuthCallbackURL` field to the `HttpConfig` section of your `management.json`:
+
+```json
+"HttpConfig": {
+  ...existing fields...,
+  "AuthCallbackURL": "https://<your-management-domain>/api/reverse-proxy/callback"
+}
+```
+
+Replace `<your-management-domain>` with your NetBird management server domain (the same domain used for the dashboard).
+
+#### Step 2: Register callback in your IdP
+
+In your identity provider's application settings, add the following URL as an allowed redirect URI / callback URL:
+
+```
+https://<your-management-domain>/api/reverse-proxy/callback
+```
+
+This is in addition to any existing redirect URIs (like `/auth` or `/silent-auth`).
+
+Where to find this setting in common providers:
+
+| Provider | Where to add the redirect URI |
+|----------|-------------------------------|
+| Auth0 | Application > Settings > Allowed Callback URLs |
+| Okta | Application > General > Login redirect URIs |
+| Keycloak | Client > Settings > Valid redirect URIs |
+| Zitadel | Application > Redirect Settings > Redirect URIs |
+| Generic OIDC | Refer to your provider's documentation |
+
+#### Step 3: Restart management server
+
+Restart the management service to pick up the configuration change:
+
+```bash
+docker compose restart netbird-management
+```
+
+### Option B: Migrate to the embedded IdP (recommended)
+
+The embedded IdP (Dex) handles the reverse proxy callback registration automatically — no manual configuration needed. If you want a simpler setup, consider migrating to the embedded IdP.
+
+With the embedded IdP, external identity providers can still be used as **connectors** alongside local authentication. This means your users can continue to sign in with their existing accounts (Google, Okta, Keycloak, etc.) while the embedded IdP manages the OIDC layer.
+
+See the [Identity Providers page](/selfhosted/identity-providers) for instructions on adding external IdPs as connectors.
+
+<Note>
+Migrating from a standalone external IdP to the embedded IdP with your IdP as a connector requires user ID migration. See the [Migration Guide](/selfhosted/identity-providers#migration-guide-and-backwards-compatibility) or contact [support@netbird.io](mailto:support@netbird.io) for assistance.
+</Note>
+
+### Verification
+
+After configuring SSO for your external identity provider, verify it works:
+
+1. Create a reverse proxy service with **SSO authentication** enabled
+2. Open the service URL in an incognito/private browser window
+3. Confirm you are redirected to your IdP login page
+4. After authenticating, confirm you are redirected back to the service and can access it
+
+If the redirect fails or you see an error from your IdP, double-check that the callback URL is correctly registered in both `management.json` and your identity provider's settings.
+
 ## For users not on Traefik
 
 If your self-hosted deployment currently uses Nginx, Caddy, or another reverse proxy, you'll need to switch to Traefik before enabling the Reverse Proxy feature. See the [Traefik setup instructions](/selfhosted/reverse-proxy#traefik) for a step-by-step guide on configuring Traefik for your NetBird deployment.
@@ -192,8 +272,9 @@ If your self-hosted deployment currently uses Nginx, Caddy, or another reverse p
 1. Verify Traefik labels include `tls.passthrough=true`
 2. Confirm the router is configured as a **TCP** router (not HTTP) - labels should use `traefik.tcp.routers`, not `traefik.http.routers`
 3. Check that the `HostSNI` rule matches your proxy domain with the wildcard (`*.proxy.example.com`)
-4. Ensure the `websecure` entrypoint is configured in your Traefik configuration
-5. Restart Traefik after adding the proxy container: `docker compose restart traefik`
+4. Verify the TCP router has `priority=1` to prevent it from intercepting traffic meant for the main NetBird HTTP routers
+5. Ensure the `websecure` entrypoint is configured in your Traefik configuration
+6. Restart Traefik after adding the proxy container: `docker compose restart traefik`
 
 ### Port conflicts
 
