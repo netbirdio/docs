@@ -1,0 +1,166 @@
+import { Note } from '@/components/mdx'
+
+# Access Home Devices (VPN-to-Site)
+
+This guide shows how to access your home network devices from anywhere using the Networks feature.
+
+## What You'll Achieve
+
+After following this guide, you'll be able to access your home NAS, media server, home automation, or any device on your home network from your laptop or phone—anywhere in the world.
+
+```
+Your Laptop ──────► NetBird Tunnel ──────► Routing Peer ──────► Home NAS
+  (peer)                                    (at home)           (no NetBird)
+```
+
+## Prerequisites
+
+- A [NetBird cloud account](https://app.netbird.io/) or [self-hosted instance](/selfhosted/selfhosted-quickstart)
+- NetBird installed on your laptop or phone ([installation guide](/get-started/install))
+- An always-on device at home to serve as the routing peer (Raspberry Pi, NAS with Docker, old laptop, etc.)
+
+## Step 1: Connect Your Laptop to NetBird
+
+If you haven't already, install NetBird on your laptop and connect:
+
+1. Download NetBird from [app.netbird.io/install](https://app.netbird.io/install)
+2. Run the application and click **Connect** in the system tray
+3. Complete the sign-up process in your browser
+4. Verify your device appears in the [NetBird dashboard](https://app.netbird.io/) under **Peers**
+
+## Step 2: Add Your Laptop to a User Group
+
+1. In the **Peers** section of the dashboard, select your laptop peer
+2. Under **Assigned Groups**, add a new group: "Home Users"
+
+<p>
+    <img src="/docs-static/img/manage/networks/use-cases/by-scenario/access-home-devices/add-user-group.png" alt="Add user group" className="imagewrapper"/>
+</p>
+
+## Step 3: Find Your Home Subnet
+
+Before configuring NetBird, identify your home network's subnet.
+
+**On your routing peer device, run:**
+
+```bash
+# Linux
+ip route | grep -E "^[0-9]"
+
+# macOS
+netstat -rn | grep default
+```
+
+Look for your local subnet, typically something like `192.168.1.0/24` or `192.168.0.0/24`.
+
+## Step 4: Create a Network for Your Home LAN
+
+1. Go to **Networks** in the NetBird dashboard
+2. Click **Add Network**
+3. Name it "Home LAN" and click **Save**
+
+<p>
+    <img src="/docs-static/img/manage/networks/use-cases/by-scenario/access-home-devices/add-network-home-lan.png" alt="Add network" className="imagewrapper"/>
+</p>
+
+## Step 5: Add Your Home Subnet as a Resource
+
+1. In your new network, click **Add Resource**
+2. Enter a name like "Home Subnet"
+3. Enter your home subnet (e.g., `192.168.1.0/24`)
+4. Create a group called `home-lan` for the destination
+5. Click **Add Resource**
+
+<p>
+    <img src="/docs-static/img/manage/networks/use-cases/by-scenario/access-home-devices/add-resource-home-network.png" alt="Add resource" className="imagewrapper"/>
+</p>
+
+<Note>
+For more granular access, add specific device IPs instead of the entire subnet. For example, add `192.168.1.50/32` to only allow access to your NAS.
+</Note>
+
+## Step 6: Create an Access Policy
+
+1. After adding your resource, click **Create Policy**
+2. Set **Source** to "Home Users"
+3. Set **Destination** to `home-lan`
+4. Set **Protocol** to All
+5. Name it "Home LAN Access" and click **Add Policy**
+
+<p>
+    <img src="/docs-static/img/manage/networks/use-cases/by-scenario/access-home-devices/add-policy-home-lan.png" alt="Add policy" className="imagewrapper"/>
+</p>
+
+## Step 7: Set Up the Routing Peer
+
+The routing peer forwards traffic from NetBird to your local network. Use any always-on device:
+- Raspberry Pi
+- Synology NAS
+- Apple TV/Android TV
+- Home server
+
+**Install NetBird on your routing peer:**
+
+1. In the NetBird dashboard, go to **Setup Keys**
+2. Create a new setup key (one-time use recommended). Add `home-lan` to **Auto-assigned groups** and click **Create Setup Key**.
+
+<Note>
+You can also add groups to peers manually after setup. Go to **Peers**, select the peer, and add groups under **Assigned Groups**.
+</Note>
+
+3. On your routing peer, run:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+sudo netbird up --setup-key YOUR_SETUP_KEY
+```
+
+4. In the Networks view, click **Add Routing Peer** on your Home LAN network
+
+<p>
+    <img src="/docs-static/img/manage/networks/use-cases/by-scenario/access-home-devices/add-routing-peer.png" alt="Add routing peer button" className="imagewrapper"/>
+</p>
+
+5. Select your new peer and click **Add Routing Peer**
+
+<p>
+    <img src="/docs-static/img/manage/networks/use-cases/by-scenario/access-home-devices/add-routing-peer-home-network.png" alt="Add routing peer" className="imagewrapper"/>
+</p>
+
+## Step 8: Test the Connection
+
+From your laptop (connected to a different network like mobile data or coffee shop WiFi):
+
+```bash
+ping 192.168.1.1  # Your router
+ping 192.168.1.50 # Your NAS or other device
+```
+
+You can now access your home devices from anywhere.
+
+## Common Home Devices to Access
+
+| Device | Typical Access Method |
+|--------|----------------------|
+| Synology/QNAP NAS | Web UI (port 5000/5001), SMB shares |
+| Home Assistant | Web UI (port 8123) |
+| Plex/Jellyfin | Web UI (port 32400/8096) |
+| Pi-hole | Web UI (port 80), DNS (port 53) |
+| Security cameras | RTSP streams, web interfaces |
+| Printers | IPP/AirPrint, web interfaces |
+
+## Troubleshooting
+
+**Can't reach home devices:**
+1. Verify the routing peer is online: check `netbird status` on the routing peer
+2. Ensure the routing peer can reach local devices: `ping 192.168.1.1` from the routing peer
+3. Check that your access policy includes your user/device
+
+**Intermittent connectivity:**
+1. Ensure the routing peer has a stable internet connection
+2. Check if your ISP blocks VPN traffic (try a different port or protocol)
+
+## Next Steps
+
+- **Need Site-to-Site?** If you want to connect two home networks together, see [Site-to-Site: Home Networks](/manage/network-routes/use-cases/by-scenario/site-to-site-home)
+- **Advanced configuration:** See [Advanced Configuration](/manage/network-routes/use-cases/by-configuration/advanced-configuration) for masquerade options and access control details

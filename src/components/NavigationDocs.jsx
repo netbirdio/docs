@@ -18,6 +18,7 @@ export const docsNavigation = [
         links: [
             { title: 'How NetBird Works', href: '/about-netbird/how-netbird-works' },
             { title: 'NetBird vs. Traditional VPN', href: '/about-netbird/netbird-vs-traditional-vpn' },
+            { title: 'Self-Hosted vs. Cloud', href: '/about-netbird/self-hosted-vs-cloud' },
             { title: 'Understanding NAT and Connectivity', href: '/about-netbird/understanding-nat-and-connectivity' },
             { title: 'Why WireGuard with NetBird', href: '/about-netbird/why-wireguard-with-netbird' },
             { title: 'Browser Client Architecture', href: '/about-netbird/browser-client-architecture' },
@@ -93,16 +94,6 @@ export const docsNavigation = [
                             },
                         ]
                     },
-                    {
-                        title: 'Connect Site-to-Site',
-                        isOpen: true,
-                        links: [
-                            {
-                                title: 'Simplify Workload Migrations',
-                                href: '/manage/peers/site-to-site/db-workload-migration'
-                            },
-                        ]
-                    },
                     { title: 'Auto Update', href: '/manage/peers/auto-update' },
                 ]
             },
@@ -138,26 +129,64 @@ export const docsNavigation = [
                 isOpen: false,
                 links: [
                     { title: 'Concept', href: '/manage/networks' },
-                    { title: 'Route Traffic to Multiple IP resources', href: '/manage/networks/routing-traffic-to-multiple-resources' },
-                    { title: 'Access Restricted Website Domain Resources', href: '/manage/networks/accessing-restricted-domain-resources' },
-                    { title: 'Access Entire Domains Within Networks', href: '/manage/networks/accessing-entire-domains-within-networks' },
                     {
-                        title: 'Homelab',
-                        isOpen: true,
+                        title: 'Use Cases',
+                        isOpen: false,
                         links: [
-                            { title: 'Access Home Network', href: '/manage/networks/homelab/access-home-network' },
+                            { title: 'Overview', href: '/manage/networks/use-cases' },
+                            {
+                                title: 'By Scenario',
+                                isOpen: false,
+                                links: [
+                                    { title: 'Access Home Devices', href: '/manage/networks/use-cases/by-scenario/access-home-devices' },
+                                    { title: 'Remote Worker Access', href: '/manage/networks/use-cases/by-scenario/remote-worker-access' },
+                                    { title: 'Cloud to On-Premise', href: '/manage/networks/use-cases/by-scenario/cloud-to-on-premise' },
+                                ]
+                            },
+                            {
+                                title: 'By Resource Type',
+                                isOpen: false,
+                                links: [
+                                    { title: 'Multiple IP Resources', href: '/manage/networks/use-cases/by-resource-type/routing-traffic-to-multiple-resources' },
+                                    { title: 'Domain Resources', href: '/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources' },
+                                    { title: 'Wildcard Domains', href: '/manage/networks/use-cases/by-resource-type/accessing-entire-domains-within-networks' },
+                                ]
+                            },
                         ]
-                    },
+                    }
                 ]
             },
             {
                 title: 'Network Routes',
                 isOpen: false,
                 links: [
-                    { title: 'Route Traffic to Private Networks', href: '/manage/network-routes/routing-traffic-to-private-networks' },
-                    { title: 'Configure Default Routes for Internet Traffic', href: '/manage/network-routes/configuring-default-routes-for-internet-traffic' },
-                    { title: 'Configure Routes with Access control', href: '/manage/network-routes/configuring-routes-with-access-control' },
-                    { title: 'Resolve Overlapping Routes', href: '/manage/network-routes/resolve-overlapping-routes' },
+                    { title: 'Concept', href: '/manage/network-routes' },
+                    {
+                        title: 'Use Cases',
+                        isOpen: false,
+                        links: [
+                            { title: 'Overview', href: '/manage/network-routes/use-cases' },
+                            {
+                                title: 'By Scenario',
+                                isOpen: false,
+                                links: [
+                                    { title: 'Site-to-Site: Home', href: '/manage/network-routes/use-cases/by-scenario/site-to-site-home' },
+                                    { title: 'Site-to-Site: Office', href: '/manage/network-routes/use-cases/by-scenario/site-to-site-office' },
+                                    { title: 'Site-to-Site: Cloud', href: '/manage/network-routes/use-cases/by-scenario/site-to-site-cloud' },
+                                    { title: 'Exit Nodes', href: '/manage/network-routes/use-cases/by-scenario/exit-nodes' },
+                                ]
+                            },
+                            {
+                                title: 'By Configuration',
+                                isOpen: false,
+                                links: [
+                                    { title: 'Access Control', href: '/manage/network-routes/use-cases/by-configuration/access-control' },
+                                    { title: 'Overlapping Routes', href: '/manage/network-routes/use-cases/by-configuration/overlapping-routes' },
+                                    { title: 'Advanced Configuration', href: '/manage/network-routes/use-cases/by-configuration/advanced-configuration' },
+                                ]
+                            },
+                        ]
+                    }
                 ]
             },
             {
@@ -354,14 +383,41 @@ export const docsNavigation = [
     {
         title: 'USE CASES',
         links: [
-            { title: 'Site-to-Site and Site-to-VPN', href: '/use-cases/setup-site-to-site-access' },
-            { title: 'Serverless and NetBird', href: '/use-cases/netbird-on-faas' },
-            { title: 'Routing peers and Kubernetes', href: '/use-cases/routing-peers-and-kubernetes' },
-            { title: 'Implement Zero Trust with NetBird', href: '/use-cases/implement-zero-trust' },     
-            { title: 'NetBird Client on AWS ECS', href: '/use-cases/examples' },
-            { title: 'NetBird on Mikrotik Router', href: '/use-cases/client-on-mikrotik-router' },
-            { title: 'Distributed AI on Kubernetes', href: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm' },
-            { title: 'Self-hosted vs. Cloud-hosted NetBird', href: '/selfhosted/self-hosted-vs-cloud-netbird' },
+            { title: 'Overview', href: '/use-cases' },
+            {
+                title: 'Remote Access',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/use-cases/site-to-site' },
+                ]
+            },
+            {
+                title: 'Homelab',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/use-cases/homelab' },
+                    { title: 'NetBird on MikroTik Router', href: '/use-cases/homelab/client-on-mikrotik-router' },
+                ]
+            },
+            {
+                title: 'Cloud',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/use-cases/cloud' },
+                    { title: 'NetBird on AWS ECS', href: '/use-cases/cloud/aws-ecs-terraform' },
+                    { title: 'NetBird on Serverless (FaaS)', href: '/use-cases/cloud/netbird-on-faas' },
+                    { title: 'Routing Peers and Kubernetes', href: '/use-cases/cloud/routing-peers-and-kubernetes' },
+                    { title: 'Distributed Multi-Cloud AI', href: '/use-cases/cloud/distributed-multi-cloud-ai' },
+                ]
+            },
+            {
+                title: 'Security',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/use-cases/security' },
+                    { title: 'Implement Zero Trust', href: '/use-cases/security/implement-zero-trust' },
+                ]
+            },
         ],
     },
     {

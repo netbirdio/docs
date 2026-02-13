@@ -1,0 +1,152 @@
+# Accessing restricted domain resources
+
+This guide shows how to access restricted websites or services using NetBird [Networks](/manage/networks) with [domain resources](/manage/networks#resources). Domain resources are useful when the target service is behind a load balancer with frequently changing IP addresses.
+
+## Example scenario
+
+A company hosts an accounting application at `accounting.example.com` on AWS infrastructure in the EU Central region. The application runs on an EC2 instance behind a load balancer.
+
+The company wants to implement zero-trust access with role-based permissions:
+- **Finance team**: HTTP/HTTPS access to `accounting.example.com` (ports 80 and 443)
+- **Support team**: SSH access to the backend at `example.com` (port 22)
+
+### Prerequisites
+
+Before starting, ensure you have:
+- [NetBird clients](/get-started) installed on finance and support team devices
+- [Routing peers](/manage/networks#routing-peers) configured in the AWS VPC using [setup keys](/manage/peers/access-infrastructure/setup-keys-add-servers-to-network)
+
+## Create a network
+
+1. Navigate to `Networks` > `Networks` in the NetBird dashboard
+2. Click `Add Network`
+3. Enter a name (e.g., `AWS EU Network`) and optional description
+4. Click `Add Network`
+
+![Create Network](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/01-restricted-domain.png)
+
+### Add routing peers
+
+Click `Add Routing Peer` to enable access to the network's resources.
+
+![Add Routing Peers Window](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/02-restricted-domain.png)
+
+In the next window:
+- Select `Routing Peers` to add a single peer (e.g., `aws-router`)
+- Or select `Peer Group` to add multiple peers for high availability
+- Click `Continue`
+
+![Local Routing Peers](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/03-restricted-domain.png)
+
+In `Advanced Settings`:
+- Enable `Masquerade` to access private networks without configuring local routers
+- Set `Metric` to prioritize routers (lower values = higher priority)
+- Click `Add Routing Peer`
+
+![Masquerade and Metric](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/04-restricted-domain.png)
+
+### Add the accounting subdomain resource
+
+Click `Add Resource` to add the accounting website.
+
+![Add Network Resource](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/05-restricted-domain.png)
+
+Configure the resource:
+- **Name**: `Accounting restricted subdomain`
+- **Address**: `accounting.example.com`
+- **Assigned Groups**: Select or create a group (e.g., `Accounting Subdomain`)
+- Click `Add Resource`
+
+![Add Accounting Website Resource](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/06-restricted-domain.png)
+
+### Create an access policy for the finance team
+
+Click `Create Policy` to define access for the finance team.
+
+![Add Policy](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/07-restricted-domain.png)
+
+Configure the policy:
+- **Protocol**: `TCP`
+- **Source**: `Finance` (the finance team group)
+- **Destination**: `Accounting Subdomain` (auto-populated)
+- **Ports**: `80` and `443`
+
+![Finance Policy](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/08-restricted-domain.png)
+
+Click `Continue` to optionally add posture checks, then `Continue` again. Enter a policy name (e.g., `Accounting subdomain Policy`) and click `Add Policy`.
+
+![Finance Policy Name](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/09-restricted-domain.png)
+
+### Add the top-level domain resource for support
+
+The support team needs SSH access to the backend at `example.com`. Add a new resource:
+
+1. In the `AWS EU Network` screen, click `Add Resource`
+2. Configure:
+   - **Name**: `Restricted Website TLD`
+   - **Address**: `example.com`
+   - **Assigned Groups**: Select or create a group (e.g., `Webserver`)
+
+![Add TLD Resource](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/10-restricted-domain.png)
+
+### Create an access policy for the support team
+
+Create a policy for SSH access:
+
+1. Click `Add Policy` next to the `Restricted Website TLD` resource
+2. Configure:
+   - **Protocol**: `TCP`
+   - **Source**: `Support`
+   - **Destination**: `Webserver`
+   - **Ports**: `22`
+3. Click `Continue`
+
+![Add Support Team Policy](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/11-restricted-domain.png)
+
+4. Optionally add posture checks, then click `Continue`
+5. Enter a policy name (e.g., `Restricted Website TLD Policy`)
+
+![Name Support Team Policy](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/12-restricted-domain.png)
+
+## Verify the configuration
+
+The completed network shows both resources with their access policies:
+
+![AWS EU Network](/docs-static/img/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources/13-restricted-domain.png)
+
+Use the NetBird CLI to verify access. From a finance team workstation:
+
+```bash
+$ netbird networks list
+Available Networks:
+
+  - ID: Accounting restricted subdomain
+    Domains: accounting.example.com
+    Status: Selected
+    Resolved IPs: -
+
+  - ID: Internal Web Services
+    Domains: *.company.internal
+    Status: Selected
+    Resolved IPs: -
+```
+
+From a support team workstation:
+
+```bash
+$ netbird networks list
+Available Networks:
+
+  - ID: Internal Web Services
+    Domains: *.company.internal
+    Status: Selected
+    Resolved IPs: -
+
+  - ID: Restricted Website TLD
+    Domains: example.com
+    Status: Selected
+    Resolved IPs:
+      [example.com]: 93.184.215.14, 2606:2800:21f:cb07:6820:80da:af6b:8b2c
+```
+
+Each team sees only the resources they have access to, with appropriate port restrictions enforced by the access policies.
