@@ -82,7 +82,7 @@ docker exec -it netbird-server netbird-mgmt token list
 docker exec -it netbird-server netbird-mgmt token revoke <token-id>
 ```
 
-### Step 3: Add the proxy service to docker-compose.yml
+### Step 3: Add the proxy service to docker-compose.yml and update the management container gRPC route.
 
 Add the following service to your `docker-compose.yml`. Replace the placeholder values with your actual domains:
 
@@ -91,7 +91,7 @@ proxy:
   image: netbirdio/reverse-proxy:latest
   container_name: netbird-proxy
   extra_hosts:
-    - "netbird.example.com:172.30.0.10"
+    - "netbird.example.com:host-gateway"
   restart: unless-stopped
   networks: [netbird]
   depends_on:
@@ -123,7 +123,25 @@ volumes:
   netbird_proxy_certs:
 ```
 
-Replace `netbird.example.com` in the `extra_hosts` entry with your actual NetBird management domain. This hairpin NAT fix ensures the proxy can reach Traefik's static IP within the Docker network.
+Update the management container Traefik route
+
+From:
+
+```yml
+      # Management gRPC router
+      - traefik.http.routers.netbird-mgmt-grpc.rule=Host(`netbird.example.com`) && PathPrefix(`/management.ManagementService/`)
+```
+
+To: 
+
+
+```yaml
+      # Management gRPC router
+      - traefik.http.routers.netbird-mgmt-grpc.rule=Host(`netbird.example.com`) && (PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))
+```
+
+
+Replace `netbird.example.com` in the `extra_hosts` entry and `traefik` labels  with your actual NetBird management domain. This hairpin NAT fix ensures the proxy can reach Traefik's static IP within the Docker network.
 
 Then create a `proxy.env` file with the proxy configuration:
 
