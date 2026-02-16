@@ -429,10 +429,6 @@ export const docsNavigation = [
         isOpen: false,
         links: [
           {
-            title: 'Enable Post Quantum Cryptography',
-            href: '/manage/integrations/enable-post-quantum-cryptography',
-          },
-          {
             title: 'MDM for Deployment',
             isOpen: true,
             links: [
@@ -634,6 +630,10 @@ export const docsNavigation = [
           {
             title: 'Block Inbound Connections',
             href: '/client/block-inbound-connections',
+          },
+          {
+            title: 'Enable Post-Quantum Cryptography',
+            href: '/client/enable-post-quantum-cryptography',
           },
         ],
       },
