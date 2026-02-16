@@ -632,8 +632,8 @@ export const docsNavigation = [
             href: '/client/block-inbound-connections',
           },
           {
-            title: 'Enable Post-Quantum Cryptography',
-            href: '/client/enable-post-quantum-cryptography',
+            title: 'Post-Quantum Cryptography',
+            href: '/client/post-quantum-cryptography',
           },
         ],
       },
