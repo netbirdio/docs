@@ -197,6 +197,7 @@ export const docsNavigation = [
                     { title: 'Custom Domains', href: '/manage/reverse-proxy/custom-domains' },
                     { title: 'Authentication', href: '/manage/reverse-proxy/authentication' },
                     { title: 'Access Logs', href: '/manage/reverse-proxy/access-logs' },
+                    { title: 'Multiple Instances', href: '/manage/reverse-proxy/multiple-instances' },
                 ]
             },
             {
