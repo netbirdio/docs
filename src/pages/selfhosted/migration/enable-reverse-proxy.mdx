@@ -37,6 +37,7 @@ If your current deployment uses a reverse proxy other than Traefik, you'll need 
 
 Before starting, ensure you have:
 
+- **Combined container setup** - your deployment uses the `netbird-server` combined container (not the old 5-container setup with separate dashboard, signal, relay, management, and coturn containers). If you are still on the old setup, you must migrate first — see [Migrating from the old multi-container setup](#migrating-from-the-old-multi-container-setup) below.
 - **Traefik** as your reverse proxy (see [Why Traefik is required](#why-traefik-is-required) above)
 - **Latest `netbird-server` image** - pull the latest version to ensure the management CLI supports token creation
 - **A domain for the proxy** - e.g., `proxy.example.com`. Service subdomains will be created under this domain (e.g., `myapp.proxy.example.com`)
@@ -267,9 +268,37 @@ After configuring SSO for your external identity provider, verify it works:
 
 If the redirect fails or you see an error from your IdP, double-check that the callback URL is correctly registered in both `management.json` and your identity provider's settings.
 
+## Migrating from the old multi-container setup
+
+If your deployment still uses the old 5-container setup (separate `dashboard`, `signal`, `relay`, `management`, and `coturn` containers), you need to migrate to the combined container setup before following this guide. NetBird provides a migration script (`migrate.sh`) that handles this transition. See the [Combined Container Setup migration guide](/selfhosted/migration/combined-container) for full details.
+
+<Note>
+The migration script only supports deployments using the **embedded IdP (Dex)**. If your setup uses an external identity provider (Auth0, Keycloak, Okta, etc.), you should perform a fresh install using `getting-started.sh` instead.
+</Note>
+
+**For setups using the embedded Caddy proxy**, the script performs a fully automatic migration — it stops the old containers, generates Traefik configuration, and starts the new combined container setup. After the script completes, your deployment will be running Traefik and you can proceed with the steps in this guide.
+
+**For setups using a custom or external reverse proxy**, the script generates the necessary configuration files but does not modify your proxy configuration. You will need to manually stop the old containers, replace your `docker-compose.yml`, and update your reverse proxy routing to match the new setup.
+
+To run the migration:
+
+```bash
+curl -fsSL https://github.com/netbirdio/netbird/raw/main/infrastructure_files/migrate.sh -o migrate.sh
+chmod +x migrate.sh
+./migrate.sh
+```
+
+The script accepts the following flags:
+- `--install-dir /path/to/netbird` — specify a custom installation directory
+- `--non-interactive` — skip confirmation prompts (useful for automation)
+
+The script creates a full backup of your configuration before making any changes, along with a rollback script you can use to revert if needed.
+
 ## For users not on Traefik
 
-If your self-hosted deployment currently uses Nginx, Caddy, or another reverse proxy, you'll need to switch to Traefik before enabling the Reverse Proxy feature. See the [Traefik setup instructions](/selfhosted/reverse-proxy#traefik) for a step-by-step guide on configuring Traefik for your NetBird deployment.
+If your self-hosted deployment already uses the combined container setup but with a reverse proxy other than Traefik (Nginx, Caddy, or another proxy), you'll need to switch to Traefik before enabling the Reverse Proxy feature. See the [Traefik setup instructions](/selfhosted/reverse-proxy#traefik) for a step-by-step guide on configuring Traefik for your NetBird deployment.
+
+If you are still on the old multi-container setup with the embedded Caddy proxy, see [Migrating from the old multi-container setup](#migrating-from-the-old-multi-container-setup) above — the migration script handles the switch to Traefik automatically for embedded Caddy setups.
 
 ## Environment variable reference
 

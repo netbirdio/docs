@@ -1,0 +1,260 @@
+import {Note, Warning, Success} from "@/components/mdx"
+
+export const description = 'Migrate your self-hosted NetBird deployment from the old 5-container setup to the new combined container architecture using the migrate.sh script.'
+
+# Migration Guide: Combined Container Setup
+
+This guide walks you through migrating a pre-v0.65.0 NetBird self-hosted deployment from the old 5-container architecture (dashboard, signal, relay, management, coturn) to the new 2-container combined setup (Traefik + `netbird-server`). The migration is handled by the `migrate.sh` script, which automates detection, backup, configuration generation, and (for Caddy-based setups) the full cutover.
+
+<Note>
+**Who is this guide for?** This migration guide is for users who:
+- Have an existing self-hosted deployment running the **old 5-container setup** (separate dashboard, signal, relay, management, and coturn containers)
+- Are using the **embedded IdP (Dex)** for authentication
+- Want to move to the combined `netbird-server` container for a simpler, more maintainable deployment
+</Note>
+
+<Warning>
+The migration script **exits with an error** if it detects an external identity provider (Auth0, Keycloak, Okta, Zitadel, Google Workspace, Microsoft Entra ID, etc.). If you are using an external IdP, do not run this script. Instead, follow the [self-hosting quickstart](/selfhosted/selfhosted-quickstart) for a fresh installation.
+</Warning>
+
+## Overview of changes
+
+### What's new
+
+- **Combined `netbird-server` container** - management, signal, relay, and the embedded STUN server all run in a single container, replacing four separate services
+- **Traefik reverse proxy** (for Caddy-based setups) - replaces the embedded Caddy with Traefik v3.6, handling TLS termination via Let's Encrypt and routing for gRPC, WebSocket, and HTTP traffic
+- **Unified `config.yaml`** - a single configuration file replaces the combination of `management.json`, `setup.env`, and multiple environment files
+- **Simplified Docker Compose** - the stack goes from 5+ services down to 2 (Traefik + `netbird-server`) or 3 (with dashboard)
+
+### What's removed
+
+- **Separate signal, relay, management, and coturn containers** - consolidated into `netbird-server`
+- **Embedded Caddy** - replaced by Traefik (for setups that previously used Caddy)
+- **turnserver.conf** - STUN is now built into the combined server
+- **management.json** - replaced by `config.yaml` (the management container reads the new format)
+
+## Prerequisites
+
+Before running the migration, ensure you have:
+
+- **Docker** with **Docker Compose** (v2 plugin or standalone `docker-compose`)
+- **jq**, **openssl**, and **curl** installed on the host
+- **Embedded IdP (Dex)** - the script only supports embedded IdP setups. External IdP deployments are not supported.
+- **Root or sudo access** to the machine running your NetBird deployment
+- A brief **maintenance window** - peers will need to reconnect after migration
+
+## How the script works
+
+The script runs through four phases automatically:
+
+**Phase 0 - Detection:** The script locates your installation directory (checking `$PWD`, `/opt/netbird`, and `/opt/wiretrustee`), validates the old setup by looking for `management.json` and `docker-compose.yml`, and detects your reverse proxy type (embedded Caddy, Traefik, or external), IdP type, Docker volumes, domain, store engine (SQLite/PostgreSQL/MySQL), encryption key, and relay secret. If `config.yaml` already exists, the script exits - it assumes you have already migrated.
+
+**Phase 1 - Backup:** A timestamped backup directory (e.g., `backup-20260217-143000`) is created containing copies of `docker-compose.yml`, `management.json`, `setup.env`, `base.setup.env`, `turnserver.conf`, `dashboard.env`, and the `artifacts/` directory if it exists. The script also records Docker volume and container state, and generates a `rollback.sh` script for reverting.
+
+**Phase 2 - Configuration generation:** The script generates three files:
+- `config.yaml` - the combined server configuration (server settings, auth, store config, reverse proxy settings)
+- `dashboard.env` - dashboard environment variables for the embedded IdP
+- `docker-compose.yml` - the new Docker Compose file (format depends on your proxy type, see below)
+
+**Phase 3 - Apply:** For Caddy-based setups, the script stops the old containers, starts the new ones, waits for health checks (OIDC endpoint and healthcheck endpoint), and runs verification. For external proxy setups, the script only generates configuration files - you handle the cutover manually.
+
+### Migration modes
+
+The script operates in one of two modes depending on your detected reverse proxy:
+
+**Automatic (embedded Caddy setups).** If your old deployment uses the embedded Caddy proxy (the default from `configure.sh` or `getting-started.sh`), the script performs the full migration end-to-end. It stops old containers, generates a Traefik-based `docker-compose.yml`, and starts the new stack. The generated compose file creates a Docker network (`172.30.0.0/24`) with Traefik at `172.30.0.10`, and reuses your existing management volume if detected.
+
+**Manual (external proxy setups).** If your deployment uses a custom or external reverse proxy (Nginx, HAProxy, etc.), the script generates the configuration files but does **not** stop or start any containers. You must handle the cutover yourself, including updating your proxy routing rules.
+
+## Migration steps
+
+### Step 1: Download the script
+
+```bash
+curl -fsSL https://github.com/netbirdio/netbird/raw/main/infrastructure_files/migrate.sh -o migrate.sh
+chmod +x migrate.sh
+```
+
+### Step 2: Run the migration
+
+If your NetBird installation is in the current directory:
+
+```bash
+./migrate.sh
+```
+
+If your installation is in a different directory:
+
+```bash
+./migrate.sh --install-dir /opt/netbird
+```
+
+The script will display a summary of what it detected and ask for confirmation before making changes.
+
+For automation or CI pipelines, use the `--non-interactive` flag to skip confirmation prompts:
+
+```bash
+./migrate.sh --install-dir /opt/netbird --non-interactive
+```
+
+### Step 3: Verify the migration (Caddy setups)
+
+For Caddy-based setups, the script automatically verifies the migration by checking:
+1. That the expected containers are running
+2. That the OIDC endpoint (`https://your-domain/oauth2/.well-known/openid-configuration`) returns HTTP 200
+3. That the management API (`https://your-domain/api/accounts`) is responding
+
+After the script completes, confirm everything is working:
+
+```bash
+# Check running containers
+cd /opt/netbird  # or your install directory
+docker compose ps
+
+# Check logs
+docker compose logs -f netbird-server
+
+# Open the dashboard
+# https://your-domain
+```
+
+<Success>
+If all three verification checks pass and you can access the dashboard, the migration is complete. Your peers, networks, routes, and access policies are preserved in the database. Clients should reconnect automatically - if they do not, run `netbird down && netbird up` on the client.
+</Success>
+
+### Step 3: Complete the cutover (external proxy setups)
+
+For external proxy setups, the script generates the configuration files but leaves the actual cutover to you. After the script finishes, follow these steps:
+
+**1. Stop the old containers:**
+
+```bash
+cd /opt/netbird  # or your install directory
+docker compose down
+```
+
+**2. Start the new containers:**
+
+```bash
+docker compose up -d
+```
+
+**3. Update your reverse proxy routing.** The new setup exposes the dashboard at `127.0.0.1:8080` and the combined server at `127.0.0.1:8081`. Configure your reverse proxy to route traffic as follows:
+
+| Path pattern | Backend | Protocol |
+|---|---|---|
+| `/signalexchange.SignalExchange/*` | `127.0.0.1:8081` | gRPC (h2c) |
+| `/management.ManagementService/*` | `127.0.0.1:8081` | gRPC (h2c) |
+| `/relay*`, `/ws-proxy/*` | `127.0.0.1:8081` | WebSocket |
+| `/api/*`, `/oauth2/*` | `127.0.0.1:8081` | HTTP |
+| `/*` (catch-all) | `127.0.0.1:8080` | HTTP (dashboard) |
+
+<Note>
+The gRPC routes require HTTP/2 cleartext (h2c) support in your reverse proxy. Ensure your proxy is configured to forward these paths using h2c, not standard HTTP/1.1.
+</Note>
+
+**4. Verify the services are healthy:**
+
+```bash
+# Check containers
+docker compose ps
+
+# Check OIDC endpoint
+curl -sk https://your-domain/oauth2/.well-known/openid-configuration
+
+# Check management API (expect HTTP 401 - means it's running)
+curl -sk -o /dev/null -w '%{http_code}' https://your-domain/api/accounts
+```
+
+## CLI reference
+
+| Flag | Description |
+|---|---|
+| `--install-dir DIR` | Path to the existing NetBird installation directory. If not specified, the script checks `$PWD`, `/opt/netbird`, and `/opt/wiretrustee`, or prompts interactively. |
+| `--non-interactive` | Skip all confirmation prompts. Useful for automation and CI pipelines. |
+| `-h`, `--help` | Display usage information and exit. |
+
+## Troubleshooting
+
+### Script exits with "External IdP detected"
+
+The migration script only supports deployments using the embedded IdP (Dex). If your setup uses an external identity provider, you need to perform a fresh installation instead. See the [self-hosting quickstart](/selfhosted/selfhosted-quickstart).
+
+### Script exits with "config.yaml already exists"
+
+This means the installation directory already contains a `config.yaml` file, which indicates a previous migration or a newer installation. If you want to re-run the migration, remove or rename the existing `config.yaml` first:
+
+```bash
+mv config.yaml config.yaml.bak
+```
+
+### Script cannot detect the installation directory
+
+If the script cannot find `management.json` in any of the default locations (`$PWD`, `/opt/netbird`, `/opt/wiretrustee`), use the `--install-dir` flag to specify the path explicitly:
+
+```bash
+./migrate.sh --install-dir /path/to/your/netbird
+```
+
+### Health check times out after migration
+
+If the health check times out but containers are running, the services may still be starting. Check the logs for errors:
+
+```bash
+docker compose logs netbird-server
+docker compose logs traefik
+```
+
+Common causes include:
+- DNS for your domain not pointing to the server
+- Ports 80 and 443 not open or blocked by a firewall
+- Let's Encrypt rate limits (if you have requested many certificates recently)
+
+### Clients cannot connect after migration
+
+Peers should reconnect automatically after the migration. If they do not:
+
+```bash
+# On each client
+netbird down && netbird up
+```
+
+If connections still fail, verify that port `3478/udp` (STUN) is open and that your domain resolves correctly.
+
+## Rollback procedure
+
+The script creates a complete backup before making any changes. To revert to your previous setup:
+
+```bash
+# Run the generated rollback script
+bash /opt/netbird/backup-YYYYMMDD-HHMMSS/rollback.sh
+```
+
+The rollback script stops the new containers, restores all backed-up configuration files (`docker-compose.yml`, `management.json`, `setup.env`, `dashboard.env`, etc.), removes the generated `config.yaml`, and restarts the old containers.
+
+You can also rollback manually:
+
+```bash
+# Stop new containers
+docker compose down
+
+# Restore backed-up files
+cp backup-YYYYMMDD-HHMMSS/docker-compose.yml .
+cp backup-YYYYMMDD-HHMMSS/management.json .
+cp backup-YYYYMMDD-HHMMSS/setup.env . 2>/dev/null
+cp backup-YYYYMMDD-HHMMSS/dashboard.env . 2>/dev/null
+
+# Remove new config
+rm -f config.yaml
+
+# Start old containers
+docker compose up -d
+```
+
+## Additional resources
+
+- [Self-Hosting Quickstart](/selfhosted/selfhosted-quickstart) - fresh installation guide for new deployments
+- [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy) - after migrating to the combined container setup with Traefik, follow this guide to add the NetBird Reverse Proxy service
+- [Authentication and IdPs](/selfhosted/identity-providers) - configuring identity providers for self-hosted deployments
+- [Configuration Files](/selfhosted/configuration-files) - reference for all configuration files in a self-hosted deployment
+- [migrate.sh source](https://github.com/netbirdio/netbird/blob/main/infrastructure_files/migrate.sh) - the migration script on GitHub
