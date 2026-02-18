@@ -92,7 +92,7 @@ function useTableOfContents(tableOfContents) {
       .flatMap((node) => [node.id, ...node.children.map((child) => child.id)])
       .map((id) => {
         let el = document.getElementById(id)
-        if (!el) return
+        if (!el) return null
 
         let style = window.getComputedStyle(el)
         let scrollMt = parseFloat(style.scrollMarginTop)
@@ -100,20 +100,23 @@ function useTableOfContents(tableOfContents) {
         let top = window.scrollY + el.getBoundingClientRect().top - scrollMt
         return { id, top }
       })
+      .filter(Boolean)
   }, [])
 
   useEffect(() => {
     if (tableOfContents.length === 0) return
-    let headings = getHeadings(tableOfContents)
     function onScroll() {
+      let headings = getHeadings(tableOfContents)
+      if (headings.length === 0) return
+
       let scrollTop = window.scrollY
       setShowJumpToTop(scrollTop > 400)
-      
-      let top = scrollTop + 10;
-      let current = headings[0]?.id
+
+      let top = scrollTop + 10
+      let current = headings[0].id
       for (let heading of headings) {
-        if (top >= heading?.top) {
-          current = heading?.id
+        if (top >= heading.top) {
+          current = heading.id
         } else {
           break
         }
