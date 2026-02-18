@@ -321,11 +321,15 @@ traefik.http.routers.netbird-grpc.rule=Host(`netbird.example.com`) && (PathPrefi
 
 Without the `/management.ProxyService/` route, the proxy will fail to register with the management server.
 
-### 2. Fix the Traefik container IP
+### 2. Fix DNS resolution (same-host only)
 
-When the proxy connects to your management domain through Traefik, the DNS resolution inside the Docker network must point to the Traefik container. This is done via an `extra_hosts` entry in the proxy service, but the IP address must match Traefik's actual IP.
+<Note>
+If your proxy and management server run on **separate hosts** - which is the typical reason for routing through Traefik - you can skip this step. The proxy will resolve your management domain to the remote host's public IP via normal DNS.
+</Note>
 
-To ensure a stable IP, assign a static IP to the Traefik container within your Docker network:
+If your proxy and Traefik run on the **same host** but you still need to route through Traefik (rather than using the [direct Docker network connection](#proxy-environment-variables) above), the proxy must resolve the management domain to Traefik's container IP. Without this, the domain resolves to the host's public IP and the connection loops back through the external interface - a hairpin NAT problem.
+
+To fix DNS resolution on the same host, assign a static IP to the Traefik container and add an `extra_hosts` entry to the proxy service:
 
 ```yaml
 # In your docker-compose.yml
@@ -344,11 +348,7 @@ services:
     networks:
       netbird:
         ipv4_address: 172.30.0.10
-```
 
-Then add the `extra_hosts` entry to the proxy service referencing that IP:
-
-```yaml
   proxy:
     # ...existing proxy config...
     extra_hosts:
@@ -389,7 +389,11 @@ Finally, update `proxy.env` to connect through Traefik and remove `NB_PROXY_ALLO
 ```bash
 NB_PROXY_MANAGEMENT_ADDRESS=https://netbird.example.com:443
 # Do NOT set NB_PROXY_ALLOW_INSECURE when connecting over TLS through Traefik
-```e
+```
+
+<Warning>
+If you use the `extra_hosts` approach above, you **must** assign a static IP to Traefik. Without it, Docker may assign a different IP on container restart and the `extra_hosts` entry will silently point to the wrong address.
+</Warning>
 
 ## For users not on Traefik
 
