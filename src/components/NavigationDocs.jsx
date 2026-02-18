@@ -342,7 +342,7 @@ export const docsNavigation = [
                     { title: 'Backup', href: '/selfhosted/maintenance/backup' },
                     { title: 'Upgrade', href: '/selfhosted/maintenance/upgrade' },
                     { title: 'Remove', href: '/selfhosted/maintenance/remove' },
-                    { title: 'Reverse Proxy', href: '/selfhosted/reverse-proxy' },
+                    { title: 'External Reverse Proxy', href: '/selfhosted/external-reverse-proxy' },
                     { title: 'Management SQLite Store', href: '/selfhosted/sqlite-store' },
                     { title: 'Management Postgres Store', href: '/selfhosted/postgres-store' },
                     { title: 'Activity Events Postgres Store', href: '/selfhosted/activity-postgres-store' },

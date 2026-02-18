@@ -1,12 +1,17 @@
-# Reverse Proxy Setup for Self-Hosted NetBird
+# External Reverse Proxy Setup for Self-Hosted NetBird
 
 NetBird includes a built-in Traefik reverse proxy that handles TLS certificates automatically via Let's Encrypt. However, if you already have an existing reverse proxy (Nginx, Caddy, etc.), you can configure NetBird to work with it instead.
 
 <Note>
-This is not to be confused with our new NetBird reverse proxy service that launched with v0.65.0. To learn more about using NetBird as a reverse proxy, see the [NetBird Proxy documentation](/manage/reverse-proxy).
+This is not to be confused with the NetBird reverse proxy service that launched with v0.65.0. The NetBird reverse proxy feature is only compatible with Traefik because it requires TLS passthrough, which Traefik supports natively. To learn more about using NetBird as a reverse proxy, see the [NetBird Proxy documentation](/manage/reverse-proxy).
 </Note>
 
 Not all reverse proxies are supported as NetBird uses *gRPC* for various components. Your reverse proxy must support HTTP/2 and gRPC proxying.
+
+Starting with **v0.65.0**, new NetBird installations use a **combined container** (`netbirdio/netbird-server`) that merges management, signal, and relay into a single service. This simplifies reverse proxy configuration because all traffic routes to one backend. The templates on this page cover both setups:
+
+- **[Combined container (v0.65.0+)](#combined-container-setup-v0650)** -- the default for new installations. All backend services run in a single container on one port.
+- **[Multi-container (legacy)](#multi-container-setup-legacy)** -- for installations that predate v0.65.0, where management, signal, and relay run as separate containers.
 
 ## Quick Setup
 
@@ -34,7 +39,450 @@ This option is only available during initial setup with `getting-started.sh`. Fo
 
 For existing NetBird installations, use the configuration templates in the sections below to manually configure your reverse proxy.
 
-## Required Routing Endpoints
+---
+
+## Combined Container Setup (v0.65.0+)
+
+Starting with v0.65.0, new NetBird deployments use the `netbirdio/netbird-server` image, which combines management, signal, and relay into a single container. All backend traffic routes to one service on a single port, which simplifies reverse proxy configuration significantly.
+
+<Warning>
+UDP port **3478** (STUN) must be publicly accessible and **cannot** be proxied through your reverse proxy. HTTP reverse proxies only handle TCP traffic; STUN requires direct UDP access. Ensure your firewall allows inbound UDP on port 3478 and that this port is published directly from the container (e.g. `3478:3478/udp`), bypassing the reverse proxy entirely.
+</Warning>
+
+### Required Routing Endpoints (Combined)
+
+All reverse proxy configurations for the combined container must route the following endpoints to the single `netbird-server` container:
+
+| Path | Protocol | Target | Notes |
+|------|----------|--------|-------|
+| `/relay*` | WebSocket | netbird-server:80 | WebSocket upgrade required |
+| `/ws-proxy/signal*` | WebSocket | netbird-server:80 | WebSocket upgrade required |
+| `/ws-proxy/management*` | WebSocket | netbird-server:80 | WebSocket upgrade required |
+| `/signalexchange.SignalExchange/*` | gRPC | netbird-server:80 | HTTP/2 (h2c) required |
+| `/management.ManagementService/*` | gRPC | netbird-server:80 | HTTP/2 (h2c) required |
+| `/api/*` | HTTP | netbird-server:80 | REST API |
+| `/oauth2/*` | HTTP | netbird-server:80 | Embedded IdP |
+| `/*` | HTTP | dashboard:80 | Catch-all for dashboard |
+
+<Note>
+The combined container includes an embedded STUN server that still needs to be directly accessible on UDP port 3478.
+</Note>
+
+### Docker Compose for External Proxy (Combined)
+
+When using an external reverse proxy with the combined container, expose the following ports:
+
+```yaml
+services:
+  dashboard:
+    image: netbirdio/dashboard:latest
+    ports:
+      - '127.0.0.1:8080:80'
+    # ... other config
+
+  netbird-server:
+    image: netbirdio/netbird-server:latest
+    ports:
+      - '127.0.0.1:8081:80'
+      - '3478:3478/udp'
+    volumes:
+      - netbird_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml
+    command: ["--config", "/etc/netbird/config.yaml"]
+    # ... other config
+```
+
+<Note>
+Binding to `127.0.0.1` is recommended when your reverse proxy runs on the same host. This prevents direct access to the containers and ensures all traffic goes through the proxy.
+</Note>
+
+#### Container Port Reference (Combined)
+
+| Service | Host Port | Container Port | Protocol |
+|---------|-----------|----------------|----------|
+| Dashboard | 8080 | 80 | HTTP |
+| NetBird Server | 8081 | 80 | HTTP/gRPC/WebSocket |
+| STUN (UDP) | 3478 | 3478 | UDP |
+
+---
+
+### Configuration Templates (Combined)
+
+#### Traefik (Combined)
+
+For Traefik with the combined container, you only need two routers: one for gRPC (which requires an `h2c` backend) and one for everything else (WebSocket, REST API, OAuth2). The dashboard uses a separate low-priority catch-all router.
+
+Replace `netbird.example.com` with your domain, `websecure` with your HTTPS entrypoint, and `letsencrypt` with your certificate resolver name.
+
+```yaml
+services:
+  dashboard:
+    image: netbirdio/dashboard:latest
+    networks: [traefik-network]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.netbird-dashboard.rule=Host(`netbird.example.com`)
+      - traefik.http.routers.netbird-dashboard.entrypoints=websecure
+      - traefik.http.routers.netbird-dashboard.tls=true
+      - traefik.http.routers.netbird-dashboard.tls.certresolver=letsencrypt
+      - traefik.http.routers.netbird-dashboard.priority=1
+      - traefik.http.services.netbird-dashboard.loadbalancer.server.port=80
+
+  netbird-server:
+    image: netbirdio/netbird-server:latest
+    networks: [traefik-network]
+    ports:
+      - '3478:3478/udp'
+    volumes:
+      - netbird_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml
+    command: ["--config", "/etc/netbird/config.yaml"]
+    labels:
+      - traefik.enable=true
+      # gRPC router (needs h2c backend for HTTP/2 cleartext)
+      - traefik.http.routers.netbird-grpc.rule=Host(`netbird.example.com`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`))
+      - traefik.http.routers.netbird-grpc.entrypoints=websecure
+      - traefik.http.routers.netbird-grpc.tls=true
+      - traefik.http.routers.netbird-grpc.tls.certresolver=letsencrypt
+      - traefik.http.routers.netbird-grpc.service=netbird-server-h2c
+      - traefik.http.routers.netbird-grpc.priority=100
+      # Backend router (relay, WebSocket, API, OAuth2)
+      - traefik.http.routers.netbird-backend.rule=Host(`netbird.example.com`) && (PathPrefix(`/relay`) || PathPrefix(`/ws-proxy/`) || PathPrefix(`/api`) || PathPrefix(`/oauth2`))
+      - traefik.http.routers.netbird-backend.entrypoints=websecure
+      - traefik.http.routers.netbird-backend.tls=true
+      - traefik.http.routers.netbird-backend.tls.certresolver=letsencrypt
+      - traefik.http.routers.netbird-backend.service=netbird-server
+      - traefik.http.routers.netbird-backend.priority=100
+      # Services
+      - traefik.http.services.netbird-server.loadbalancer.server.port=80
+      - traefik.http.services.netbird-server-h2c.loadbalancer.server.port=80
+      - traefik.http.services.netbird-server-h2c.loadbalancer.server.scheme=h2c
+
+networks:
+  traefik-network:
+    external: true
+
+volumes:
+  netbird_data:
+```
+
+<Note>
+The combined container requires two Traefik service definitions pointing to the same port: `netbird-server` for standard HTTP/WebSocket traffic and `netbird-server-h2c` with `scheme=h2c` for gRPC traffic.
+</Note>
+
+---
+
+#### Nginx (Combined)
+
+##### Nginx running in Docker (Combined)
+
+If Nginx runs in Docker on the same network as the NetBird containers, use the container names directly:
+
+```nginx
+# NetBird Nginx Configuration (Combined Container - Docker network)
+
+upstream netbird_dashboard {
+    server netbird-dashboard:80;
+    keepalive 10;
+}
+upstream netbird_server {
+    server netbird-server:80;
+}
+
+server {
+    listen 80;
+    server_name netbird.example.com;
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name netbird.example.com;
+
+    ssl_certificate /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
+
+    # Required for long-lived gRPC connections
+    client_header_timeout 1d;
+    client_body_timeout 1d;
+
+    # Common proxy headers
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Scheme $scheme;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # WebSocket connections (relay, signal, management)
+    location ~ ^/(relay|ws-proxy/) {
+        proxy_pass http://netbird_server;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 1d;
+    }
+
+    # Native gRPC (signal + management)
+    location ~ ^/(signalexchange\.SignalExchange|management\.ManagementService)/ {
+        grpc_pass grpc://netbird_server;
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+        grpc_socket_keepalive on;
+    }
+
+    # HTTP routes (API + OAuth2)
+    location ~ ^/(api|oauth2)/ {
+        proxy_pass http://netbird_server;
+        proxy_set_header Host $host;
+    }
+
+    # Dashboard (catch-all)
+    location / {
+        proxy_pass http://netbird_dashboard;
+    }
+}
+```
+
+##### Nginx running on host (Combined)
+
+If Nginx is installed directly on the host, use localhost addresses:
+
+```nginx
+# NetBird Nginx Configuration (Combined Container - Host)
+
+upstream netbird_dashboard {
+    server 127.0.0.1:8080;
+    keepalive 10;
+}
+upstream netbird_server {
+    server 127.0.0.1:8081;
+}
+
+server {
+    listen 80;
+    server_name netbird.example.com;
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name netbird.example.com;
+
+    ssl_certificate /path/to/fullchain.pem;
+    ssl_certificate_key /path/to/privkey.pem;
+
+    # Required for long-lived gRPC connections
+    client_header_timeout 1d;
+    client_body_timeout 1d;
+
+    # Common proxy headers
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Scheme $scheme;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # WebSocket connections (relay, signal, management)
+    location ~ ^/(relay|ws-proxy/) {
+        proxy_pass http://netbird_server;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 1d;
+    }
+
+    # Native gRPC (signal + management)
+    location ~ ^/(signalexchange\.SignalExchange|management\.ManagementService)/ {
+        grpc_pass grpc://netbird_server;
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+        grpc_socket_keepalive on;
+    }
+
+    # HTTP routes (API + OAuth2)
+    location ~ ^/(api|oauth2)/ {
+        proxy_pass http://netbird_server;
+        proxy_set_header Host $host;
+    }
+
+    # Dashboard (catch-all)
+    location / {
+        proxy_pass http://netbird_dashboard;
+    }
+}
+```
+
+---
+
+#### Caddy (Combined)
+
+##### Caddy running in Docker (Combined)
+
+If Caddy runs in Docker on the same network as NetBird, use container names:
+
+```
+netbird.example.com {
+    # Native gRPC (needs HTTP/2 cleartext to backend)
+    @grpc header Content-Type application/grpc*
+    reverse_proxy @grpc h2c://netbird-server:80
+
+    # Combined server paths (relay, signal, management, OAuth2)
+    @backend path /relay* /ws-proxy/* /api/* /oauth2/*
+    reverse_proxy @backend netbird-server:80
+
+    # Dashboard (everything else)
+    reverse_proxy /* netbird-dashboard:80
+}
+```
+
+##### Caddy running on host (Combined)
+
+If Caddy is installed directly on the host, use localhost addresses:
+
+```
+netbird.example.com {
+    # Native gRPC (needs HTTP/2 cleartext to backend)
+    @grpc header Content-Type application/grpc*
+    reverse_proxy @grpc h2c://127.0.0.1:8081
+
+    # Combined server paths (relay, signal, management, OAuth2)
+    @backend path /relay* /ws-proxy/* /api/* /oauth2/*
+    reverse_proxy @backend 127.0.0.1:8081
+
+    # Dashboard (everything else)
+    reverse_proxy /* 127.0.0.1:8080
+}
+```
+
+---
+
+#### Nginx Proxy Manager (Combined)
+
+With the combined container, NPM configuration is simpler because all backend traffic routes to the same service.
+
+<Note>
+NPM requires backend services to be running before you can create proxy hosts. Start the NetBird containers first, then configure NPM.
+</Note>
+
+##### NPM running in Docker (Combined)
+
+**1. Create a Proxy Host in NPM:**
+- Domain: `netbird.example.com`
+- Forward Hostname/IP: `netbird-dashboard`
+- Forward Port: `80`
+- Block Common Exploits: enabled
+
+**2. SSL tab:**
+- Request or select existing certificate
+- **Enable "HTTP/2 Support"** (required for gRPC)
+
+**3. Advanced tab - paste this configuration:**
+
+```nginx
+# Required for long-lived connections (gRPC and WebSocket)
+client_header_timeout 1d;
+client_body_timeout 1d;
+
+# WebSocket connections (relay, signal, management)
+location ~ ^/(relay|ws-proxy/) {
+    proxy_pass http://netbird-server:80;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# Native gRPC (signal + management)
+location ~ ^/(signalexchange\.SignalExchange|management\.ManagementService)/ {
+    grpc_pass grpc://netbird-server:80;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+
+# HTTP routes (API + OAuth2)
+location ~ ^/(api|oauth2)/ {
+    proxy_pass http://netbird-server:80;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+##### NPM running on host (Combined)
+
+**1. Create a Proxy Host in NPM:**
+- Domain: `netbird.example.com`
+- Forward Hostname/IP: `127.0.0.1`
+- Forward Port: `8080`
+- Block Common Exploits: enabled
+
+**2. SSL tab:**
+- Request or select existing certificate
+- **Enable "HTTP/2 Support"** (required for gRPC)
+
+**3. Advanced tab - paste this configuration:**
+
+```nginx
+# Required for long-lived connections (gRPC and WebSocket)
+client_header_timeout 1d;
+client_body_timeout 1d;
+
+# WebSocket connections (relay, signal, management)
+location ~ ^/(relay|ws-proxy/) {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# Native gRPC (signal + management)
+location ~ ^/(signalexchange\.SignalExchange|management\.ManagementService)/ {
+    grpc_pass grpc://127.0.0.1:8081;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+
+# HTTP routes (API + OAuth2)
+location ~ ^/(api|oauth2)/ {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+---
+
+## Multi-Container Setup (Legacy)
+
+The following sections apply to NetBird installations from before v0.65.0 that use separate containers for management, signal, and relay. If you are running a new installation, use the [combined container templates above](#combined-container-setup-v0650).
+
+<Warning>
+UDP port **3478** (STUN/TURN via coturn) must be publicly accessible and **cannot** be proxied through your reverse proxy. HTTP reverse proxies only handle TCP traffic; STUN/TURN requires direct UDP access. Ensure your firewall allows inbound UDP on port 3478 and that the coturn container publishes this port directly, bypassing the reverse proxy entirely.
+</Warning>
+
+### Required Routing Endpoints (Multi-Container)
 
 All reverse proxy configurations must route the following endpoints:
 
@@ -53,7 +501,7 @@ All reverse proxy configurations must route the following endpoints:
 The `coturn` service still needs to be directly accessible on UDP port 3478 as it handles STUN/TURN traffic.
 </Note>
 
-## Docker Compose for External Proxy
+### Docker Compose for External Proxy (Multi-Container)
 
 When using an external reverse proxy, expose the NetBird container ports to the host:
 
@@ -89,7 +537,7 @@ services:
 Binding to `127.0.0.1` is recommended when your reverse proxy runs on the same host. This prevents direct access to the containers and ensures all traffic goes through the proxy.
 </Note>
 
-### Container Port Reference
+#### Container Port Reference (Multi-Container)
 
 | Service | Host Port | Container Port | Protocol |
 |---------|-----------|----------------|----------|
@@ -101,9 +549,9 @@ Binding to `127.0.0.1` is recommended when your reverse proxy runs on the same h
 
 ---
 
-## Configuration Templates
+### Configuration Templates (Multi-Container)
 
-### Traefik
+#### Traefik (Multi-Container)
 
 For Traefik, NetBird containers are configured with Docker labels for automatic service discovery. The `getting-started.sh` script will prompt for your Traefik configuration:
 
@@ -111,7 +559,7 @@ For Traefik, NetBird containers are configured with Docker labels for automatic 
 - **HTTPS entrypoint**: Your Traefik entrypoint for HTTPS traffic (commonly `websecure`)
 - **Certificate resolver**: Your Traefik certresolver for automatic TLS (e.g., `letsencrypt`)
 
-#### Complete Docker Compose with Traefik Labels
+##### Complete Docker Compose with Traefik Labels
 
 Add the following labels to your NetBird services in `docker-compose.yml`. Replace:
 - `netbird.example.com` with your domain
@@ -204,7 +652,7 @@ networks:
     external: true
 ```
 
-#### Traefik Configuration Requirements
+##### Traefik Configuration Requirements
 
 Your Traefik instance must have the following configured:
 
@@ -246,7 +694,7 @@ entryPoints:
           scheme: https
 ```
 
-#### Example Traefik Docker Compose
+##### Example Traefik Docker Compose
 
 If you don't have Traefik set up yet, here's a complete example:
 
@@ -286,9 +734,9 @@ When using `getting-started.sh` with Traefik, the script will ask for your netwo
 
 ---
 
-### Nginx
+#### Nginx (Multi-Container)
 
-#### Nginx running in Docker
+##### Nginx running in Docker (Multi-Container)
 
 If Nginx is running in Docker, the easiest approach is to have NetBird join the same Docker network. The `getting-started.sh` script will ask for your Nginx network name and configure everything automatically.
 
@@ -405,7 +853,7 @@ server {
 }
 ```
 
-#### Nginx running on host (not in Docker)
+##### Nginx running on host (Multi-Container)
 
 If Nginx is installed directly on the host, use localhost addresses:
 
@@ -538,7 +986,7 @@ sudo cp /path/to/netbird.conf /etc/nginx/conf.d/netbird.conf
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-#### TLS Certificate Setup for Nginx
+##### TLS Certificate Setup for Nginx
 
 <Note>
 **Important difference:** Unlike Caddy which obtains and renews TLS certificates automatically, Nginx requires manual certificate setup and configuration.
@@ -643,9 +1091,9 @@ These settings ensure:
 
 ---
 
-### Caddy (External)
+#### Caddy (Multi-Container)
 
-#### Caddy running in Docker
+##### Caddy running in Docker (Multi-Container)
 
 If Caddy is running in Docker, the easiest approach is to have NetBird join the same Docker network. The `getting-started.sh` script will ask for your Caddy network name and configure everything automatically.
 
@@ -677,7 +1125,7 @@ netbird.example.com {
 }
 ```
 
-#### Caddy running on host (not in Docker)
+##### Caddy running on host (Multi-Container)
 
 If Caddy is installed directly on the host, use localhost addresses:
 
@@ -716,7 +1164,7 @@ sudo systemctl reload caddy
 
 ---
 
-### Nginx Proxy Manager
+#### Nginx Proxy Manager (Multi-Container)
 
 Nginx Proxy Manager requires all NetBird routing to be configured via the "Advanced" tab. The Custom Locations feature doesn't properly handle path prefixes.
 
@@ -724,7 +1172,7 @@ Nginx Proxy Manager requires all NetBird routing to be configured via the "Advan
 NPM requires backend services to be running before you can create proxy hosts. The `getting-started.sh` script will start NetBird containers first, then display the configuration instructions.
 </Note>
 
-#### NPM running in Docker (recommended)
+##### NPM running in Docker (Multi-Container)
 
 If NPM is running in Docker, the easiest approach is to have NetBird join the same Docker network. The script will ask for your NPM network name and configure everything automatically.
 
@@ -819,7 +1267,7 @@ location /management.ManagementService/ {
 }
 ```
 
-#### NPM running on host (not in Docker)
+##### NPM running on host (Multi-Container)
 
 If NPM is installed directly on the host, use localhost addresses:
 
