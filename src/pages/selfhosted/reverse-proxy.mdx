@@ -46,6 +46,7 @@ All reverse proxy configurations must route the following endpoints:
 | `/api/*` | HTTP | management:80 | REST API |
 | `/ws-proxy/management*` | WebSocket | management:80 | WebSocket upgrade required |
 | `/management.ManagementService/*` | gRPC | management:80 | HTTP/2 (h2c) required |
+| `/management.ProxyService/*` | gRPC | management:80 | HTTP/2 (h2c) required. Only needed if using the [Reverse Proxy feature](/manage/reverse-proxy). |
 | `/oauth2/*` | HTTP | management:80 | Embedded IdP |
 | `/*` | HTTP | dashboard:80 | Catch-all for dashboard |
 
@@ -184,7 +185,7 @@ services:
       - traefik.http.routers.netbird-mgmt-ws.service=netbird-mgmt-ws
       - traefik.http.services.netbird-mgmt-ws.loadbalancer.server.port=80
       # Management gRPC router
-      - traefik.http.routers.netbird-mgmt-grpc.rule=Host(`netbird.example.com`) && PathPrefix(`/management.ManagementService/`)
+      - traefik.http.routers.netbird-mgmt-grpc.rule=Host(`netbird.example.com`) && (PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))
       - traefik.http.routers.netbird-mgmt-grpc.entrypoints=websecure
       - traefik.http.routers.netbird-mgmt-grpc.tls=true
       - traefik.http.routers.netbird-mgmt-grpc.tls.certresolver=letsencrypt
@@ -392,6 +393,14 @@ server {
         grpc_socket_keepalive on;
     }
 
+    # Proxy gRPC (required for reverse proxy feature)
+    location /management.ProxyService/ {
+        grpc_pass grpc://netbird_management;
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+        grpc_socket_keepalive on;
+    }
+
     # Embedded IdP OAuth2
     location /oauth2/ {
         proxy_pass http://netbird_management;
@@ -504,6 +513,14 @@ server {
 
     # Management gRPC
     location /management.ManagementService/ {
+        grpc_pass grpc://netbird_management;
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+        grpc_socket_keepalive on;
+    }
+
+    # Proxy gRPC (required for reverse proxy feature)
+    location /management.ProxyService/ {
         grpc_pass grpc://netbird_management;
         grpc_read_timeout 1d;
         grpc_send_timeout 1d;
@@ -669,6 +686,9 @@ netbird.example.com {
     # Management gRPC
     reverse_proxy /management.ManagementService/* h2c://netbird-management:80
 
+    # Proxy gRPC (required for reverse proxy feature)
+    reverse_proxy /management.ProxyService/* h2c://netbird-management:80
+
     # Embedded IdP OAuth2
     reverse_proxy /oauth2/* netbird-management:80
 
@@ -700,6 +720,9 @@ netbird.example.com {
 
     # Management gRPC
     reverse_proxy /management.ManagementService/* h2c://127.0.0.1:8081
+
+    # Proxy gRPC (required for reverse proxy feature)
+    reverse_proxy /management.ProxyService/* h2c://127.0.0.1:8081
 
     # Embedded IdP OAuth2
     reverse_proxy /oauth2/* 127.0.0.1:8081
@@ -817,6 +840,14 @@ location /management.ManagementService/ {
     grpc_send_timeout 1d;
     grpc_socket_keepalive on;
 }
+
+# gRPC for Proxy service (required for reverse proxy feature)
+location /management.ProxyService/ {
+    grpc_pass grpc://netbird-management:80;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
 ```
 
 #### NPM running on host (not in Docker)
@@ -907,6 +938,14 @@ location /signalexchange.SignalExchange/ {
 
 # gRPC for Management service
 location /management.ManagementService/ {
+    grpc_pass grpc://127.0.0.1:8081;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+
+# gRPC for Proxy service (required for reverse proxy feature)
+location /management.ProxyService/ {
     grpc_pass grpc://127.0.0.1:8081;
     grpc_read_timeout 1d;
     grpc_send_timeout 1d;
