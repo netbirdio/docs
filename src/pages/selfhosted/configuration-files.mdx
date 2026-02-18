@@ -143,7 +143,12 @@ netbird-server:
   labels:
     - traefik.enable=true
     # gRPC router (needs h2c backend for HTTP/2 cleartext)
-    - traefik.http.routers.netbird-grpc.rule=Host(`netbird.example.com`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`))
+    # The /management.ProxyService/ path is only required if the reverse proxy
+    # container (netbirdio/reverse-proxy) connects through Traefik — i.e., it
+    # runs on a separate host or a different Docker network. If the proxy is on
+    # the same Docker network as netbird-server, it connects directly and this
+    # path prefix can be omitted.
+    - traefik.http.routers.netbird-grpc.rule=Host(`netbird.example.com`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))
     - traefik.http.routers.netbird-grpc.entrypoints=websecure
     - traefik.http.routers.netbird-grpc.tls=true
     - traefik.http.routers.netbird-grpc.tls.certresolver=letsencrypt
@@ -192,7 +197,7 @@ When using the built-in Traefik, the `netbird-server` service uses two routers t
 
 | Router | Path Prefixes | Backend Service | Purpose |
 |--------|---------------|-----------------|---------|
-| `netbird-grpc` | `/signalexchange.SignalExchange/`, `/management.ManagementService/` | `netbird-server-h2c` (h2c scheme) | gRPC traffic for signal exchange and management API. Uses HTTP/2 cleartext (h2c) backend because gRPC requires HTTP/2. |
+| `netbird-grpc` | `/signalexchange.SignalExchange/`, `/management.ManagementService/`, `/management.ProxyService/` | `netbird-server-h2c` (h2c scheme) | gRPC traffic for signal exchange, management API, and the [Reverse Proxy feature](/manage/reverse-proxy). Uses HTTP/2 cleartext (h2c) backend because gRPC requires HTTP/2. The `/management.ProxyService/` path is only needed if the reverse proxy container connects through Traefik (see comment in the snippet above). |
 | `netbird-backend` | `/relay`, `/ws-proxy/`, `/api`, `/oauth2` | `netbird-server` (http scheme) | HTTP traffic for relay connections, WebSocket proxying, REST API, and OAuth2/OIDC endpoints. |
 
 The dashboard router has `priority=1` (lowest), so it acts as a catch-all for requests that don't match the more specific server routes.

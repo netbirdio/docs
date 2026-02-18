@@ -29,8 +29,8 @@ If your current deployment uses a reverse proxy other than Traefik, you'll need 
 
 ### What stays the same
 
-- Your existing `netbird-server`, `dashboard`, `signal`, and `relay` services are unchanged
-- Your `management.json` and other configuration files require no modifications — **unless** you use an external identity provider (not the embedded IdP). See [Configure SSO for external identity providers](#configure-sso-for-external-identity-providers) below.
+- Your existing NetBird services are unchanged
+- Your configuration files (`config.yaml` for combined setup, `management.json` for multi-container setup) require no modifications - **unless** you use an external identity provider (not the embedded IdP). See [Configure SSO for external identity providers](#configure-sso-for-external-identity-providers) below.
 - Existing peers, networks, and access policies are unaffected
 
 ## Prerequisites
@@ -38,14 +38,18 @@ If your current deployment uses a reverse proxy other than Traefik, you'll need 
 Before starting, ensure you have:
 
 - **Traefik** as your reverse proxy (see [Why Traefik is required](#why-traefik-is-required) above)
-- **Latest `netbird-server` image** - pull the latest version to ensure the management CLI supports token creation
+- **Latest NetBird images** - pull the latest version to ensure the management server and CLI support the reverse proxy feature and token creation
 - **A domain for the proxy** - e.g., `proxy.example.com`. Service subdomains will be created under this domain (e.g., `myapp.proxy.example.com`)
 - **Wildcard DNS capability** - ability to create a `*.proxy.example.com` DNS record pointing to your server
+- **Port 443 accessible** - the proxy needs this for ACME TLS-ALPN-01 challenges (certificate provisioning)
+
+<Note>
+This guide covers both the **combined container** setup (`netbirdio/netbird-server`, the default for new deployments) and the **multi-container** setup (separate `management`, `signal`, and `relay` images). Where commands or configuration differ between the two setups, both variants are shown.
+</Note>
 
 <Warning>
 The proxy domain **must not** be a subdomain of your NetBird management domain. For example, if your management server is at `netbird.example.com`, do not use `proxy.netbird.example.com`. Use a separate subdomain like `proxy.example.com` instead. Using a subdomain of the management domain causes TLS and routing conflicts between the proxy and management services.
 </Warning>
-- **Port 443 accessible** - the proxy needs this for ACME TLS-ALPN-01 challenges (certificate provisioning)
 
 ## Migration steps
 
@@ -58,16 +62,26 @@ cd netbird-backup-$(date +%Y%m%d)
 
 # Backup configuration files
 cp ../docker-compose.yml .
-cp ../management.json . 2>/dev/null
+cp ../config.yaml . 2>/dev/null       # Combined container setup
+cp ../management.json . 2>/dev/null   # Multi-container setup
 cp ../*.env . 2>/dev/null || echo "No .env files found"
 ```
 
 ### Step 2: Generate a proxy access token
 
-The proxy authenticates with the management server using an access token. Generate one using the management CLI:
+The proxy authenticates with the management server using an access token. Generate one using the server CLI.
+
+**Combined container** (`netbirdio/netbird-server`):
 
 ```bash
-docker exec -it netbird-server netbird-mgmt token create --name "my-proxy"
+docker exec -it netbird-server /go/bin/netbird-server token create \
+  --name "my-proxy" --config <netbird-data-dir>/config.yaml
+```
+
+**Multi-container** (separate `netbirdio/management` image):
+
+```bash
+docker exec -it netbird-management /go/bin/netbird-mgmt token create --name "my-proxy"
 ```
 
 This outputs a token in the format `nbx_...` (40 characters). **Save the token immediately** - it is only displayed once. The management server stores only a SHA-256 hash.
@@ -75,27 +89,33 @@ This outputs a token in the format `nbx_...` (40 characters). **Save the token i
 You can manage tokens later with:
 
 ```bash
-# List all tokens
-docker exec -it netbird-server netbird-mgmt token list
+# List all tokens (combined container)
+docker exec -it netbird-server /go/bin/netbird-server token list \
+  --config <netbird-data-dir>/config.yaml
 
-# Revoke a token by ID
-docker exec -it netbird-server netbird-mgmt token revoke <token-id>
+# List all tokens (multi-container)
+docker exec -it netbird-management /go/bin/netbird-mgmt token list
+
+# Revoke a token by ID (combined container)
+docker exec -it netbird-server /go/bin/netbird-server token revoke <token-id> \
+  --config <netbird-data-dir>/config.yaml
+
+# Revoke a token by ID (multi-container)
+docker exec -it netbird-management /go/bin/netbird-mgmt token revoke <token-id>
 ```
 
 ### Step 3: Add the proxy service to docker-compose.yml
 
-Add the following service to your `docker-compose.yml`. Replace the placeholder values with your actual domains:
+Add the following service to your `docker-compose.yml`. Adjust the `depends_on` value to match your management service name:
 
 ```yaml
 proxy:
   image: netbirdio/reverse-proxy:latest
   container_name: netbird-proxy
-  extra_hosts:
-    - "netbird.example.com:172.30.0.10"
   restart: unless-stopped
   networks: [netbird]
   depends_on:
-    - netbird-server
+    - netbird-server  # Use "management" for multi-container setup
   env_file:
     - ./proxy.env
   volumes:
@@ -123,21 +143,41 @@ volumes:
   netbird_proxy_certs:
 ```
 
-Replace `netbird.example.com` in the `extra_hosts` entry with your actual NetBird management domain. This hairpin NAT fix ensures the proxy can reach Traefik's static IP within the Docker network.
+Then create a `proxy.env` file with the proxy configuration.
 
-Then create a `proxy.env` file with the proxy configuration:
+**Combined container** (`netbirdio/netbird-server`):
 
 ```bash
 NB_PROXY_DOMAIN=proxy.example.com
 NB_PROXY_TOKEN=nbx_your_token_here
-NB_PROXY_MANAGEMENT_ADDRESS=https://netbird.example.com:443
+NB_PROXY_MANAGEMENT_ADDRESS=http://netbird-server:80
+NB_PROXY_ALLOW_INSECURE=true
 NB_PROXY_ADDRESS=:8443
 NB_PROXY_ACME_CERTIFICATES=true
 NB_PROXY_ACME_CHALLENGE_TYPE=tls-alpn-01
 NB_PROXY_CERTIFICATE_DIRECTORY=/certs
 ```
 
-Replace `proxy.example.com` with your proxy domain and `netbird.example.com` with your management domain.
+**Multi-container** (separate `netbirdio/management` image):
+
+```bash
+NB_PROXY_DOMAIN=proxy.example.com
+NB_PROXY_TOKEN=nbx_your_token_here
+NB_PROXY_MANAGEMENT_ADDRESS=http://management:33073
+NB_PROXY_ALLOW_INSECURE=true
+NB_PROXY_ADDRESS=:8443
+NB_PROXY_ACME_CERTIFICATES=true
+NB_PROXY_ACME_CHALLENGE_TYPE=tls-alpn-01
+NB_PROXY_CERTIFICATE_DIRECTORY=/certs
+```
+
+Replace `proxy.example.com` with your proxy domain. The `NB_PROXY_MANAGEMENT_ADDRESS` must match the Docker Compose service name and port of your management server - `netbird-server:80` for the combined container, or `management:33073` for the multi-container Traefik setup.
+
+<Note>
+The proxy connects to the management server directly over the Docker network rather than through Traefik. This avoids the need to route the `/management.ProxyService/` gRPC service through your reverse proxy and eliminates hairpin NAT issues. The `NB_PROXY_ALLOW_INSECURE=true` setting is safe here because the traffic never leaves the Docker network.
+
+If your proxy and management server run on **separate hosts** and cannot communicate over a shared Docker network, see [Connecting through Traefik](#connecting-through-traefik-instead-of-docker-network) below.
+</Note>
 
 The Traefik labels configure a **TCP router** that:
 - Catches any request not matched by higher-priority HTTP routers via `HostSNI(*)` (wildcard)
@@ -152,7 +192,7 @@ The `HostSNI(*)` rule acts as a catch-all for any domain not matched by the exis
 
 ### Step 4: Set up DNS records
 
-Create two DNS records pointing to the server running your NetBird stack — one for the base proxy domain and one wildcard for service subdomains:
+Create two DNS records pointing to the server running your NetBird stack - one for the base proxy domain and one wildcard for service subdomains:
 
 | Type | Name | Content |
 |------|------|---------|
@@ -194,7 +234,7 @@ If the domain appears, the proxy is connected and ready. You can now [create you
 
 ### Who this applies to
 
-This section applies to deployments using a **standalone external identity provider** (Auth0, Okta, Keycloak, Zitadel, etc.) instead of the built-in embedded IdP (Dex). If you deployed using the quickstart script with default settings, you are using the embedded IdP and can skip this section.
+This section applies to **multi-container** deployments using a **standalone external identity provider** (Auth0, Okta, Keycloak, Zitadel, etc.) instead of the built-in embedded IdP (Dex). If you are running the combined container or deployed using the quickstart script with default settings, you are using the embedded IdP and can skip this section - the callback is registered automatically.
 
 ### Why this is needed
 
@@ -206,16 +246,17 @@ If you want to keep using your current external identity provider, follow these 
 
 #### Step 1: Add callback URL to management.json
 
-Add the `AuthCallbackURL` field to the `HttpConfig` section of your `management.json`:
+Add the `AuthCallbackURL` and `AuthClientID` fields to the `HttpConfig` section of your `management.json`:
 
 ```json
 "HttpConfig": {
   ...existing fields...,
+  "AuthClientID": "<your-auth-client-id>",
   "AuthCallbackURL": "https://<your-management-domain>/api/reverse-proxy/callback"
 }
 ```
 
-Replace `<your-management-domain>` with your NetBird management server domain (the same domain used for the dashboard).
+Replace `<your-management-domain>` with your NetBird management server domain (the same domain used for the dashboard). Replace `<your-auth-client-id>` with the OAuth2 client ID from your identity provider (the same client ID used for the dashboard application).
 
 #### Step 2: Register callback in your IdP
 
@@ -242,12 +283,12 @@ Where to find this setting in common providers:
 Restart the management service to pick up the configuration change:
 
 ```bash
-docker compose restart netbird-management
+docker compose restart management
 ```
 
 ### Option B: Migrate to the embedded IdP (recommended)
 
-The embedded IdP (Dex) handles the reverse proxy callback registration automatically — no manual configuration needed. If you want a simpler setup, consider migrating to the embedded IdP.
+The embedded IdP (Dex) handles the reverse proxy callback registration automatically - no manual configuration needed. If you want a simpler setup, consider migrating to the embedded IdP.
 
 With the embedded IdP, external identity providers can still be used as **connectors** alongside local authentication. This means your users can continue to sign in with their existing accounts (Google, Okta, Keycloak, etc.) while the embedded IdP manages the OIDC layer.
 
@@ -268,6 +309,94 @@ After configuring SSO for your external identity provider, verify it works:
 
 If the redirect fails or you see an error from your IdP, double-check that the callback URL is correctly registered in both `management.json` and your identity provider's settings.
 
+## Connecting through Traefik instead of Docker network
+
+If your proxy container cannot reach the management container directly - for example, if they run on **separate hosts** - you can route the proxy's management connection through Traefik instead. This requires three additional configuration steps.
+
+### 1. Add the ProxyService gRPC route
+
+The proxy communicates with the management server over two gRPC services: `ManagementService` and `ProxyService`. Both paths must be routed through Traefik. Find the existing gRPC router label in your `docker-compose.yml` - in a standard deployment this is `traefik.http.routers.netbird-grpc` - and add the `ProxyService` path prefix:
+
+```
+traefik.http.routers.netbird-grpc.rule=Host(`netbird.example.com`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))
+```
+
+Without the `/management.ProxyService/` route, the proxy will fail to register with the management server.
+
+### 2. Fix the Traefik container IP for hairpin NAT
+
+When the proxy connects to your management domain through Traefik, the DNS resolution inside the Docker network must point to the Traefik container. This is done via an `extra_hosts` entry in the proxy service, but the IP address must match Traefik's actual IP.
+
+To ensure a stable IP, assign a static IP to the Traefik container within your Docker network:
+
+```yaml
+# In your docker-compose.yml
+
+networks:
+  netbird:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
+
+services:
+  traefik:
+    # ...existing traefik config...
+    networks:
+      netbird:
+        ipv4_address: 172.30.0.10
+```
+
+Then add the `extra_hosts` entry to the proxy service referencing that IP:
+
+```yaml
+  proxy:
+    # ...existing proxy config...
+    extra_hosts:
+      - "netbird.example.com:172.30.0.10"
+```
+
+Replace `netbird.example.com` with your actual management domain.
+
+### 3. Increase Traefik's idle timeout for gRPC
+
+Traefik's default idle timeout (180 seconds) is too short for the long-lived gRPC streams used between the proxy and management server. Without increasing it, the proxy will report connection timeout errors and the dashboard may show the proxy agent as offline.
+
+Add the following to your Traefik static configuration:
+
+```yaml
+# In traefik.yml
+entryPoints:
+  websecure:
+    address: ":443"
+    transport:
+      respondingTimeouts:
+        idleTimeout: "0"
+```
+
+Or as a command-line argument:
+
+```yaml
+# In docker-compose.yml
+services:
+  traefik:
+    command:
+      # ...existing args...
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=0"
+```
+
+Finally, update `proxy.env` to connect through Traefik and remove `NB_PROXY_ALLOW_INSECURE`:
+
+```bash
+NB_PROXY_MANAGEMENT_ADDRESS=https://netbird.example.com:443
+# Do NOT set NB_PROXY_ALLOW_INSECURE when connecting over TLS through Traefik
+```
+
+<Warning>
+If you do not assign a static IP to Traefik, Docker may assign a different IP on container restart, and the `extra_hosts` entry will silently point to the wrong address. Always configure a fixed subnet and static IP when using this approach.
+</Warning>
+
 ## For users not on Traefik
 
 If your self-hosted deployment currently uses Nginx, Caddy, or another reverse proxy, you'll need to switch to Traefik before enabling the Reverse Proxy feature. See the [Traefik setup instructions](/selfhosted/reverse-proxy#traefik) for a step-by-step guide on configuring Traefik for your NetBird deployment.
@@ -276,7 +405,7 @@ If your self-hosted deployment currently uses Nginx, Caddy, or another reverse p
 
 | Variable | Required | Description | Default |
 |----------|----------|-------------|---------|
-| `NB_PROXY_TOKEN` | Yes | Access token generated via `netbird-mgmt token create`. The proxy refuses to start without it. | - |
+| `NB_PROXY_TOKEN` | Yes | Access token generated via `netbird-server token create` (combined) or `netbird-mgmt token create` (multi-container). The proxy refuses to start without it. | - |
 | `NB_PROXY_DOMAIN` | Yes | Base domain for this proxy instance (e.g., `proxy.example.com`). Determines the domain available for services. | - |
 | `NB_PROXY_MANAGEMENT_ADDRESS` | No | URL of your NetBird management server. The proxy connects via gRPC to register itself. | `https://api.netbird.io:443` |
 | `NB_PROXY_ADDRESS` | No | Address the proxy listens on. | `:8443` (Docker), `:443` (binary) |
@@ -342,8 +471,15 @@ docker compose up -d
 You can also revoke the proxy token to prevent the proxy from reconnecting:
 
 ```bash
-docker exec -it netbird-server netbird-mgmt token list
-docker exec -it netbird-server netbird-mgmt token revoke <token-id>
+# Combined container
+docker exec -it netbird-server /go/bin/netbird-server token list \
+  --config <netbird-data-dir>/config.yaml
+docker exec -it netbird-server /go/bin/netbird-server token revoke <token-id> \
+  --config <netbird-data-dir>/config.yaml
+
+# Multi-container
+docker exec -it netbird-management /go/bin/netbird-mgmt token list
+docker exec -it netbird-management /go/bin/netbird-mgmt token revoke <token-id>
 ```
 
 ## Additional resources
