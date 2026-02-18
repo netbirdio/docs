@@ -287,6 +287,7 @@ export const docsNavigation = [
             href: '/manage/reverse-proxy/authentication',
           },
           { title: 'Access Logs', href: '/manage/reverse-proxy/access-logs' },
+          { title: 'Multiple Instances', href: '/manage/reverse-proxy/multiple-instances' },
         ],
       },
       {
