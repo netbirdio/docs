@@ -1,0 +1,158 @@
+# Migration Guide: Setup Caddy with L4 to support the netbird proxy feature
+
+This guide walks you through adding or modifying Caddy as external reverse proxy inside docker while supporting the netbird proxy feature. By the end, your Caddy reverse proxy will correctly forward the requests to the netbird proxy without TLS termination.
+
+<Warning>
+This setup is **not** production ready!
+
+It uses a caddy plugin that is still under development. Use with caution.
+</Warning>
+
+## Docker Compose Setup for Caddy
+
+This guide covers the basics about the setup of caddy using docker compose with a focus on the modifications needed to run it with TLS passthrough.
+
+### Dockerfile
+
+Caddy on default does not support TLS passthrough. There is a [caddy plugin](https://github.com/mholt/caddy-l4) that makes this functionality work. We need to create our own caddy docker image with this plugin installed. For this create the following `Dockerfile`:
+
+```dockerfile
+ARG VERSION=2
+
+FROM caddy:${VERSION}-builder AS builder
+RUN xcaddy build --with github.com/mholt/caddy-l4
+
+FROM caddy:${VERSION}-alpine
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+```
+
+This will build the docker image with the caddy plugin installed.
+
+### Docker Compose
+
+The build process of the image and the caddy management can be done using docker compose. Use the following `docker-compose.yml`:
+
+```yaml
+name: caddy
+
+services:
+  caddy:
+    image: local-caddy-l4
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: 2
+    restart: unless-stopped
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./caddy:/etc/caddy
+      - ./data:/data
+      - ./config:/config
+    networks:
+      caddy:
+        ipv4_address: 172.30.0.10 # Define your IPv4 here, that you might reference inside the netbird proxy setup, the IP needs to be inside the subnet of the caddy network
+
+networks:
+  caddy:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+```
+
+Alternativly you can use `docker network create caddy --subnet 172.30.0.0/24` to create the network externally and instead use the following
+
+```yaml
+networks:
+  caddy:
+    external: true
+```
+
+This way this docker-compose doesnt need to be up for the caddy network to be created. Else other services, that depend on the caddy network wont start if it is not initialized.
+
+
+### Caddy Setup
+
+Create a folder called `caddy` and inside create the `Caddyfile`:
+
+```nginx
+# This section needs to be first inside the Caddyfile and cannot be moved!
+{
+  admin off  # Optional, disables the admin web ui (recommended if not used)
+  servers {
+    listener_wrappers {
+      layer4 {    # This section passes the TLS directly to the container for the specified domain (and wildcard subdomain)
+        @proxy-exact tls sni proxy.domain.com
+        route @proxy-exact {
+          proxy netbird-proxy:8443
+        } 
+        @proxy-wild tls sni_regexp ^[^.]+\.proxy\.domain\.com$
+        route @proxy-wild {
+          proxy netbird-proxy:8443
+        }
+      }
+      tls
+    }
+  }
+}
+
+netbird.domain.com {
+    # ws-proxy signal
+    handle /ws-proxy/signal* {
+        reverse_proxy netbird-signal:80
+    }
+
+    # ws-proxy management
+    handle /ws-proxy/management* {
+        reverse_proxy netbird-management:33073
+    }
+
+    # SignalExchange (gRPC)
+    handle /signalexchange.SignalExchange/* {
+        reverse_proxy h2c://netbird-signal:10000
+    }
+
+    # Relay
+    handle /relay* {
+        reverse_proxy netbird-relay:33080
+    }
+
+    # API
+    handle /api* {
+        reverse_proxy netbird-management:33073 
+    }
+
+    # Management gRPC
+    handle /management.ManagementService/* {
+        reverse_proxy h2c://netbird-management:33073
+    }
+
+    # Proxy gRPC -> DONT FORGET TO ADD THIS
+    handle /management.ProxyService/* {
+        reverse_proxy h2c://netbird-management:33073
+    }
+    
+    # Dashboard
+    handle {
+        reverse_proxy netbird-dashboard:80
+    }
+}
+
+# ... additional hosts
+```
+
+### Start Caddy
+
+Your folder structure for caddy should look like this:
+```
+caddy-docker
+| caddy
+| | Caddyfile
+| docker-compose.yml
+| Dockerfile 
+```
+
+After all these configurations navigate into the `caddy-docker` folder. Run the following command `docker compose up -d --build`. This will build the caddy docker image and start it.

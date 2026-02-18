@@ -15,7 +15,11 @@ The NetBird proxy container manages its own TLS certificates (via Let's Encrypt 
 
 This capability is called **TLS passthrough**, and among common reverse proxies, **only Traefik supports it** via its TCP routers. Other reverse proxies (Nginx, Caddy, Nginx Proxy Manager) terminate TLS themselves and cannot forward the raw encrypted connection, which breaks the proxy's certificate management.
 
-If your current deployment uses a reverse proxy other than Traefik, you'll need to switch before enabling this feature. See [Switching to Traefik](/selfhosted/reverse-proxy#traefik) for instructions.
+If your current deployment uses a reverse proxy other than Traefik, you'll need to switch before enabling this feature for production environments. See [Switching to Traefik](/selfhosted/reverse-proxy#traefik) for instructions.
+
+<Note>
+This guide also covers using Caddy as reverse proxy, even tho this is not considered production ready.
+</Note>
 
 ## Overview of changes
 
@@ -86,6 +90,9 @@ docker exec -it netbird-server netbird-mgmt token revoke <token-id>
 
 Add the following service to your `docker-compose.yml`. Replace the placeholder values with your actual domains:
 
+<Row>
+  <Col>
+Traefik-Setup:
 ```yaml
 proxy:
   image: netbirdio/reverse-proxy:latest
@@ -114,6 +121,39 @@ proxy:
       max-size: "500m"
       max-file: "2"
 ```
+  </Col>
+  <Col>
+Caddy-Setup: (not production ready)
+```yaml
+proxy:
+  image: netbirdio/reverse-proxy:latest
+  container_name: netbird-proxy
+  extra_hosts:
+    - "netbird.example.com:172.30.0.10"
+  restart: unless-stopped
+  networks: [netbird,caddy]
+  depends_on:
+    - netbird-server
+  env_file:
+    - ./proxy.env
+  volumes:
+    - netbird_proxy_certs:/certs
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "500m"
+      max-file: "2"
+
+# Also add the network
+networks:
+  # ...
+  caddy:
+    external: true
+```
+
+This setup expects the caddy network with the caddy-container already created and accessible.
+  </Col>
+</Row>
 
 Also add the `netbird_proxy_certs` volume to your `volumes:` section:
 
@@ -161,7 +201,10 @@ Create two DNS records pointing to the server running your NetBird stack — one
 
 The base domain record is required because a wildcard DNS record does not cover the bare domain itself. The wildcard record ensures that all service subdomains (e.g., `myapp.proxy.example.com`, `dashboard.proxy.example.com`) resolve to your server where Traefik forwards them to the proxy container.
 
-### Step 5: Apply changes
+### Step 5 (caddy only): Setup Caddy
+Follow the instructions from [Setup external Caddy for use with Netbird Reverse-Proxy feature](/selfhosted/migration/caddy-netbird-proxy-setup). Afterwards continue with step 6.
+
+### Step 6: Apply changes
 
 ```bash
 # Pull the new image
@@ -179,7 +222,7 @@ docker compose logs -f proxy
 
 You should see log messages indicating the proxy has connected to the management server and is ready to serve traffic.
 
-### Step 6: Verify in the dashboard
+### Step 7: Verify in the dashboard
 
 Once the proxy connects to the management server:
 
