@@ -524,6 +524,11 @@ export const docsNavigation = [
             title: 'Activity Events Postgres Store',
             href: '/selfhosted/activity-postgres-store',
           },
+          {
+            title: 'Management Geolocation Database',
+            href: '/selfhosted/geo-support'
+          },
+
         ],
       },
       {
@@ -601,7 +606,6 @@ export const docsNavigation = [
         ],
       },
       { title: 'Advanced Guide', href: '/selfhosted/selfhosted-guide' },
-      { title: 'Management geolocation', href: '/selfhosted/geo-support' },
       { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
       {
         title: 'Migration Guides',

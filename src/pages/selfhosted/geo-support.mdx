@@ -27,7 +27,64 @@ local GeoLite2 databases updated. When the `management` service is started, the 
 if the current database is outdated. If the database is outdated or does not exist, the files will be downloaded
 and loaded automatically. Restarting the `management` service will trigger the update check.
 
-This behavior can be disabled by passing the `--disable-geolite-update` flag to the `management` command. When 
-`--disable-geolite-update` is set, the service will download the geolite databases only if there is no file in the data directory. The database with the 
-most recent date will be loaded if more than one exists. If a database does not exist, it will be downloaded 
+This behavior can be disabled by passing the `--disable-geolite-update` flag to the `management` command or by setting
+`disableGeoliteUpdate: true` in the [combined configuration file](https://github.com/netbirdio/netbird/blob/318cf59d660ef6195f86b8982d38acb891c0beb6/combined/config-simple.yaml.example#L81):
+
+```yaml
+disableGeoliteUpdate: true
+```
+
+When disabled, the service will download the geolite databases only if there is no file in the data directory. The database with the
+most recent date will be loaded if more than one exists. If a database does not exist, it will be downloaded
 and loaded, but it will not be updated on subsequent restarts of the `management` service.
+
+## Disabling geolocation entirely
+
+If you do not need geolocation-based posture checks, you can disable the geolocation service entirely by setting the environment variable:
+
+```bash
+NB_DISABLE_GEOLOCATION=true
+```
+
+When set, the management server will skip geolocation initialization and will not attempt to download any databases.
+
+## Troubleshooting: GeoLite2 download fails in restricted networks
+
+In some network environments, the automatic download of the GeoLite2 database from `pkgs.netbird.io` may fail.
+This commonly happens when:
+
+- Corporate firewalls perform **deep packet inspection (DPI)**, intercepting HTTPS traffic and re-signing certificates with internal certificate authorities. The management server cannot verify these intercepted certificates, causing TLS errors during the download.
+- Outbound access to `pkgs.netbird.io` is **blocked by firewall rules** or proxy restrictions.
+- The server has **no internet access** at all (air-gapped environments).
+
+See [netbirdio/netbird#5216](https://github.com/netbirdio/netbird/pull/5216) for more context on this issue.
+
+If you are affected, you can manually provide the GeoLite2 database file instead of relying on the automatic download:
+
+1. **Disable automatic updates** by passing the `--disable-geolite-update` flag or setting `disableGeoliteUpdate: true` in the config to prevent the server from attempting to download or overwrite the database.
+
+2. **Download the GeoLite2 City database** from [MaxMind's GeoLite2 page](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data/). You will need a free MaxMind account to download the MMDB file.
+
+3. **Place the file in the management data directory** with the naming convention `GeoLite2-City_YYYYMMDD.mmdb` (e.g., `GeoLite2-City_20260127.mmdb`).
+
+### Locating the data directory
+
+For Docker-based self-hosted deployments, the management data is stored in a Docker volume. You can find it at:
+
+```
+/var/lib/docker/volumes/netbird_data/_data/
+```
+
+The directory contents look something like this:
+
+```bash
+root@selfhosted-1:/var/lib/docker/volumes/netbird_data/_data# ls -l
+total 72452
+-rw-r--r-- 1 root root 63524357 Feb 13 23:00 GeoLite2-City_20260127.mmdb
+-rw-r--r-- 1 root root   425984 Feb 17 19:31 events.db
+-rw-r--r-- 1 root root  7307264 Feb 13 23:00 geonames_20260127.db
+-rw-r--r-- 1 root root    98304 Feb 18 14:07 idp.db
+-rw-r--r-- 1 root root  2826240 Feb 18 14:07 store.db
+```
+
+Copy your downloaded GeoLite2 MMDB file into this directory, then restart the management service. The server will detect and load the existing database file without attempting a download.
