@@ -611,6 +611,9 @@ export const docsNavigation = [
         title: 'Migration Guides',
         isOpen: false,
         links: [
+          { title: 'Combined Container Setup', 
+            href: '/selfhosted/migration/combined-container' 
+          },
           {
             title: 'Coturn to Embedded STUN',
             href: '/selfhosted/migration/coturn-to-stun-migration',
