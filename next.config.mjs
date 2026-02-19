@@ -454,7 +454,17 @@ const nextConfig = {
             // documentation redirects for integrations
             {
                 source: '/how-to/enable-post-quantum-cryptography',
-                destination: '/manage/integrations/enable-post-quantum-cryptography',
+                destination: '/client/post-quantum-cryptography',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/enable-post-quantum-cryptography',
+                destination: '/client/post-quantum-cryptography',
+                permanent: true,
+            },
+            {
+                source: '/client/enable-post-quantum-cryptography',
+                destination: '/client/post-quantum-cryptography',
                 permanent: true,
             },
             {
