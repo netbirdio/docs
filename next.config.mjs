@@ -646,6 +646,12 @@ const nextConfig = {
                 destination: '/use-cases/cloud/distributed-multi-cloud-ai',
                 permanent: true,
             },
+            // selfhosted reverse proxy rename
+            {
+                source: '/selfhosted/reverse-proxy',
+                destination: '/selfhosted/external-reverse-proxy',
+                permanent: true,
+            },
         ]
     },
     rewrites: async () => {
