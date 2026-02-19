@@ -46,21 +46,41 @@ Each proxy instance authenticates with the management server using an access tok
 
 **Recommended: one token per instance.** Using unique tokens provides better auditability (you can see which instance connected) and allows you to revoke access for a single instance without affecting others.
 
-Generate a token for each instance:
+Generate a token for each instance. The command differs depending on whether you use the combined container or the older multi-container setup.
+
+**Combined container** (`netbirdio/netbird-server`):
 
 ```bash
-docker exec -it netbird-server netbird-mgmt token create --name "proxy-server-1"
-docker exec -it netbird-server netbird-mgmt token create --name "proxy-server-2"
+docker exec -it netbird-server /go/bin/netbird-server token create \
+  --name "proxy-server-1" --config <netbird-data-dir>/config.yaml
+
+docker exec -it netbird-server /go/bin/netbird-server token create \
+  --name "proxy-server-2" --config <netbird-data-dir>/config.yaml
+```
+
+**Multi-container** (separate `netbirdio/management` image):
+
+```bash
+docker exec -it netbird-management /go/bin/netbird-mgmt token create --name "proxy-server-1"
+docker exec -it netbird-management /go/bin/netbird-mgmt token create --name "proxy-server-2"
 ```
 
 Use a descriptive `--name` for each token so you can identify which instance it belongs to when listing or revoking tokens:
 
 ```bash
-# List all tokens
-docker exec -it netbird-server netbird-mgmt token list
+# List all tokens (combined container)
+docker exec -it netbird-server /go/bin/netbird-server token list \
+  --config <netbird-data-dir>/config.yaml
 
-# Revoke a specific instance's token
-docker exec -it netbird-server netbird-mgmt token revoke <token-id>
+# List all tokens (multi-container)
+docker exec -it netbird-management /go/bin/netbird-mgmt token list
+
+# Revoke a specific instance's token (combined container)
+docker exec -it netbird-server /go/bin/netbird-server token revoke <token-id> \
+  --config <netbird-data-dir>/config.yaml
+
+# Revoke a specific instance's token (multi-container)
+docker exec -it netbird-management /go/bin/netbird-mgmt token revoke <token-id>
 ```
 
 <Note>
@@ -258,9 +278,15 @@ To gracefully remove a proxy instance from the cluster:
 # Stop the proxy on the server being removed
 docker compose down
 
-# Revoke its token on the management server
-docker exec -it netbird-server netbird-mgmt token list
-docker exec -it netbird-server netbird-mgmt token revoke <token-id>
+# Revoke its token on the management server (combined container)
+docker exec -it netbird-server /go/bin/netbird-server token list \
+  --config <netbird-data-dir>/config.yaml
+docker exec -it netbird-server /go/bin/netbird-server token revoke <token-id> \
+  --config <netbird-data-dir>/config.yaml
+
+# Revoke its token on the management server (multi-container)
+docker exec -it netbird-management /go/bin/netbird-mgmt token list
+docker exec -it netbird-management /go/bin/netbird-mgmt token revoke <token-id>
 ```
 
 After stopping the instance, update your DNS records to remove the server's IP address so clients are no longer directed to it.
