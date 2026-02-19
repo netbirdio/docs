@@ -287,7 +287,6 @@ export const docsNavigation = [
             href: '/manage/reverse-proxy/authentication',
           },
           { title: 'Access Logs', href: '/manage/reverse-proxy/access-logs' },
-          { title: 'Multiple Instances', href: '/manage/reverse-proxy/multiple-instances' },
         ],
       },
       {
@@ -506,6 +505,10 @@ export const docsNavigation = [
               {
                 title: 'Set Up External Signal',
                 href: '/selfhosted/maintenance/scaling/set-up-external-signal',
+              },
+              {
+                title: 'Multiple Proxy Instances',
+                href: '/selfhosted/maintenance/scaling/multiple-proxy-instances',
               },
             ],
           },
