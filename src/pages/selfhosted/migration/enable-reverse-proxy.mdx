@@ -171,10 +171,8 @@ NB_PROXY_ACME_CHALLENGE_TYPE=tls-alpn-01
 NB_PROXY_CERTIFICATE_DIRECTORY=/certs
 ```
 
-Replace `proxy.example.com` with your proxy domain. The `NB_PROXY_MANAGEMENT_ADDRESS` must match the Docker Compose service name and port of your management server - `netbird-server:80` for the combined container, or `management:33073` for the multi-container Traefik setup.
-
 <Note>
-The proxy connects to the management server directly over the Docker network rather than through Traefik. This avoids the need to route the `/management.ProxyService/` gRPC service through your reverse proxy and eliminates hairpin NAT issues. The `NB_PROXY_ALLOW_INSECURE=true` setting is safe here because the traffic never leaves the Docker network.
+The proxy connects to the management server directly over the Docker network rather than through Traefik; this avoids the need to route the `/management.ProxyService/` gRPC service through your reverse proxy. The `NB_PROXY_ALLOW_INSECURE=true` setting is safe here because the traffic never leaves the Docker network.
 
 If your proxy and management server run on **separate hosts** and cannot communicate over a shared Docker network, see [Connecting through Traefik](#connecting-through-traefik-instead-of-docker-network) below.
 </Note>
@@ -323,11 +321,15 @@ traefik.http.routers.netbird-grpc.rule=Host(`netbird.example.com`) && (PathPrefi
 
 Without the `/management.ProxyService/` route, the proxy will fail to register with the management server.
 
-### 2. Fix the Traefik container IP for hairpin NAT
+### 2. Fix DNS resolution (same-host only)
 
-When the proxy connects to your management domain through Traefik, the DNS resolution inside the Docker network must point to the Traefik container. This is done via an `extra_hosts` entry in the proxy service, but the IP address must match Traefik's actual IP.
+<Note>
+If your proxy and management server run on **separate hosts** - which is the typical reason for routing through Traefik - you can skip this step. The proxy will resolve your management domain to the remote host's public IP via normal DNS.
+</Note>
 
-To ensure a stable IP, assign a static IP to the Traefik container within your Docker network:
+If your proxy and Traefik run on the **same host** but you still need to route through Traefik (rather than using the [direct Docker network connection](#proxy-environment-variables) above), the proxy must resolve the management domain to Traefik's container IP. Without this, the domain resolves to the host's public IP and the connection loops back through the external interface - a hairpin NAT problem.
+
+To fix DNS resolution on the same host, assign a static IP to the Traefik container and add an `extra_hosts` entry to the proxy service:
 
 ```yaml
 # In your docker-compose.yml
@@ -346,11 +348,7 @@ services:
     networks:
       netbird:
         ipv4_address: 172.30.0.10
-```
 
-Then add the `extra_hosts` entry to the proxy service referencing that IP:
-
-```yaml
   proxy:
     # ...existing proxy config...
     extra_hosts:
@@ -394,7 +392,7 @@ NB_PROXY_MANAGEMENT_ADDRESS=https://netbird.example.com:443
 ```
 
 <Warning>
-If you do not assign a static IP to Traefik, Docker may assign a different IP on container restart, and the `extra_hosts` entry will silently point to the wrong address. Always configure a fixed subnet and static IP when using this approach.
+If you use the `extra_hosts` approach above, you **must** assign a static IP to Traefik. Without it, Docker may assign a different IP on container restart and the `extra_hosts` entry will silently point to the wrong address.
 </Warning>
 
 ## For users not on Traefik
@@ -416,9 +414,6 @@ If your self-hosted deployment currently uses Nginx, Caddy, or another reverse p
 | `NB_PROXY_CERTIFICATE_DIRECTORY` | No | Directory where static certificate files are stored. | `./certs` |
 | `NB_PROXY_ALLOW_INSECURE` | No | Allow insecure (non-TLS) gRPC connection to the management server. Set to `true` when connecting over an internal Docker network. | `false` |
 | `NB_PROXY_FORWARDED_PROTO` | No | Protocol to report in the `X-Forwarded-Proto` header. Set to `https` when TLS is terminated at the proxy. | - |
-| `NB_PROXY_OIDC_CLIENT_ID` | No | OIDC client ID for proxy SSO authentication. | - |
-| `NB_PROXY_OIDC_ENDPOINT` | No | OIDC discovery endpoint URL for proxy SSO authentication. | - |
-| `NB_PROXY_OIDC_SCOPES` | No | Comma-separated list of OIDC scopes to request (e.g., `openid,profile,email`). | - |
 | `NB_PROXY_DEBUG_LOGS` | No | Enable debug-level logging. | `false` |
 
 ## Troubleshooting

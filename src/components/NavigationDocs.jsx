@@ -506,6 +506,10 @@ export const docsNavigation = [
                 title: 'Set Up External Signal',
                 href: '/selfhosted/maintenance/scaling/set-up-external-signal',
               },
+              {
+                title: 'Multiple Proxy Instances',
+                href: '/selfhosted/maintenance/scaling/multiple-proxy-instances',
+              },
             ],
           },
           { title: 'Backup', href: '/selfhosted/maintenance/backup' },
