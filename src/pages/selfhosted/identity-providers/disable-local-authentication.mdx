@@ -1,3 +1,7 @@
+import {Note, Warning} from "@/components/mdx"
+
+export const description = 'Disable local email/password authentication in your self-hosted NetBird deployment so that all users must sign in through an external identity provider.'
+
 # Disable Local Authentication
 
 If you prefer to delegate all credential storage and authentication to your IdP while still utilizing NetBird's new,
@@ -31,6 +35,11 @@ Before disabling local authentication:
 
 5. Verify you can log in via the external IdP with full owner access.
 
+<Warning>
+Complete all prerequisite steps before disabling local authentication. If you disable local login without first
+promoting an external IdP user to Owner, you will lose administrative access to your instance.
+</Warning>
+
 <Note>
 NetBird will refuse to disable local authentication if no external identity provider connectors are configured.
     This prevents you from being locked out of your instance.
@@ -40,27 +49,39 @@ NetBird will refuse to disable local authentication if no external identity prov
 
 ### Combined setup (config.yaml)
 
-Set `localAuthDisabled` to `true` in your `config.yaml`:
+<Note>
+If you deployed using the [`getting-started.sh`](/selfhosted/selfhosted-quickstart) quickstart script (post v0.65.0) or have
+already [migrated to the combined container](/selfhosted/migration/combined-container), your deployment uses
+`config.yaml`.
+</Note>
+
+Set `localAuthDisabled` to `true` under the `server.auth` section of your `config.yaml`:
 
 ```yaml
 server:
   auth:
+    issuer: "https://netbird.example.com/oauth2"
     localAuthDisabled: true
+    signKeyRefreshEnabled: true
+    dashboardRedirectURIs:
+      - "https://netbird.example.com/nb-auth"
+      - "https://netbird.example.com/nb-silent-auth"
+    cliRedirectURIs:
+      - "http://localhost:53000/"
 ```
 
-Restart the server:
+Restart the server to apply the change:
 ```bash
 docker compose restart netbird-server
 ```
 
-<Note>
-For a full list of available configuration options, see the [config.yaml.example](https://github.com/netbirdio/netbird/blob/main/combined/config.yaml.example) reference file.
-</Note>
-
 ### Older multi-container setup (management.json)
 
 <Note>
-This section applies to deployments using the older multi-container architecture. If you deployed using [`getting-started.sh`](/selfhosted/selfhosted-quickstart), you are on the combined setup and should use the `config.yaml` instructions above. See the [migration guide](/selfhosted/migration/combined-container) to upgrade.
+This section applies to deployments using the older multi-container architecture with separate dashboard, management,
+signal, relay, and coturn containers. If you deployed using [`getting-started.sh`](/selfhosted/selfhosted-quickstart) post-v0.65.0,
+you are on the combined setup and should use the `config.yaml` instructions above. See the
+[migration guide](/selfhosted/migration/combined-container) to upgrade.
 </Note>
 
 Update your `management.json`:
@@ -85,7 +106,9 @@ After updating the configuration, the local login option will no longer appear o
 
 ## Re-enabling Local Authentication
 
-To restore local authentication, set `localAuthDisabled` back to `false` in `config.yaml` (or `LocalAuthDisabled` in `management.json`) and restart the server.
+To restore local authentication, reverse the configuration change and restart the server:
+
+- **Combined setup:** set `localAuthDisabled` back to `false` in `config.yaml` and run `docker compose restart netbird-server`.
+- **Older multi-container setup:** set `LocalAuthDisabled` to `false` in `management.json` and run `docker compose restart management`.
+
 All previously created local users will be able to log in again with their existing passwords.
-
-
