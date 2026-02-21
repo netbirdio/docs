@@ -1,0 +1,348 @@
+import {Note, Warning} from "@/components/mdx"
+
+export const description =
+    'Expose local HTTP services to the public internet directly from the command line using `netbird expose`, with optional authentication, custom domains, and automatic session management.'
+
+# Expose from CLI
+
+The `netbird expose` command lets peers expose local HTTP services to the public internet through the NetBird reverse proxy without using the dashboard. Services created this way are **ephemeral** — they exist only while the command is running and are automatically removed when you stop the command or the session expires.
+
+This is useful for quick demos, temporary access to development servers, webhook receivers, or sharing local work with teammates.
+
+<Note>
+    **Availability:** This feature requires the NetBird management server to have the Reverse Proxy module enabled. For self-hosted deployments, ensure your proxy instance is deployed and connected. See [Reverse Proxy](/manage/reverse-proxy) for setup details.
+</Note>
+
+## Prerequisites
+
+Before using `netbird expose`, make sure:
+
+- The NetBird client is connected — run `netbird up` first.
+- The **Peer Expose** feature is enabled by your account administrator (see [Enable peer expose](#enable-peer-expose) below).
+- If peer group restrictions are configured, your peer must be in one of the allowed groups.
+
+## Enable peer expose
+
+An account administrator must enable peer expose before any peer can use the `netbird expose` command.
+
+### From the dashboard
+
+1. Navigate to **Settings** > **Clients** in the NetBird dashboard.
+2. Scroll to the **Peer Expose** section.
+3. Toggle **Enable Peer Expose** on.
+4. Optionally, select specific **peer groups** that are allowed to expose services. If no groups are selected, all connected peers can expose services.
+5. Click **Save Changes**.
+
+### From the API
+
+Set `peer_expose_enabled` to `true` in the account settings `extra` object:
+
+```bash
+curl -X PUT "https://api.netbird.io/api/accounts/{account_id}" \
+  -H "Authorization: Token {api_token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "settings": {
+      "extra": {
+        "peer_expose_enabled": true,
+        "peer_expose_groups": ["ch8i4ug6lnn4g9hqv7m0"]
+      }
+    }
+  }'
+```
+
+Set `peer_expose_groups` to an array of peer group IDs to restrict which peers can expose services. Use an empty array `[]` to allow all peers.
+
+## Basic usage
+
+Expose a local HTTP server running on a specific port:
+
+```shell
+netbird expose 8080
+```
+
+On success, the command outputs the public URL and keeps the session alive:
+
+```
+Service exposed successfully!
+  Name:     myapp-a1b2c3
+  URL:      https://myapp-a1b2c3.proxy.example.com
+  Domain:   myapp-a1b2c3.proxy.example.com
+  Protocol: http
+  Port:     8080
+
+Press Ctrl+C to stop exposing.
+```
+
+The service is now accessible at the displayed URL. Press `Ctrl+C` to stop exposing and remove the service.
+
+## Command reference
+
+```shell
+netbird expose <port> [flags]
+```
+
+### Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `port` | Yes | The local port number to expose (1–65535) |
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--protocol` | string | `http` | Protocol to use. Only `http` is currently supported. |
+| `--with-pin` | string | | Protect the exposed service with a PIN code. |
+| `--with-password` | string | | Protect the exposed service with a password. |
+| `--with-user-groups` | strings | | Restrict access to specific user groups (SSO authentication). Comma-separated. |
+| `--with-custom-domain` | string | | Use a custom domain instead of an auto-generated one. Must be pre-configured in your account. |
+| `--with-name-prefix` | string | | Prefix for the generated service name and subdomain. |
+
+## Authentication
+
+By default, exposed services are publicly accessible to anyone who knows the URL. You can protect them using one or more authentication methods.
+
+### PIN protection
+
+Protect the service with a PIN code that users must enter before accessing it:
+
+```shell
+netbird expose 8080 --with-pin 1234
+```
+
+### Password protection
+
+Protect the service with a password:
+
+```shell
+netbird expose 8080 --with-password mysecretpassword
+```
+
+### SSO user group restriction
+
+Restrict access to users in specific groups from your identity provider:
+
+```shell
+netbird expose 8080 --with-user-groups engineering,devops
+```
+
+Users must authenticate through your configured IdP (OIDC) and belong to one of the specified groups to access the service.
+
+### Combining authentication methods
+
+You can combine multiple authentication methods. When multiple methods are enabled, users can choose which one to use:
+
+```shell
+netbird expose 8080 --with-pin 1234 --with-password backup-password --with-user-groups admin
+```
+
+<Note>
+    If no authentication flag is provided, the service is publicly accessible without any protection. Consider always using at least one authentication method for sensitive services.
+</Note>
+
+For more details on how each authentication method works, see [Reverse Proxy Authentication](/manage/reverse-proxy/authentication).
+
+## Custom domains
+
+By default, `netbird expose` generates a random subdomain on your proxy cluster domain (e.g., `a1b2c3d4e5f6.proxy.example.com`). You can customize this in two ways.
+
+### Name prefix
+
+Use `--with-name-prefix` to add a readable prefix to the generated subdomain:
+
+```shell
+netbird expose 8080 --with-name-prefix myapp
+```
+
+This produces a domain like `myapp-a1b2c3.proxy.example.com` instead of a fully random one.
+
+The prefix must follow these rules:
+- Lowercase letters, numbers, and hyphens only
+- Must start and end with a letter or number
+- 1 to 32 characters long
+
+### Custom domain
+
+Use `--with-custom-domain` to expose the service on a domain you own:
+
+```shell
+netbird expose 8080 --with-custom-domain app.example.com
+```
+
+<Warning>
+    The custom domain must already be configured and verified in your account before it can be used with the expose command. See [Custom Domains](/manage/reverse-proxy/custom-domains) for setup instructions.
+</Warning>
+
+## Session lifecycle
+
+Understanding how expose sessions work helps you manage them effectively and troubleshoot issues.
+
+### How sessions work
+
+When you run `netbird expose`, the following happens:
+
+1. The CLI sends the request to the local NetBird daemon.
+2. The daemon connects to the management server and creates an ephemeral reverse proxy service.
+3. The management server provisions a TLS certificate and domain for the service.
+4. The daemon receives the public URL and displays it to you.
+5. The daemon enters a **renewal loop**, sending a keep-alive signal to the management server every **30 seconds**.
+6. The management server maintains an in-memory session with a **90-second TTL** that resets on each renewal.
+
+### Stopping a session
+
+There are several ways a session can end:
+
+| Trigger | What happens | Service removed? |
+|---------|-------------|-----------------|
+| **Ctrl+C** or **SIGTERM** | The daemon sends a stop request to the management server within a 5-second timeout. | Yes, immediately |
+| **Renewal failure** | The daemon cannot reach the management server to renew. The CLI exits with an error. The server-side session expires after the TTL. | Yes, after 90 seconds |
+| **Client disconnects** | The daemon process is killed (e.g., `kill -9`, system crash). No stop request is sent. | Yes, after 90 seconds |
+| **Session TTL expires** | The management server's reaper removes sessions that haven't been renewed within 90 seconds. | Yes, by the reaper |
+| **Management server restart** | In-memory sessions are lost. | Yes, immediately on restart |
+
+### What causes expiration
+
+A session expires when the management server does not receive a renewal within 90 seconds. Common causes:
+
+- **Network interruption** between the peer and the management server.
+- **Client process killed** without graceful shutdown (e.g., `kill -9`, OOM kill, system reboot).
+- **Daemon restarted** while an expose session is active.
+- **Management server restarted** — all in-memory sessions are cleared.
+
+When a session expires, the management server automatically deletes the ephemeral service and logs a **"Peer expose expired"** activity event.
+
+<Note>
+    The 90-second TTL means the service may remain accessible for up to 90 seconds after the client disconnects unexpectedly. During this window, the domain still resolves and routes traffic. For sensitive services, always use authentication to prevent unauthorized access.
+</Note>
+
+## Rate limits
+
+Each peer can have a maximum of **10 active expose sessions** at the same time. If you need to expose more services simultaneously, either stop an existing session first or use the dashboard to create permanent services.
+
+Attempting to exceed this limit returns an error:
+
+```
+peer has reached the maximum number of active expose sessions (10)
+```
+
+## Permissions
+
+The `netbird expose` command requires permission at two levels:
+
+1. **Account level** — The Peer Expose feature must be enabled in account settings.
+2. **Group level** — If `peer_expose_groups` is configured, the peer must belong to at least one of the specified groups.
+
+If the peer does not have permission, the command returns a "permission denied" error.
+
+## Comparison with dashboard services
+
+| Property | Dashboard services | CLI expose services |
+|----------|-------------------|---------------------|
+| **Created via** | Dashboard or API | `netbird expose` command |
+| **Lifecycle** | Permanent until manually deleted | Ephemeral — removed when command exits or session expires |
+| **TTL** | None | 90 seconds, auto-renewed every 30 seconds |
+| **Multiple targets** | Yes (path-based routing) | Single target (the local port) |
+| **Custom domains** | Yes | Yes (if pre-configured) |
+| **Authentication** | SSO, Password, PIN | SSO (user groups), Password, PIN |
+| **Advanced settings** | Host header, redirect rewriting | Not available |
+| **Visibility** | Always shown in dashboard | Shown while active |
+| **Rate limit** | None | Max 10 per peer |
+| **Source label** | Permanent | Ephemeral |
+
+## Activity tracking
+
+All peer expose actions are recorded in the activity log and visible in the dashboard under **Events** > **Audit**:
+
+| Event | Description |
+|-------|-------------|
+| **Peer exposed service** | A peer created an expose session. Includes peer name, domain, and whether authentication is enabled. |
+| **Peer unexposed service** | A peer stopped an expose session (Ctrl+C or explicit stop). |
+| **Peer expose expired** | An expose session was removed because the renewal TTL expired. |
+
+## Troubleshooting
+
+### "client is not running, run 'netbird up' first"
+
+The NetBird daemon is not connected. Start it with:
+
+```shell
+netbird up
+```
+
+### "permission denied"
+
+Either peer expose is disabled in account settings, or your peer is not in an allowed group. Ask your account administrator to:
+
+1. Enable **Peer Expose** in **Settings** > **Clients**.
+2. Add your peer's group to the allowed peer groups (or leave the group list empty to allow all peers).
+
+### "peer has reached the maximum number of active expose sessions (10)"
+
+You have 10 active expose sessions on this peer. Stop one of them before creating a new one. Check for stale sessions that may not have been properly cleaned up — they will expire within 90 seconds.
+
+### "generate service name: invalid name prefix"
+
+The `--with-name-prefix` value contains invalid characters. The prefix must be:
+
+- Lowercase letters (`a-z`), numbers (`0-9`), and hyphens (`-`) only
+- Must start and end with a letter or number
+- 1 to 32 characters long
+
+### "only HTTP protocol is supported"
+
+The `--protocol` flag only accepts `http`. HTTPS and other protocols are not yet supported for peer expose.
+
+### Service URL returns connection error after Ctrl+C
+
+This is expected. The service is removed when you press `Ctrl+C`. The domain will stop resolving shortly after. If the TLS certificate was cached by your browser, you may see a brief connection error before the domain fully propagates.
+
+### Service still accessible after client crash
+
+If the client disconnects without sending a stop request (e.g., process killed, network failure), the service remains active for up to 90 seconds until the session TTL expires. This is by design to tolerate brief network interruptions without interrupting active users.
+
+## Examples
+
+### Quick demo server
+
+Expose a local development server for a quick demo:
+
+```shell
+# Start your dev server
+npm run dev  # Runs on port 3000
+
+# In another terminal, expose it
+netbird expose 3000 --with-name-prefix demo
+```
+
+### Protected staging environment
+
+Expose a staging server with password protection:
+
+```shell
+netbird expose 8080 --with-password staging-review --with-name-prefix staging
+```
+
+### Team-only access
+
+Expose a service restricted to your engineering team via SSO:
+
+```shell
+netbird expose 8080 --with-user-groups engineering --with-name-prefix internal-api
+```
+
+### Webhook receiver
+
+Temporarily expose a local webhook endpoint for testing:
+
+```shell
+netbird expose 9000 --with-name-prefix webhooks
+```
+
+## Related pages
+
+- [Reverse Proxy](/manage/reverse-proxy) - overview of the reverse proxy feature, dashboard setup, and concepts
+- [Authentication](/manage/reverse-proxy/authentication) - detailed guide on SSO, password, and PIN authentication
+- [Custom Domains](/manage/reverse-proxy/custom-domains) - configure your own domain names
+- [Access Logs](/manage/reverse-proxy/access-logs) - monitor traffic to your reverse proxy services
+- [CLI Reference](/get-started/cli#expose) - `netbird expose` command reference
