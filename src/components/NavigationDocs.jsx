@@ -287,6 +287,10 @@ export const docsNavigation = [
             href: '/manage/reverse-proxy/authentication',
           },
           { title: 'Access Logs', href: '/manage/reverse-proxy/access-logs' },
+          {
+            title: 'Expose from CLI',
+            href: '/manage/reverse-proxy/expose-from-cli',
+          },
         ],
       },
       {
