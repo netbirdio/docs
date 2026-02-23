@@ -48,7 +48,7 @@ const nextConfig = {
             },
             {
                 source: '/docs/how-to-guides/nameservers',
-                destination: '/manage/dns/nameserver-groups',
+                destination: '/manage/dns/internal-dns-servers',
                 permanent: true,
             },
             {

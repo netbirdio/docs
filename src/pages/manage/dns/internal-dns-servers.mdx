@@ -1,0 +1,169 @@
+export const description = 'Configure NetBird to work with internal DNS servers like Active Directory, BIND, and Unbound'
+import {Note} from "@/components/mdx"
+
+# Internal DNS Servers
+
+When your network has on-premise DNS infrastructure — Active Directory, BIND, Unbound, or other internal DNS servers — you may need to configure NetBird to use them. This page covers when a nameserver configuration is needed and when it isn't.
+
+## When You Don't Need a Nameserver
+
+If you just need access to a few internal resources by domain name, you don't need to configure a nameserver. Create a [Network resource](/manage/networks) with the internal domain name (e.g., `fileserver.corp.local`) and an [access control policy](/manage/access-control/manage-network-access) allowing your peers to reach it. The routing peer will resolve the DNS and route traffic to that resource. This works as long as the routing peer itself can resolve the domain.
+
+You can also use wildcard domains as resources (e.g., `*.corp.local`), but this will route all traffic to those domains through the routing peer. For more granular access to resources, we recommend using single domain names.
+
+## Domain Resources and Routing Peer DNS
+
+When you define a [Network resource](/manage/networks) using a domain name (e.g., `crm.corp.local`), the **routing peer** resolves that domain using its own local DNS configuration. The client sends DNS queries to the routing peer, which looks up the domain and returns the result.
+
+This means the routing peer must be able to resolve the domain. If it can't — for example, a Linux routing peer that isn't configured to use your Active Directory DNS — domain resource lookups will fail.
+
+To fix this, add the **routing peer's group** as a distribution group on the internal Nameserver:
+
+1. Go to **DNS** → **Nameservers**
+2. Edit your internal DNS nameserver (or create one if it doesn't exist)
+3. Add the **routing peer's group** to the **Distribution Groups**
+4. Under **Domains**, ensure your internal domains are listed (e.g., `corp.local`)
+5. Save
+
+This ensures the routing peer receives the nameserver configuration and can resolve internal domains on behalf of clients.
+
+<Note>
+This applies to all domain-based resources, not just Active Directory domains. Any routing peer that needs to resolve internal domain names must have the corresponding nameserver distributed to its group.
+</Note>
+
+## Configuring Nameservers for Internal Domains
+
+To resolve internal domains through NetBird, create a **match domain** Nameserver pointing to your internal DNS server:
+
+1. Go to **DNS** → **Nameservers** → **Add Nameserver**
+2. Choose **Custom DNS**
+
+<img src="/docs-static/img/manage/dns/netbird-nameserver-add-button.png" alt="Add nameserver" className="imagewrapper"/>
+
+3. Add the IP addresses of your internal DNS servers (e.g., `192.168.0.32`)
+4. Select the **Distribution Groups** — the peer groups that should use this nameserver
+
+<img src="/docs-static/img/manage/dns/netbird-nameserver-custom.png" alt="Custom DNS provider" className="imagewrapper"/>
+
+5. Under **Domains**, add a **Match Domain** and enter your internal domains (e.g., `corp.local`, `company.internal`)
+
+<img src="/docs-static/img/manage/dns/netbird-nameserver-add-domain.png" alt="Add match domain" className="imagewrapper"/>
+
+6. Save the nameserver
+
+Peers in the distribution groups will use your internal DNS server for the specified domains, while all other domains continue to resolve normally.
+
+<Note>
+Configure 2-3 nameserver IPs for redundancy. If the first fails, peers automatically try the next one.
+</Note>
+
+### Private DNS Behind Routing Peers
+
+If your internal DNS server is on a private network (not directly reachable by peers), you need to set up routing in addition to the nameserver configuration above. This is common when your DNS server is on an office LAN or cloud VPC that only the routing peer can access.
+
+**Create a Network Resource** so peers can reach the DNS server through the routing peer:
+
+1. Go to **Networks** → **Add Network**
+2. Add a resource with the DNS server's IP (e.g., `192.168.0.32/32`)
+3. Assign the resource to a group (e.g., "Internal DNS")
+4. Add the routing peer that can access the private network
+
+For details, see [Networks](/manage/networks).
+
+**Create an Access Control Policy** allowing DNS traffic from your peers to the DNS server:
+
+1. **Source**: Your user groups (e.g., "Remote Developers")
+2. **Destination**: The DNS resource group (e.g., "Internal DNS")
+3. **Protocol**: UDP, **Port**: 53
+
+For details, see [Manage Network Access](/manage/access-control/manage-network-access).
+
+### Primary vs Match Domain Nameservers
+
+- **Match domain**: Handles queries for specific domains (e.g., `corp.local`). Adding a domain automatically matches all its subdomains.
+- **Primary**: Handles all queries not matched by other nameservers. To create a primary nameserver, leave the Match Domains section empty.
+
+<Note>
+Each peer should have exactly **one** primary nameserver. If you don't configure a primary, peers use their original DNS settings for non-matched queries.
+</Note>
+
+### Search Domains
+
+Toggle **Mark match domains as search domains** to enable domain suffix searching. When enabled, typing `server` expands to `server.company.internal`. Only applies to match domain nameservers.
+
+### Example: Split-Horizon DNS
+
+A common setup with two nameservers:
+
+**Primary (internet)**: Select a predefined provider like Cloudflare (1.1.1.1, 1.0.0.1). Assign to "All Peers". Leave match domains empty.
+
+**Match domain (internal)**: Choose Custom DNS with your internal DNS server IPs (e.g., 10.0.0.1, 10.0.0.2). Assign to "All Peers". Add match domain `company.internal`. Enable search domains.
+
+Result:
+- `google.com` → Cloudflare
+- `app.company.internal` → Internal DNS (10.0.0.1)
+- `server` → Expanded to `server.company.internal` → Internal DNS
+
+### DNS Failover and Overlapping Domains
+
+Configure multiple nameserver IPs within a single nameserver entry for automatic failover. The client tries servers in order.
+
+If multiple nameservers match a query, the **most specific match wins**:
+
+```
+Query: app.us-east.company.internal
+
+Nameservers:
+1. company.internal → DNS1
+2. us-east.company.internal → DNS2
+
+Result: Uses DNS2 (more specific)
+```
+
+---
+
+## Managing Nameservers
+
+### Editing
+
+1. Navigate to **DNS** → **Nameservers**
+2. Click the nameserver to edit
+3. Modify settings and click **Save**
+
+<Note>
+Changes propagate to peers within 10-30 seconds. No peer restart required.
+</Note>
+
+### Temporarily Disabling
+
+Edit the nameserver and toggle **Enable Nameserver** to OFF. Peers stop using it but the configuration is preserved.
+
+### Deleting
+
+<Note>
+Before deleting a primary nameserver, create a new primary first, or peers will revert to their original DNS settings.
+</Note>
+
+1. Click the nameserver
+2. Click **Delete** and confirm
+
+---
+
+## Active Directory & Domain Controllers
+
+Active Directory (AD) environments have specific DNS requirements because Domain Controllers (DCs) run their own DNS services and rely on DNS for core AD functionality like domain joins, authentication, and service discovery.
+
+### Domain Controllers as Routing Peers
+
+We do not recommend using Domain Controllers as routing peers. If you must, you need to **disable DNS management** for the DC's group. If NetBird manages DNS on a Domain Controller, it can interfere with the AD DNS services that the DC depends on.
+
+To configure this:
+
+1. Create a dedicated group for your Domain Controllers (e.g., "Domain Controllers")
+2. Go to **DNS** → **DNS Settings**
+3. Add the Domain Controller group to **Disable DNS management for these groups**
+4. Save Changes
+
+This prevents NetBird from modifying the DC's DNS configuration while still allowing the DC to act as a routing peer. The DC continues using its own DNS for Active Directory services.
+
+For more details on DNS management modes, see [DNS Settings](/manage/dns/dns-settings).

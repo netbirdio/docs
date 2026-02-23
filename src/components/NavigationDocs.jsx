@@ -293,14 +293,10 @@ export const docsNavigation = [
         title: 'DNS',
         isOpen: false,
         links: [
-          {
-            title: 'Quickstart',
-            href: '/manage/dns/private-dns-behind-routing-peers',
-          },
           { title: 'Overview', href: '/manage/dns' },
           {
-            title: 'Configuring Nameservers',
-            href: '/manage/dns/nameserver-groups',
+            title: 'Internal DNS Servers',
+            href: '/manage/dns/internal-dns-servers',
           },
           { title: 'DNS Settings', href: '/manage/dns/dns-settings' },
           { title: 'Custom Zones', href: '/manage/dns/custom-zones' },
@@ -530,9 +526,8 @@ export const docsNavigation = [
           },
           {
             title: 'Management Geolocation Database',
-            href: '/selfhosted/geo-support'
+            href: '/selfhosted/geo-support',
           },
-
         ],
       },
       {
@@ -619,8 +614,9 @@ export const docsNavigation = [
             title: 'Coturn to Embedded STUN',
             href: '/selfhosted/migration/coturn-to-stun-migration',
           },
-          { title: 'Combined Container Setup', 
-            href: '/selfhosted/migration/combined-container' 
+          {
+            title: 'Combined Container Setup',
+            href: '/selfhosted/migration/combined-container',
           },
           {
             title: 'Enable Reverse Proxy',
