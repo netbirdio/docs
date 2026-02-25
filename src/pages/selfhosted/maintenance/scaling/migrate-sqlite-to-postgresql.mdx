@@ -122,3 +122,63 @@ You should see:
 ```
 using Postgres store engine
 ```
+
+## Migrate Auth Store
+
+The embedded identity provider (Dex) uses a separate SQLite database (`idp.db`) to store authentication data such as users, passwords, connectors, sessions, and tokens. You can optionally migrate this to PostgreSQL as well.
+
+### Create the Auth Database
+
+```bash
+docker exec postgres-server psql -U postgres -c "CREATE DATABASE netbird_auth;"
+```
+
+### Create the Auth Migration File
+
+Create a file called `auth-sqlite.load` with the following content:
+
+```
+LOAD DATABASE
+     FROM sqlite:///root/combined/backup/idp.db
+     INTO postgresql://postgres:password@localhost:5432/netbird_auth
+
+WITH include drop, create tables, create indexes, reset sequences
+
+CAST
+     column client.public                            to boolean,
+     column auth_request.force_approval_prompt       to boolean,
+     column auth_request.logged_in                   to boolean,
+     column auth_request.claims_email_verified       to boolean,
+     column auth_code.claims_email_verified          to boolean,
+     column refresh_token.claims_email_verified      to boolean
+;
+```
+
+<Note>
+Update the SQLite path and PostgreSQL connection string to match your environment.
+</Note>
+
+### Run the Auth Migration
+
+```bash
+pgloader auth-sqlite.load
+```
+
+### Update config.yaml
+
+Add the `authStore` section to your `config.yaml`:
+
+```yaml
+server:
+  # ... existing settings ...
+
+  authStore:
+    engine: "postgres"
+    dsn: "host=postgres-server port=5432 user=postgres password=password dbname=netbird_auth sslmode=disable"
+```
+
+### Restart and Verify
+
+```bash
+docker compose up -d
+```
