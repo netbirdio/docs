@@ -182,3 +182,57 @@ server:
 ```bash
 docker compose up -d
 ```
+
+## Migrate Activity Store
+
+The activity events store uses a separate SQLite database (`events.db`) to record user and system activity. You can optionally migrate this to PostgreSQL as well.
+
+### Create the Activity Database
+
+```bash
+docker exec postgres-server psql -U postgres -c "CREATE DATABASE netbird_events;"
+```
+
+### Create the Activity Migration File
+
+Create a file called `activity-sqlite.load` with the following content:
+
+```
+LOAD DATABASE
+     FROM sqlite:///root/combined/backup/events.db
+     INTO postgresql://postgres:password@localhost:5432/netbird_events
+
+WITH include drop, create tables, create indexes, reset sequences
+;
+```
+
+<Note>
+No boolean CAST rules are needed for the activity store — all columns use standard integer and text types.
+
+Update the SQLite path and PostgreSQL connection string to match your environment.
+</Note>
+
+### Run the Activity Migration
+
+```bash
+pgloader activity-sqlite.load
+```
+
+### Update config.yaml
+
+Add the `activityStore` section to your `config.yaml`:
+
+```yaml
+server:
+  # ... existing settings ...
+
+  activityStore:
+    engine: "postgres"
+    dsn: "host=postgres-server port=5432 user=postgres password=password dbname=netbird_events sslmode=disable"
+```
+
+### Restart and Verify
+
+```bash
+docker compose up -d
+```
