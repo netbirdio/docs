@@ -1,0 +1,112 @@
+import {Note, Warning} from "@/components/mdx"
+
+export const description =
+    'Configure backend services like Jellyfin, Home Assistant, Plex, and Nextcloud to trust the NetBird reverse proxy IP range for correct client IP detection.'
+
+# Backend Service Configuration
+
+When a backend service sits behind a reverse proxy, it sees the proxy's IP address as the client IP instead of the real user's IP. Many self-hosted applications require you to configure a list of "trusted proxies" or "known proxies" so they can correctly read the real client IP from the `X-Forwarded-For` header.
+
+With the NetBird Reverse Proxy, the proxy connects to your target service through a WireGuard tunnel. From the target's perspective, the source IP of incoming requests is the proxy's **NetBird IP** — an address from the `100.64.0.0/10` Carrier-Grade NAT range that NetBird uses for all peers.
+
+<Warning>
+    **Do not hardcode a specific NetBird IP** (e.g., `100.64.0.47`) in your backend's trusted proxy configuration. NetBird IPs can change when the peer or service restarts, which would cause your backend to stop trusting the proxy and reject forwarded headers.
+</Warning>
+
+## Docker bridge networks
+
+If the NetBird peer and the backend service run as containers on the **same Docker bridge network** (for example, when using the Home Assistant NetBird add-on), traffic between them does not traverse the WireGuard tunnel. In this case, the backend sees the NetBird container's **Docker bridge IP** (typically from `172.16.0.0/12`) rather than a NetBird IP.
+
+When this applies, add the Docker bridge subnet to your trusted proxy list **in addition to** the NetBird range:
+
+```
+100.64.0.0/10
+172.16.0.0/12
+```
+
+<Note>
+    The default Docker bridge subnet is `172.17.0.0/16`, but Docker and add-on managers may assign addresses from anywhere in the `172.16.0.0/12` range. Check your Docker network configuration (`docker network inspect <network>`) to find the exact subnet if you want a narrower entry.
+</Note>
+
+## Recommended solution
+
+Instead of specifying a single IP, configure your backend to trust the **entire NetBird CGNAT range**:
+
+```
+100.64.0.0/10
+```
+
+This covers all possible NetBird IPs regardless of reassignment. This is safe because only authorized peers within your NetBird network can reach the target through the encrypted WireGuard tunnel — no external traffic can originate from this range.
+
+If the NetBird peer runs on the same Docker bridge network as the backend (see [above](#docker-bridge-networks)), also add the Docker bridge range `172.16.0.0/12`.
+
+<Note>
+    If you prefer a narrower NetBird range, you can use your account's specific network range (typically `100.64.0.0/16`). Find your account's range via the API: `GET /api/accounts/{id}` — look for the `network_range` field. However, the full `/10` range is recommended for simplicity and resilience.
+</Note>
+
+## Service-specific examples
+
+Below are configuration examples for common self-hosted applications. Configuration options may vary by version — consult each application's official documentation for the most current syntax.
+
+### Jellyfin
+
+In the Jellyfin admin dashboard:
+
+1. Go to **Dashboard** → **Networking**.
+2. In the **Known Proxies** field, enter `100.64.0.0/10`.
+3. Click **Save**.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/jellyfin-known-proxies.png" alt="Jellyfin Networking settings showing 100.64.0.0/10 in the Known Proxies field" className="imagewrapper-large"/>
+</p>
+
+This tells Jellyfin to trust forwarded headers from any NetBird IP, allowing it to see the real client IP.
+
+### Home Assistant
+
+In your `configuration.yaml`, add or update the `http` section:
+
+```yaml
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 100.64.0.0/10
+```
+
+If you are running the **NetBird add-on** (which runs as a Docker container on the same host), also add the Docker bridge range:
+
+```yaml
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 100.64.0.0/10
+    - 172.16.0.0/12
+```
+
+Restart Home Assistant after making this change. Without `use_x_forwarded_for` and a matching `trusted_proxies` entry, Home Assistant will block requests from the reverse proxy.
+
+### Nextcloud
+
+In your Nextcloud `config/config.php`, add the NetBird range to the `trusted_proxies` array:
+
+```php
+'trusted_proxies' => ['100.64.0.0/10'],
+```
+
+Nextcloud supports CIDR notation for IPv4 ranges. When a request arrives from a trusted proxy, Nextcloud reads the real client IP from the `X-Forwarded-For` header instead of using the proxy's IP.
+
+## Verifying your configuration
+
+After updating your backend's trusted proxy settings:
+
+1. Access your service through the NetBird reverse proxy URL.
+2. Check the backend's access logs — the logged client IP should be the **real user's IP**, not a `100.64.x.x` address.
+3. If the backend still shows a NetBird IP, verify that **Pass Host Header** is enabled in your reverse proxy service's [Settings tab](/manage/reverse-proxy#step-4-configure-advanced-settings) and that you have restarted the backend service after changing its configuration.
+
+You can also monitor requests from the NetBird side using [Access Logs](/manage/reverse-proxy/access-logs).
+
+## Related pages
+
+- [Reverse Proxy Overview](/manage/reverse-proxy) — setup, concepts, and service management
+- [Access Logs](/manage/reverse-proxy/access-logs) — monitor traffic to your reverse proxy services
+- [How NetBird Works](/about-netbird/how-netbird-works) — details on IP assignment from the CGNAT range
