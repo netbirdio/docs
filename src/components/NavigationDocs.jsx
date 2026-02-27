@@ -288,6 +288,10 @@ export const docsNavigation = [
           },
           { title: 'Access Logs', href: '/manage/reverse-proxy/access-logs' },
           {
+            title: 'Service Configuration',
+            href: '/manage/reverse-proxy/service-configuration',
+          },
+          {
             title: 'Expose from CLI',
             href: '/manage/reverse-proxy/expose-from-cli',
           },
