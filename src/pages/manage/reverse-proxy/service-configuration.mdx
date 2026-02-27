@@ -13,7 +13,11 @@ With the NetBird Reverse Proxy, the proxy connects to your target service throug
     **Do not hardcode a specific NetBird IP** (e.g., `100.64.0.47`) in your backend's trusted proxy configuration. NetBird IPs can change when the peer or service restarts, which would cause your backend to stop trusting the proxy and reject forwarded headers.
 </Warning>
 
-## Docker bridge networks
+<Warning>
+    **Cloud-hosted usage limits:** NetBird's cloud-hosted Reverse Proxy is provided on a shared, best-effort basis. High-volume or sustained data transfers may be subject to bandwidth limits, rate limiting, and fair-use policies under the [NetBird Terms of Service](https://netbird.io/terms). These restrictions do not apply if you [self-host NetBird](/selfhosted/selfhosted-guide).
+</Warning>
+
+## Docker Bridge Networks
 
 If the NetBird peer and the backend service run as containers on the **same Docker bridge network** (for example, when using the Home Assistant NetBird add-on), traffic between them does not traverse the WireGuard tunnel. In this case, the backend sees the NetBird container's **Docker bridge IP** (typically from `172.16.0.0/12`) rather than a NetBird IP.
 
@@ -28,7 +32,7 @@ When this applies, add the Docker bridge subnet to your trusted proxy list **in 
     The default Docker bridge subnet is `172.17.0.0/16`, but Docker and add-on managers may assign addresses from anywhere in the `172.16.0.0/12` range. Check your Docker network configuration (`docker network inspect <network>`) to find the exact subnet if you want a narrower entry.
 </Note>
 
-## Recommended solution
+## Recommended Solution
 
 Instead of specifying a single IP, configure your backend to trust the **entire NetBird CGNAT range**:
 
@@ -44,7 +48,7 @@ If the NetBird peer runs on the same Docker bridge network as the backend (see [
     If you prefer a narrower NetBird range, you can use your account's specific network range (typically `100.64.0.0/16`). Find your account's range via the API: `GET /api/accounts/{id}` — look for the `network_range` field. However, the full `/10` range is recommended for simplicity and resilience.
 </Note>
 
-## Service-specific examples
+## Service-specific Examples
 
 Below are configuration examples for common self-hosted applications. Configuration options may vary by version — consult each application's official documentation for the most current syntax.
 
@@ -57,14 +61,13 @@ In the Jellyfin admin dashboard:
 3. Click **Save**.
 
 <p>
-    <img src="/docs-static/img/manage/reverse-proxy/jellyfin-known-proxies.png" alt="Jellyfin Networking settings showing 100.64.0.0/10 in the Known Proxies field" className="imagewrapper-large"/>
+    <img src="/docs-static/img/manage/reverse-proxy/service-configuration/jellyfin-known-proxies.png" alt="Jellyfin Networking settings showing 100.64.0.0/10 in the Known Proxies field" className="imagewrapper-large"/>
 </p>
 
-This tells Jellyfin to trust forwarded headers from any NetBird IP, allowing it to see the real client IP.
-
+This tells Jellyfin to trust forwarded headers from any NetBird IP, allowing it to see the real client IP. Additionally, Jellyfin supports adding a 'Base URL' this can be used in conjuction with setting a location while [configuring your serivce](https://docs.netbird.io/manage/reverse-proxy#step-2-configure-service-details) on the NetBird Reverse Proxy service.
 ### Home Assistant
 
-In your `configuration.yaml`, add or update the `http` section:
+In your `configuration.yaml`, add or update the `http` section. You can do this through the File Editor or Studio Code Server add-on, or via the command line if you have terminal access. If you want to learn more about Home Assistant checkout our [full guide on the Knowledge Hub](https://netbird.io/knowledge-hub/home-assistant-access).
 
 ```yaml
 http:
@@ -73,7 +76,9 @@ http:
     - 100.64.0.0/10
 ```
 
-If you are running the **NetBird add-on** (which runs as a Docker container on the same host), also add the Docker bridge range:
+If you are running the [NetBird add-on](https://github.com/netbirdio/addon-netbird) (which runs as a Docker container on the same host), also add the Docker bridge range. Click the button below to get this add-on.
+
+[![Add NetBird add-on repository](/docs-static/img/manage/reverse-proxy/service-configuration/ha_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fglemsom%2Fhassio-netbird)
 
 ```yaml
 http:
@@ -92,6 +97,8 @@ In your Nextcloud `config/config.php`, add the NetBird range to the `trusted_pro
 ```php
 'trusted_proxies' => ['100.64.0.0/10'],
 ```
+
+If you're running NextCloud AIO this should be configured automatically during setup, but if needed you can use `sudo docker exec -u 0 -it nextcloud-aio-nextcloud /bin/bash`.
 
 Nextcloud supports CIDR notation for IPv4 ranges. When a request arrives from a trusted proxy, Nextcloud reads the real client IP from the `X-Forwarded-For` header instead of using the proxy's IP.
 
