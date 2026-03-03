@@ -1,0 +1,139 @@
+import {Note, Warning} from "@/components/mdx";
+
+# Certificate Authority
+
+NetBird includes a built-in Certificate Authority (CA) that issues TLS certificates for peer hostnames.
+This lets services running on your NetBird peers use valid HTTPS without manually setting up certificates or exposing anything to the public internet.
+
+The CA is constrained to your network's DNS domain via x509 NameConstraints, so it can only sign certificates for hostnames within your NetBird network (e.g. `crm.netbird.cloud`, `*.db.netbird.cloud`).
+
+<Note>
+    The CA feature requires a DNS domain to be configured for your network.
+    Go to **Settings > Networks** and set a DNS domain before initializing the CA.
+</Note>
+
+## How it works
+
+1. The management server generates an ECDSA P-256 root CA certificate scoped to your DNS domain
+2. Peers request certificates via `netbird cert request` — the private key never leaves the device, only a CSR is sent
+3. The management server signs the CSR and returns the certificate
+4. Certificates are automatically renewed before expiry
+5. The CA certificate can be installed into the OS trust store so browsers and other tools trust peer certificates without warnings
+
+## Initialize the Certificate Authority
+
+Navigate to **Settings > Certificate Authority** in the NetBird dashboard.
+
+If no CA has been initialized yet, you'll see a setup screen. Click **Initialize CA** to open the configuration dialog:
+
+- **Display Name** — used in the certificate's CommonName field. Leave empty for automatic naming based on your DNS domain.
+- **Organization** — the organization name embedded in the CA certificate. Defaults to "NetBird Self-Hosted".
+- **Validity** — how long the root CA certificate will be valid. Options range from 1 year to 20 years. The default is 10 years, which is typical for root CAs.
+
+After initialization, the CA status card shows the certificate details including fingerprint, creation date, and expiry.
+
+## Wildcard certificates
+
+By default, peers can only request certificates for their own FQDN (e.g. `myserver.netbird.cloud`).
+You can enable wildcard certificates to allow peers to also request certificates covering all subdomains (e.g. `*.myserver.netbird.cloud`).
+
+Toggle **Allow wildcard certificates** in the CA settings page. When enabled, peers can use the `--wildcard` flag when requesting certificates.
+
+## Viewing peer certificates
+
+Each peer has a **Certificates** tab on its detail page. This tab shows:
+
+- **Active certificate** — the currently valid certificate displayed as a card with domain, status, issue and expiry dates, and serial number
+- **Previous certificates** — expired or revoked certificates in a collapsible list
+
+## Revoking a certificate
+
+On the peer's Certificates tab, click **Revoke Certificate** below the active certificate card.
+This immediately revokes the certificate. Revoked certificates appear in the "Previous certificates" section with a red "Revoked" badge.
+
+<Note>
+    Revoking a certificate cannot be undone. The peer will need to request a new certificate.
+</Note>
+
+## Rotating the CA
+
+If you need to replace the CA (for example, if the CA private key may have been compromised), click **Rotate CA** on the CA settings page.
+
+Rotation creates a new CA and deactivates the current one. Existing certificates signed by the old CA remain valid until they expire. New certificate requests will be signed by the new CA.
+
+Previous CAs are listed in the **Previous CAs** collapsible section on the settings page.
+
+## Downloading the CA certificate
+
+Click **Download CA Certificate** on the CA settings page to download the root CA certificate in PEM format.
+This is useful if you need to distribute the CA certificate to systems or tools that don't use the NetBird client.
+
+## CLI usage
+
+The `netbird cert` command manages TLS certificates on a peer.
+
+### Request a certificate
+
+```bash
+netbird cert request
+```
+
+Requests a TLS certificate for this peer from the management server. The private key is generated locally and never leaves the device.
+
+**Flags:**
+- `--type` — signing type: `internal` (default) or `acme`
+- `--wildcard` — include a wildcard SAN (`*.fqdn`) in the certificate. Requires wildcard certificates to be enabled in the CA settings.
+
+**Examples:**
+
+```bash
+# Request a standard certificate
+netbird cert request
+
+# Request a wildcard certificate
+netbird cert request --wildcard
+```
+
+### Check certificate status
+
+```bash
+netbird cert status
+```
+
+Shows the current certificate details including DNS names, issuer, dates, CA trust status, and file paths.
+
+### Install CA into OS trust store
+
+```bash
+netbird cert trust-ca
+```
+
+Installs the account's CA certificate into the operating system trust store. After this, browsers and other TLS clients on the machine will trust certificates issued by your NetBird CA without warnings.
+
+### Remove CA from OS trust store
+
+```bash
+netbird cert untrust-ca
+```
+
+Removes the CA certificate from the OS trust store.
+
+## Permissions
+
+The Certificate Authority feature uses its own permission set:
+
+- **Read** — view CA status and issued certificates
+- **Create** — initialize a new CA
+- **Update** — rotate the CA, revoke certificates, toggle wildcard setting
+
+These can be configured in **Settings > Permissions** for each role.
+
+## Get started
+<p float="center" >
+    <Button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</Button>
+</p>
+
+- Make sure to [star us on GitHub](https://github.com/netbirdio/netbird)
+- Follow us [on X](https://x.com/netbird)
+- Join our [Slack Channel](/slack-url)
+- NetBird [latest release](https://github.com/netbirdio/netbird/releases) on GitHub

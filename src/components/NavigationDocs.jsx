@@ -424,6 +424,10 @@ export const docsNavigation = [
             title: 'Plans and Billing',
             href: '/manage/settings/plans-and-billing',
           },
+          {
+            title: 'Certificate Authority',
+            href: '/manage/settings/certificate-authority',
+          },
           { title: 'Auto Update', href: '/manage/peers/auto-update' },
           { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
         ],
