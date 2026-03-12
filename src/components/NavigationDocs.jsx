@@ -420,13 +420,17 @@ export const docsNavigation = [
             title: 'Multi-Factor Authentication',
             href: '/manage/settings/multi-factor-authentication',
           },
-          { title: 'Delete Account', href: '/manage/settings/delete-account' },
+          { title: 'Auto Update', href: '/manage/peers/auto-update' },
+          { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
+          {
+            title: 'Notifications',
+            href: '/manage/settings/notifications',
+          },
           {
             title: 'Plans and Billing',
             href: '/manage/settings/plans-and-billing',
           },
-          { title: 'Auto Update', href: '/manage/peers/auto-update' },
-          { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
+          { title: 'Delete Account', href: '/manage/settings/delete-account' },
         ],
       },
       {
