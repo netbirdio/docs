@@ -1,5 +1,5 @@
-export const description = 'Configure NetBird to work with internal DNS servers like Active Directory, BIND, and Unbound'
-import {Note} from "@/components/mdx"
+export const description = 'Configure NetBird to work with internal DNS servers like Active Directory, BIND, and Unbound. Includes troubleshooting WireGuard port conflicts on Domain Controllers.'
+import {Note, Warning} from "@/components/mdx"
 
 # Internal DNS Servers
 
@@ -167,3 +167,66 @@ To configure this:
 This prevents NetBird from modifying the DC's DNS configuration while still allowing the DC to act as a routing peer. The DC continues using its own DNS for Active Directory services.
 
 For more details on DNS management modes, see [DNS Settings](/manage/dns/dns-settings).
+
+### WireGuard Port Conflict on Domain Controllers
+
+When NetBird is installed on a Windows Domain Controller, the Windows DNS Server service may already be using UDP port 51820 — WireGuard's default port. This causes NetBird to fail during startup.
+
+**Symptoms:**
+- NetBird fails with: `Error: daemon up failed: call service up method: rpc error: code = DeadlineExceeded desc = context deadline exceeded`
+- The peer appears as **disconnected** in the NetBird management portal
+- The WireGuard tunnel cannot establish a connection
+
+**Cause:**
+
+The Windows DNS Server service uses a dynamic socket pool that can bind to UDP port 51820 before WireGuard claims it. Since both services need exclusive use of the port, WireGuard fails to start.
+
+**Diagnosis:**
+
+1. Open an elevated Command Prompt or PowerShell on the Domain Controller and check what process is using port 51820:
+
+```cmd
+netstat -ano | findstr 51820
+```
+
+2. Identify the process holding the port using the PID from the output:
+
+```cmd
+tasklist /FI "PID eq <PID>"
+```
+
+If the process is `dns.exe` or `svchost.exe` (hosting the DNS Server service), this confirms the port conflict.
+
+3. Optionally, capture a NetBird debug bundle for further investigation:
+
+```cmd
+netbird debug for 1m -U
+```
+
+**Fix:**
+
+Exclude port 51820 from the DNS Server's socket pool so it cannot claim the port:
+
+```cmd
+dnscmd /config /SocketPoolExcludedPortRanges 51820-51820
+```
+
+Then restart the DNS Server service:
+
+```cmd
+net stop dns && net start dns
+```
+
+Then restart the NetBird service:
+
+```cmd
+netbird service restart
+```
+
+<Warning>
+Restarting the DNS Server service temporarily disrupts DNS resolution for all clients using this Domain Controller. Schedule this change during a maintenance window or ensure other DCs can handle DNS queries.
+</Warning>
+
+<Note>
+This port exclusion persists across reboots. If you later change the WireGuard listen port in your NetBird configuration, update the exclusion range accordingly.
+</Note>
