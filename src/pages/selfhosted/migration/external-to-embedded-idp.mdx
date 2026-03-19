@@ -1,10 +1,10 @@
 import {Note, Warning, Success} from "@/components/mdx"
 
-export const description = 'Migrate a self-hosted NetBird deployment from an external identity provider to the embedded Dex-based IdP introduced in v0.60.0.'
+export const description = 'Migrate a self-hosted NetBird deployment from an external identity provider to the embedded Dex-based IdP introduced in v0.62.0.'
 
 # Migration Guide: External IdP to Embedded IdP
 
-This guide walks through migrating a self-hosted NetBird deployment from an external identity provider to the embedded Dex-based IdP introduced in v0.60.0.
+This guide walks through migrating a self-hosted NetBird deployment from an external identity provider to the embedded Dex-based IdP introduced in v0.62.0.
 
 <Note>
 **Who is this guide for?** This migration guide is for users who:
@@ -103,12 +103,12 @@ Zitadel requires manual connector setup because the management server's service 
    - **Name:** `netbird-dex`
    - **Type:** Web
    - **Authentication Method:** Code
-4. Set the redirect URI to `https://<your-management-domain>/oauth2/callback`.
-5. Save and copy the **Client ID** and **Client Secret**.
+4. Set the redirect URI to `https://<your-management-domain>/oauth2/callback` and create the application.
+5. After creating, you'll be prompted with the **Client ID** and **Client Secret**, make sure you copy them and save them, we'll use them later.
 6. Under **Token Settings**, enable both:
    - User roles inside ID token
    - User Info inside ID token
-7. Create a `connector.json` file:
+7. Create a `connector.json` file with the values from the step 5 above:
 
 ```json
 {
@@ -116,10 +116,10 @@ Zitadel requires manual connector setup because the management server's service 
   "name": "zitadel",
   "id": "zitadel",
   "config": {
-    "issuer": "https://<your-zitadel-domain>",
-    "clientID": "<client-id>",
-    "clientSecret": "<client-secret>",
-    "redirectURI": "https://<your-management-domain>/oauth2/callback"
+    "issuer": "https://<your-zitadel-domain>", // same as you use to log in to zitadel dashboard
+    "clientID": "<client-id>", // from step 5
+    "clientSecret": "<client-secret>", // from step 5
+    "redirectURI": "https://<your-management-domain>/oauth2/callback" // same as you use to log in to management dashboard
   }
 }
 ```
@@ -152,17 +152,13 @@ You will pass this file in Step 5 with the `--idp-seed-info` flag.
 
 ## Step 3: Stop the Management Server
 
-**Systemd / bare-metal:**
-
-```bash
-sudo systemctl stop netbird-management
-```
-
-**Docker Compose:**
-
 ```bash
 docker compose stop management
 ```
+
+<Note>
+**Bare-metal:** Depending on your setup, you might need to use systemctl or some other method to stop the management server.
+</Note>
 
 ---
 
@@ -173,13 +169,6 @@ The tool creates `management.json.bak` automatically, but always make your own b
 <Warning>
 Do not skip this step. The migration modifies user IDs in the database. A manual backup is your only recovery path if something goes wrong.
 </Warning>
-
-**Systemd / bare-metal (SQLite):**
-
-```bash
-cp /var/lib/netbird/store.db /var/lib/netbird/store.db.bak
-cp /etc/netbird/management.json /etc/netbird/management.json.bak
-```
 
 **Docker Compose (SQLite in a named volume):**
 
@@ -202,7 +191,16 @@ cp ~/netbird/management.json ~/netbird/management.json.bak
 
 ```bash
 pg_dump -h <host> -U <user> -d <database> -f netbird-backup.sql
+cp ~/netbird/management.json ~/netbird/management.json.bak
+```
+
+**Bare-metal (SQLite):**
+
+Baremetal installations will have a different path based on your setup, but the genreal idea is the same:
+
+```bash
 cp /etc/netbird/management.json /etc/netbird/management.json.bak
+cp /var/lib/netbird/store.db /var/lib/netbird/store.db.bak
 ```
 
 ---
@@ -217,26 +215,32 @@ This previews what will happen without writing any changes.
 
 ```bash
 ./netbird-idp-migrate \
-  --config /etc/netbird/management.json \
+  --config ~/netbird/management.json \
+  --datadir /var/lib/docker/volumes/<volume-name>/_data \
   --dry-run
 ```
 
 **Zitadel / custom providers** (pass the `connector.json` from Step 2):
 
-```bash
-./netbird-idp-migrate \
-  --config /etc/netbird/management.json \
-  --idp-seed-info "$(base64 < connector.json)" \
-  --dry-run
-```
-
-<Note>
-**Docker users:** If your database is in a volume that doesn't match the `Datadir` in `management.json`, add `--datadir`:
+Make sure that the connector.json that you're passing here contains the same values as you used in Step 2 above. 
+The --idp-seed-info flag let's us configure the initial Static Connector that the management server will use to connect to the exteernal IdP.
 
 ```bash
 ./netbird-idp-migrate \
   --config ~/netbird/management.json \
   --datadir /var/lib/docker/volumes/<volume-name>/_data \
+  --idp-seed-info "$(base64 < connector.json)" \
+  --dry-run
+```
+
+<Note>
+The `--datadir` flag is needed when your database is in a Docker volume whose path doesn't match the `Datadir` in `management.json`. You can find the volume name with `docker volume ls --format '{{ .Name }}' | grep -i management` and the volume path with `docker volume inspect <volume-name> --format '{{ .Mountpoint }}'`.
+
+**Bare-metal / systemd users** can omit `--datadir` if the default data directory in `management.json` is correct:
+
+```bash
+./netbird-idp-migrate \
+  --config /etc/netbird/management.json \
   --dry-run
 ```
 </Note>
@@ -266,11 +270,14 @@ Run the same command without `--dry-run`:
 
 ```bash
 # Auto-detected providers
-./netbird-idp-migrate --config /etc/netbird/management.json
+./netbird-idp-migrate \
+  --config ~/netbird/management.json \
+  --datadir /var/lib/docker/volumes/<volume-name>/_data
 
 # Zitadel / custom providers
 ./netbird-idp-migrate \
-  --config /etc/netbird/management.json \
+  --config ~/netbird/management.json \
+  --datadir /var/lib/docker/volumes/<volume-name>/_data \
   --idp-seed-info "$(base64 < connector.json)"
 ```
 
@@ -284,7 +291,7 @@ Type `y` and press Enter.
 
 ### Review the new config
 
-Open `/etc/netbird/management.json` and verify:
+Open your `management.json` (e.g., `~/netbird/management.json`) and verify:
 
 - `IdpManagerConfig` is **removed**.
 - `EmbeddedIdP` is present with `"Enabled": true` and your connector in `StaticConnectors`.
@@ -353,7 +360,7 @@ AUTH_CLIENT_ID=netbird-dashboard
 AUTH_AUDIENCE=netbird-dashboard
 ```
 
-Restart the dashboard after updating.
+If you're using docker, make sure to recreate the dashboard container to apply the new environment variables with `docker compose up -d dashboard`
 
 ---
 
@@ -362,10 +369,6 @@ Restart the dashboard after updating.
 ### Start the management server
 
 ```bash
-# Systemd
-sudo systemctl start netbird-management
-
-# Docker Compose
 docker compose up -d management
 ```
 
@@ -406,7 +409,8 @@ Migrate user IDs in the database but skip config generation:
 
 ```bash
 ./netbird-idp-migrate \
-  --config /etc/netbird/management.json \
+  --config ~/netbird/management.json \
+  --datadir /var/lib/docker/volumes/<volume-name>/_data \
   --skip-config
 ```
 
@@ -414,7 +418,8 @@ Migrate user IDs in the database but skip config generation:
 
 ```bash
 ./netbird-idp-migrate \
-  --config /etc/netbird/management.json \
+  --config ~/netbird/management.json \
+  --datadir /var/lib/docker/volumes/<volume-name>/_data \
   --force
 ```
 
@@ -472,11 +477,11 @@ The migration is **idempotent**. Already-migrated users are detected and skipped
 
 If something goes wrong after migration:
 
-1. **Stop** the management server.
+1. **Stop** the management server: `docker compose stop management`
 2. **Restore the database:**
-   - SQLite (bare-metal): `cp /var/lib/netbird/store.db.bak /var/lib/netbird/store.db`
    - SQLite (Docker volume): `sudo cp $VOLUME_PATH/store.db.bak $VOLUME_PATH/store.db`
+   - SQLite (bare-metal): `cp /var/lib/netbird/store.db.bak /var/lib/netbird/store.db`
    - PostgreSQL: restore from your `pg_dump` backup
-3. **Restore the config:** `cp /etc/netbird/management.json.bak /etc/netbird/management.json`
+3. **Restore the config:** `cp ~/netbird/management.json.bak ~/netbird/management.json`
 4. **Revert** any reverse proxy or dashboard env changes.
-5. **Start** the management server.
+5. **Start** the management server: `docker compose up -d management`
