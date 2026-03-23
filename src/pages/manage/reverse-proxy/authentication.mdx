@@ -1,11 +1,11 @@
-import {Note} from "@/components/mdx"
+import {Note, Warning} from "@/components/mdx"
 
 export const description =
-    'Configure SSO, password, and PIN authentication methods for NetBird Reverse Proxy services to control who can access your exposed applications.'
+    'Configure SSO, password, PIN, and header authentication methods, plus IP and country access restrictions, for NetBird Reverse Proxy services.'
 
 # Reverse Proxy Authentication
 
-NetBird Reverse Proxy supports multiple authentication methods to control who can access your exposed services. You can enable one or more methods on each service, or leave a service completely public. Authentication is configured per service in the **Authentication** tab when creating or editing a service.
+NetBird Reverse Proxy supports multiple authentication methods and connection-level access restrictions to control who can access your exposed services. You can enable one or more methods on each service, or leave a service completely public. Authentication and access restrictions are configured per service in the **Authentication** tab when creating or editing a service.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/authentication/reverse-proxy-add-service-auth.png" alt="Authentication tab showing all available authentication methods" className="imagewrapper"/>
@@ -13,7 +13,11 @@ NetBird Reverse Proxy supports multiple authentication methods to control who ca
 
 ## Authentication methods
 
-NetBird offers three authentication methods, each suited to different access patterns. You can enable any combination of them on a single service.
+NetBird offers four authentication methods, each suited to different access patterns. You can enable any combination of them on a single service.
+
+<Note>
+    SSO, password, PIN, and header authentication all require HTTP (Layer 7) and are only available for HTTP services. For L4 services (TCP, UDP, TLS), use [access restrictions](#access-restrictions) to control access.
+</Note>
 
 ### SSO (Single Sign-On)
 
@@ -72,6 +76,29 @@ PIN code authentication works similarly to password authentication but is limite
 
 **Best for:** Quick access scenarios, kiosk-style interfaces, or situations where a simple numeric code is easier to share than a full password.
 
+### Header Authentication
+
+Header authentication validates a static header value on each request. This is designed for programmatic or machine-to-machine access where clients can include a custom HTTP header with their requests. The proxy checks the header before forwarding the request to your backend and strips the header so that authentication credentials are not leaked to the backend.
+
+NetBird supports three header presets to simplify configuration:
+
+| Preset | Header | Value format | Example value |
+|--------|--------|-------------|---------------|
+| **Basic Auth** | `Authorization` | `Basic base64(username:password)` | `Basic dXNlcjpwYXNz` |
+| **Bearer Token** | `Authorization` | `Bearer <token>` | `Bearer my-secret-token` |
+| **Custom Header** | Any header name you choose | Any value | `X-API-Key: my-api-key` |
+
+You can configure multiple header entries on a single service. If multiple headers are configured, a request that matches **any one** of them is granted access (OR logic).
+
+**Key details:**
+
+- Header values are hashed with **Argon2id** before being stored, the same as passwords and PINs. The plaintext value is never stored.
+- The matching header is stripped from the request before it is forwarded to the backend.
+- Sessions last **24 hours** before re-authentication is required.
+- Header authentication works at the HTTP level, so it is available for HTTP services. It is not available for L4 services.
+
+**Best for:** API clients, CI/CD pipelines, webhooks, monitoring probes, and any scenario where a browser-based login flow is not practical. Also useful alongside SSO: team members authenticate via SSO in a browser, while automated systems use header auth.
+
 ### No authentication (public access)
 
 Services can also be configured without any authentication. When no authentication method is enabled, anyone with the service URL can access it without any restrictions.
@@ -97,13 +124,67 @@ Common combinations include:
 | Combination | Use case |
 |-------------|----------|
 | **SSO + Password** | Team members use SSO; external collaborators use a shared password |
+| **SSO + Header Auth** | Team members authenticate in a browser; automated systems use an API key |
 | **SSO + PIN Code** | Team members use SSO; quick access via PIN for specific scenarios |
 | **Password + PIN Code** | Different shared credentials for different groups of users |
-| **SSO + Password + PIN Code** | Maximum flexibility with all methods available |
+| **Any auth + Access Restrictions** | IP/country restrictions as a first layer, then authentication for identity |
+
+## Access restrictions
+
+Access restrictions control which connections are allowed to reach your service based on the client's IP address or geographic location. Unlike authentication methods, access restrictions operate at the connection level and work for both HTTP and L4 services.
+
+Access restrictions are evaluated **before** authentication. If a connection is blocked by an IP or country rule, it is rejected immediately without any authentication check.
+
+### IP CIDR restrictions
+
+You can define IP allowlists and blocklists using CIDR notation:
+
+- **Allowed CIDRs**: if non-empty, only connections from IPs matching these CIDRs are permitted. All other IPs are rejected.
+- **Blocked CIDRs**: connections from IPs matching these CIDRs are rejected. Evaluated after the allowed list.
+
+The evaluation order is: if an allowed list is present, the IP must match it first. Then the blocked list is checked. This means you can use an allowed list to broadly permit a range, then use the blocked list to carve out exceptions.
+
+**Example**: allow your office network but block a specific subnet:
+
+| Field | Value |
+|-------|-------|
+| Allowed CIDRs | `203.0.113.0/24` |
+| Blocked CIDRs | `203.0.113.128/25` |
+
+### Country restrictions
+
+You can restrict access based on the client's country, determined by GeoIP lookup on the source IP address:
+
+- **Allowed countries**: if non-empty, only connections from these countries are permitted. Specify ISO 3166-1 alpha-2 country codes (e.g., `US`, `DE`, `GB`).
+- **Blocked countries**: connections from these countries are rejected.
+
+The evaluation logic mirrors CIDR restrictions: if an allowed list is present, the country must match. Then the blocked list is checked.
+
+<Warning>
+    Country restrictions require a GeoIP database. On self-hosted deployments, the proxy must have the MaxMind GeoLite2 database configured. If the database is unavailable and country restrictions are configured, all connections are denied (fail-closed). See [Geolocation Database](/selfhosted/geo-support) for setup instructions.
+</Warning>
+
+<Note>
+    GeoIP accuracy depends on the database quality and the client's IP address. VPN and proxy users may appear from a different country than their physical location.
+</Note>
+
+### Combining restrictions with authentication
+
+Access restrictions and authentication methods are independent layers:
+
+1. **Connection arrives** at the proxy.
+2. **Access restrictions** are evaluated first: IP CIDRs, then country. If the connection is blocked, it is rejected with no further processing.
+3. **Authentication** is evaluated next (for HTTP services): SSO, password, PIN, or header auth.
+4. If both layers pass, the request is forwarded to the backend.
+
+This layered approach lets you, for example, restrict a service to your corporate IP ranges while still requiring SSO for identity verification. Or you can use access restrictions as the sole protection for an L4 service that cannot use browser-based auth.
 
 ## Configuring authentication
 
-All authentication settings are managed in the **Authentication** tab of the service creation or edit modal. Navigate to **Reverse Proxy** > **Services**, then either click **Add Service** to create a new service or click an existing service to edit it.
+Authentication and access control are configured in separate tabs of the service creation or edit modal. Navigate to **Reverse Proxy** > **Services**, then either click **Add Service** to create a new service or click an existing service to edit it.
+
+- **Authentication** tab (HTTP services only): SSO, password, PIN, and header authentication
+- **Access Control** tab (all service modes): IP CIDR and country restrictions
 
 ### Setting up SSO
 
@@ -134,6 +215,35 @@ All authentication settings are managed in the **Authentication** tab of the ser
 4. Enter a numeric PIN in the input field.
 5. Click **Save** (or **Save Changes** when editing).
 
+### Setting up header authentication
+
+1. Open the service modal (create or edit).
+2. Switch to the **Authentication** tab.
+3. Click **Header Auth**.
+4. Select a preset type: **Basic Auth**, **Bearer Token**, or **Custom Header**.
+5. Fill in the required fields:
+   - For **Basic Auth**: enter a username and password. The value is automatically encoded as `Basic base64(username:password)`.
+   - For **Bearer Token**: enter the token value. The value is automatically prefixed with `Bearer `.
+   - For **Custom Header**: enter the header name (e.g., `X-API-Key`) and the expected value.
+6. To add additional headers, click **Add Another Header**. Any matching header grants access.
+7. Click **Save** (or **Save Changes** when editing).
+
+### Setting up access restrictions
+
+1. Open the service modal (create or edit).
+2. Switch to the **Access Control** tab. This tab is available for all service modes (HTTP and L4).
+3. To restrict by IP:
+   - Enter CIDRs in the **Allowed CIDRs** field to create an allowlist (e.g., `10.0.0.0/8`, `203.0.113.0/24`).
+   - Enter CIDRs in the **Blocked CIDRs** field to create a blocklist.
+5. To restrict by country:
+   - Select countries in the **Allowed Countries** field to create a country allowlist.
+   - Select countries in the **Blocked Countries** field to create a country blocklist.
+6. Click **Save** (or **Save Changes** when editing).
+
+<Note>
+    Access restrictions apply immediately to new connections. Existing connections that were established before the restriction was added are not affected until they reconnect.
+</Note>
+
 ### Removing authentication
 
 To remove an authentication method from a service:
@@ -161,3 +271,4 @@ Authenticated sessions for reverse proxy services are managed using JWT (JSON We
 - [Access Logs](/manage/reverse-proxy/access-logs) - monitor and audit traffic to your reverse proxy services
 - [Single Sign-On](/manage/team/single-sign-on) - configure your identity provider for SSO across NetBird
 - [Provision Users and Groups](/manage/team/idp-sync) - sync users and groups from your identity provider
+- [Geolocation Database](/selfhosted/geo-support) - configure MaxMind GeoLite2 for country-based access restrictions (self-hosted)

@@ -1,11 +1,11 @@
 import {Note, Warning} from "@/components/mdx"
 
 export const description =
-    'Expose internal services to the public internet with automatic TLS, authentication, and traffic routing through the NetBird mesh network.'
+    'Expose internal services to the public internet with automatic TLS, authentication, access restrictions, and traffic routing through the NetBird mesh network.'
 
 # Reverse Proxy
 
-NetBird Reverse Proxy lets you expose internal services running on peers or behind network resources to the public internet. NetBird handles TLS termination, optional authentication, and proxies incoming traffic through the WireGuard mesh to reach the target service - all without opening ports or configuring firewalls on your internal machines.
+NetBird Reverse Proxy lets you expose internal services running on peers or behind network resources to the public internet. NetBird handles TLS termination, optional authentication and access restrictions, and proxies incoming traffic through the NetBird mesh to reach the target service, all without opening ports or configuring firewalls on your internal machines.
 
 <Note>
     **Availability:** Reverse Proxy is available for both **cloud** and **self-hosted** deployments and is currently in **beta**.
@@ -19,13 +19,18 @@ NetBird Reverse Proxy lets you expose internal services running on peers or behi
 
 ## How it works
 
-When you create a reverse proxy service, NetBird provisions a public domain with an automatic TLS certificate. Incoming HTTPS requests to that domain are terminated at the NetBird proxy cluster, then forwarded through an encrypted WireGuard tunnel to the target peer or network resource running your application. The target service only needs to be reachable within your NetBird network - it does not need a public IP address or open ports.
+When you create a reverse proxy service, NetBird provisions a public domain with an automatic TLS certificate. Incoming traffic to that domain is received at the NetBird proxy cluster, then forwarded through an encrypted NetBird tunnel to the target peer or network resource running your application. The target service only needs to be reachable within your NetBird network: it does not need a public IP address or open ports.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-diagram.png" alt="Reverse proxy traffic flow diagram showing User to Proxy Service (TLS) through WireGuard tunnel to either a NetBird Peer directly or via a Routing Peer to a Network Resource" className="imagewrapper-big"/>
 </p>
 
-You can optionally require authentication (SSO via your configured IdP, password, or PIN) before users can reach the service, ensuring that even publicly accessible URLs remain protected.
+NetBird supports two categories of service:
+
+- **HTTP services** operate at Layer 7. The proxy terminates TLS at the edge and forwards HTTP requests to your backend. This mode supports path-based routing, host header forwarding, redirect rewriting, and browser-based authentication (SSO, password, PIN).
+- **L4 services** (TCP, UDP, TLS) operate at Layer 4. The proxy forwards raw connections or datagrams directly to your backend without inspecting application-layer content. TLS mode performs SNI-based routing, passing the encrypted connection through to the backend without terminating it.
+
+You can optionally require authentication before users can reach the service, and restrict access by IP address or country. See [Authentication](/manage/reverse-proxy/authentication) for all available options.
 
 ## Concepts
 
@@ -33,15 +38,34 @@ You can optionally require authentication (SSO via your configured IdP, password
 
 A service is the core configuration unit of the Reverse Proxy. Each service maps a public domain to one or more internal targets and defines how traffic is authenticated and forwarded. A service consists of:
 
+- **Service mode** - HTTP (Layer 7) or TCP/UDP/TLS (Layer 4)
 - **Domain** - the public URL where the service is reachable
 - **Targets** - one or more backend destinations that handle incoming requests
-- **Authentication** - optional SSO, password, or PIN protection
-- **Settings** - advanced options for host header forwarding and redirect rewriting
+- **Authentication** - optional SSO, password, PIN, or header-based protection
+- **Access restrictions** - optional IP CIDR and country-based access control
+- **Settings** - advanced options (varies by service mode)
 - **Enabled/Disabled toggle** - turn the service on or off without deleting it
+
+### Service modes
+
+The service mode determines how the proxy handles traffic between clients and your backend.
+
+| Mode | Layer | Description |
+|------|-------|-------------|
+| **HTTP** | L7 | TLS termination at the proxy, HTTP-level forwarding. Supports path-based routing, host header forwarding, redirect rewriting, and browser-based authentication (SSO, password, PIN). |
+| **TCP** | L4 | Raw TCP relay. The proxy accepts TCP connections on a dedicated port and forwards them to your backend. |
+| **UDP** | L4 | UDP relay with session tracking. The proxy accepts UDP packets on a dedicated port and forwards them to your backend. Sessions are reaped after an idle timeout. |
+| **TLS** | L4 | TLS passthrough with SNI-based routing. The proxy inspects the TLS ClientHello to read the SNI hostname and forwards the encrypted connection to your backend without terminating TLS. |
+
+L4 services (TCP, UDP, TLS) listen on a dedicated port on the proxy cluster. Depending on the cluster, the port may be auto-assigned or you can specify one manually. The proxy cluster's `supports_custom_ports` capability determines whether manual port selection is available.
+
+<Note>
+    L4 services do not support browser-based authentication (SSO, password, PIN) or header authentication because there is no HTTP layer. You can use [access restrictions](/manage/reverse-proxy/authentication#access-restrictions) (IP CIDR and country rules) to protect L4 services.
+</Note>
 
 ### Targets
 
-A target defines where proxied traffic is sent within your NetBird network. Each service can have multiple targets for path-based routing. Every target specifies a type, protocol, port, and optional path.
+A target defines where proxied traffic is sent within your NetBird network. Every target specifies a type and port. HTTP services additionally support path-based routing.
 
 | Type | Description | How to select |
 |------|-------------|---------------|
@@ -50,12 +74,20 @@ A target defines where proxied traffic is sent within your NetBird network. Each
 | **Domain** | A network resource identified by a domain name | Select from your network resources |
 | **Subnet** | A network resource within a CIDR range | Select from your network resources, then specify an IP within the range |
 
-Each target also has the following properties:
+Target properties vary by service mode:
 
+**HTTP services:**
 - **Path** (optional) - a URL path prefix for path-based routing (e.g., `/api`). See [Path-based routing](#path-based-routing) below.
 - **Protocol** - `HTTP` or `HTTPS`, depending on what the backend service speaks
 - **Port** - the port on the target machine (defaults to `80` for HTTP, `443` for HTTPS)
 - **Enabled/Disabled toggle** - individually enable or disable targets without removing them
+
+**L4 services (TCP, UDP, TLS):**
+- **Type** - same Peer, Host, Domain, or Subnet selection as HTTP services
+- **Port** - the port on the target machine
+- **Enabled/Disabled toggle** - individually enable or disable targets without removing them
+
+L4 targets do not support path-based routing or HTTP/HTTPS protocol selection.
 
 ### Domains
 
@@ -91,15 +123,16 @@ All domain types receive automatic TLS certificates managed by the proxy.
 
 You can protect a service with one or more authentication methods. When multiple methods are enabled, users can choose which one to use when accessing the service.
 
-| Method | Description |
-|--------|-------------|
-| **SSO (Single Sign-On)** | Authenticate via your identity provider using OIDC. You can optionally restrict access to specific user groups. |
-| **Password** | Protect with a shared password that you define when configuring the service. |
-| **PIN Code** | Protect with a numeric PIN code. |
-| **No authentication** | The service is publicly accessible without any authentication. |
+| Method | HTTP services | L4 services | Description |
+|--------|:---:|:---:|-------------|
+| **SSO (Single Sign-On)** | Yes | No | Authenticate via your identity provider using OIDC. Optionally restrict access to specific user groups. |
+| **Password** | Yes | No | Protect with a shared password. |
+| **PIN Code** | Yes | No | Protect with a numeric PIN code. |
+| **Header Authentication** | Yes | No | Validate a static header value (API key, Bearer token, Basic auth). Useful for programmatic access. |
+| **Access Restrictions** | Yes | Yes | Restrict access by IP CIDR range or country. Works at the connection level, so it applies to all service modes. |
 
 <Note>
-    If you save a service with no authentication configured, the dashboard will display a warning. Public services are accessible to anyone on the internet who knows the URL.
+    If you save a service with no authentication or access restrictions configured, the dashboard will display a warning. Public services are accessible to anyone on the internet who knows the URL.
 </Note>
 
 For detailed configuration instructions, see [Authentication](/manage/reverse-proxy/authentication).
@@ -191,27 +224,28 @@ Navigate to **Reverse Proxy** > **Services** in the NetBird dashboard and click 
 
 In the **Details** tab:
 
-1. Enter a **subdomain** for your service (e.g., `myapp`).
-2. Select a **base domain**. Cloud users see domains with a **Free** badge (e.g., `abc123.eu.proxy.netbird.io`). Self-hosted users see domains with a **Cluster** badge (e.g., `proxy.mycompany.com`, based on their deployed proxy instances). You can also select a custom domain you have already configured.
-3. Click **Add Target** to define where traffic should be sent.
+1. Select a **service mode**. Choose **HTTP** for web applications, or **TCP**, **UDP**, or **TLS** for Layer 4 services. See [Service modes](#service-modes) for details on each mode.
+2. Enter a **subdomain** for your service (e.g., `myapp`).
+3. Select a **base domain**. Cloud users see domains with a **Free** badge (e.g., `abc123.eu.proxy.netbird.io`). Self-hosted users see domains with a **Cluster** badge (e.g., `proxy.mycompany.com`, based on their deployed proxy instances). You can also select a custom domain you have already configured.
+4. For L4 services, set the **listen port** that the proxy will accept connections on. Some clusters auto-assign ports; others allow you to specify one manually.
+5. Click **Add Target** to define where traffic should be sent.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-service-details.png" alt="Add Service modal showing the Details tab" className="imagewrapper"/>
 </p>
 
-4. In the target configuration, select the **type** (Peer, Host, Domain, or Subnet), then choose the specific peer or resource.
-5. Set the **protocol** (HTTP or HTTPS) and **port** for the target.
-6. Optionally, enter a **path** if you are using path-based routing.
+6. In the target configuration, select the **type** (Peer, Host, Domain, or Subnet), then choose the specific peer or resource.
+7. For HTTP services, set the **protocol** (HTTP or HTTPS) and **port** for the target. Optionally, enter a **path** for path-based routing. For L4 services, set the target **host/IP** and **port**.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-target.png" alt="Add Target configuration modal" className="imagewrapper"/>
 </p>
 
-You can add multiple targets to route different URL paths to different backend services.
+You can add multiple targets. HTTP services support path-based routing across targets.
 
-### Step 3: Configure authentication
+### Step 3: Configure authentication (HTTP only)
 
-Switch to the **Authentication** tab to configure how users are authenticated before reaching your service.
+Switch to the **Authentication** tab to configure how users are authenticated before reaching your service. This tab is only available for HTTP services.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-service-auth.png" alt="Add Service modal showing the Authentication tab" className="imagewrapper"/>
@@ -220,22 +254,37 @@ Switch to the **Authentication** tab to configure how users are authenticated be
 - Enable **SSO** to require users to authenticate through your identity provider. Optionally restrict access to specific groups.
 - Enable **Password** and set a shared password.
 - Enable **PIN Code** and set a numeric code.
+- Enable **Header Authentication** to require a specific header value (API key, Bearer token, or Basic auth credentials). Useful for machine-to-machine access.
 - Leave all methods disabled for public (unauthenticated) access.
 
 <Note>
     You can enable multiple authentication methods simultaneously. Users will be able to choose their preferred method when accessing the service.
 </Note>
 
+### Step 3b: Configure access control
+
+Switch to the **Access Control** tab to restrict access by IP address or country. This tab is available for all service modes (HTTP and L4).
+
+- Add **allowed CIDRs** or **blocked CIDRs** to restrict by IP range.
+- Add **allowed countries** or **blocked countries** to restrict by geographic location.
+
+Access restrictions are evaluated before authentication: if a connection is blocked by an IP or country rule, it is rejected before any authentication check.
+
 ### Step 4: Configure advanced settings
 
-Switch to the **Settings** tab to adjust advanced proxy behavior.
+Switch to the **Settings** tab to adjust advanced proxy behavior. The available settings depend on the service mode.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-service-settings.png" alt="Add Service modal showing the Settings tab" className="imagewrapper"/>
 </p>
 
+**HTTP services:**
 - **Pass Host Header** - when enabled, the original `Host` header from the client request is forwarded to the backend service instead of the target's hostname. This is useful when the backend application needs to know the public domain it is being accessed through.
 - **Rewrite Redirects** - when enabled, `Location` headers in backend responses (used for HTTP redirects) are rewritten to use the public domain. This prevents users from being redirected to internal URLs that they cannot reach.
+
+**L4 services (TCP, UDP, TLS):**
+- **PROXY Protocol** (TCP/TLS only) - when enabled, the proxy sends a PROXY Protocol v2 header to the backend, allowing it to see the real client IP address. The backend must support PROXY Protocol to use this option.
+- **Session Idle Timeout** (UDP only) - how long a UDP session can be idle before the proxy reaps it. Specified as a duration string (e.g., `30s`, `2m`). Defaults to 30 seconds.
 
 <Warning>
     **Backend configuration may be required.** If your backend service has a "trusted proxies", "known hosts", or "allowed networks" setting (common in Jellyfin, Home Assistant, Plex, Nextcloud, and others), you must configure it to trust the NetBird IP range. Without this, the backend may reject proxied requests or fail to read the real client IP. See [Backend Service Configuration](/manage/reverse-proxy/service-configuration) for details and per-service examples.
@@ -267,6 +316,43 @@ Within a service, you can:
 - **Remove targets** - remove a target to stop routing traffic to that backend
 - **Enable or disable targets** - toggle individual targets on or off without removing them from the service
 
+## Port allocation for L4 services
+
+L4 services (TCP, UDP, TLS) require a dedicated port on the proxy cluster. How ports are assigned depends on whether the proxy cluster supports custom port selection:
+
+- **Custom port selection available**: you choose the exact port the proxy listens on. This is useful when clients expect a well-known port (e.g., 5432 for PostgreSQL, 3306 for MySQL). Self-hosted proxy clusters support this when configured to allow it.
+- **Auto-assigned ports only**: the proxy cluster automatically assigns an available port. This is the case for NetBird's shared cloud proxy clusters, where port allocation is managed to avoid conflicts between accounts. The assigned port is shown in the service details after creation.
+
+The dashboard indicates whether a proxy cluster supports custom ports when you select the domain. If custom ports are not supported, the listen port field is read-only and populated after creation.
+
+<Warning>
+    Each port on a proxy cluster can only be used by one service at a time. If you specify a port that is already in use by another service, creation will fail. L4 listen ports also cannot conflict with the proxy's tunnel port.
+</Warning>
+
+<Note>
+    The listen port for an L4 service is separate from the target port. For example, a service could listen on port 15432 on the proxy cluster and forward traffic to port 5432 on the backend peer. Clients connect to the proxy cluster address on the listen port.
+</Note>
+
+### How services share ports
+
+The proxy's main port always runs an SNI router that peeks at the TLS ClientHello to read the requested hostname, then routes the connection to the matching service. This allows multiple service modes to share the same port.
+
+**On the main port**, HTTP and TLS services coexist via SNI routing:
+- Each incoming connection is matched against configured domains.
+- If the SNI hostname matches an **HTTP** service, the connection is forwarded to the HTTP reverse proxy for L7 handling.
+- If the SNI hostname matches a **TLS** service, the encrypted connection is passed through directly to the backend without TLS termination.
+- If the SNI hostname does not match any service, the connection falls through to the HTTP reverse proxy, which returns an error since no matching service exists.
+- Connections with no SNI (e.g., TLS 1.3 with Encrypted Client Hello) follow the same fallback path.
+
+<Warning>
+    Do not configure an HTTP and a TLS service with the same hostname. The HTTP route takes priority and the TLS service becomes unreachable. Use different domain names for each.
+</Warning>
+
+**On custom ports**, TLS and TCP services can coexist:
+- TLS connections are matched by SNI and passed through to the backend.
+- Connections that do not match any SNI route (or are not TLS at all) fall back to the TCP relay.
+- This is useful for running a TLS passthrough alongside a plain TCP catch-all on the same port.
+
 ## Path-based routing
 
 When a service has multiple targets, you can assign each target a unique path prefix to route different URL paths to different backends. For example:
@@ -291,13 +377,13 @@ The Networks page also displays a badge on each resource indicating how many rev
 
 ## Expose from CLI
 
-In addition to creating services through the dashboard, peers can expose local services directly from the command line using the `netbird expose` command. This creates a temporary (ephemeral) service that lives only as long as the command is running — useful for quick demos, development sharing, or temporary webhook endpoints.
+In addition to creating services through the dashboard, peers can expose local services directly from the command line using the `netbird expose` command. This creates a temporary (ephemeral) service that lives only as long as the command is running, useful for quick demos, development sharing, or temporary webhook endpoints.
 
 ```shell
 netbird expose 8080
 ```
 
-The command supports optional authentication (`--with-pin`, `--with-password`, `--with-user-groups`), custom domains (`--with-custom-domain`), and name prefixes (`--with-name-prefix`).
+The command supports HTTP and L4 protocols (`--protocol`), optional authentication (`--with-pin`, `--with-password`, `--with-user-groups`), custom domains (`--with-custom-domain`), and name prefixes (`--with-name-prefix`). For L4 services, use `--with-external-port` to specify the listen port on the proxy cluster.
 
 <Note>
     The Peer Expose feature must be enabled by an account administrator in **Settings** > **Clients** before peers can use this command.
@@ -310,7 +396,7 @@ For the complete guide including setup, authentication options, session lifecycl
 - [Expose from CLI](/manage/reverse-proxy/expose-from-cli) - expose local services from the command line using `netbird expose`
 - [Multiple Proxy Instances](/selfhosted/maintenance/scaling/multiple-proxy-instances) - deploy multiple proxy instances for high availability and redundancy
 - [Custom Domains](/manage/reverse-proxy/custom-domains) - configure your own domain names for reverse proxy services
-- [Authentication](/manage/reverse-proxy/authentication) - detailed guide on SSO, password, and PIN authentication options
+- [Authentication](/manage/reverse-proxy/authentication) - SSO, password, PIN, header authentication, and access restrictions
 - [Access Logs](/manage/reverse-proxy/access-logs) - monitor and audit traffic to your reverse proxy services
 - [Networks](/manage/networks) - configure internal networks and resources
 - [Access Control](/manage/access-control/manage-network-access) - manage policies that control access to your network
