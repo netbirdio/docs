@@ -296,6 +296,10 @@ export const docsNavigation = [
             title: 'Expose from CLI',
             href: '/manage/reverse-proxy/expose-from-cli',
           },
+          {
+            title: 'Troubleshooting',
+            href: '/manage/reverse-proxy/troubleshooting',
+          },
         ],
       },
       {
@@ -313,7 +317,7 @@ export const docsNavigation = [
             title: 'DNS Aliases for Routed Networks',
             href: '/manage/dns/dns-aliases-for-routed-networks',
           },
-          { title: 'DNS Troubleshooting', href: '/manage/dns/troubleshooting' },
+          { title: 'Troubleshooting', href: '/manage/dns/troubleshooting' },
         ],
       },
       {

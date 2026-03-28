@@ -1,0 +1,91 @@
+import {Note} from "@/components/mdx"
+
+export const description = 'Troubleshoot common reverse proxy issues like 502 errors when routing peer traffic targets its own IP address.'
+
+# Reverse Proxy Troubleshooting
+
+This guide helps you diagnose and resolve common reverse proxy issues in NetBird. Follow the structured approach below to identify and fix problems quickly.
+
+## Quick Diagnostics Checklist
+
+Before diving deep, run through this quick checklist:
+
+```bash
+# 1. Is NetBird connected on the routing peer?
+netbird status -d
+
+# 2. Is the reverse proxy service showing in the dashboard?
+#    Check Dashboard -> Reverse Proxy -> Services
+
+# 3. Can the routing peer reach the target service locally?
+# From the routing peer (or inside its container):
+curl -sS -o /dev/null -w "%{http_code}" http://<target-ip>:<port> --max-time 5
+# Docker:
+docker exec <routing-peer-container> wget -qO- http://<target-ip>:<port> --timeout=5
+
+# 4. Check proxy logs for error details
+# Look for 502 status codes and connection errors:
+# "Peer Not Connected" -> peer is offline or unreachable
+# "Connection Error: operation timed out" -> routing/ACL issue
+# "no route to host" -> invalid target IP (e.g., network address .0)
+
+# 5. Is the target IP the same as the routing peer's IP?
+# If yes, this is a known issue — switch the target type to Peer.
+# See Issue 1 below.
+
+# 6. Verify the target type matches your setup
+# Peer -> service runs on a machine with NetBird installed
+# Host/Subnet -> service runs on a device without NetBird, reached via routing peer
+```
+
+If any of these fail, continue to the relevant section below.
+
+## Common Issues and Solutions
+
+### Issue 1: 502 errors when routing peer forwards to its own IP
+
+**Symptoms**:
+- Reverse proxy services return **502 "Peer Not Connected"** or **502 "Connection Error: operation timed out"**
+- The target destination IP belongs to the same machine running the routing peer
+- Other services routed through the same routing peer to different IPs on the network work fine
+- Proxy logs show timeout errors like:
+  
+```
+proxy error: host=10.0.0.10:32400 status=502 title="Connection Error" err=connect tcp 10.0.0.10:32400: operation timed out
+```
+
+For example, if a routing peer runs on a machine with IP `10.0.0.10` and the reverse proxy target is `http://10.0.0.10:32400`, the connection will time out. However, a target pointing at `http://10.0.0.50:8096` (a different machine on the same subnet) works without issue through the same routing peer.
+
+This happens because when a reverse proxy service uses a network resource (subnet) target, the routing peer is expected to forward traffic to other hosts on the subnet, not deliver tunneled traffic back to itself. The management server does not generate the necessary ACL rules for self-targeted traffic, so the connection times out. This is expected behavior.
+
+You can confirm this by verifying the service is reachable locally on the routing peer (outside of the tunnel):
+
+```bash
+docker exec <routing-peer-container> wget -qO- http://10.0.0.10:32400 --timeout=5
+```
+
+If this returns a response (even a `401 Unauthorized`), the service is reachable locally but not through the tunnel, confirming the issue.
+
+**Solutions**:
+
+Change the target type from **Subnet** (network resource) to **Peer** for any service running on the same machine as the routing peer.
+
+1. Open the reverse proxy service in the NetBird dashboard.
+2. Edit the target.
+3. Change the target type from **Host** or **Subnet** to **Peer**.
+4. Select the peer that corresponds to the machine running the service (this is the same machine as your routing peer).
+5. Set the protocol and port as before (e.g., HTTP, port 32400).
+6. Save the service.
+
+When the target type is **Peer**, the proxy sends traffic directly to that peer through the WireGuard tunnel. The traffic arrives on the peer's local network stack and is delivered to the listening service without any forwarding hop. This bypasses the subnet routing path entirely, so the missing ACL does not apply.
+
+## When to use each target type
+
+| Target type | Use case |
+|---|---|
+| **Peer** | The service runs directly on a machine that has the NetBird client installed. |
+| **Host / Subnet** | The service runs on a device that does not have a NetBird client and relies on a routing peer to forward traffic to it on the local network. |
+
+## Common mistakes
+
+**Pointing a subnet target at the network address instead of a host address.** For example, using `10.0.0.0:8989` instead of `10.0.0.10:8989`. The network address (`.0`) is not a valid host and will return "no route to host." Always use the specific IP of the machine running the service.
