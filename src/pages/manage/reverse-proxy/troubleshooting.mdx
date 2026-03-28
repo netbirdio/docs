@@ -40,6 +40,100 @@ docker exec <routing-peer-container> wget -qO- http://<target-ip>:<port> --timeo
 
 If any of these fail, continue to the relevant section below.
 
+## Self-Hosted Debugging with the Proxy Debug Endpoint
+
+Self-hosted deployments can enable a built-in debug endpoint on the proxy for deeper diagnostics. This is disabled by default.
+
+### Enabling the debug endpoint
+
+Enable the debug endpoint by setting the environment variable or passing the flag when starting the proxy:
+
+```bash
+# Environment variable (e.g., in Docker Compose)
+NB_PROXY_DEBUG_ENDPOINT=true
+
+# Or as a CLI flag
+netbird-proxy --debug-endpoint
+```
+
+The endpoint listens on `localhost:8444` by default. To change the address:
+
+```bash
+NB_PROXY_DEBUG_ENDPOINT_ADDRESS=localhost:9090
+# Or
+netbird-proxy --debug-endpoint --debug-endpoint-addr localhost:9090
+```
+
+You can also access the debug endpoint directly in a browser at `http://localhost:8444/debug` for an overview of server uptime, connected clients, and service status.
+
+### Debug CLI commands
+
+Once the debug endpoint is enabled, use the `netbird-proxy debug` CLI commands to inspect proxy state. All commands support a `--json` flag for machine-readable output and `--addr` to specify the debug endpoint address.
+
+#### Check proxy health
+
+```bash
+netbird-proxy debug health
+```
+
+Returns management connection state and overall client health.
+
+#### List connected clients
+
+```bash
+netbird-proxy debug clients
+```
+
+Shows all connected clients with their service counts and status.
+
+#### Inspect a specific client
+
+```bash
+netbird-proxy debug status <account-id>
+```
+
+Shows detailed status for a client. You can filter results:
+
+```bash
+# Filter by peer IP
+netbird-proxy debug status <account-id> --filter-by-ips 10.0.0.10
+
+# Filter by connection status
+netbird-proxy debug status <account-id> --filter-by-status connected
+
+# Filter by connection type
+netbird-proxy debug status <account-id> --filter-by-connection-type P2P
+```
+
+#### TCP ping through a client
+
+```bash
+netbird-proxy debug ping <account-id> <host> [port]
+```
+
+Tests TCP connectivity from the proxy through a client's network to a target host. Port defaults to 80. This is useful for confirming whether the proxy can reach a target service through a specific routing peer:
+
+```bash
+# Test if the proxy can reach a service at 10.0.0.10:32400 through the client
+netbird-proxy debug ping <account-id> 10.0.0.10 32400
+```
+
+#### Set client log level
+
+```bash
+netbird-proxy debug log level <account-id> <level>
+```
+
+Temporarily change a client's log level for debugging. Valid levels: `trace`, `debug`, `info`, `warn`, `error`.
+
+#### View sync response
+
+```bash
+netbird-proxy debug sync-response <account-id>
+```
+
+Shows the latest sync response for a client, which includes the service and peer configuration the proxy has received from the management server.
+
 ## Common Issues and Solutions
 
 ### Issue 1: 502 errors when routing peer forwards to its own IP
@@ -49,7 +143,7 @@ If any of these fail, continue to the relevant section below.
 - The target destination IP belongs to the same machine running the routing peer
 - Other services routed through the same routing peer to different IPs on the network work fine
 - Proxy logs show timeout errors like:
-  
+
 ```
 proxy error: host=10.0.0.10:32400 status=502 title="Connection Error" err=connect tcp 10.0.0.10:32400: operation timed out
 ```
