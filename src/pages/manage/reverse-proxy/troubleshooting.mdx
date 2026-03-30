@@ -33,7 +33,14 @@ docker exec <routing-peer-container> wget -qO- http://<target-ip>:<port> --timeo
 # If yes, this is a known issue — switch the target type to Peer.
 # See Issue 1 below.
 
-# 6. Verify the target type matches your setup
+# 6. Is the service listening on the right interface?
+# It must bind to 0.0.0.0 (or :: for IPv6), the NetBird IP,
+# or the destination IP — NOT 127.0.0.1/localhost.
+ss -tlnp | grep <port>
+# or on macOS:
+lsof -iTCP:<port> -sTCP:LISTEN
+
+# 7. Verify the target type matches your setup
 # Peer -> service runs on a machine with NetBird installed
 # Host/Subnet -> service runs on a device without NetBird, reached via routing peer
 ```
@@ -172,6 +179,102 @@ Change the target type from **Subnet** (network resource) to **Peer** for any se
 6. Save the service.
 
 When the target type is **Peer**, the proxy sends traffic directly to that peer through the WireGuard tunnel. The traffic arrives on the peer's local network stack and is delivered to the listening service without any forwarding hop. This bypasses the subnet routing path entirely, so the missing ACL does not apply.
+
+### Issue 2: Service bound to localhost is unreachable
+
+**Symptoms**:
+- Reverse proxy returns **502** errors even though the service is running
+- The service works when accessed locally on the machine (e.g., `curl http://localhost:8080`) but fails through the reverse proxy
+- Proxy logs show connection refused or timeout errors
+
+This happens when the target service is configured to listen only on `127.0.0.1` (localhost) or `::1`. Traffic arriving through NetBird comes from the WireGuard tunnel interface, not the loopback interface, so a service bound to localhost will refuse the connection.
+
+**How to check**:
+
+On the target machine, verify what address the service is listening on:
+
+```bash
+# Linux
+ss -tlnp | grep <port>
+
+# macOS
+lsof -iTCP:<port> -sTCP:LISTEN
+
+# Windows (PowerShell)
+Get-NetTCPConnection -LocalPort <port> -State Listen | Select-Object LocalAddress,LocalPort
+```
+
+If the `Local Address` column shows `127.0.0.1` or `::1`, the service is only reachable from the machine itself.
+
+**Solution**:
+
+Reconfigure the service to listen on one of the following:
+- `0.0.0.0` (all IPv4 interfaces) or `::` (all IPv6 interfaces) — simplest option
+- The machine's NetBird IP (e.g., `100.x.y.z`) — if you want to restrict access to NetBird traffic only
+- The specific LAN IP used as the reverse proxy destination
+
+Where to change this depends on the service. Look for a `bind`, `listen`, `host`, or `address` setting in the service's configuration file. For example:
+
+```
+# Common examples across different services
+bind-address = 0.0.0.0
+host: 0.0.0.0
+listen_addresses = '*'
+server.host: "0.0.0.0"
+```
+
+After changing the bind address, restart the service and verify with `ss` or `lsof` that it now listens on the correct interface.
+
+## Advanced Debugging with Packet Capture
+
+If the checks above don't reveal the issue, you can use packet capture tools to verify whether traffic is actually arriving on the routing peer or target machine. This is especially useful for diagnosing routing, firewall, or NAT issues.
+
+### Linux (tcpdump)
+
+On the routing peer or target machine, capture traffic on the relevant interface:
+
+```bash
+# Capture traffic on the WireGuard interface (wt0 is the default NetBird interface)
+sudo tcpdump -i wt0 -n port <target-port>
+
+# Capture on all interfaces to see where traffic arrives
+sudo tcpdump -i any -n port <target-port>
+
+# Save to a file for later analysis
+sudo tcpdump -i wt0 -n port <target-port> -w /tmp/capture.pcap
+```
+
+If you see packets arriving on `wt0` but no response, the issue is on the target machine (firewall, service not listening, wrong bind address). If no packets arrive at all, the issue is upstream (routing, ACLs, or peer connectivity).
+
+### macOS (tcpdump)
+
+```bash
+# NetBird uses utun interfaces on macOS — find yours with ifconfig
+sudo tcpdump -i utun4 -n port <target-port>
+```
+
+### Windows (pktmon)
+
+```powershell
+# List network interfaces to find the WireGuard/NetBird adapter
+pktmon list
+
+# Start a capture filtered by port
+pktmon start --capture --pkt-size 0 -c <component-id> -t <target-port>
+
+# Stop and convert to pcapng for Wireshark
+pktmon stop
+pktmon etl2pcap pktmon.etl -o capture.pcapng
+```
+
+### Wireshark
+
+You can also open any `.pcap` or `.pcapng` file in [Wireshark](https://www.wireshark.org/) for visual inspection. Use display filters to narrow down the traffic:
+
+```
+tcp.port == <target-port>
+ip.addr == <target-ip>
+```
 
 ## When to use each target type
 
