@@ -8,7 +8,7 @@ This guide walks through migrating a self-hosted NetBird deployment from an exte
 
 <Note>
 **Who is this guide for?** This migration guide is for users who:
-- Have an existing self-hosted deployment using an **external IdP** (Auth0, Azure AD, Keycloak, Okta, Authentik, PocketID, Google, Zitadel, or JumpCloud)
+- Have an existing self-hosted deployment using an **external IdP**
 - Want to move to the **embedded Dex-based IdP** for a simpler, self-contained authentication setup
 </Note>
 
@@ -46,19 +46,19 @@ This guide assumes you're using Docker and everything is run in the same bash se
 
 ### Flags and Environment variables
 
-| Flag | Environment variable | Description |
-|------|----------------------|-------------|
-| `--domain` | `NETBIRD_DOMAIN` | Domain for both dashboard and API |
-| `--dashboard-domain` | `NETBIRD_DASHBOARD_URL` | Dashboard domain (will override --domain) |
-| `--api-domain` | `NETBIRD_API_URL` | API domain (will override --domain) |
-| `--config` | `NETBIRD_CONFIG_PATH` | Path to management.json (required) |
-| `--datadir` | `NETBIRD_DATA_DIR` | Override data directory from config (store.db path will be derived from this) |
-| `--idp-seed-info` | `NETBIRD_IDP_SEED_INFO` | Base64-encoded connector JSON |
-| `--dry-run` | `NETBIRD_DRY_RUN` | Preview changes without writing |
-| `--force` | `NETBIRD_FORCE` | Skip confirmation prompt |
-| `--skip-config` | `NETBIRD_SKIP_CONFIG` | Skip config generation (DB migration only) |
-| `--skip-populate-user-info` | `NETBIRD_SKIP_POPULATE_USER_INFO` | Skip populating user info (user id migration only) |
-| `--log-level` | `NETBIRD_LOG_LEVEL` | Log level: debug, info, warn, error (default "info") |
+| Flag | Environment variable | Description | Expected format |
+|------|----------------------|-------------| --------------- |
+| `--domain` | `NETBIRD_DOMAIN` | Domain for both dashboard and API | example.com |
+| `--dashboard-url` | `NETBIRD_DASHBOARD_URL` | Dashboard domain (will override --domain) | example.com or example.com:33073 or https://example.com |
+| `--api-url` | `NETBIRD_API_URL` | API domain (will override --domain) | example.com or example.com:33073 or https://example.com |
+| `--config` | `NETBIRD_CONFIG_PATH` | Path to management.json (required) | /path/to/management.json |
+| `--datadir` | `NETBIRD_DATA_DIR` | Override data directory from config (store.db path will be derived from this) | /path/to/datadir |
+| `--idp-seed-info` | `NETBIRD_IDP_SEED_INFO` | Base64-encoded connector JSON | base64-encoded JSON string |
+| `--dry-run` | `NETBIRD_DRY_RUN` | Preview changes without writing | true or false |
+| `--force` | `NETBIRD_FORCE` | Skip confirmation prompt | true or false |
+| `--skip-config` | `NETBIRD_SKIP_CONFIG` | Skip config generation (DB migration only) | true or false |
+| `--skip-populate-user-info` | `NETBIRD_SKIP_POPULATE_USER_INFO` | Skip populating user info (user id migration only) | true or false |
+| `--log-level` | `NETBIRD_LOG_LEVEL` | Log level: debug, info, warn, error (default "info") | debug, info, warn, error |
 
 
 <Note>
@@ -114,15 +114,15 @@ The new embedded IdP made the generation of the OIDC connector config easier, th
 When following the guides to generate the application, make sure you store the client ID and client Secret somewhere safe. You'll need them later.
 
 To spare details in this guide, you can use the following guides to create the OIDC connector configuration for your provider:
-- [Auth0](/selfhosted/identity-providers/managed/auth0)
-- [Azure AD](/selfhosted/identity-providers/managed/microsoft-entra-id)
-- [Keycloak](/selfhosted/identity-providers/managed/keycloak)
-- [Okta](/selfhosted/identity-providers/managed/okta)
-- [Authentik](/selfhosted/identity-providers/managed/authentik)
-- [PocketID](/selfhosted/identity-providers/managed/pocketid)
-- [Google Workspace](/selfhosted/identity-providers/managed/google-workspace)
-- [JumpCloud](/selfhosted/identity-providers/managed/jumpcloud)
-- [Zitadel](/selfhosted/identity-providers/managed/zitadel)
+- <a href="/selfhosted/identity-providers/managed/auth0" target="_blank">Auth0</a>
+- <a href="/selfhosted/identity-providers/managed/microsoft-entra-id" target="_blank">Azure AD</a>
+- <a href="/selfhosted/identity-providers/keycloak" target="_blank">Keycloak</a>
+- <a href="/selfhosted/identity-providers/managed/okta" target="_blank">Okta</a>
+- <a href="/selfhosted/identity-providers/authentik" target="_blank">Authentik</a>
+- <a href="/selfhosted/identity-providers/pocketid" target="_blank">PocketID</a>
+- <a href="/selfhosted/identity-providers/managed/google-workspace" target="_blank">Google Workspace</a>
+- <a href="/selfhosted/identity-providers/managed/jumpcloud" target="_blank">JumpCloud</a>
+- <a href="/selfhosted/identity-providers/zitadel" target="_blank">Zitadel</a>
 
 
 ### Creating the IdP Seed info
@@ -153,7 +153,7 @@ Using Zitadel as an example, the JSON should have the following values:
 2. Encode and store it in the `NETBIRD_IDP_SEED_INFO` environment variable:
 
 ```bash
-NETBIRD_IDP_SEED_INFO=$(base64 < connector.json)
+export NETBIRD_IDP_SEED_INFO=$(base64 < connector.json | tr -d '\n') 
 ```
 
 ---
@@ -182,16 +182,16 @@ VOLUME_NAME=$(docker volume ls --format '{{ .Name }}' | grep -Ei 'management|mgm
 echo "Volume: $VOLUME_NAME"
 
 # Get the host path
-NETBIRD_DATA_DIR=$(docker volume inspect "$VOLUME_NAME" --format '{{ .Mountpoint }}')
+export NETBIRD_DATA_DIR=$(docker volume inspect "$VOLUME_NAME" --format '{{ .Mountpoint }}')
 echo "Path: $NETBIRD_DATA_DIR"
 
-# Verify store.db exists, then back up
+# (SQLite only) Verify store.db exists, then back up
 sudo ls "$NETBIRD_DATA_DIR/store.db"
 sudo cp "$NETBIRD_DATA_DIR/store.db" "$NETBIRD_DATA_DIR/store.db.bak"
 
 # Verify management.json exists, the path will vary based on your setup, then back up
-NETBIRD_CONFIG_PATH="<path-to-config>/management.json"
-ls "$NETBIRD_CONFIG_PATH"
+export NETBIRD_CONFIG_PATH="<path-to-config>/management.json"
+cat "$NETBIRD_CONFIG_PATH"
 
 cp "$NETBIRD_CONFIG_PATH" "$NETBIRD_CONFIG_PATH.bak"
 ```
@@ -223,6 +223,18 @@ You should expect to see an output similar to this:
 }
 ```
 
+### (PostgreSQL only) Verify that the database env var is set
+
+The postgres store engine requires the postgres container to expose the port over the host
+so that the migration tool can connect to it. You can set the env var in your shell:
+
+```bash
+# This should match the same env var content that is passed to the management server
+export NB_STORE_ENGINE_POSTGRES_DSN="host=localhost port=5432 user=postgres password=postgres dbname=netbird sslmode=disable"
+```
+
+
+
 If you don't see the expected output, please make sure you followed the steps in this guide, or that you use 
 the correct flags while running the tool.
 
@@ -234,7 +246,12 @@ Assuming that you've followed the steps in this guide, you should be able to run
 ./netbird-idp-migrate --domain mgmt.example.com --dry-run
 ```
 
-You should see output like:
+<Note>
+If the env vars are not set, you can use the flags listed at the [Flags and Environment variables](#flags-and-environment-variables) section.
+</Note>
+
+
+After running the dry run command you should see output like:
 
 ```
 INFO resolved connector: type=oidc, id=auth0, name=auth0
@@ -326,14 +343,13 @@ Your dashboard should also be updated to use the embedded IdP configuration, for
 `dashboard.env` or environment variables (check docker compose file for reference).
 
 Your env vars should have the following values:
-```
+```bash
 AUTH_AUDIENCE=netbird-dashboard
 AUTH_CLIENT_ID=netbird-dashboard
 AUTH_AUTHORITY=https://<your-domain>/oauth2
 AUTH_SUPPORTED_SCOPES=openid profile email groups
 AUTH_REDIRECT_URI=/nb-auth
 AUTH_SILENT_REDIRECT_URI=/nb-silent-auth
-
 ```
 
 If you're using docker, make sure to recreate the dashboard container to apply the new environment variables with `docker compose up -d dashboard`
