@@ -1,0 +1,91 @@
+# Restrict Network Access with FleetDM
+
+[FleetDM](https://fleetdm.com/) is an open-source device management platform for macOS, Windows, and Linux that uses
+[osquery](https://osquery.io/) for endpoint visibility and compliance policy enforcement. Fleet continuously collects
+device data including disk encryption status, software vulnerabilities, and policy compliance, which can be used to
+enforce network access controls based on device security posture.
+
+The integration of NetBird with FleetDM ensures only devices that are managed by Fleet and meet your defined compliance
+policies can access the network. Administrators can enforce access restrictions based on criteria such as disk encryption,
+failing policies, vulnerable software, and specific policy requirements — blocking non-compliant devices automatically.
+
+In this guide, you'll learn how to integrate NetBird with FleetDM and configure compliance-based access controls for your network.
+
+<Note>
+    TLDR: Devices that fail to meet FleetDM compliance requirements (disk encryption, policy compliance, vulnerable software, etc.) will automatically lose network access. Once a device meets all criteria, access is restored.
+</Note>
+
+## Prerequisites
+
+Before you start creating and configuring a FleetDM integration, ensure that you have the following:
+- A FleetDM instance (self-hosted or Fleet Cloud) with API access enabled.
+- An API-only user or admin account with read access to **Hosts** and **Policies**.
+  If you don't have the required permissions, ask your Fleet administrator to grant them.
+
+## Create a FleetDM API Token
+
+- Navigate to your FleetDM Management Console
+- Go to **Settings** &raquo; **Users**
+- Click **Create user** and select **API-only user**
+- Fill in the form:
+  - **Name**: `NetBird Integration`
+  - **Email**: `netbird-integration@yourcompany.com`
+  - **Role**: **Observer** (read-only access to hosts and policies)
+- Click **Create**
+- Generate an API token for this user
+- Copy the generated API token immediately
+- Note your FleetDM server URL from your browser's address bar (e.g., `https://fleet.yourcompany.com`)
+
+<Note>
+Treat the API token securely and store it safely. You will need both the server URL and API token for the NetBird integration configuration.
+</Note>
+
+## Configure a FleetDM Integration in NetBird
+
+- Navigate to the [Integrations &raquo; EDR](https://app.netbird.io/integrations?tab=edr) tab in the NetBird dashboard
+- Click **Connect FleetDM** to start the configuration wizard
+
+- Click the **Get Started** button to initiate the integration process
+- Enter your FleetDM server URL (e.g., `https://fleet.yourcompany.com`) and click **Continue**
+
+- Enter the API token you created in the previous step and click **Continue** to verify the connection
+
+- Select the **groups** you want to apply the integration to and click **Continue**
+
+<Note>
+    The EDR check will apply only to peers in the selected groups and will require a matching device in FleetDM.
+    You can also use groups [synchronized from your Identity Provider (IdP)](/manage/team/idp-sync).
+</Note>
+
+- Configure the compliance criteria that devices must meet to access your network. These security requirements ensure only healthy, properly configured devices can connect. Select the criteria that align with your organization's security policies:
+  - **Max Failing Policies**: Maximum number of allowed failing policies on a device. Set to `0` to require all policies to pass.
+  - **Max Vulnerable Software**: Maximum number of allowed vulnerable software packages on a device. Set to `0` to block devices with any known vulnerabilities.
+  - **Required Policy IDs**: Specific FleetDM policy IDs that must be passing on the device. Enter comma-separated policy IDs (e.g., `1, 5, 12`). If any of the specified policies is failing, the device is non-compliant.
+  - **Disk Encryption**: Requires disk encryption (FileVault on macOS, BitLocker on Windows) to be enabled on the device.
+  - **Online Status**: Requires the host to be online and recently seen by Fleet.
+
+- Configure the **FleetDM Sync Window** (default is 24 hours). This setting determines which devices NetBird will consider for network access based on their recent activity in FleetDM. Only devices that have been active and reporting to Fleet within this time window will be synchronized. These devices must then also meet the configured compliance criteria to gain network access.
+
+<Note>
+    For example, if the sync window is set to 24 hours and a device hasn't synced with FleetDM for 27 hours, it will be blocked from the network even if it was previously marked as compliant.
+</Note>
+
+- Click **Connect** to complete the integration setup
+
+- Only peers that have a matching device in FleetDM and meet all the configured compliance criteria will be granted access to the network.
+  Peers without a matching FleetDM device or those that don't meet the compliance requirements will appear with an `Approval required` mark in the peers list and won't be able to access
+  the network until they are registered in Fleet and satisfy all the specified security requirements.
+
+<Note>
+    NetBird matches FleetDM hosts to peers using the **hardware serial number** of the device. You must ensure that each of your devices has a unique serial number.
+</Note>
+
+## Finding FleetDM Policy IDs
+
+To use the **Required Policy IDs** compliance setting, you need to know the numeric IDs of your FleetDM policies:
+
+- Navigate to your FleetDM Management Console
+- Go to **Policies**
+- Click on a policy to view its details
+- The policy ID is visible in the URL (e.g., `https://fleet.yourcompany.com/policies/5` — the ID is `5`)
+- Enter the desired policy IDs as a comma-separated list in the NetBird compliance configuration

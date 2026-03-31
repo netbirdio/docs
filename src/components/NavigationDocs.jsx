@@ -155,16 +155,20 @@ export const docsNavigation = [
                 href: '/manage/access-control/endpoint-detection-and-response/crowdstrike-edr',
               },
               {
+                title: 'FleetDM',
+                href: '/manage/access-control/endpoint-detection-and-response/fleetdm-edr',
+              },
+              {
+                title: 'Huntress',
+                href: '/manage/access-control/endpoint-detection-and-response/huntress-edr',
+              },
+              {
                 title: 'Microsoft Intune',
                 href: '/manage/access-control/endpoint-detection-and-response/intune-mdm',
               },
               {
                 title: 'SentinelOne Singularity',
                 href: '/manage/access-control/endpoint-detection-and-response/sentinelone-edr',
-              },
-              {
-                title: 'Huntress',
-                href: '/manage/access-control/endpoint-detection-and-response/huntress-edr',
               },
             ],
           },
