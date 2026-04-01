@@ -334,6 +334,10 @@ export const docsNavigation = [
           },
           { title: 'Approve Users', href: '/manage/team/approve-users' },
           {
+            title: 'Enable NetBird for Entra ID',
+            href: '/manage/team/entra-id-app-enablement',
+          },
+          {
             title: 'Provision Users & Groups',
             href: '/manage/team/idp-sync',
             isOpen: false,
