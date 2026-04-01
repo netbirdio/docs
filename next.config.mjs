@@ -652,6 +652,12 @@ const nextConfig = {
                 destination: '/selfhosted/external-reverse-proxy',
                 permanent: true,
             },
+            // selfhosted scaling redirect
+            {
+                source: '/scaling-your-self-hosted-deployment',
+                destination: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
+                permanent: true,
+            },
         ]
     },
     rewrites: async () => {
