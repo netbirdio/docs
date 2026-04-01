@@ -184,6 +184,31 @@ The Traefik labels configure a **TCP router** that:
 The `HostSNI(*)` rule acts as a catch-all for any domain not matched by the existing NetBird HTTP routers. The `priority=1` ensures this TCP router only handles traffic that no other router claims. Any domain pointing to your server that isn't `netbird.example.com` will be forwarded to the proxy.
 </Note>
 
+### Exposing L4 ports
+
+The Traefik configuration above only routes port 443 to the proxy container. HTTP and TLS services work over this port automatically (via SNI routing), but TCP and UDP services listen on dedicated ports that need to be exposed separately.
+
+If you plan to use L4 services (TCP or UDP mode), add `ports` entries directly to the `proxy` service in your `docker-compose.yml` for each port you want to expose. These ports should be mapped on the proxy container itself, not through Traefik, since routing them through Traefik would add an unnecessary extra hop:
+
+```yaml
+proxy:
+  # ...existing configuration...
+  ports:
+    - "5432:5432/tcp"    # Example: PostgreSQL
+    - "3306:3306/tcp"    # Example: MySQL
+    - "5353:5353/udp"    # Example: DNS
+```
+
+Each entry maps a host port to the same port inside the container. Add or remove entries as you create or delete L4 services. After changing the ports, apply with:
+
+```bash
+docker compose up -d proxy
+```
+
+<Note>
+You only need port mappings for TCP and UDP mode services. HTTP and TLS mode services are routed through port 443 via Traefik and do not require additional port entries.
+</Note>
+
 ### Step 4: Set up DNS records
 
 Create one DNS record pointing to the server running your NetBird stack - one for the base proxy domain and one wildcard for service subdomains:
