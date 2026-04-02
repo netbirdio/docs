@@ -243,6 +243,15 @@ server:
       - "https://netbird.example.com/nb-silent-auth"
     cliRedirectURIs:
       - "http://localhost:53000/"
+    staticConnectors:
+      - type: keycloak
+        name: keycloak
+        id: keycloak
+        config:
+          issuer: "https://keycloak.domain.com/realms/netbird"
+          clientID: "your-client-id"
+          clientSecret: "your-client-secret"
+          redirectURI: "https://netbird.example.com/oauth2/callback"
 
   store:
     engine: "sqlite"  # sqlite, postgres, or mysql
@@ -287,6 +296,10 @@ server:
 Configures the built-in identity provider (embedded IdP) that handles user authentication and management.
 
 <Properties>
+  <Property name="server.auth.localAuthDisabled" type="boolean">
+    Disables the built-in local authentication. Set to `true` when using static connectors to handle all authentication through external OIDC providers. Default: `false`.
+    **Do not turn off local authentication unless you have an OIDC configured and an Owner that can log-in through external OIDC*. 
+  </Property>
   <Property name="server.auth.issuer" type="string">
     The issuer URL for OAuth2/OIDC tokens. Format: `https://your-domain/oauth2`. This URL is used to validate JWT tokens and must be accessible to clients.
   </Property>
@@ -298,6 +311,9 @@ Configures the built-in identity provider (embedded IdP) that handles user authe
   </Property>
   <Property name="server.auth.cliRedirectURIs" type="array">
     Redirect URIs for CLI-based authentication. Default: `["http://localhost:53000/"]`. Used when authenticating via the `netbird` CLI tool.
+  </Property>
+  <Property name="server.auth.staticConnectors" type="array">
+    Static connectors enable the configuration of OIDC providers ahead of time, which allows you to programmatically configure your netbird instances.
   </Property>
 </Properties>
 
@@ -311,6 +327,41 @@ When the embedded IdP is active, the server automatically hosts these OIDC endpo
 <Note>
 NetBird also supports integration with external OIDC-compatible identity providers for Single Sign-On (SSO), Multi-Factor Authentication (MFA), and centralized user management. See the [Authentication & IdPs page](/selfhosted/identity-providers) for configuration details.
 </Note>
+
+### Static Connectors Settings
+
+Static connectors enable an alternative path to generate OIDC configurations at startup. The list of connectors defined here will be stored as provided into the database.
+You can add as many OIDC connector objects as you want. If a connector is given here, you'll also be able to disable local authentication.
+
+<Warning>
+  Static connectors listed in configuration are going to be matched 1-to-1 with what's stored in the database, this means that during a restart, the server will update the OIDC connectors based on ID matching. 
+  Management server will always reconcile the static connectors in the database with the configuration provided in this property.
+  However, OIDC connectors created through the dashboard will remain untouched as long as there's no static connector with the same ID.
+</Warning>
+
+<Properties>
+  <Property name="type" type="string">
+    The OIDC provider type (e.g., `keycloak`, `authentik`). Determines provider-specific behavior.
+  </Property>
+  <Property name="id" type="string">
+    Unique ID for this connector. Make sure it doesn't collide with dashboard-generated connector IDs.
+  </Property>
+  <Property name="name" type="string">
+    Display name of the connector.
+  </Property>
+  <Property name="config.issuer" type="string">
+    Issuer URL of the connector. Make sure that appending `/.well-known/openid-configuration` to this URL returns a valid JSON.
+  </Property>
+  <Property name="config.clientID" type="string">
+    Client ID of the connector. See [Configuring an OIDC Provider](/selfhosted/identity-providers/oidc-providers#configuring-an-oidc-provider) for how to obtain this.
+  </Property>
+  <Property name="config.clientSecret" type="string">
+    Client secret of the connector. See [Configuring an OIDC Provider](/selfhosted/identity-providers/oidc-providers#configuring-an-oidc-provider) for how to obtain this.
+  </Property>
+  <Property name="config.redirectURI" type="string">
+    Your management server endpoint callback URL. Format: `https://your-domain/oauth2/callback`.
+  </Property>
+</Properties>
 
 ### Store Settings
 
