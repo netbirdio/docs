@@ -644,6 +644,10 @@ export const docsNavigation = [
             title: 'Enable Reverse Proxy',
             href: '/selfhosted/migration/enable-reverse-proxy',
           },
+          {
+            title: 'External IdP to Embedded IdP',
+            href: '/selfhosted/migration/external-to-embedded-idp',
+          },
         ],
       },
     ],
