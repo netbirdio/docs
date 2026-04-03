@@ -30,12 +30,12 @@ docker exec <routing-peer-container> wget -qO- http://<target-ip>:<port> --timeo
 # "no route to host" -> invalid target IP (e.g., network address .0)
 
 # 5. Is the target IP the same as the routing peer's IP?
-# If yes, this is a known issue — switch the target type to Peer.
+# If yes, this is a known issue. Switch the target type to Peer.
 # See Issue 1 below.
 
 # 6. Is the service listening on the right interface?
 # It must bind to 0.0.0.0 (or :: for IPv6), the NetBird IP,
-# or the destination IP — NOT 127.0.0.1/localhost.
+# or the destination IP, NOT 127.0.0.1/localhost.
 ss -tlnp | grep <port>
 # or on macOS:
 lsof -iTCP:<port> -sTCP:LISTEN
@@ -209,8 +209,8 @@ If the `Local Address` column shows `127.0.0.1` or `::1`, the service is only re
 **Solution**:
 
 Reconfigure the service to listen on one of the following:
-- `0.0.0.0` (all IPv4 interfaces) or `::` (all IPv6 interfaces) — simplest option
-- The machine's NetBird IP (e.g., `100.x.y.z`) — if you want to restrict access to NetBird traffic only
+- `0.0.0.0` (all IPv4 interfaces) or `::` (all IPv6 interfaces), the simplest option
+- The machine's NetBird IP (e.g., `100.x.y.z`) if you want to restrict access to NetBird traffic only
 - The specific LAN IP used as the reverse proxy destination
 
 Where to change this depends on the service. Look for a `bind`, `listen`, `host`, or `address` setting in the service's configuration file. For example:
@@ -224,6 +224,87 @@ server.host: "0.0.0.0"
 ```
 
 After changing the bind address, restart the service and verify with `ss` or `lsof` that it now listens on the correct interface.
+
+### Issue 3: Geo-restrictions block internal traffic from the management server
+
+**Symptoms**:
+
+- Adding an external identity provider (e.g., PocketID) exposed through the reverse proxy fails with a **403 Forbidden** error
+- The management server logs show repeated connector initialization failures:
+
+```
+ERRO [err: failed to open connector: failed to create connector <id>: failed to get provider: 403 Forbidden: Forbidden
+] idp/dex/logrus_handler.go:83: Failed to get connector
+```
+
+- The IdP is accessible from a browser and from the host machine, but not from inside the management server container
+- The instance setup status remains `false` in the dashboard
+
+This applies to self-hosted setups where an external identity provider (such as Authentik or PocketID) is exposed through the NetBird reverse proxy. For example, the architecture described in [Self-host NetBird with Authentik](https://netbird.io/knowledge-hub/selfhost-netbird-with-authentik). The management server (Dex) needs to reach the IdP's OIDC discovery endpoint through the reverse proxy to initialize the connector. However, traffic originating from inside the Docker network does not carry a valid geo-IP. The proxy sees an internal Docker IP instead of a public IP, which doesn't match any country, so the restriction rejects the request with a 403.
+
+<Note>
+This issue only applies to self-hosted deployments where the IdP is exposed through the NetBird reverse proxy and a restriction (such as geo-IP country filtering or access controls) is added to that service. If your IdP is hosted externally, accessible via a separate domain, or the reverse proxy service has no restrictions configured, this does not apply.
+</Note>
+
+**How to confirm**:
+
+Test connectivity to the IdP from inside the management server's network. Use a lightweight container attached to the same network namespace:
+
+```
+docker run --rm --network container:netbird-server curlimages/curl -s https://<your-idp-domain>/.well-known/openid-configuration
+```
+
+If this returns `Forbidden` while the same URL works from the host:
+
+```
+curl -s https://<your-idp-domain>/.well-known/openid-configuration
+```
+
+Then geo-restrictions on the reverse proxy service are blocking internal traffic.
+
+**Solution**:
+
+Remove or adjust the geo-restriction on the reverse proxy service that exposes your IdP. You can do this from the NetBird dashboard under **Reverse Proxy > Services**, then edit the service and remove the country restriction.
+
+If you are locked out of the dashboard because the IdP connector cannot initialize (e.g., you already removed local users), you can modify the restriction directly in the management database:
+
+1. Stop all NetBird containers:
+
+```
+cd ~/netbird
+docker compose stop
+```
+
+2. Identify the service ID for your IdP service:
+
+```
+docker run --rm --user root -v <netbird_data_volume>:/data --entrypoint sqlite3 keinos/sqlite3 /data/store.db \
+  "SELECT id, domain, restrictions FROM services;"
+```
+
+3. Clear the geo-restriction on the IdP service:
+
+```
+docker run --rm --user root -v <netbird_data_volume>:/data --entrypoint sqlite3 keinos/sqlite3 /data/store.db \
+  "UPDATE services SET restrictions='{}' WHERE id='<service-id>';"
+```
+
+4. Start the containers:
+
+```
+docker compose start
+```
+
+5. Verify the connector initializes by checking the management server logs:
+
+```
+docker logs netbird-server --tail 20
+```
+
+Once you regain access to the dashboard, you can re-enable geo-restrictions on the service if needed. To prevent this issue in the future, consider one of the following:
+
+- Leave geo-restrictions disabled on services that the management server needs to reach internally (such as your IdP).
+- Use a separate network path for the IdP that doesn't pass through the reverse proxy's geo-restriction layer.
 
 ## Advanced Debugging with Packet Capture
 
@@ -249,7 +330,7 @@ If you see packets arriving on `wt0` but no response, the issue is on the target
 ### macOS (tcpdump)
 
 ```bash
-# NetBird uses utun interfaces on macOS — find yours with ifconfig
+# NetBird uses utun interfaces on macOS. Find yours with ifconfig
 sudo tcpdump -i utun4 -n port <target-port>
 ```
 
