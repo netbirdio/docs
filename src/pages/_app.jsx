@@ -14,6 +14,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import {dom} from "@fortawesome/fontawesome-svg-core";
 import {AnnouncementBannerProvider} from "@/components/announcement-banner/AnnouncementBannerProvider";
 import {ImageZoom} from "@/components/ImageZoom";
+import {MatomoTagManager} from "@/components/Matomo";
 
 function onRouteChange() {
   useMobileNavigationStore.getState().close()
@@ -27,6 +28,7 @@ export default function App({ Component, pageProps }) {
     let tableOfContents = collectHeadings(pageProps.sections)
   return (
     <>
+      <MatomoTagManager />
       <Head>
         <style>{dom.css()}</style>
         {router.route.startsWith('/ipa') ?
