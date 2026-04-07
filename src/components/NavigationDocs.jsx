@@ -432,6 +432,7 @@ export const docsNavigation = [
             title: 'Multi-Factor Authentication',
             href: '/manage/settings/multi-factor-authentication',
           },
+          { title: 'IPv6 Overlay Addressing', href: '/manage/settings/ipv6' },
           { title: 'Delete Account', href: '/manage/settings/delete-account' },
           {
             title: 'Plans and Billing',
