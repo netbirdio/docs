@@ -218,37 +218,12 @@ The STUN port (3478/udp) must always be exposed publicly, regardless of reverse 
 ## config.yaml
 
 The unified configuration file controls the combined NetBird server. It replaces the separate `management.json` and `relay.env` files from older deployments.
+See an example `config.yaml` file in the [NetBird GitHub repository](https://github.com/netbirdio/netbird/blob/main/combined/config.yaml.example).
 
 ### Complete Structure
 
-```yaml
-server:
-  listenAddress: ":80"
-  exposedAddress: "https://netbird.example.com:443"
-  stunPorts:
-    - 3478
-  metricsPort: 9090
-  healthcheckAddress: ":9000"
-  logLevel: "info"
-  logFile: "console"
-
-  authSecret: "your-relay-auth-secret"
-  dataDir: "/var/lib/netbird"
-
-  auth:
-    issuer: "https://netbird.example.com/oauth2"
-    signKeyRefreshEnabled: true
-    dashboardRedirectURIs:
-      - "https://netbird.example.com/nb-auth"
-      - "https://netbird.example.com/nb-silent-auth"
-    cliRedirectURIs:
-      - "http://localhost:53000/"
-
-  store:
-    engine: "sqlite"  # sqlite, postgres, or mysql
-    dsn: ""  # Connection string for postgres or mysql
-    encryptionKey: "your-encryption-key"
-```
+Below are the main sections of the `config.yaml` file.
+See an example `config.yaml` file in the [NetBird GitHub repository](https://github.com/netbirdio/netbird/blob/main/combined/config.yaml.example) for a complete configuration example.
 
 ### Server Settings
 
@@ -290,6 +265,9 @@ Configures the built-in identity provider (embedded IdP) that handles user authe
   <Property name="server.auth.issuer" type="string">
     The issuer URL for OAuth2/OIDC tokens. Format: `https://your-domain/oauth2`. This URL is used to validate JWT tokens and must be accessible to clients.
   </Property>
+  <Property name="server.auth.localAuthDisabled" type="boolean">
+    Disables the embedded local identity provider. Default: `false`. Set to `true` when using an external OIDC provider exclusively and you want to prevent local authentication.
+  </Property>
   <Property name="server.auth.signKeyRefreshEnabled" type="boolean">
     Enables automatic refresh of IdP signing keys. Recommended: `true`. Ensures tokens remain valid by periodically rotating signing keys.
   </Property>
@@ -298,6 +276,12 @@ Configures the built-in identity provider (embedded IdP) that handles user authe
   </Property>
   <Property name="server.auth.cliRedirectURIs" type="array">
     Redirect URIs for CLI-based authentication. Default: `["http://localhost:53000/"]`. Used when authenticating via the `netbird` CLI tool.
+  </Property>
+  <Property name="server.auth.owner.email" type="string">
+    Email address for the initial admin user. Optional. When set together with `owner.password`, the server creates this user on first startup with admin privileges.
+  </Property>
+  <Property name="server.auth.owner.password" type="string">
+    Password for the initial admin user. Optional. Used together with `owner.email` to bootstrap the first admin account on initial deployment.
   </Property>
 </Properties>
 
@@ -352,6 +336,38 @@ See [Management Postgres Store](/selfhosted/postgres-store) for detailed Postgre
 <Warning>
 Keep `server.store.encryptionKey` secure and backed up. This key encrypts sensitive data in your database, including setup keys and API tokens. Losing this key means losing access to encrypted data, and you will need to regenerate all setup keys and API tokens.
 </Warning>
+
+### Activity Events Store Settings
+
+Configures the database backend for storing activity events (audit trail). By default, activity events are stored in a separate SQLite database in the data directory.
+
+<Properties>
+  <Property name="server.activityStore.engine" type="string">
+    Database engine for activity events. Options: `sqlite`, `postgres`. Default: `sqlite`.
+  </Property>
+  <Property name="server.activityStore.dsn" type="string">
+    Connection string for postgres engine. Example: `host=localhost port=5432 user=postgres password=postgres dbname=netbird_activity sslmode=disable`.
+  </Property>
+  <Property name="server.activityStore.file" type="string">
+    Custom SQLite file path. Optional, defaults to `{dataDir}/events.db`.
+  </Property>
+</Properties>
+
+### Auth Store Settings
+
+Configures the database backend for the embedded identity provider (Dex). By default, auth data is stored in a separate SQLite database in the data directory.
+
+<Properties>
+  <Property name="server.authStore.engine" type="string">
+    Database engine for the embedded IdP. Options: `sqlite3`, `postgres`. Default: `sqlite3`.
+  </Property>
+  <Property name="server.authStore.dsn" type="string">
+    Connection string for postgres engine. Example: `host=localhost port=5432 user=postgres password=postgres dbname=netbird_idp sslmode=disable`.
+  </Property>
+  <Property name="server.authStore.file" type="string">
+    Custom SQLite file path. Optional, defaults to `{dataDir}/idp.db`.
+  </Property>
+</Properties>
 
 ---
 
