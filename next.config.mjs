@@ -506,6 +506,16 @@ const nextConfig = {
             },
             // documentation redirects for client
             {
+                source: '/client/allow-ssh',
+                destination: '/manage/peers/ssh#enabling-ssh',
+                permanent: true,
+            },
+            {
+                source: '/client/enable-lazy-connections',
+                destination: '/manage/peers/lazy-connection',
+                permanent: true,
+            },
+            {
                 source: '/how-to/profiles',
                 destination: '/client/profiles',
                 permanent: true,
