@@ -318,6 +318,10 @@ export const docsNavigation = [
           { title: 'DNS Settings', href: '/manage/dns/dns-settings' },
           { title: 'Custom Zones', href: '/manage/dns/custom-zones' },
           {
+            title: 'Extra DNS Labels',
+            href: '/manage/dns/extra-dns-labels',
+          },
+          {
             title: 'DNS Aliases for Routed Networks',
             href: '/manage/dns/dns-aliases-for-routed-networks',
           },
