@@ -656,6 +656,7 @@ export const docsNavigation = [
     title: 'CLIENT',
     links: [
       { title: 'Profiles', href: '/client/profiles' },
+      { title: 'Environment Variables', href: '/client/environment-variables' },
       {
         title: 'Settings',
         isOpen: false,
