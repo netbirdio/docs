@@ -258,6 +258,8 @@ If the ADFS server resolves its own service name to an external IP (for example,
 
 ## Step 2: Configure the OIDC Application Group
 
+You'll configure ADFS as an external OIDC identity provider that NetBird can add via **Settings > Identity Providers** in the Management Dashboard. NetBird generates a redirect URL that must be registered in ADFS, so you'll pause mid-way through this step to fetch that URL from the NetBird Dashboard.
+
 ### 2.1 Generate a Client ID
 
 ```powershell
@@ -273,27 +275,42 @@ Record this value. You will use it in multiple steps and when configuring NetBir
 New-AdfsApplicationGroup -Name "NetBird" -ApplicationGroupIdentifier "NetBird"
 ```
 
-### 2.3 Add a Native Application (Public Client)
+### 2.3 Get the Redirect URL from NetBird
 
-<Note>
-The NetBird dashboard is a browser-based single-page application (SPA) that uses PKCE (Proof Key for Code Exchange) for authentication. ADFS must be configured with a **Native Application** (public client), not a Server Application (confidential client). A Server Application expects a `client_secret` on every token exchange, which an SPA cannot provide. Using the wrong client type will result in a 400 error on every login attempt.
-</Note>
+1. Log in to your NetBird Dashboard in another browser tab
+2. Navigate to **Settings > Identity Providers**
+3. Click **Add Identity Provider**
+4. Select **Generic OIDC** from the type dropdown
+5. Fill in:
+
+   | Field | Value |
+   | --- | --- |
+   | Name | `ADFS` (or your preferred display name) |
+   | Client ID | The GUID from [Step 2.1](#21-generate-a-client-id) |
+   | Client Secret | Enter a placeholder (you will replace it in [Step 7](#step-7-complete-netbird-configuration)) |
+   | Issuer | `https://<ADFS_FQDN>/adfs` |
+
+6. NetBird displays a **Redirect URL** — copy this value. Do **not** click **Save** yet; you'll return to this tab in [Step 7](#step-7-complete-netbird-configuration).
+
+### 2.4 Add a Server Application (Confidential Client)
+
+Create a confidential OIDC client in ADFS with a generated client secret. NetBird's Dashboard IdP flow exchanges the authorization code using the client secret, so ADFS must be configured as a **Server Application**, not a Native Application.
 
 ```powershell
-Add-AdfsNativeClientApplication `
-  -Name "NetBird - Native App" `
+$serverApp = Add-AdfsServerApplication `
+  -Name "NetBird - Server App" `
   -ApplicationGroupIdentifier "NetBird" `
   -Identifier $clientId `
-  -RedirectUri @(
-    "https://<NETBIRD_DOMAIN>/peers",
-    "https://<NETBIRD_DOMAIN>/add-peers",
-    "http://localhost:53000"
-  )
+  -RedirectUri @("<REDIRECT_URL_FROM_NETBIRD>") `
+  -GenerateClientSecret
+
+$clientSecret = $serverApp.ClientSecret
+Write-Host "Client Secret: $clientSecret"
 ```
 
-Replace `<NETBIRD_DOMAIN>` with your NetBird management URL. The redirect URIs must point to actual routes in the NetBird dashboard. The `http://localhost:53000` entry is required for CLI-based peer authentication.
+Replace `<REDIRECT_URL_FROM_NETBIRD>` with the URL you copied in [Step 2.3](#23-get-the-redirect-url-from-netbird). Record the client secret — you'll paste it into NetBird in [Step 7](#step-7-complete-netbird-configuration). ADFS does not display the secret again, so if you lose it you'll need to regenerate it with `Set-AdfsServerApplication ... -GenerateClientSecret`.
 
-### 2.4 Add a Web API
+### 2.5 Add a Web API
 
 ```powershell
 Add-AdfsWebApiApplication `
@@ -303,7 +320,7 @@ Add-AdfsWebApiApplication `
   -AccessControlPolicyName "Permit everyone"
 ```
 
-### 2.5 Grant OIDC Permissions
+### 2.6 Grant OIDC Permissions
 
 ```powershell
 Grant-AdfsApplicationPermission `
@@ -378,10 +395,17 @@ c:[Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccou
    param = c.Value);
 "@
 
+# Rule 5: Override the default sub claim with the UPN
+$subRule = @"
+@RuleName = "Override sub claim"
+c:[Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"]
+=> issue(Type = "sub", Value = c.Value);
+"@
+
 # Apply all rules
 Set-AdfsWebApiApplication `
   -TargetName "NetBird - Web API" `
-  -IssuanceTransformRules ($ldapRule + $nameRule + $groupQueryRule + $groupFilterRule + $upnRule)
+  -IssuanceTransformRules ($ldapRule + $nameRule + $groupQueryRule + $groupFilterRule + $upnRule + $subRule)
 ```
 
 <Note>
@@ -389,7 +413,7 @@ The `name` claim must be emitted in its own rule (Rule 2) using the short claim 
 </Note>
 
 <Note>
-**Why the UPN rule is required:** ADFS generates base64-encoded pairwise subject identifiers for the `sub` claim by default. Base64 encoding can produce `/`, `+`, and `=` characters. When NetBird uses the `sub` claim as the user identifier in API URL paths, the `/` characters are interpreted as path separators, causing 404 errors. The UPN claim provides a URL-safe, human-readable identifier instead.
+**Why the sub override (Rule 5) is required:** ADFS generates base64-encoded pairwise subject identifiers for the `sub` claim by default. Base64 encoding can produce `/`, `+`, and `=` characters. When NetBird uses the `sub` claim as the user identifier in API URL paths, the `/` characters are interpreted as path separators, causing 404 errors. Emitting `sub` from the UPN (Rule 5) provides a URL-safe, human-readable identifier instead. On some ADFS builds you may also need to disable pairwise identifiers on the Server Application (`Set-AdfsServerApplication ... -PairwiseIdentifierEnabled $false`) — check Microsoft's [AD FS OpenID Connect documentation](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/overview/ad-fs-openid-connect-oauth-flows-scenarios) for your version.
 </Note>
 
 Groups are filtered at the ADFS level so only relevant groups appear in the JWT and get synced into NetBird.
@@ -538,64 +562,56 @@ From an external machine, navigate to `https://adfs.example.com/adfs/ls/idpiniti
 
 ---
 
-## Step 7: Configure NetBird
+## Step 7: Complete NetBird Configuration
 
-### 7.1 OIDC Provider Values
+### 7.1 Finish Adding the Identity Provider
 
-Provide the following values during NetBird setup or in your NetBird configuration:
+Return to the NetBird Dashboard tab you opened in [Step 2.3](#23-get-the-redirect-url-from-netbird):
 
-| Field | Value |
-| --- | --- |
-| OIDC Discovery Endpoint | `https://<ADFS_FQDN>/adfs/.well-known/openid-configuration` |
-| Client ID | The GUID generated in [Step 2.1](#21-generate-a-client-id) |
-| Scopes | `openid profile email` |
+1. Replace the placeholder **Client Secret** field with the secret generated in [Step 2.4](#24-add-a-server-application-confidential-client)
+2. Verify the other values:
 
-### 7.2 Required NetBird Configuration Settings
+   | Field | Value |
+   | --- | --- |
+   | Type | Generic OIDC |
+   | Name | `ADFS` (or your chosen display name) |
+   | Client ID | The GUID from [Step 2.1](#21-generate-a-client-id) |
+   | Client Secret | From [Step 2.4](#24-add-a-server-application-confidential-client) |
+   | Issuer | `https://<ADFS_FQDN>/adfs` |
 
-Two settings are required for correct operation with ADFS:
+3. Click **Save**
 
-```bash
-NETBIRD_TOKEN_SOURCE="idToken"
-NETBIRD_AUTH_USER_ID_CLAIM="upn"
-```
+### 7.2 Verify the Redirect URI
 
-**`NETBIRD_TOKEN_SOURCE=idToken`** — ADFS includes user claims (email, name, groups) in the `id_token`. The `access_token` may not contain these claims. Without this setting, users may appear without names or email addresses in the NetBird dashboard.
-
-**`NETBIRD_AUTH_USER_ID_CLAIM=upn`** — This tells NetBird to use the UPN claim as the user identifier instead of the default `sub` claim. The ADFS `sub` claim contains base64 characters that break URL routing in the management API.
-
-### 7.3 Redirect URI Configuration
-
-After NetBird is deployed, verify that the redirect URIs configured in the ADFS Native Application ([Step 2.3](#23-add-a-native-application-public-client)) exactly match the URIs that NetBird sends in its OIDC authorization requests. Mismatches in paths, trailing slashes, or protocol will cause login failures.
-
-To check the currently configured redirect URIs:
+If you misplace the Redirect URL later, you can list the URIs currently registered on the ADFS Server Application:
 
 ```powershell
-Get-AdfsNativeClientApplication -Name "NetBird - Native App" | Select-Object -ExpandProperty RedirectUri
+Get-AdfsServerApplication -Name "NetBird - Server App" | Select-Object -ExpandProperty RedirectUri
 ```
 
-To update them:
+To update them (for example, if NetBird regenerates the URL after reconfiguration):
 
 ```powershell
-Set-AdfsNativeClientApplication `
-  -TargetName "NetBird - Native App" `
-  -RedirectUri @(
-    "https://<NETBIRD_DOMAIN>/peers",
-    "https://<NETBIRD_DOMAIN>/add-peers",
-    "http://localhost:53000"
-  )
+Set-AdfsServerApplication `
+  -TargetName "NetBird - Server App" `
+  -RedirectUri @("<REDIRECT_URL_FROM_NETBIRD>")
 ```
 
-### 7.4 JWT Group Sync
+### 7.3 Enable JWT Group Sync
 
 To synchronize AD group memberships into NetBird for use in access control policies:
 
-1. In the NetBird dashboard, navigate to **Settings > Groups**
+1. In the NetBird Dashboard, navigate to **Settings > Groups**
 2. Toggle **Enable JWT group sync**
 3. Set the JWT claim name to `groups`
 
 Groups appear in NetBird using the short names from the token (for example, `NetBird-Users`, `Domain Users`). Groups are synced at login time — when a user authenticates, their current group memberships are read from the token. Only groups matching the ADFS filter pattern will appear in NetBird, and that filter is controlled by the regex in the "Filter Group Membership" claim rule.
 
-### 7.5 TLS Verification
+<Note>
+Groups with matching names in NetBird and ADFS will **not** sync. To import a group from ADFS, first delete the existing group with that name in NetBird.
+</Note>
+
+### 7.4 TLS Verification
 
 The NetBird management server must trust the TLS certificate on the ADFS/WAP endpoint. If you are using a certificate from a public CA, this works automatically. If you are using an internal CA, add the CA certificate to the trust store on the NetBird server.
 
@@ -606,6 +622,15 @@ curl -s https://<ADFS_FQDN>/adfs/.well-known/openid-configuration | jq .
 ```
 
 This request routes through the WAP and should return the OIDC discovery document with no TLS errors.
+
+### 7.5 Test the Login
+
+1. Log out of the NetBird Dashboard
+2. On the login page, click the **ADFS** button
+3. You are redirected to ADFS (through the WAP)
+4. Sign in with AD credentials and complete the Duo MFA challenge
+5. Confirm you are redirected back to the NetBird Dashboard as the authenticated user
+6. Verify the user's display name, email, and group memberships appear correctly
 
 ---
 
@@ -640,7 +665,7 @@ Navigate to `https://<ADFS_FQDN>/adfs/ls/idpinitiatedsignon` from an external ma
 
 ### Login returns a 400 error on token exchange
 
-The ADFS application is configured as a Server Application (confidential client) instead of a Native Application (public client). The NetBird dashboard uses PKCE and does not send a `client_secret`. Recreate the application using `Add-AdfsNativeClientApplication` per [Step 2.3](#23-add-a-native-application-public-client), then re-grant permissions per [Step 2.5](#25-grant-oidc-permissions).
+The ADFS application is most likely configured as a Native Application (public client) instead of a Server Application (confidential client). NetBird's Dashboard IdP flow sends a `client_secret` during token exchange, which ADFS will reject if the app was created with `Add-AdfsNativeClientApplication`. Delete the Native Application and recreate it using `Add-AdfsServerApplication` per [Step 2.4](#24-add-a-server-application-confidential-client), then re-grant permissions per [Step 2.6](#26-grant-oidc-permissions). Also verify the client secret pasted into NetBird matches the one generated in ADFS.
 
 ### Dashboard login silently fails with no error
 
@@ -652,7 +677,7 @@ In the Duo Admin Panel, open the Microsoft ADFS application and set User access 
 
 ### Users appear without a name or email in NetBird
 
-Verify that the AD user objects have `displayName`, `givenName`, `sn`, and `mail` attributes populated. Also verify that `NETBIRD_TOKEN_SOURCE` is set to `idToken` in the NetBird configuration.
+Verify that the AD user objects have `displayName`, `givenName`, `sn`, and `mail` attributes populated, and that the LDAP and Display Name claim rules from [Step 3](#step-3-configure-claim-transform-rules) are attached to the Web API. Decode a fresh id\_token with a JWT inspector to confirm `email`, `name`, `given_name`, and `family_name` are present.
 
 ### User display name shows as "CORP" or an array instead of the real name
 
@@ -660,11 +685,11 @@ The ADFS `name` claim contains two values: one from the implicit Windows account
 
 ### NetBird API returns 404 for user operations
 
-The ADFS `sub` claim contains base64 characters (`/`, `+`, `=`) that break URL path routing. Set `NETBIRD_AUTH_USER_ID_CLAIM=upn` in the NetBird configuration and verify the UPN claim rule exists in the ADFS Web API (Step 3, Rule 4).
+The ADFS `sub` claim contains base64 characters (`/`, `+`, `=`) that break URL path routing. Verify that the "Override sub claim" rule (Rule 5 in [Step 3](#step-3-configure-claim-transform-rules)) is active on the Web API. On some ADFS versions the default pairwise identifier is still emitted alongside your override; in that case disable pairwise identifiers on the Server Application with `Set-AdfsServerApplication ... -PairwiseIdentifierEnabled $false`.
 
 ### Redirect URI mismatch errors
 
-The redirect URIs in the ADFS Native Application must exactly match what NetBird sends. Check the `redirect_uri` parameter in the browser's network tab during a login attempt and compare it to the ADFS configuration. Update with `Set-AdfsNativeClientApplication` if they differ.
+The redirect URI in the ADFS Server Application must exactly match the one NetBird displays in **Settings > Identity Providers**. Check the `redirect_uri` parameter in the browser's network tab during a login attempt and compare it to the ADFS configuration. Update with `Set-AdfsServerApplication -TargetName "NetBird - Server App" -RedirectUri @("<REDIRECT_URL_FROM_NETBIRD>")` if they differ.
 
 ### WAP cannot connect to ADFS
 
@@ -683,22 +708,24 @@ If the ADFS server resolves its own FQDN to an external IP, loopback traffic may
 | Component | Type | Name |
 | --- | --- | --- |
 | Application Group | - | NetBird |
-| Native Application | Public client (PKCE) | NetBird - Native App |
+| Server Application | Confidential client (client secret) | NetBird - Server App |
 | Web API | Resource | NetBird - Web API |
-| Claim Rules | Issuance Transform | Send LDAP Attributes, Send Display Name, Query Group Membership, Filter Group Membership, Send UPN |
+| Claim Rules | Issuance Transform | Send LDAP Attributes, Send Display Name, Query Group Membership, Filter Group Membership, Send UPN, Override sub claim |
 | CORS | Trusted Origin | `https://<NETBIRD_DOMAIN>` |
 | MFA | Additional Authentication | Duo Authentication for AD FS |
 
-### OIDC Values for NetBird
+### NetBird Identity Provider Values
+
+Entered in **Settings > Identity Providers > Add Identity Provider** in the NetBird Dashboard.
 
 | Field | Value |
 | --- | --- |
+| Type | Generic OIDC |
+| Name | `ADFS` (display name on the login page) |
 | Issuer | `https://<ADFS_FQDN>/adfs` |
-| Discovery Endpoint | `https://<ADFS_FQDN>/adfs/.well-known/openid-configuration` |
-| Client ID | `<your-generated-guid>` |
-| Scopes | `openid profile email` |
-| Token Source | `idToken` |
-| User ID Claim | `upn` |
+| Client ID | The GUID generated in [Step 2.1](#21-generate-a-client-id) |
+| Client Secret | Generated by `Add-AdfsServerApplication` in [Step 2.4](#24-add-a-server-application-confidential-client) |
+| Redirect URL | Generated by NetBird; registered in ADFS in [Step 2.4](#24-add-a-server-application-confidential-client) |
 
 ---
 
