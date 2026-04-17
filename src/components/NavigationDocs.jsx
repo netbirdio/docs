@@ -604,6 +604,10 @@ export const docsNavigation = [
                 title: 'PocketID',
                 href: '/selfhosted/identity-providers/pocketid',
               },
+              {
+                title: 'ADFS',
+                href: '/selfhosted/identity-providers/adfs',
+              },
             ],
           },
           {
