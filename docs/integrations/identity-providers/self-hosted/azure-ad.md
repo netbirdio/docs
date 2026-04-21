@@ -94,7 +94,7 @@ In this step, we will create and configure Netbird application in azure AD.
 
 ### 4. Update token version
 - Click `Manifest` on left menu
-- Search for `accessTokenAcceptedVersion` and change the value from `null` to `2`
+- Search for `requestedAccessTokenVersion` and change the value from `null` to `2`
 - Click `Save`
 
 ### 5. Generate client secret
