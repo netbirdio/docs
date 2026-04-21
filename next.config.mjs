@@ -19,14 +19,11 @@ const nextConfig = {
     assetPrefix: undefined,
     reactStrictMode: true,
     pageExtensions: ['js', 'jsx', 'ts', 'tsx', 'mdx'],
-    experimental: {
-        scrollRestoration: true,
-    },
     redirects: async () => {
         return [
             {
                 source: '/slack-url',
-                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-3i1ppsk7o-pJUUiC1ZcxcjNR_A3EUr6w',
+                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-3rxbnuiyt-vXZxZ6UCjJ8aQLNLXMBJxQ',
                 permanent: false,
             },
             {
@@ -51,7 +48,7 @@ const nextConfig = {
             },
             {
                 source: '/docs/how-to-guides/nameservers',
-                destination: '/manage/dns/nameserver-groups',
+                destination: '/manage/dns/internal-dns-servers',
                 permanent: true,
             },
             {
@@ -61,7 +58,7 @@ const nextConfig = {
             },
             {
                 source: '/docs/how-to-guides/network-routes',
-                destination: '/manage/network-routes/routing-traffic-to-private-networks',
+                destination: '/manage/network-routes',
                 permanent: true,
             },
             {
@@ -98,6 +95,12 @@ const nextConfig = {
                 source: '/ipa/:path*',
                 destination: '/api/:path*',
                 permanent: true
+            },
+            // documentation redirects for about
+            {
+                source: '/selfhosted/self-hosted-vs-cloud-netbird',
+                destination: '/about-netbird/self-hosted-vs-cloud',
+                permanent: true,
             },
             // documentation redirects for access control
             {
@@ -255,27 +258,27 @@ const nextConfig = {
             // documentation redirects for use-cases
             {
                 source: '/how-to/examples',
-                destination: '/use-cases/examples',
+                destination: '/use-cases/cloud/aws-ecs-terraform',
                 permanent: true,
             },
             {
                 source: '/how-to/netbird-on-faas',
-                destination: '/use-cases/netbird-on-faas',
+                destination: '/use-cases/cloud/netbird-on-faas',
                 permanent: true,
             },
             {
                 source: '/how-to/routing-peers-and-kubernetes',
-                destination: '/use-cases/routing-peers-and-kubernetes',
+                destination: '/use-cases/cloud/routing-peers-and-kubernetes',
                 permanent: true,
             },
             {
                 source: '/how-to/client-on-mikrotik-router',
-                destination: '/use-cases/client-on-mikrotik-router',
+                destination: '/use-cases/homelab/client-on-mikrotik-router',
                 permanent: true,
             },
             {
                 source: '/how-to/distributed-multi-cloud-ai-argocd-microk8s-vllm',
-                destination: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm',
+                destination: '/use-cases/cloud/distributed-multi-cloud-ai',
                 permanent: true,
             },
             // documentation redirects for networks
@@ -307,7 +310,7 @@ const nextConfig = {
             // documentation redirects for network-routes
             {
                 source: '/how-to/routing-traffic-to-private-networks',
-                destination: '/manage/network-routes/routing-traffic-to-private-networks',
+                destination: '/manage/network-routes',
                 permanent: true,
             },
             {
@@ -451,7 +454,17 @@ const nextConfig = {
             // documentation redirects for integrations
             {
                 source: '/how-to/enable-post-quantum-cryptography',
-                destination: '/manage/integrations/enable-post-quantum-cryptography',
+                destination: '/client/post-quantum-cryptography',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/enable-post-quantum-cryptography',
+                destination: '/client/post-quantum-cryptography',
+                permanent: true,
+            },
+            {
+                source: '/client/enable-post-quantum-cryptography',
+                destination: '/client/post-quantum-cryptography',
                 permanent: true,
             },
             {
@@ -493,6 +506,16 @@ const nextConfig = {
             },
             // documentation redirects for client
             {
+                source: '/client/allow-ssh',
+                destination: '/manage/peers/ssh#enabling-ssh',
+                permanent: true,
+            },
+            {
+                source: '/client/enable-lazy-connections',
+                destination: '/manage/peers/lazy-connection',
+                permanent: true,
+            },
+            {
                 source: '/how-to/profiles',
                 destination: '/client/profiles',
                 permanent: true,
@@ -506,6 +529,143 @@ const nextConfig = {
             {
                 source: '/how-to/report-bug-issues',
                 destination: '/help/report-bug-issues',
+                permanent: true,
+            },
+            {
+                source: '/manage/dns/zones',
+                destination: '/manage/dns/custom-zones',
+                permanent: true,
+            },
+            // Site-to-site documentation restructure redirects
+            {
+                source: '/use-cases/setup-site-to-site-access',
+                destination: '/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/site-to-site/db-workload-migration',
+                destination: '/manage/network-routes/use-cases/by-scenario/site-to-site-cloud',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/site-to-site-cloud',
+                destination: '/manage/network-routes/use-cases/by-scenario/site-to-site-cloud',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/homelab/access-home-network',
+                destination: '/manage/networks/use-cases/by-scenario/access-home-devices',
+                permanent: true,
+            },
+            // Networks guides moved to use-cases
+            {
+                source: '/manage/networks/routing-traffic-to-multiple-resources',
+                destination: '/manage/networks/use-cases/by-resource-type/routing-traffic-to-multiple-resources',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/accessing-restricted-domain-resources',
+                destination: '/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/accessing-entire-domains-within-networks',
+                destination: '/manage/networks/use-cases/by-resource-type/accessing-entire-domains-within-networks',
+                permanent: true,
+            },
+            // Network Routes guides moved to use-cases
+            {
+                source: '/manage/network-routes/routing-traffic-to-private-networks',
+                destination: '/manage/network-routes',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/routing-traffic-to-private-networks',
+                destination: '/manage/network-routes',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/configuring-default-routes-for-internet-traffic',
+                destination: '/manage/network-routes/use-cases/by-scenario/exit-nodes',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/configuring-routes-with-access-control',
+                destination: '/manage/network-routes/use-cases/by-configuration/access-control',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/resolve-overlapping-routes',
+                destination: '/manage/network-routes/use-cases/by-configuration/overlapping-routes',
+                permanent: true,
+            },
+            // Site-to-Site section redirects (overview and comprehensive guides)
+            {
+                source: '/manage/site-to-site',
+                destination: '/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/site-to-site/connect-home-networks',
+                destination: '/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/site-to-site/connect-office-networks',
+                destination: '/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/site-to-site/connect-cloud-environments',
+                destination: '/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/site-to-site/advanced-configuration',
+                destination: '/manage/network-routes/use-cases/by-configuration/advanced-configuration',
+                permanent: true,
+            },
+            // Use-cases flat pages -> categorized
+            {
+                source: '/use-cases/examples',
+                destination: '/use-cases/cloud/aws-ecs-terraform',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/netbird-on-faas',
+                destination: '/use-cases/cloud/netbird-on-faas',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/routing-peers-and-kubernetes',
+                destination: '/use-cases/cloud/routing-peers-and-kubernetes',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/implement-zero-trust',
+                destination: '/use-cases/security/implement-zero-trust',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/client-on-mikrotik-router',
+                destination: '/use-cases/homelab/client-on-mikrotik-router',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm',
+                destination: '/use-cases/cloud/distributed-multi-cloud-ai',
+                permanent: true,
+            },
+            // selfhosted reverse proxy rename
+            {
+                source: '/selfhosted/reverse-proxy',
+                destination: '/selfhosted/external-reverse-proxy',
+                permanent: true,
+            },
+            // selfhosted scaling redirect
+            {
+                source: '/scaling-your-self-hosted-deployment',
+                destination: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
                 permanent: true,
             },
         ]

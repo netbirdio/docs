@@ -7,6 +7,15 @@ import * as yaml from 'js-yaml';
 import { merge } from 'allof-merge'
 import RequestBodyObject = OpenAPIV3_1.RequestBodyObject;
 
+function escapeMdx(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/<=/g, "{'<='}")
+    .replace(/>=/g, "{'>='}")
+    .replace(/^- /gm, '\\- ')
+    .replace(/\n- /g, '\n\\- ');
+}
+
 // Pre-processes the spec to fix allOf with conflicting enums by merging them
 function fixConflictingEnumAllOf(obj: any): any {
   if (obj === null || typeof obj !== 'object') {
@@ -123,7 +132,10 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
   Object.entries(spec.paths).forEach(([key, val]) => {
     const fullPath = `${server}${key}`
 
-    toArrayWithKey(val!, 'operation').forEach((o) => {
+    const httpMethods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head', 'trace']
+    toArrayWithKey(val!, 'operation')
+      .filter((o) => httpMethods.includes(o.operation))
+      .forEach((o) => {
       const operation = o as v3OperationWithPath
 
       var request = null
@@ -135,7 +147,7 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
       }
 
       var response = null
-      if(operation.responses["200"] != undefined && operation.responses["200"]["content"]["application/json"] != undefined) {
+      if(operation.responses && operation.responses["200"] != undefined && operation.responses["200"]["content"] != undefined && operation.responses["200"]["content"]["application/json"] != undefined) {
         response = {
             example: extractInfo(operation.responses["200"]["content"]["application/json"].schema, 'example'),
             schema: extractInfo(operation.responses["200"]["content"]["application/json"].schema, 'type')
@@ -158,7 +170,10 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
     })
   })
 
+  const excludedTags = ['Checkout', 'AWS Marketplace', 'Plans', 'Subscription', 'Portal']
+
   tagGroups.forEach((value: enrichedOperation[], key: string) => {
+    if (excludedTags.includes(key)) return
 
     const operations = value
 
@@ -176,11 +191,12 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
       tag: key,
       sections,
       operations,
+      escapeMdx,
       // components,
     })
 
     // Write to disk
-    let outputFile = dest + "/" + key.toLowerCase().replace(" ", "-") + ".mdx"
+    let outputFile = dest + "/" + key.toLowerCase().replace(/ /g, "-") + ".mdx"
     writeToDisk(outputFile, content)
     // console.log('Saved: ', outputFile)
 

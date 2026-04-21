@@ -1,0 +1,299 @@
+import {Note, Warning} from "@/components/mdx"
+
+export const description =
+    'Deploy multiple NetBird proxy instances across separate servers for high availability, redundancy, and geographic distribution.'
+
+# Running Multiple Proxy Instances
+
+Running a single NetBird proxy instance works well for many deployments, but production environments often require higher availability. By deploying multiple proxy instances across separate servers, you get automatic failover - if one instance goes down, the remaining instances continue serving traffic without interruption.
+
+This guide covers how to deploy additional proxy instances, manage tokens and TLS certificates across instances, and monitor your proxy cluster.
+
+## How clustering works
+
+```
+                     ┌── HA Cluster ──────────────┐
+      Auth Check     │  *.eu.proxy.example.com    │
+  ◄─────────────────►│                            │
+  │                  │  Proxy W (TLS)             │ ◄── WireGuard ──┐
+  │                  │  Proxy X (TLS)             │ ◄── WireGuard ──┤► NetBird Peer
+  │                  │  Proxy Y (TLS)             │ ◄── WireGuard ──┘   (Service)
+  │                  └────────────────────────────┘
+  │
+Management Service
+(netbird.example.com)
+```
+
+Proxy instances that share the same `NB_PROXY_DOMAIN` value automatically form a cluster. Each instance independently connects to the management server via gRPC and registers itself under the shared domain. The management server tracks all connected instances and distributes traffic configuration to each one.
+
+When a client connects to a service domain (e.g., `myapp.proxy.example.com`), DNS resolves to one of the servers running a proxy instance. That instance handles TLS termination and forwards the request through the WireGuard mesh to the target. If the server becomes unavailable, clients are routed to another server in the cluster through DNS failover.
+
+There is no leader election or instance-to-instance communication - each proxy instance operates independently and receives the same configuration from the management server.
+
+## Prerequisites
+
+Before deploying additional proxy instances, make sure you have:
+
+- A working single-instance proxy deployment (see [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy) if you haven't set this up yet)
+- One or more additional servers with Docker installed
+- Traefik configured on each server (or a load balancer in front of all servers)
+- The ability to update DNS records to point to multiple servers
+- Access to the management server CLI to generate proxy tokens
+
+## Token management
+
+Each proxy instance authenticates with the management server using an access token. You can either generate a unique token per instance or share a single token across instances.
+
+**Recommended: one token per instance.** Using unique tokens provides better auditability (you can see which instance connected) and allows you to revoke access for a single instance without affecting others.
+
+Generate a token for each instance. The command differs depending on whether you use the combined container or the older multi-container setup.
+
+**Combined container** (`netbirdio/netbird-server`):
+
+```bash
+docker exec -it netbird-server /go/bin/netbird-server token create \
+  --name "proxy-server-1" --config <netbird-data-dir>/config.yaml
+
+docker exec -it netbird-server /go/bin/netbird-server token create \
+  --name "proxy-server-2" --config <netbird-data-dir>/config.yaml
+```
+
+**Multi-container** (separate `netbirdio/management` image):
+
+```bash
+docker exec -it netbird-management /go/bin/netbird-mgmt token create --name "proxy-server-1"
+docker exec -it netbird-management /go/bin/netbird-mgmt token create --name "proxy-server-2"
+```
+
+Use a descriptive `--name` for each token so you can identify which instance it belongs to when listing or revoking tokens:
+
+```bash
+# List all tokens (combined container)
+docker exec -it netbird-server /go/bin/netbird-server token list \
+  --config <netbird-data-dir>/config.yaml
+
+# List all tokens (multi-container)
+docker exec -it netbird-management /go/bin/netbird-mgmt token list
+
+# Revoke a specific instance's token (combined container)
+docker exec -it netbird-server /go/bin/netbird-server token revoke <token-id> \
+  --config <netbird-data-dir>/config.yaml
+
+# Revoke a specific instance's token (multi-container)
+docker exec -it netbird-management /go/bin/netbird-mgmt token revoke <token-id>
+```
+
+<Note>
+Tokens are displayed only once when created. Save each token immediately - the management server stores only a SHA-256 hash and cannot retrieve the original value.
+</Note>
+
+## Deploying additional instances
+
+On each additional server, set up a proxy instance using the same configuration as your first instance, but with its own token.
+
+### Step 1: Create the proxy environment file
+
+Create a `proxy.env` file on the new server:
+
+```bash
+NB_PROXY_DOMAIN=proxy.example.com
+NB_PROXY_TOKEN=nbx_unique_token_for_this_instance
+NB_PROXY_MANAGEMENT_ADDRESS=https://netbird.example.com:443
+NB_PROXY_ADDRESS=:8443
+NB_PROXY_ACME_CERTIFICATES=true
+NB_PROXY_ACME_CHALLENGE_TYPE=tls-alpn-01
+NB_PROXY_CERTIFICATE_DIRECTORY=/certs
+```
+
+The `NB_PROXY_DOMAIN` value **must match** across all instances in the cluster. Use a unique `NB_PROXY_TOKEN` for each instance.
+
+### Step 2: Create the Docker Compose file
+
+Create a `docker-compose.yml` on the new server:
+
+```yaml
+services:
+  traefik:
+    image: traefik:v3.4
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--entrypoints.websecure.address=:443"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+    ports:
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [netbird]
+
+  proxy:
+    image: netbirdio/reverse-proxy:latest
+    container_name: netbird-proxy
+    restart: unless-stopped
+    networks: [netbird]
+    depends_on:
+      - traefik
+    env_file:
+      - ./proxy.env
+    volumes:
+      - netbird_proxy_certs:/certs
+    labels:
+      - traefik.enable=true
+      - traefik.tcp.routers.proxy-passthrough.entrypoints=websecure
+      - traefik.tcp.routers.proxy-passthrough.rule=HostSNI(`*`)
+      - traefik.tcp.routers.proxy-passthrough.tls.passthrough=true
+      - traefik.tcp.routers.proxy-passthrough.service=proxy-tls
+      - traefik.tcp.routers.proxy-passthrough.priority=1
+      - traefik.tcp.services.proxy-tls.loadbalancer.server.port=8443
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "2"
+
+networks:
+  netbird:
+
+volumes:
+  netbird_proxy_certs:
+```
+
+<Note>
+On additional servers that only run the proxy (not the full NetBird stack), the Traefik configuration is simpler because there are no competing HTTP routers. All traffic on port 443 is passed through to the proxy container.
+</Note>
+
+### Step 3: Start the instance
+
+```bash
+docker compose pull
+docker compose up -d
+
+# Verify the proxy is running
+docker compose logs -f proxy
+```
+
+You should see log messages indicating the proxy has connected to the management server and registered under the cluster domain.
+
+### Step 4: Update DNS
+
+Add DNS records so that your proxy domain resolves to all servers running proxy instances. The simplest approach is multiple A records:
+
+| Type | Name | Content |
+|------|------|---------|
+| `A` | `proxy.example.com` | `<server-1-ip>` |
+| `A` | `proxy.example.com` | `<server-2-ip>` |
+| `A` | `*.proxy.example.com` | `<server-1-ip>` |
+| `A` | `*.proxy.example.com` | `<server-2-ip>` |
+
+Most DNS providers perform round-robin resolution when multiple records exist for the same name. If a server becomes unreachable, clients retry against the next resolved IP.
+
+Alternatively, place a load balancer in front of all proxy servers and point DNS to the load balancer's address.
+
+## TLS certificate management
+
+Each proxy instance needs valid TLS certificates for the service domains it handles. There are two approaches, and the right choice depends on your cluster size and operational preferences.
+
+### ACME mode (Let's Encrypt)
+
+With `NB_PROXY_ACME_CERTIFICATES=true`, each instance independently provisions its own certificates from Let's Encrypt. This is the simplest approach - no certificate files need to be shared between servers.
+
+Each instance completes the ACME challenge independently using the configured challenge type (`tls-alpn-01` or `http-01`). This means each server must be reachable on the challenge port for its own domains.
+
+<Note>
+Let's Encrypt enforces [rate limits](https://letsencrypt.org/docs/rate-limits/) - notably 50 certificates per registered domain per week. For most deployments this is not an issue, but if you are running many instances with many service domains, you may hit these limits. In that case, consider using static wildcard certificates instead.
+</Note>
+
+### Static certificates (wildcard)
+
+For larger clusters or environments where you want consistent certificate management, use a wildcard certificate shared across all instances. This avoids ACME rate limits and removes the need for each server to complete ACME challenges.
+
+The recommended approach is to store your wildcard certificate and key on a shared NFS mount that all proxy servers can access. Cloud providers offer managed NFS services for this purpose - for example, AWS Elastic File System (EFS), Google Cloud Filestore, or Azure Files. Mount the shared filesystem to the same path on each server, then configure the proxy to read certificates from that path:
+
+```bash
+NB_PROXY_DOMAIN=proxy.example.com
+NB_PROXY_CERTIFICATE_FILE=tls.crt
+NB_PROXY_CERTIFICATE_KEY_FILE=tls.key
+NB_PROXY_CERTIFICATE_DIRECTORY=/certs
+```
+
+Mount the shared NFS directory into the container as a read-only bind mount:
+
+```yaml
+volumes:
+  - /mnt/shared-certs:/certs:ro
+```
+
+With this setup, you only need to update the certificate files in one place. When you renew or rotate a certificate on the NFS share, every proxy instance picks up the change automatically.
+
+<Note>
+The proxy watches the certificate files for changes and reloads them without a restart. This works seamlessly with shared storage - renew the certificate once on the NFS share, and all instances begin using the new certificate within seconds.
+</Note>
+
+### Choosing between ACME and static certificates
+
+| | ACME (Let's Encrypt) | Static (wildcard) |
+|---|---|---|
+| **Setup complexity** | Lower - no certificate distribution needed | Higher - requires a shared NFS mount across servers |
+| **Certificate rotation** | Automatic | Update once on the shared mount; all instances reload automatically |
+| **ACME rate limits** | Each instance provisions independently; risk of rate limits at scale | Not applicable |
+| **Best for** | Small clusters (2–3 instances) | Larger clusters or strict certificate control |
+
+## Monitoring and failover
+
+### Verifying cluster status
+
+After deploying all instances, verify they are connected:
+
+1. Open the NetBird dashboard and navigate to **Reverse Proxy** > **Services**
+2. Click **Add Service** and check the domain selector - your cluster domain should appear with a **Cluster** badge
+3. The management server tracks all connected proxy instances; if an instance disconnects, it is removed from the active cluster
+
+### Checking proxy logs
+
+On each server, check the proxy logs for connectivity and error information:
+
+```bash
+docker compose logs -f proxy
+```
+
+Look for connection status messages confirming the proxy is connected to the management server and receiving configuration updates.
+
+### Failover behavior
+
+When a proxy instance goes down:
+
+- DNS-based failover directs clients to remaining healthy servers (depending on your DNS configuration and TTL settings)
+- The management server detects the disconnected instance and removes it from the active cluster
+- Remaining instances continue serving all configured services without interruption
+- When the instance recovers and reconnects, it automatically rejoins the cluster and begins serving traffic again
+
+No manual intervention is required for failover or recovery.
+
+### Removing an instance
+
+To gracefully remove a proxy instance from the cluster:
+
+```bash
+# Stop the proxy on the server being removed
+docker compose down
+
+# Revoke its token on the management server (combined container)
+docker exec -it netbird-server /go/bin/netbird-server token list \
+  --config <netbird-data-dir>/config.yaml
+docker exec -it netbird-server /go/bin/netbird-server token revoke <token-id> \
+  --config <netbird-data-dir>/config.yaml
+
+# Revoke its token on the management server (multi-container)
+docker exec -it netbird-management /go/bin/netbird-mgmt token list
+docker exec -it netbird-management /go/bin/netbird-mgmt token revoke <token-id>
+```
+
+After stopping the instance, update your DNS records to remove the server's IP address so clients are no longer directed to it.
+
+## Related pages
+
+- [Reverse Proxy Overview](/manage/reverse-proxy) - core concepts, service configuration, and quick start guide
+- [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy) - migration guide for adding the proxy to an existing deployment
+- [Scaling Your Deployment](/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment) - overview of scaling options for self-hosted NetBird
+- [Custom Domains](/manage/reverse-proxy/custom-domains) - use your own domain names for reverse proxy services

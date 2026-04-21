@@ -55,8 +55,12 @@ export function Button({
   )
 
   if (variant === 'primary' || variant === 'outline-arrow') {
+    const divProps = {}
+    if (!props.href && props.onClick) {
+      divProps.onClick = props.onClick
+    }
     return (
-      <div className="relative inline-flex group transition-all" onClick={props.href ? undefined : props.onClick}>
+      <div className="relative inline-flex group transition-all" {...divProps}>
         {variant === 'primary' && (
           <span className="absolute h-full w-full left-0 top-0 blur-sm bg-netbird z-0 transition-all duration-200 transform-gpu opacity-0 group-hover:opacity-100 pointer-events-none"></span>
         )}

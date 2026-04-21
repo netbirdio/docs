@@ -1,0 +1,143 @@
+import {Note} from "@/components/mdx";
+
+# Remote Jobs
+
+Remote Jobs allow administrators to trigger actions on connected peers without requiring direct CLI access. This is useful for troubleshooting remote machines, collecting diagnostic information from end-users, or automating peer-level operations from the Dashboard or API.
+
+<Note>
+    Remote Jobs require the target peer to be **online** and running **NetBird v0.64.0 or later**.
+</Note>
+
+## Overview
+
+Remote Jobs are managed per-peer and follow a simple lifecycle:
+
+1. An administrator creates a job targeting a specific peer
+2. The management server sends the job request to the peer via its gRPC connection
+3. The peer executes the job and reports back with results
+4. The administrator retrieves the results from the Dashboard or API
+
+Each peer can have only one pending job at a time. Jobs transition through the following statuses:
+
+- **Pending** - Job has been created and sent to the peer
+- **Succeeded** - The peer completed the job successfully
+- **Failed** - The job failed (a reason is provided)
+
+Jobs that don't receive a response within 5 minutes are automatically marked as failed.
+
+## Permissions
+
+Remote Jobs are controlled by the **RemoteJobs** permission module:
+
+- **Create** - Required to trigger new jobs on peers
+- **Read** - Required to view job history and results
+
+Configure these permissions through your RBAC role assignments.
+
+## When to Use Remote Jobs
+
+Remote Jobs are designed for situations where you need diagnostics from a peer but can't — or don't want to — ask someone to run CLI commands on the machine:
+
+- **Supporting non-technical users** - An end-user reports connectivity issues on their laptop. Instead of walking them through terminal commands, you trigger a debug bundle directly from the Dashboard and get the logs you need.
+- **Troubleshooting headless infrastructure** - A routing peer running on a cloud VM or IoT device has intermittent issues. You collect a debug bundle remotely without SSH-ing into the machine or disrupting its workload.
+- **Investigating intermittent problems** - A peer experiences brief connectivity drops. You enable **Bundle Duration** to have the peer collect logs over a time window, capturing the issue as it happens rather than after the fact.
+- **Sharing diagnostics with support** - You need to file a bug report or support request. A single remote job produces an anonymized bundle with an upload key you can paste directly into a GitHub Issue or Slack thread.
+- **Fleet-wide diagnostics via API** - You script debug bundle collection across multiple peers using the API, making it easy to gather logs during an incident or a scheduled health check without manual intervention.
+
+## Job Types
+
+### Debug Bundle
+
+The Debug Bundle job remotely collects diagnostic information from a peer, including logs and system details. The generated bundle is uploaded and can be retrieved using an upload key.
+
+**Parameters:**
+
+| Parameter | Description | Range | Default |
+|-----------|-------------|-------|---------|
+| Log File Count | Number of log files to include | 1 - 1000 | 10 |
+| Bundle Duration | Time period to collect logs before creating the bundle | 1 - 5 minutes | Disabled |
+| Anonymize | Remove sensitive information (IP addresses, domains, etc.) | On / Off | Off |
+
+**Result:**
+
+On success, the job returns an **upload key** that can be used to retrieve the debug bundle. Share this key with NetBird support via GitHub Issues, Slack, or your support channel.
+
+## Using the Dashboard
+
+### Creating a Remote Job
+
+1. Navigate to **Peers** in the Dashboard
+2. Click on the peer you want to target
+3. Click the **Run Remote Job** dropdown button
+4. Select **Debug Bundle**
+5. Configure the job parameters:
+   - Set the **Log File Count** (how many log files to include)
+   - Optionally enable **Bundle Duration** to collect logs over a time window before generating the bundle
+   - Toggle **Anonymize Log Data** to strip sensitive information
+6. Click **Create Debug Bundle**
+
+<p>
+    <img src="/docs-static/img/manage/peers/remote-jobs/debug-bundle.png" alt="create debug bundle modal" className="imagewrapper"/>
+</p>
+
+<Note>
+    The **Run Remote Job** button is disabled when the peer is offline or when you lack the required permissions.
+</Note>
+
+### Viewing Job History
+
+The **Remote Jobs** tab on the peer detail page shows all jobs for that peer, sorted by creation time (newest first). The table displays:
+
+- **Type** - The job type (e.g., Debug Bundle)
+- **Status** - Color-coded status badge (yellow for pending, green for succeeded, red for failed)
+- **Created / Completed** - Timestamps for the job lifecycle
+- **Parameters** - Hover to view the full parameter configuration
+- **Output** - On success, the result (e.g., upload key with copy button). On failure, the error reason.
+
+<p>
+    <img src="/docs-static/img/manage/peers/remote-jobs/remote-job-history.png" alt="remote job history table" className="imagewrapper"/>
+</p>
+
+## Using the API
+
+Remote Jobs can be managed programmatically through the Management API. See the [Jobs API reference](/ipa/resources/jobs) for full details including request/response schemas and code examples in multiple languages.
+
+**Create a debug bundle job:**
+
+```bash
+curl -X POST https://api.netbird.io/api/peers/{peerId}/jobs \
+  -H "Authorization: Token <PAT>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workload": {
+      "type": "bundle",
+      "parameters": {
+        "log_file_count": 10,
+        "bundle_for": false,
+        "anonymize": true
+      }
+    }
+  }'
+```
+
+**List jobs for a peer:**
+
+```bash
+curl https://api.netbird.io/api/peers/{peerId}/jobs \
+  -H "Authorization: Token <PAT>"
+```
+
+**Get a specific job:**
+
+```bash
+curl https://api.netbird.io/api/peers/{peerId}/jobs/{jobId} \
+  -H "Authorization: Token <PAT>"
+```
+
+## Limitations
+
+- The target peer must be **online and connected** to the management server
+- Only **one pending job** per peer at a time
+- Peers must be running **NetBird v0.64.0 or later**
+- Jobs time out after **5 minutes** if the peer does not respond
+- Upload keys for debug bundles expire after 30 days

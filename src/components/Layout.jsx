@@ -17,6 +17,7 @@ import { faGithub } from '@fortawesome/free-brands-svg-icons';
 import {toast} from "react-toastify";
 import {AnnouncementBanner} from "@/components/announcement-banner/AnnouncementBanner";
 import {useAnnouncements} from "@/components/announcement-banner/AnnouncementBannerProvider";
+import { EDIT_ON_GITHUB_INDEX_ROUTES } from '@/lib/edit-on-github-routes'
 
 const navigation = [
   {
@@ -92,7 +93,7 @@ function useTableOfContents(tableOfContents) {
       .flatMap((node) => [node.id, ...node.children.map((child) => child.id)])
       .map((id) => {
         let el = document.getElementById(id)
-        if (!el) return
+        if (!el) return null
 
         let style = window.getComputedStyle(el)
         let scrollMt = parseFloat(style.scrollMarginTop)
@@ -100,20 +101,23 @@ function useTableOfContents(tableOfContents) {
         let top = window.scrollY + el.getBoundingClientRect().top - scrollMt
         return { id, top }
       })
+      .filter(Boolean)
   }, [])
 
   useEffect(() => {
     if (tableOfContents.length === 0) return
-    let headings = getHeadings(tableOfContents)
     function onScroll() {
+      let headings = getHeadings(tableOfContents)
+      if (headings.length === 0) return
+
       let scrollTop = window.scrollY
       setShowJumpToTop(scrollTop > 400)
-      
-      let top = scrollTop + 10;
-      let current = headings[0]?.id
+
+      let top = scrollTop + 10
+      let current = headings[0].id
       for (let heading of headings) {
-        if (top >= heading?.top) {
-          current = heading?.id
+        if (top >= heading.top) {
+          current = heading.id
         } else {
           break
         }
@@ -225,7 +229,7 @@ export function Layout({ children, title, tableOfContents }) {
             </li>
             <li key="edit-on-github">
               <Link
-                  href={"https://github.com/netbirdio/docs/tree/main/src/pages" + router.pathname + ".mdx"}
+                  href={"https://github.com/netbirdio/docs/tree/main/src/pages" + (EDIT_ON_GITHUB_INDEX_ROUTES.has(router.pathname) ? router.pathname + "/index.mdx" : router.pathname + ".mdx")}
                   className="dark:hover:text-slate-300 dark:text-slate-400 text-slate-500 hover:text-slate-700 font-normal'"
                   style={{display: "flex", alignItems: 'center'}}
               >

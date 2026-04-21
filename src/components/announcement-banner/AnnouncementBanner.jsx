@@ -1,11 +1,7 @@
-import { useEffect, useRef } from 'react'
 import clsx from 'clsx'
 import Link from 'next/link'
 
-import {
-  announcement,
-  useAnnouncements,
-} from '@/components/announcement-banner/AnnouncementBannerProvider'
+import { useAnnouncements } from '@/components/announcement-banner/AnnouncementBannerProvider'
 import { useCustomQueryURL } from '@/hooks/useCustomQueryURL'
 
 function ArrowRightIcon(props) {
@@ -38,39 +34,11 @@ function CloseIcon(props) {
   )
 }
 
-export function AnnouncementBanner() {
-  let { isVisible, close, reportHeight } = useAnnouncements()
-  let announcementLink = useCustomQueryURL(announcement.link || '')
-  let bannerRef = useRef(null)
-
-  useEffect(() => {
-    if (!isVisible) {
-      reportHeight(0)
-      return
-    }
-
-    function updateHeight() {
-      if (bannerRef.current) {
-        reportHeight(bannerRef.current.offsetHeight || 0)
-      } else {
-        reportHeight(0)
-      }
-    }
-
-    updateHeight()
-    window.addEventListener('resize', updateHeight)
-    return () => {
-      window.removeEventListener('resize', updateHeight)
-    }
-  }, [isVisible, reportHeight])
-
-  if (!isVisible) {
-    return null
-  }
+function AnnouncementItem({ announcement, onClose }) {
+  const announcementLink = useCustomQueryURL(announcement.link || '')
 
   return (
     <div
-      ref={bannerRef}
       id="announcement-banner"
       className={clsx(
         'sticky top-0 z-50 flex w-full items-center justify-center border-b border-zinc-800 bg-netbird/95 px-4 py-1.5 text-[11px] font-medium text-black shadow-sm backdrop-blur'
@@ -100,7 +68,7 @@ export function AnnouncementBanner() {
       {announcement.closeable ? (
         <button
           type="button"
-          onClick={close}
+          onClick={() => onClose(announcement.hash)}
           className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-black transition hover:bg-black/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
           aria-label="Dismiss announcement"
         >
@@ -108,5 +76,29 @@ export function AnnouncementBanner() {
         </button>
       ) : null}
     </div>
+  )
+}
+
+export function AnnouncementBanner() {
+  const { announcements, closeAnnouncement } = useAnnouncements()
+
+  if (!announcements) {
+    return null
+  }
+
+  const openAnnouncements = announcements.filter((a) => a.isOpen)
+
+  if (openAnnouncements.length === 0) {
+    return null
+  }
+
+  // Show the first open announcement
+  const announcement = openAnnouncements[0]
+
+  return (
+    <AnnouncementItem
+      announcement={announcement}
+      onClose={closeAnnouncement}
+    />
   )
 }
