@@ -4,8 +4,85 @@ export const description = 'Enable CrowdSec IP reputation blocking for self-host
 
 # CrowdSec IP Reputation
 
-CrowdSec integration is configured as part of the reverse proxy setup. See [Step 7: Enable CrowdSec IP reputation](/selfhosted/migration/enable-reverse-proxy#step-7-optional-enable-crowdsec-ip-reputation) in the Enable Reverse Proxy guide for full setup instructions, environment variables, and troubleshooting.
+![CrowdSec IP Reputation Overview](/docs-static/img/selfhosted/maintenance/crowdsec-overview.png)
+
+[CrowdSec](https://www.crowdsec.net) is an open-source security engine that combines local detection with a crowdsourced threat feed. Agents installed across the CrowdSec community share decisions about malicious IPs, and that shared intelligence is redistributed as blocklists that any CrowdSec instance can consume. NetBird Proxy integrates with CrowdSec to check every incoming client IP against a local decision cache and block connections from flagged addresses before they reach your services. For background on the wider CrowdSec platform, see the [CrowdSec documentation](https://docs.crowdsec.net).
+
+This page covers how the integration works and how to operate it. For full setup instructions, see [Step 7: Enable CrowdSec IP reputation](/selfhosted/migration/enable-reverse-proxy#step-7-optional-enable-crowdsec-ip-reputation) in the Enable Reverse Proxy guide.
 
 <Note>
 If you're running the [quickstart script](/selfhosted/selfhosted-quickstart) for a fresh installation, it offers to enable CrowdSec automatically when you choose the built-in Traefik option and enable the proxy.
 </Note>
+
+<Note>
+CrowdSec IP reputation is currently available for self-hosted deployments. Support for NetBird Cloud is coming soon.
+</Note>
+
+## How it works
+
+The integration has three components:
+
+1. **CrowdSec LAPI container**. A local CrowdSec instance (pinned to `v1.7.7` in the quickstart) runs alongside your NetBird deployment, syncs community blocklists, and persists decisions to a dedicated Docker volume.
+2. **Stream bouncer**. The proxy embeds a stream bouncer that pulls decisions from the LAPI into an in-memory cache. The bouncer starts automatically when the first service enables CrowdSec and stops when the last one disables it, so there is no ongoing cost when the feature is unused.
+3. **Per-service enforcement**. Each reverse proxy service can be set to `off`, `enforce`, or `observe`. The proxy consults the local cache on every incoming connection, so checks are fast and do not add a network round trip.
+
+The proxy advertises a `supports_crowdsec` capability to the management plane, which is how the dashboard decides whether to show the CrowdSec option in the Access Control tab. If CrowdSec is not configured on the proxy cluster, the option is hidden.
+
+Configuration is provided to the proxy via `--crowdsec-api-url` / `--crowdsec-api-key` command-line flags or the equivalent `NB_PROXY_CROWDSEC_API_URL` / `NB_PROXY_CROWDSEC_API_KEY` environment variables. The setup guide writes these to `proxy.env` automatically.
+
+## Enforcement modes
+
+| Mode | Behavior |
+|---|---|
+| **Off** | CrowdSec checks are disabled for the service (default). |
+| **Enforce** | Connections from flagged IPs are denied. If the bouncer has not completed its initial sync, all connections are denied (fail-closed). |
+| **Observe** | The verdict is recorded in access logs but does not block the connection. Use this to evaluate CrowdSec against real traffic before switching to enforce. |
+
+CrowdSec decisions include several remediation types (ban, captcha, throttle). The proxy treats every type as a connection denial in enforce mode: there is no captcha challenge or rate limiting at the proxy layer. The specific decision type is recorded in the [access logs](/manage/reverse-proxy/access-logs) as `crowdsec_ban`, `crowdsec_captcha`, or `crowdsec_throttle` so you can distinguish between them when reviewing traffic.
+
+### Reviewing observe-mode verdicts
+
+Observe-mode verdicts are recorded in the NetBird proxy access logs, not in the CrowdSec Console. When a service is in observe mode and CrowdSec flags an IP, the connection is allowed but the verdict is attached to the log entry as metadata, while the `deny_reason` field stays empty. In the dashboard's reverse proxy event log, these entries render with an observe-mode badge on the reason cell and show the decision type (ban, captcha, throttle, unavailable) so you can audit what would have been blocked before switching the service to enforce. The CrowdSec Console shows the aggregate view of community decisions and scenarios but does not know which of your proxy requests the bouncer was consulted on.
+
+![CrowdSec observe-mode badge in proxy event logs](/docs-static/img/selfhosted/maintenance/crowdsec-observe-badge.png)
+
+Access restrictions are evaluated in a fixed order: CIDR, then country, then CrowdSec. A denial at any earlier layer short-circuits the rest, and CrowdSec can never relax a CIDR or country decision. See the [restriction evaluation order](/manage/reverse-proxy/authentication#restriction-evaluation-order) reference for the full precedence table and worked examples.
+
+## Enroll with the CrowdSec Console (optional)
+
+Enrolling your LAPI with the [CrowdSec Console](https://app.crowdsec.net) lets you view blocked IPs, manage scenarios, and opt into premium blocklists from a web UI. The quickstart script prompts for an enrollment key and registers it automatically. To enroll an existing deployment:
+
+```bash
+docker compose exec crowdsec cscli console enroll <your-enrollment-key>
+docker compose restart crowdsec
+```
+
+Enrollment is optional. The bouncer continues to sync the community blocklist without it.
+
+## Configuring services
+
+Once CrowdSec is enabled on the proxy, the **CrowdSec IP Reputation** dropdown appears in the Access Control tab of each reverse proxy service. Set it to **Enforce** or **Observe** per service. See [reverse proxy authentication](/manage/reverse-proxy/authentication#crowdsec-ip-reputation) for configuration steps and [access logs](/manage/reverse-proxy/access-logs) for the verdict fields that appear in event logs.
+
+## Testing the integration
+
+After enabling CrowdSec, confirm that the proxy bouncer connected to the LAPI and completed its initial decision sync:
+
+```bash
+docker compose logs proxy | grep -i crowdsec
+```
+
+A healthy startup looks like this:
+
+```text
+netbird-proxy  | INFO proxy/internal/crowdsec/bouncer.go:70: connecting to CrowdSec LAPI at http://crowdsec:8080
+netbird-proxy  | INFO proxy/internal/crowdsec/registry.go:94: CrowdSec bouncer started
+netbird-proxy  | INFO proxy/internal/crowdsec/bouncer.go:187: CrowdSec bouncer synced initial decisions
+```
+
+To verify end-to-end enforcement without waiting for a real malicious IP to hit the cache, add a short-lived decision for your own IP and then attempt a connection:
+
+```bash
+docker compose exec crowdsec cscli decisions add --ip <your-public-ip> --duration 5m --reason "netbird test"
+```
+
+With a service set to **enforce**, the connection from `<your-ip>` should be rejected and the event log should show a `crowdsec_ban` deny reason. With a service set to **observe**, the connection succeeds but the verdict appears on the event entry with an observe-mode badge. The decision expires automatically after 5 minutes, or you can remove it earlier with `cscli decisions delete --ip <your-ip>`.
