@@ -155,16 +155,20 @@ export const docsNavigation = [
                 href: '/manage/access-control/endpoint-detection-and-response/crowdstrike-edr',
               },
               {
+                title: 'FleetDM',
+                href: '/manage/access-control/endpoint-detection-and-response/fleetdm-edr',
+              },
+              {
+                title: 'Huntress',
+                href: '/manage/access-control/endpoint-detection-and-response/huntress-edr',
+              },
+              {
                 title: 'Microsoft Intune',
                 href: '/manage/access-control/endpoint-detection-and-response/intune-mdm',
               },
               {
                 title: 'SentinelOne Singularity',
                 href: '/manage/access-control/endpoint-detection-and-response/sentinelone-edr',
-              },
-              {
-                title: 'Huntress',
-                href: '/manage/access-control/endpoint-detection-and-response/huntress-edr',
               },
             ],
           },
@@ -296,6 +300,10 @@ export const docsNavigation = [
             title: 'Expose from CLI',
             href: '/manage/reverse-proxy/expose-from-cli',
           },
+          {
+            title: 'Troubleshooting',
+            href: '/manage/reverse-proxy/troubleshooting',
+          },
         ],
       },
       {
@@ -310,10 +318,14 @@ export const docsNavigation = [
           { title: 'DNS Settings', href: '/manage/dns/dns-settings' },
           { title: 'Custom Zones', href: '/manage/dns/custom-zones' },
           {
+            title: 'Extra DNS Labels',
+            href: '/manage/dns/extra-dns-labels',
+          },
+          {
             title: 'DNS Aliases for Routed Networks',
             href: '/manage/dns/dns-aliases-for-routed-networks',
           },
-          { title: 'DNS Troubleshooting', href: '/manage/dns/troubleshooting' },
+          { title: 'Troubleshooting', href: '/manage/dns/troubleshooting' },
         ],
       },
       {
@@ -325,6 +337,10 @@ export const docsNavigation = [
             href: '/manage/team/add-users-to-your-network',
           },
           { title: 'Approve Users', href: '/manage/team/approve-users' },
+          {
+            title: 'Enable NetBird for Entra ID',
+            href: '/manage/team/entra-id-app-enablement',
+          },
           {
             title: 'Provision Users & Groups',
             href: '/manage/team/idp-sync',
@@ -420,13 +436,17 @@ export const docsNavigation = [
             title: 'Multi-Factor Authentication',
             href: '/manage/settings/multi-factor-authentication',
           },
-          { title: 'Delete Account', href: '/manage/settings/delete-account' },
+          { title: 'Auto Update', href: '/manage/peers/auto-update' },
+          { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
+          {
+            title: 'Notifications',
+            href: '/manage/settings/notifications',
+          },
           {
             title: 'Plans and Billing',
             href: '/manage/settings/plans-and-billing',
           },
-          { title: 'Auto Update', href: '/manage/peers/auto-update' },
-          { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
+          { title: 'Delete Account', href: '/manage/settings/delete-account' },
         ],
       },
       {
@@ -456,6 +476,7 @@ export const docsNavigation = [
             isOpen: true,
             links: [
               { title: 'Operator', href: '/manage/integrations/kubernetes' },
+              { title: 'Gateway API beta', href: '/manage/integrations/kubernetes/gateway-api-beta' },
             ],
           },
         ],
@@ -536,6 +557,10 @@ export const docsNavigation = [
           {
             title: 'Management Geolocation Database',
             href: '/selfhosted/geo-support',
+          },
+          {
+            title: 'CrowdSec IP Reputation',
+            href: '/selfhosted/maintenance/crowdsec',
           },
         ],
       },
@@ -631,6 +656,10 @@ export const docsNavigation = [
             title: 'Enable Reverse Proxy',
             href: '/selfhosted/migration/enable-reverse-proxy',
           },
+          {
+            title: 'External IdP to Embedded IdP',
+            href: '/selfhosted/migration/external-to-embedded-idp',
+          },
         ],
       },
     ],
@@ -639,16 +668,29 @@ export const docsNavigation = [
     title: 'CLIENT',
     links: [
       { title: 'Profiles', href: '/client/profiles' },
+      { title: 'Environment Variables', href: '/client/environment-variables' },
       {
         title: 'Settings',
         isOpen: false,
         links: [
           {
+            title: 'Allow SSH',
+            href: '/client/allow-ssh',
+          },
+          {
             title: 'Block Inbound Connections',
             href: '/client/block-inbound-connections',
           },
           {
-            title: 'Post-Quantum Cryptography',
+            title: 'Connect on Startup',
+            href: '/client/connect-on-startup',
+          },
+          {
+            title: 'Enable Lazy Connections',
+            href: '/client/enable-lazy-connections',
+          },
+          {
+            title: 'Enable Quantum-Resistance',
             href: '/client/post-quantum-cryptography',
           },
         ],
@@ -796,7 +838,7 @@ function NavigationGroup({ group, className, hasChildren }) {
         onClick={() => {
           setIsOpen(!isOpen)
           if (!isOpen) {
-            if (!isActiveGroup) router.push(group.links[0].href)
+            if (!isActiveGroup && group.links[0]?.href) router.push(group.links[0].href)
             setActiveHighlight()
           } else {
             setActiveHighlight(group.title)

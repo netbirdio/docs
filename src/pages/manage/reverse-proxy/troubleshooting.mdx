@@ -1,0 +1,369 @@
+import {Note} from "@/components/mdx"
+
+export const description = 'Troubleshoot common reverse proxy issues like 502 errors when routing peer traffic targets its own IP address.'
+
+# Reverse Proxy Troubleshooting
+
+This guide helps you diagnose and resolve common reverse proxy issues in NetBird. Follow the structured approach below to identify and fix problems quickly.
+
+## Quick Diagnostics Checklist
+
+Before diving deep, run through this quick checklist:
+
+```bash
+# 1. Is NetBird connected on the routing peer?
+netbird status -d
+
+# 2. Is the reverse proxy service showing in the dashboard?
+#    Check Dashboard -> Reverse Proxy -> Services
+
+# 3. Can the routing peer reach the target service locally?
+# From the routing peer (or inside its container):
+curl -sS -o /dev/null -w "%{http_code}" http://<target-ip>:<port> --max-time 5
+# Docker:
+docker exec <routing-peer-container> wget -qO- http://<target-ip>:<port> --timeout=5
+
+# 4. Check proxy logs for error details
+# Look for 502 status codes and connection errors:
+# "Peer Not Connected" -> peer is offline or unreachable
+# "Connection Error: operation timed out" -> routing/ACL issue
+# "no route to host" -> invalid target IP (e.g., network address .0)
+
+# 5. Is the target IP the same as the routing peer's IP?
+# If yes, this is a known issue. Switch the target type to Peer.
+# See Issue 1 below.
+
+# 6. Is the service listening on the right interface?
+# It must bind to 0.0.0.0 (or :: for IPv6), the NetBird IP,
+# or the destination IP, NOT 127.0.0.1/localhost.
+ss -tlnp | grep <port>
+# or on macOS:
+lsof -iTCP:<port> -sTCP:LISTEN
+
+# 7. Verify the target type matches your setup
+# Peer -> service runs on a machine with NetBird installed
+# Host/Subnet -> service runs on a device without NetBird, reached via routing peer
+```
+
+If any of these fail, continue to the relevant section below.
+
+## Self-Hosted Debugging with the Proxy Debug Endpoint
+
+Self-hosted deployments can enable a built-in debug endpoint on the proxy for deeper diagnostics. This is disabled by default.
+
+### Enabling the debug endpoint
+
+Enable the debug endpoint by setting the environment variable or passing the flag when starting the proxy:
+
+```bash
+# Environment variable (e.g., in Docker Compose)
+NB_PROXY_DEBUG_ENDPOINT=true
+
+# Or as a CLI flag
+netbird-proxy --debug-endpoint
+```
+
+The endpoint listens on `localhost:8444` by default. To change the address:
+
+```bash
+NB_PROXY_DEBUG_ENDPOINT_ADDRESS=localhost:9090
+# Or
+netbird-proxy --debug-endpoint --debug-endpoint-addr localhost:9090
+```
+
+You can also access the debug endpoint directly in a browser at `http://localhost:8444/debug` for an overview of server uptime, connected clients, and service status.
+
+### Debug CLI commands
+
+Once the debug endpoint is enabled, use the `netbird-proxy debug` CLI commands to inspect proxy state. All commands support a `--json` flag for machine-readable output and `--addr` to specify the debug endpoint address.
+
+#### Check proxy health
+
+```bash
+netbird-proxy debug health
+```
+
+Returns management connection state and overall client health.
+
+#### List connected clients
+
+```bash
+netbird-proxy debug clients
+```
+
+Shows all connected clients with their service counts and status.
+
+#### Inspect a specific client
+
+```bash
+netbird-proxy debug status <account-id>
+```
+
+Shows detailed status for a client. You can filter results:
+
+```bash
+# Filter by peer IP
+netbird-proxy debug status <account-id> --filter-by-ips 10.0.0.10
+
+# Filter by connection status
+netbird-proxy debug status <account-id> --filter-by-status connected
+
+# Filter by connection type
+netbird-proxy debug status <account-id> --filter-by-connection-type P2P
+```
+
+#### TCP ping through a client
+
+```bash
+netbird-proxy debug ping <account-id> <host> [port]
+```
+
+Tests TCP connectivity from the proxy through a client's network to a target host. Port defaults to 80. This is useful for confirming whether the proxy can reach a target service through a specific routing peer:
+
+```bash
+# Test if the proxy can reach a service at 10.0.0.10:32400 through the client
+netbird-proxy debug ping <account-id> 10.0.0.10 32400
+```
+
+#### Set client log level
+
+```bash
+netbird-proxy debug log level <account-id> <level>
+```
+
+Temporarily change a client's log level for debugging. Valid levels: `trace`, `debug`, `info`, `warn`, `error`.
+
+#### View sync response
+
+```bash
+netbird-proxy debug sync-response <account-id>
+```
+
+Shows the latest sync response for a client, which includes the service and peer configuration the proxy has received from the management server.
+
+## Common Issues and Solutions
+
+### Issue 1: 502 errors when routing peer forwards to its own IP
+
+**Symptoms**:
+- Reverse proxy services return **502 "Peer Not Connected"** or **502 "Connection Error: operation timed out"**
+- The target destination IP belongs to the same machine running the routing peer
+- Other services routed through the same routing peer to different IPs on the network work fine
+- Proxy logs show timeout errors like:
+
+```
+proxy error: host=10.0.0.10:32400 status=502 title="Connection Error" err=connect tcp 10.0.0.10:32400: operation timed out
+```
+
+For example, if a routing peer runs on a machine with IP `10.0.0.10` and the reverse proxy target is `http://10.0.0.10:32400`, the connection will time out. However, a target pointing at `http://10.0.0.50:8096` (a different machine on the same subnet) works without issue through the same routing peer.
+
+This happens because when a reverse proxy service uses a network resource (subnet) target, the routing peer is expected to forward traffic to other hosts on the subnet, not deliver tunneled traffic back to itself. The management server does not generate the necessary ACL rules for self-targeted traffic, so the connection times out. This is expected behavior.
+
+You can confirm this by verifying the service is reachable locally on the routing peer (outside of the tunnel):
+
+```bash
+docker exec <routing-peer-container> wget -qO- http://10.0.0.10:32400 --timeout=5
+```
+
+If this returns a response (even a `401 Unauthorized`), the service is reachable locally but not through the tunnel, confirming the issue.
+
+**Solutions**:
+
+Change the target type from **Subnet** (network resource) to **Peer** for any service running on the same machine as the routing peer.
+
+1. Open the reverse proxy service in the NetBird dashboard.
+2. Edit the target.
+3. Change the target type from **Host** or **Subnet** to **Peer**.
+4. Select the peer that corresponds to the machine running the service (this is the same machine as your routing peer).
+5. Set the protocol and port as before (e.g., HTTP, port 32400).
+6. Save the service.
+
+When the target type is **Peer**, the proxy sends traffic directly to that peer through the WireGuard tunnel. The traffic arrives on the peer's local network stack and is delivered to the listening service without any forwarding hop. This bypasses the subnet routing path entirely, so the missing ACL does not apply.
+
+### Issue 2: Service bound to localhost is unreachable
+
+**Symptoms**:
+- Reverse proxy returns **502** errors even though the service is running
+- The service works when accessed locally on the machine (e.g., `curl http://localhost:8080`) but fails through the reverse proxy
+- Proxy logs show connection refused or timeout errors
+
+This happens when the target service is configured to listen only on `127.0.0.1` (localhost) or `::1`. Traffic arriving through NetBird comes from the WireGuard tunnel interface, not the loopback interface, so a service bound to localhost will refuse the connection.
+
+**How to check**:
+
+On the target machine, verify what address the service is listening on:
+
+```bash
+# Linux
+ss -tlnp | grep <port>
+
+# macOS
+lsof -iTCP:<port> -sTCP:LISTEN
+
+# Windows (PowerShell)
+Get-NetTCPConnection -LocalPort <port> -State Listen | Select-Object LocalAddress,LocalPort
+```
+
+If the `Local Address` column shows `127.0.0.1` or `::1`, the service is only reachable from the machine itself.
+
+**Solution**:
+
+Reconfigure the service to listen on one of the following:
+- `0.0.0.0` (all IPv4 interfaces) or `::` (all IPv6 interfaces), the simplest option
+- The machine's NetBird IP (e.g., `100.x.y.z`) if you want to restrict access to NetBird traffic only
+- The specific LAN IP used as the reverse proxy destination
+
+Where to change this depends on the service. Look for a `bind`, `listen`, `host`, or `address` setting in the service's configuration file. For example:
+
+```
+# Common examples across different services
+bind-address = 0.0.0.0
+host: 0.0.0.0
+listen_addresses = '*'
+server.host: "0.0.0.0"
+```
+
+After changing the bind address, restart the service and verify with `ss` or `lsof` that it now listens on the correct interface.
+
+### Issue 3: Geo-restrictions block internal traffic from the management server
+
+**Symptoms**:
+
+- Adding an external identity provider (e.g., PocketID) exposed through the reverse proxy fails with a **403 Forbidden** error
+- The management server logs show repeated connector initialization failures:
+
+```
+ERRO [err: failed to open connector: failed to create connector <id>: failed to get provider: 403 Forbidden: Forbidden
+] idp/dex/logrus_handler.go:83: Failed to get connector
+```
+
+- The IdP is accessible from a browser and from the host machine, but not from inside the management server container
+- The instance setup status remains `false` in the dashboard
+
+This applies to self-hosted setups where an external identity provider (such as Authentik or PocketID) is exposed through the NetBird reverse proxy. For example, the architecture described in [Self-host NetBird with Authentik](https://netbird.io/knowledge-hub/selfhost-netbird-with-authentik). The management server (Dex) needs to reach the IdP's OIDC discovery endpoint through the reverse proxy to initialize the connector. However, traffic originating from inside the Docker network does not carry a valid geo-IP. The proxy sees an internal Docker IP instead of a public IP, which doesn't match any country, so the restriction rejects the request with a 403.
+
+<Note>
+This issue only applies to self-hosted deployments where the IdP is exposed through the NetBird reverse proxy and a restriction (such as geo-IP country filtering or access controls) is added to that service. If your IdP is hosted externally, accessible via a separate domain, or the reverse proxy service has no restrictions configured, this does not apply.
+</Note>
+
+**How to confirm**:
+
+Test connectivity to the IdP from inside the management server's network. Use a lightweight container attached to the same network namespace:
+
+```
+docker run --rm --network container:netbird-server curlimages/curl -s https://<your-idp-domain>/.well-known/openid-configuration
+```
+
+If this returns `Forbidden` while the same URL works from the host:
+
+```
+curl -s https://<your-idp-domain>/.well-known/openid-configuration
+```
+
+Then geo-restrictions on the reverse proxy service are blocking internal traffic.
+
+**Solution**:
+
+Remove or adjust the geo-restriction on the reverse proxy service that exposes your IdP. You can do this from the NetBird dashboard under **Reverse Proxy > Services**, then edit the service and remove the country restriction.
+
+If you are locked out of the dashboard because the IdP connector cannot initialize (e.g., you already removed local users), you can modify the restriction directly in the management database:
+
+1. Stop all NetBird containers:
+
+```
+cd ~/netbird
+docker compose stop
+```
+
+2. Identify the service ID for your IdP service:
+
+```
+docker run --rm --user root -v <netbird_data_volume>:/data --entrypoint sqlite3 keinos/sqlite3 /data/store.db \
+  "SELECT id, domain, restrictions FROM services;"
+```
+
+3. Clear the geo-restriction on the IdP service:
+
+```
+docker run --rm --user root -v <netbird_data_volume>:/data --entrypoint sqlite3 keinos/sqlite3 /data/store.db \
+  "UPDATE services SET restrictions='{}' WHERE id='<service-id>';"
+```
+
+4. Start the containers:
+
+```
+docker compose start
+```
+
+5. Verify the connector initializes by checking the management server logs:
+
+```
+docker logs netbird-server --tail 20
+```
+
+Once you regain access to the dashboard, you can re-enable geo-restrictions on the service if needed. To prevent this issue in the future, consider one of the following:
+
+- Leave geo-restrictions disabled on services that the management server needs to reach internally (such as your IdP).
+- Use a separate network path for the IdP that doesn't pass through the reverse proxy's geo-restriction layer.
+
+## Advanced Debugging with Packet Capture
+
+If the checks above don't reveal the issue, you can use packet capture tools to verify whether traffic is actually arriving on the routing peer or target machine. This is especially useful for diagnosing routing, firewall, or NAT issues.
+
+### Linux (tcpdump)
+
+On the routing peer or target machine, capture traffic on the relevant interface:
+
+```bash
+# Capture traffic on the WireGuard interface (wt0 is the default NetBird interface)
+sudo tcpdump -i wt0 -n port <target-port>
+
+# Capture on all interfaces to see where traffic arrives
+sudo tcpdump -i any -n port <target-port>
+
+# Save to a file for later analysis
+sudo tcpdump -i wt0 -n port <target-port> -w /tmp/capture.pcap
+```
+
+If you see packets arriving on `wt0` but no response, the issue is on the target machine (firewall, service not listening, wrong bind address). If no packets arrive at all, the issue is upstream (routing, ACLs, or peer connectivity).
+
+### macOS (tcpdump)
+
+```bash
+# NetBird uses utun interfaces on macOS. Find yours with ifconfig
+sudo tcpdump -i utun4 -n port <target-port>
+```
+
+### Windows (pktmon)
+
+```powershell
+# List network interfaces to find the WireGuard/NetBird adapter
+pktmon list
+
+# Start a capture filtered by port
+pktmon start --capture --pkt-size 0 -c <component-id> -t <target-port>
+
+# Stop and convert to pcapng for Wireshark
+pktmon stop
+pktmon etl2pcap pktmon.etl -o capture.pcapng
+```
+
+### Wireshark
+
+You can also open any `.pcap` or `.pcapng` file in [Wireshark](https://www.wireshark.org/) for visual inspection. Use display filters to narrow down the traffic:
+
+```
+tcp.port == <target-port>
+ip.addr == <target-ip>
+```
+
+## When to use each target type
+
+| Target type | Use case |
+|---|---|
+| **Peer** | The service runs directly on a machine that has the NetBird client installed. |
+| **Host / Subnet** | The service runs on a device that does not have a NetBird client and relies on a routing peer to forward traffic to it on the local network. |
+
+## Common mistakes
+
+**Pointing a subnet target at the network address instead of a host address.** For example, using `10.0.0.0:8989` instead of `10.0.0.10:8989`. The network address (`.0`) is not a valid host and will return "no route to host." Always use the specific IP of the machine running the service.

@@ -184,6 +184,31 @@ The Traefik labels configure a **TCP router** that:
 The `HostSNI(*)` rule acts as a catch-all for any domain not matched by the existing NetBird HTTP routers. The `priority=1` ensures this TCP router only handles traffic that no other router claims. Any domain pointing to your server that isn't `netbird.example.com` will be forwarded to the proxy.
 </Note>
 
+### Exposing L4 ports
+
+The Traefik configuration above only routes port 443 to the proxy container. HTTP and TLS services work over this port automatically (via SNI routing), but TCP and UDP services listen on dedicated ports that need to be exposed separately.
+
+If you plan to use L4 services (TCP or UDP mode), add `ports` entries directly to the `proxy` service in your `docker-compose.yml` for each port you want to expose. These ports should be mapped on the proxy container itself, not through Traefik, since routing them through Traefik would add an unnecessary extra hop:
+
+```yaml
+proxy:
+  # ...existing configuration...
+  ports:
+    - "5432:5432/tcp"    # Example: PostgreSQL
+    - "3306:3306/tcp"    # Example: MySQL
+    - "5353:5353/udp"    # Example: DNS
+```
+
+Each entry maps a host port to the same port inside the container. Add or remove entries as you create or delete L4 services. After changing the ports, apply with:
+
+```bash
+docker compose up -d proxy
+```
+
+<Note>
+You only need port mappings for TCP and UDP mode services. HTTP and TLS mode services are routed through port 443 via Traefik and do not require additional port entries.
+</Note>
+
 ### Step 4: Set up DNS records
 
 Create one DNS record pointing to the server running your NetBird stack - one for the base proxy domain and one wildcard for service subdomains:
@@ -222,6 +247,155 @@ Once the proxy connects to the management server:
 4. In the domain selector, you should see your proxy domain (e.g., `proxy.example.com`) with a **Cluster** badge
 
 If the domain appears, the proxy is connected and ready. You can now [create your first service](/manage/reverse-proxy#quick-start).
+
+### Step 7 (optional): Enable CrowdSec IP reputation
+
+[CrowdSec](https://www.crowdsec.net) is an open-source security engine that shares threat intelligence across its community network. When integrated with the NetBird Proxy, it checks every incoming client IP against a local cache of known malicious addresses and blocks them before they reach your services. This step is entirely optional.
+
+<Note>
+**Already have the proxy running?** If you completed steps 1-6 previously and are coming back to add CrowdSec, start here. The instructions below work whether you're setting up the proxy for the first time or adding CrowdSec to an existing proxy deployment.
+</Note>
+
+A CrowdSec LAPI (Local API) container runs alongside your deployment, syncs decisions from community blocklists, and exposes them to the proxy via a stream bouncer. The proxy supports two enforcement modes per service:
+
+| Mode | Behavior |
+|------|----------|
+| **enforce** | Blocked IPs are denied immediately. If the bouncer is not yet synced, connections are denied (fail-closed). |
+| **observe** | Blocked IPs are logged but not denied. Use this to evaluate CrowdSec before enforcing. |
+
+#### 7a. Add the CrowdSec container
+
+Add the following service to your `docker-compose.yml`:
+
+```yaml
+  crowdsec:
+    image: crowdsecurity/crowdsec:v1.7.7
+    container_name: netbird-crowdsec
+    restart: unless-stopped
+    networks: [netbird]
+    environment:
+      COLLECTIONS: crowdsecurity/linux
+    volumes:
+      - ./crowdsec:/etc/crowdsec
+      - crowdsec_db:/var/lib/crowdsec/data
+    healthcheck:
+      test: ["CMD", "cscli", "lapi", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    labels:
+      - traefik.enable=false
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "2"
+```
+
+Add `crowdsec_db:` to the `volumes:` section, and update the proxy's `depends_on` so it waits for CrowdSec to be healthy:
+
+```yaml
+  proxy:
+    depends_on:
+      netbird-server:
+        condition: service_started
+      crowdsec:
+        condition: service_healthy
+```
+
+#### 7b. Start CrowdSec and register a bouncer
+
+```bash
+mkdir -p crowdsec
+docker compose up -d crowdsec
+```
+
+Wait for the container to become healthy:
+
+```bash
+docker compose exec crowdsec cscli lapi status
+```
+
+Then register a bouncer:
+
+```bash
+docker compose exec crowdsec cscli bouncers add netbird-proxy -o raw
+```
+
+This prints a single API key. Copy it.
+
+#### 7c. Configure the proxy
+
+Add these lines to `proxy.env`:
+
+```bash
+NB_PROXY_CROWDSEC_API_URL=http://crowdsec:8080
+NB_PROXY_CROWDSEC_API_KEY=<bouncer-key-from-above>
+```
+
+Then restart the proxy:
+
+```bash
+docker compose up -d proxy
+```
+
+Verify the connection in the proxy logs:
+
+```bash
+docker compose logs proxy | grep -i crowdsec
+```
+
+You should see `CrowdSec bouncer synced initial decisions` once the LAPI connection is established.
+
+#### 7d. Enable per service
+
+CrowdSec must be enabled individually on each service through the dashboard under **Access Control > Access Restrictions**. Set the CrowdSec mode to **enforce** or **observe**.
+
+<Warning>
+In **enforce** mode, if the bouncer has not completed its initial sync with the LAPI, all connections to that service will be denied. This is by design (fail-closed). If you want to avoid this during initial rollout, start with **observe** mode.
+</Warning>
+
+#### 7e. Enroll in CrowdSec Console (optional)
+
+The CrowdSec Console gives you a web dashboard to monitor decisions, manage alerts, and subscribe to premium blocklists. Enrollment is optional: the community blocklists work without it.
+
+```bash
+docker compose exec crowdsec cscli console enroll <your-enrollment-key>
+```
+
+Get your enrollment key at [app.crowdsec.net](https://app.crowdsec.net).
+
+#### CrowdSec environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `NB_PROXY_CROWDSEC_API_URL` | CrowdSec LAPI URL. Example: `http://crowdsec:8080`. Empty disables CrowdSec. |
+| `NB_PROXY_CROWDSEC_API_KEY` | Bouncer API key generated by `cscli bouncers add`. |
+
+#### CrowdSec troubleshooting
+
+**Bouncer not connecting**: Check that the CrowdSec container is healthy and reachable from the proxy container:
+
+```bash
+docker compose exec proxy wget -qO- http://crowdsec:8080/v1/decisions/stream --header "X-Api-Key: <your-key>" 2>&1 | head
+```
+
+If this fails, verify both containers are on the same Docker network.
+
+**All connections denied after enabling enforce mode**: This typically means the bouncer has not completed its initial sync. Check the proxy logs for the `CrowdSec bouncer synced initial decisions` message. If it's missing, the LAPI may be unreachable or the API key may be incorrect. Switch to **observe** mode on affected services until the issue is resolved.
+
+**Checking active decisions**:
+
+```bash
+# List current decisions
+docker compose exec crowdsec cscli decisions list
+
+# Ban an IP for 1 hour (for testing)
+docker compose exec crowdsec cscli decisions add --ip 1.2.3.4 --duration 1h --reason "manual test"
+
+# Remove all decisions for an IP
+docker compose exec crowdsec cscli decisions delete --ip 1.2.3.4
+```
 
 ## Configure SSO for external identity providers
 

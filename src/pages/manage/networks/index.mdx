@@ -35,6 +35,10 @@ You can add multiple routing peers using individual peers or groups to ensure hi
 </p>
 
 <Note>
+To get alerted when a routing peer goes offline, enable the **Routing Peer Disconnected** event in [Notifications](/manage/settings/notifications). You can receive alerts via email, webhook, or Slack.
+</Note>
+
+<Note>
 A network resource policy grants access to the network **behind** the routing peer, not to the routing peer machine itself. If you need to access services running on the routing peer (for example, Pi-hole, Home Assistant, or a monitoring dashboard), add the routing peer to a group and create a peer-to-peer [access control policy](/manage/access-control) with that group as the destination.
 </Note>
 
@@ -126,6 +130,21 @@ Example policy allowing the `Berlin Office` group to access the internal CRM sys
 
 <Note>
     Policies for domain or wildcard domain resources may unintentionally affect peers with IP range resources, since IP ranges can match any address. We recommend using dedicated networks and routing peers for domain-based resources to prevent unwanted access. A fix for this behavior is planned for an upcoming release.
+</Note>
+
+## Manage Access to Routing Peer
+
+A network resource policy grants access to the network **behind** the routing peer — traffic that is forwarded through the peer to reach backend resources. However, firewall rules for routed traffic are processed in the **forward chain**, not the **input chain**. This follows the same pattern as Linux Netfilter (iptables/nftables), where packets destined for the host itself traverse the input chain, while packets being routed to another destination traverse the forward chain. This means that a network resource policy alone does **not** grant access to services running directly on the routing peer itself.
+
+If you need to reach services hosted on the routing peer machine (for example, Pi-hole, Home Assistant, a monitoring dashboard, or any locally bound service), you must create a separate [access control policy](/manage/access-control) with:
+
+- **Source**: the group containing the peers and users that need access
+- **Destination**: a group that includes the routing peer
+
+This additional policy ensures that the routing peer's input chain allows inbound connections from your NetBird peers. Without it, traffic destined for the routing peer's own IP will be dropped even if there is a valid network resource policy for the subnet behind it.
+
+<Note>
+    This is a common pitfall when the routing peer also runs local services. Remember: network resource policies control forwarded traffic (forward chain), while peer-to-peer access control policies control traffic to the peer itself (input chain). You need both if you want to access the routing peer **and** the resources behind it.
 </Note>
 
 ## Enable DNS Wildcard Routing

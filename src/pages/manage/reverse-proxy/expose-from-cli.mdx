@@ -1,17 +1,13 @@
 import {Note, Warning} from "@/components/mdx"
 
 export const description =
-    'Expose local HTTP services to the public internet directly from the command line using `netbird expose`, with optional authentication, custom domains, and automatic session management.'
+    'Expose local HTTP and L4 services to the public internet directly from the command line using `netbird expose`, with optional authentication, custom domains, and automatic session management.'
 
 # Expose from CLI
 
-The `netbird expose` command lets peers expose local HTTP services to the public internet through the NetBird reverse proxy without using the dashboard. Services created this way are **ephemeral** — they exist only while the command is running and are automatically removed when you stop the command or the session expires.
+The `netbird expose` command lets peers expose local services to the public internet through the NetBird reverse proxy without using the dashboard. Services created this way are **ephemeral**: they exist only while the command is running and are automatically removed when you stop the command or the session expires.
 
-This is useful for quick demos, temporary access to development servers, webhook receivers, or sharing local work with teammates.
-
-<Note>
-    **Availability:** This feature requires the NetBird management server to have the Reverse Proxy module enabled. For self-hosted deployments, ensure your proxy instance is deployed and connected. See [Reverse Proxy](/manage/reverse-proxy) for setup details.
-</Note>
+This supports both HTTP and L4 (TCP, UDP, TLS) protocols, making it useful for quick demos, temporary access to development servers, webhook receivers, database tunnels, or sharing local work with teammates.
 
 ## Prerequisites
 
@@ -30,7 +26,7 @@ An account administrator must enable peer expose before any peer can use the `ne
 1. Navigate to **Settings** > **Clients** in the NetBird dashboard.
 2. Scroll to the **Peer Expose** section.
 3. Toggle **Enable Peer Expose** on.
-4. Select specific **peer groups** that are allowed to expose services. Groups without proper permission with get a `PermissionDenied` error. 
+4. Select specific **peer groups** that are allowed to expose services. Groups without proper permission will get a `PermissionDenied` error. 
 5. Click **Save Changes**.
 
 ### From the API
@@ -67,12 +63,49 @@ Service exposed successfully!
   URL:      https://myapp-a1b2c3.proxy.example.com
   Domain:   myapp-a1b2c3.proxy.example.com
   Protocol: http
-  Port:     8080
+  Internal: 8080
 
 Press Ctrl+C to stop exposing.
 ```
 
 The service is now accessible at the displayed URL. Press `Ctrl+C` to stop exposing and remove the service.
+
+### Exposing L4 services
+
+To expose a TCP, UDP, or TLS service, use the `--protocol` flag:
+
+```shell
+netbird expose --protocol tcp 5432
+```
+
+For L4 services, the output includes the external port on the proxy cluster:
+
+```
+Service exposed successfully!
+  Name:     myapp-a1b2c3
+  URL:      myapp-a1b2c3.proxy.example.com:5432
+  Protocol: tcp
+  Internal: 5432
+  External: 5432
+
+Press Ctrl+C to stop exposing.
+```
+
+By default, the external port matches the target port. Use `--with-external-port` to specify a different one:
+
+```shell
+netbird expose --protocol tcp --with-external-port 15432 5432
+```
+
+If the proxy cluster does not support custom ports (e.g., NetBird shared cloud clusters), the port is auto-assigned. When you explicitly specify `--with-external-port` but the cluster overrides your choice, the output indicates the reassignment:
+
+```
+  External: 38721
+
+  Note: requested port 15432 was reassigned
+```
+
+If you do not specify `--with-external-port`, the assigned port is shown without a reassignment note.
 
 ## Command reference
 
@@ -90,12 +123,17 @@ netbird expose <port> [flags]
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--protocol` | string | `http` | Protocol to use: `http` or `https` (e.g. `--protocol http`). |
-| `--with-pin` | string | | Protect the exposed service with a 6-digit PIN (e.g. `--with-pin 123456`). Must be exactly 6 digits. |
-| `--with-password` | string | | Protect the exposed service with a password (e.g. `--with-password my-secret`). Cannot be empty. |
-| `--with-user-groups` | strings | | Restrict access to specific user groups via SSO (e.g. `--with-user-groups devops,Backend`). Cannot be empty. |
-| `--with-custom-domain` | string | | Custom domain for the exposed service, must be configured to your account (e.g. `--with-custom-domain myapp.example.com`). |
+| `--protocol` | string | `http` | Protocol to use: `http`, `https`, `tcp`, `udp`, or `tls`. |
+| `--with-external-port` | uint16 | target port | Public-facing port on the proxy cluster. L4 only (TCP, UDP, TLS). Defaults to the target port. |
+| `--with-pin` | string | | Protect the exposed service with a 6-digit PIN. HTTP only. |
+| `--with-password` | string | | Protect the exposed service with a password. HTTP only. |
+| `--with-user-groups` | strings | | Restrict access to specific user groups via SSO. HTTP only. |
+| `--with-custom-domain` | string | | Custom domain for the exposed service, must be configured in your account. |
 | `--with-name-prefix` | string | | Prefix for the generated service name (e.g. `--with-name-prefix my-app`). |
+
+<Note>
+    Authentication flags (`--with-pin`, `--with-password`, `--with-user-groups`) are only supported for HTTP/HTTPS protocols. L4 protocols (TCP, UDP, TLS) do not support these flags because there is no HTTP layer to serve a login page. Similarly, `--with-external-port` is only supported for L4 protocols.
+</Note>
 
 ## Authentication
 
@@ -238,12 +276,13 @@ If the peer does not have permission, the command returns a "permission denied" 
 | Property | Dashboard services | CLI expose services |
 |----------|-------------------|---------------------|
 | **Created via** | Dashboard or API | `netbird expose` command |
-| **Lifecycle** | Permanent until manually deleted | Ephemeral — removed when command exits or session expires |
+| **Lifecycle** | Permanent until manually deleted | Ephemeral: removed when command exits or session expires |
 | **TTL** | None | 90 seconds, auto-renewed every 30 seconds |
-| **Multiple targets** | Yes (path-based routing) | Single target (the local port) |
+| **Service modes** | HTTP, TCP, UDP, TLS | HTTP, HTTPS, TCP, UDP, TLS |
+| **Multiple targets** | Yes (path-based routing for HTTP) | Single target (the local port) |
 | **Custom domains** | Yes | Yes (if pre-configured) |
-| **Authentication** | SSO, Password, PIN | SSO (user groups), Password, PIN |
-| **Advanced settings** | Host header, redirect rewriting | Not available |
+| **Authentication** | SSO, Password, PIN, Header Auth, Access Restrictions | SSO (user groups), Password, PIN (HTTP only) |
+| **Advanced settings** | Host header, redirect rewriting, PROXY protocol, session timeout | Not available |
 | **Visibility** | Always shown in dashboard | Shown while active |
 | **Rate limit** | None | Max 10 per peer |
 | **Source label** | Permanent | Ephemeral |
@@ -289,7 +328,7 @@ The `--with-name-prefix` value contains invalid characters. The prefix must be:
 
 ### "unsupported protocol"
 
-The `--protocol` flag only accepts `http` or `https`. Other protocols (e.g. TCP, UDP) are not yet supported for peer expose.
+The `--protocol` flag accepts `http`, `https`, `tcp`, `udp`, or `tls`. Any other value is rejected.
 
 ### Service URL returns connection error after Ctrl+C
 
@@ -337,10 +376,34 @@ Temporarily expose a local webhook endpoint for testing:
 netbird expose 9000 --with-name-prefix webhooks
 ```
 
+### Database tunnel
+
+Expose a local PostgreSQL instance over TCP:
+
+```shell
+netbird expose --protocol tcp 5432
+```
+
+### Game server
+
+Expose a local UDP game server on a specific external port:
+
+```shell
+netbird expose --protocol udp --with-external-port 27015 27015
+```
+
+### TLS passthrough
+
+Expose a service that handles its own TLS termination:
+
+```shell
+netbird expose --protocol tls --with-custom-domain tls.example.com 4443
+```
+
 ## Related pages
 
 - [Reverse Proxy](/manage/reverse-proxy) - overview of the reverse proxy feature, dashboard setup, and concepts
-- [Authentication](/manage/reverse-proxy/authentication) - detailed guide on SSO, password, and PIN authentication
+- [Authentication](/manage/reverse-proxy/authentication) - SSO, password, PIN, and header authentication, plus access restrictions
 - [Custom Domains](/manage/reverse-proxy/custom-domains) - configure your own domain names
 - [Access Logs](/manage/reverse-proxy/access-logs) - monitor traffic to your reverse proxy services
 - [CLI Reference](/get-started/cli#expose) - `netbird expose` command reference

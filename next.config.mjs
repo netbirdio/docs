@@ -506,6 +506,16 @@ const nextConfig = {
             },
             // documentation redirects for client
             {
+                source: '/client/allow-ssh',
+                destination: '/manage/peers/ssh#enabling-ssh',
+                permanent: true,
+            },
+            {
+                source: '/client/enable-lazy-connections',
+                destination: '/manage/peers/lazy-connection',
+                permanent: true,
+            },
+            {
                 source: '/how-to/profiles',
                 destination: '/client/profiles',
                 permanent: true,
@@ -650,6 +660,12 @@ const nextConfig = {
             {
                 source: '/selfhosted/reverse-proxy',
                 destination: '/selfhosted/external-reverse-proxy',
+                permanent: true,
+            },
+            // selfhosted scaling redirect
+            {
+                source: '/scaling-your-self-hosted-deployment',
+                destination: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
                 permanent: true,
             },
         ]
