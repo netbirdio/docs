@@ -170,6 +170,10 @@ export const docsNavigation = [
                 title: 'SentinelOne Singularity',
                 href: '/manage/access-control/endpoint-detection-and-response/sentinelone-edr',
               },
+              {
+                title: 'Bypass Compliance',
+                href: '/manage/access-control/endpoint-detection-and-response/bypass-compliance',
+              },
             ],
           },
         ],
