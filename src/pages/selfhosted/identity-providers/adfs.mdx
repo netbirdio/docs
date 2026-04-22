@@ -104,7 +104,7 @@ No other traffic from the DMZ should reach the corporate LAN. This is the critic
 
 | Source | Destination | Port | Protocol | Purpose |
 | --- | --- | --- | --- | --- |
-| ADFS Server | Domain Controller | 389/636 | TCP | LDAP/LDAPS for authentication |
+| ADFS Server | Domain Controller | 389/636 | TCP | LDAP/LDAPS for directory and attribute lookups (claim data) |
 | ADFS Server | Domain Controller | 88 | TCP/UDP | Kerberos |
 | ADFS Server | Domain Controller | 53 | TCP/UDP | DNS |
 | ADFS Server | Duo Cloud (`*.duosecurity.com`) | 443 | TCP | Duo MFA verification (outbound, only if using Duo MFA) |
@@ -351,7 +351,7 @@ Get-Service adfssrv
 
 ```powershell
 Start-Service adfssrv
-Get-EventLog -LogName "AD FS/Admin" -Newest 20
+Get-WinEvent -LogName "AD FS/Admin" -MaxEvents 20
 ```
 
 If the service won't start, review the event log for errors. Common startup issues include certificate problems (revoked, expired, wrong key usage) and gMSA permission problems.
@@ -430,6 +430,10 @@ Write-Host "Client Secret: $clientSecret"
 Replace `<REDIRECT_URL_FROM_NETBIRD>` with the URL you copied in [Step 2.3](#2-3-get-the-redirect-url-from-net-bird). Record the client secret — you'll paste it into NetBird in [Step 7](#step-7-complete-net-bird-configuration). ADFS does not display the secret again, so if you lose it you'll need to regenerate it with `Set-AdfsServerApplication ... -GenerateClientSecret`.
 
 ### 2.5 Add a Web API
+
+<Note>
+This guide uses the same identifier (`$clientId`) for the Server Application and the Web API for simplicity. `Grant-AdfsApplicationPermission` in [Step 2.6](#2-6-grant-oidc-permissions) links them explicitly. In larger environments you may see the Web API use a distinct resource URI like `api://netbird`; both patterns are valid.
+</Note>
 
 ```powershell
 Add-AdfsWebApiApplication `
@@ -547,7 +551,7 @@ The `name` claim must be emitted in its own rule (Rule 2) using the short claim 
 </Note>
 
 <Note>
-**Why the sub override (Rule 5) is required:** ADFS generates base64-encoded pairwise subject identifiers for the `sub` claim by default. Base64 encoding can produce `/`, `+`, and `=` characters. When NetBird uses the `sub` claim as the user identifier in API URL paths, the `/` characters are interpreted as path separators, causing 404 errors. Emitting `sub` from the UPN (Rule 5) provides a URL-safe, human-readable identifier instead. On some ADFS builds you may also need to disable pairwise identifiers on the Server Application (`Set-AdfsServerApplication ... -PairwiseIdentifierEnabled $false`) — check Microsoft's [AD FS OpenID Connect documentation](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/overview/ad-fs-openid-connect-oauth-flows-scenarios) for your version.
+**Why the sub override (Rule 5) is required:** ADFS generates base64-encoded pairwise subject identifiers for the `sub` claim by default. Base64 encoding can produce `/`, `+`, and `=` characters. When NetBird uses the `sub` claim as the user identifier in API URL paths, the `/` characters are interpreted as path separators, causing 404 errors. Emitting `sub` from the UPN (Rule 5) provides a URL-safe, human-readable identifier instead. As an additional safeguard, set `NETBIRD_AUTH_USER_ID_CLAIM="upn"` in NetBird's `setup.env` so NetBird uses the UPN claim directly rather than relying on the overridden `sub`.
 </Note>
 
 Groups are filtered at the ADFS level so only relevant groups appear in the JWT and get synced into NetBird.
@@ -866,7 +870,7 @@ To synchronize AD group memberships into NetBird for use in access control polic
 2. Toggle **Enable JWT group sync**
 3. Set the JWT claim name to `groups`
 
-Groups appear in NetBird using the short names from the token (for example, `NetBird-Users`, `Domain Users`). Groups are synced at login time — when a user authenticates, their current group memberships are read from the token. Only groups matching the ADFS filter pattern will appear in NetBird, and that filter is controlled by the regex in the "Filter Group Membership" claim rule.
+Groups appear in NetBird using the short names from the token (for example, `NetBird-Users`), filtered by the regex in your "Filter Group Membership" claim rule. Only groups matching the filter will appear in NetBird. Groups are synced at login time — when a user authenticates, their current group memberships are read from the token.
 
 <Note>
 Groups with matching names in NetBird and ADFS will **not** sync. To import a group from ADFS, first delete the existing group with that name in NetBird.
@@ -946,7 +950,12 @@ The ADFS `name` claim contains two values: one from the implicit Windows account
 
 ### NetBird API returns 404 for user operations
 
-The ADFS `sub` claim contains base64 characters (`/`, `+`, `=`) that break URL path routing. Verify that the "Override sub claim" rule (Rule 5 in [Step 3](#step-3-configure-claim-transform-rules)) is active on the Web API. On some ADFS versions the default pairwise identifier is still emitted alongside your override; in that case disable pairwise identifiers on the Server Application with `Set-AdfsServerApplication ... -PairwiseIdentifierEnabled $false`.
+The ADFS `sub` claim contains base64 characters (`/`, `+`, `=`) that break URL path routing. Two fixes work together:
+
+1. Verify that the "Override sub claim" rule (Rule 5 in [Step 3](#step-3-configure-claim-transform-rules)) is active on the Web API.
+2. Set `NETBIRD_AUTH_USER_ID_CLAIM="upn"` in NetBird's `setup.env` so NetBird uses the UPN claim directly.
+
+If both are in place and the error persists, decode a fresh id\_token and confirm the `sub` value is now the UPN (for example, `alice@example.com`) rather than a base64 string.
 
 ### Redirect URI mismatch errors
 
