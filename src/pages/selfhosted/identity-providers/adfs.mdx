@@ -452,11 +452,22 @@ Grant-AdfsApplicationPermission `
 
 ## Step 3: Configure Claim Transform Rules
 
-NetBird requires specific claims in the OIDC tokens. Add these issuance transform rules to the Web API:
+By default, the OIDC tokens ADFS issues only include a user's Windows account name. NetBird needs more than that — email, display name, first and last name, a URL-safe user identifier, and optionally AD group memberships — to populate the dashboard and evaluate access policies. You fill that gap with **issuance transform rules**: claim-language snippets attached to the Web API that tell ADFS which AD attributes to look up for each authenticating user and which OIDC claims to emit them as.
+
+Here's what each rule does:
+
+- **Rule 1 — LDAP attributes:** emits `email`, `given_name`, and `family_name` from the AD `mail`, `givenName`, and `sn` attributes.
+- **Rule 2 — Display name:** emits the `name` claim from the AD `displayName` attribute. Kept separate from Rule 1 to avoid a duplicate-`name` issue that would break NetBird's user display (see the first Note after the code block).
+- **Rule 3a — Group query:** reads every AD group the user belongs to into a temporary claim type.
+- **Rule 3b — Group filter:** narrows the temporary claim to groups matching your naming convention and re-emits them as the `groups` claim NetBird consumes.
+- **Rule 4 — UPN:** emits the `upn` claim from the AD `userPrincipalName` attribute. Rule 5 depends on this.
+- **Rule 5 — `sub` override:** replaces ADFS's default base64-encoded pairwise `sub` with the UPN so the user identifier is URL-safe (see the second Note after the code block).
 
 <Note>
 Rules **3a** and **3b** are only needed if you plan to enable [JWT Group Sync](#7-3-enable-jwt-group-sync) so NetBird can mirror AD group memberships. If you don't need group sync, skip both rules and omit `$groupQueryRule + $groupFilterRule` from the `Set-AdfsWebApiApplication` call at the bottom of this step. Rule 3b alone is not useful without 3a — 3a emits groups into the temporary claim type `http://temp/groups`, and 3b filters them and re-emits as the `groups` claim NetBird actually reads.
 </Note>
+
+Add these issuance transform rules to the Web API:
 
 ```powershell
 # Rule 1: Send user attributes (email, first name, last name)
