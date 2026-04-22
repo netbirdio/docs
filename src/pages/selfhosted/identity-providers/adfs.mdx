@@ -4,7 +4,7 @@ import {Note} from "@/components/mdx";
 
 [Active Directory Federation Services (ADFS)](https://learn.microsoft.com/en-us/windows-server/identity/active-directory-federation-services) is Microsoft's on-premises identity federation service. It lets organizations use their existing Active Directory accounts for single sign-on to external applications via OpenID Connect, OAuth 2.0, and SAML 2.0. ADFS is a common choice when on-prem AD is already the source of truth for user identity and the organization does not want to move authentication to a cloud IdP.
 
-This guide walks through deploying ADFS as an OIDC identity provider for a self-hosted NetBird instance, following Microsoft's recommended topology (dedicated ADFS member server fronted by a Web Application Proxy in a DMZ) with Cisco Duo MFA enforced at authentication.
+This guide walks through deploying ADFS as an OIDC identity provider for a self-hosted NetBird instance, following Microsoft's recommended topology (dedicated ADFS member server fronted by a Web Application Proxy in a DMZ). It also covers enforcing Cisco Duo MFA at authentication as an optional hardening step — you can skip [Step 6](#step-6-install-and-configure-the-duo-adfs-mfa-adapter) if you don't need MFA or plan to enforce it through another mechanism.
 
 ## Overview
 
@@ -13,7 +13,7 @@ This guide walks through deploying ADFS as an OIDC identity provider for a self-
 - Deploying ADFS on a dedicated member server (separate from the domain controller)
 - Deploying Web Application Proxy (WAP) in a DMZ to front ADFS for external access
 - Configuring an ADFS OIDC application for NetBird with the correct claim rules
-- Integrating the Duo ADFS MFA Adapter
+- Integrating the Duo ADFS MFA Adapter (optional)
 - Firewall rules between the zones
 - Connecting ADFS to NetBird as a generic OIDC provider
 
@@ -72,7 +72,7 @@ This topology follows Microsoft's recommended deployment for ADFS:
 | Server | Network Zone | Domain Joined | Roles |
 | --- | --- | --- | --- |
 | Domain Controller | Corporate LAN | Yes (DC) | AD DS, DNS |
-| ADFS Server | Corporate LAN | Yes (member) | ADFS, Duo ADFS Adapter |
+| ADFS Server | Corporate LAN | Yes (member) | ADFS, Duo ADFS Adapter (if using Duo MFA) |
 | Web Application Proxy | DMZ | Optional (recommended: no) | Remote Access (WAP role) |
 | NetBird Management | DMZ | No | NetBird management, signal, relay, STUN |
 
@@ -107,7 +107,7 @@ No other traffic from the DMZ should reach the corporate LAN. This is the critic
 | ADFS Server | Domain Controller | 389/636 | TCP | LDAP/LDAPS for authentication |
 | ADFS Server | Domain Controller | 88 | TCP/UDP | Kerberos |
 | ADFS Server | Domain Controller | 53 | TCP/UDP | DNS |
-| ADFS Server | Duo Cloud (`*.duosecurity.com`) | 443 | TCP | Duo MFA verification (outbound) |
+| ADFS Server | Duo Cloud (`*.duosecurity.com`) | 443 | TCP | Duo MFA verification (outbound, only if using Duo MFA) |
 
 ---
 
@@ -117,7 +117,7 @@ No other traffic from the DMZ should reach the corporate LAN. This is the critic
 - Windows Server 2016 or later for the WAP server (can be a different version than the ADFS server)
 - A functioning Active Directory domain with user accounts
 - A TLS certificate for the ADFS service name (e.g., `adfs.example.com`), issued by a CA trusted by both internal and external clients. The same certificate must be installed on both the ADFS server and the WAP server.
-- A Cisco Duo account (Essentials, Advantage, or Premier plan)
+- A Cisco Duo account (Essentials, Advantage, or Premier plan) — only required if you plan to enforce Duo MFA in [Step 6](#step-6-install-and-configure-the-duo-adfs-mfa-adapter)
 - A deployed NetBird self-hosted instance
 - DNS configured so that:
     - External DNS resolves the ADFS service name to the WAP's public IP (or DMZ load balancer)
@@ -172,57 +172,142 @@ Changing UPNs in a production environment can affect other services that depend 
 
 ## Step 1: Install and Configure ADFS on the Member Server
 
-### 1.1 Install the ADFS Role
+This step installs the ADFS role on a dedicated Windows Server, creates a service account for ADFS to run as, and configures the federation farm. At the end, you'll have a working ADFS server that's reachable on the internal network. Exposing it externally is handled by the WAP in [Step 5](#step-5-install-and-configure-web-application-proxy).
 
-On the dedicated ADFS member server (not the domain controller):
+Before starting, make sure you've already provisioned the ADFS server itself. It should be:
+
+- A Windows Server 2016 or later VM (Windows Server 2022 or 2025 recommended)
+- Sized at minimum 2 vCPU, 8 GB RAM, 80 GB disk
+- Joined to your Active Directory domain (this is required; unlike WAP, ADFS must be domain-joined)
+- Placed on the internal corporate LAN, not in the DMZ
+- Not the domain controller itself; ADFS requires a separate server
+
+All commands below run on the ADFS server in an elevated PowerShell session unless otherwise noted.
+
+### 1.1 Install the ADFS Role
 
 ```powershell
 Install-WindowsFeature ADFS-Federation -IncludeManagementTools
 ```
 
+This installs the ADFS role binaries and the AD FS Management console. The role is installed but not yet configured; no services are started at this point. The command takes 1–2 minutes and does not require a reboot.
+
+Verify the installation completed:
+
+```powershell
+Get-WindowsFeature ADFS-Federation
+```
+
+The `InstallState` column should show `Installed`.
+
 ### 1.2 Install the TLS Certificate
 
-Import your CA-issued TLS certificate into the Local Computer Personal store (`Cert:\LocalMachine\My`). Note the thumbprint.
+ADFS requires a TLS certificate whose subject or SAN matches your federation service name (e.g., `adfs.example.com`). This certificate is used for:
 
-If the certificate was issued as a PFX file:
+- The HTTPS endpoint that browsers connect to for authentication
+- The TLS binding that WAP uses when proxying traffic to ADFS
+- Token signing and encryption (ADFS can use self-signed certs for these internally, but using the same public cert simplifies management)
+
+The certificate must be issued by a CA that both internal and external clients trust. For production, use a public CA (Let's Encrypt, DigiCert, Sectigo, etc.) so external users don't get certificate warnings. The certificate must include the private key.
+
+**Importing a PFX file (most common):**
+
+If your certificate was provided as a PFX (or PFX-renamed-to-P12) file with a password:
 
 ```powershell
 $pfxPassword = ConvertTo-SecureString "your-pfx-password" -AsPlainText -Force
+
 Import-PfxCertificate -FilePath "C:\path\to\adfs.pfx" `
   -CertStoreLocation "Cert:\LocalMachine\My" `
   -Password $pfxPassword
 ```
 
-Note the thumbprint:
+The certificate is imported into the Local Computer's Personal certificate store. This is where ADFS and WAP both look for certificates.
+
+**Get the thumbprint for later use:**
 
 ```powershell
 Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*adfs*" } | Format-List Subject, Thumbprint, NotAfter
 ```
 
-### 1.3 Create a Group Managed Service Account (gMSA)
+Copy the thumbprint value. You'll paste it into the ADFS farm installation command in [Step 1.4](#14-configure-the-adfs-farm), and you'll need it again in [Step 5](#step-5-install-and-configure-web-application-proxy) when configuring WAP.
 
-Microsoft recommends using a gMSA for the ADFS service account in production deployments:
+Also note the `NotAfter` date. Set a calendar reminder 30 days before this date so you can renew the certificate before it expires. An expired cert breaks all authentication.
+
+**Verify the certificate works:**
 
 ```powershell
-# Run on the domain controller first (one-time setup)
-Add-KdsRootKey -EffectiveImmediately
+Test-Certificate -Cert (Get-ChildItem Cert:\LocalMachine\My\<THUMBPRINT>) -Policy SSL
+```
 
-# Then create the gMSA (can be run from the ADFS server)
+This returns `True` if the certificate chains successfully to a trusted root CA. If it returns `False`, your CA's intermediate or root certificates may not be installed on this server.
+
+### 1.3 Create a Group Managed Service Account (gMSA)
+
+ADFS needs an identity to run its services under. You have three options:
+
+1. **Group Managed Service Account (gMSA)** — recommended for production. Password is managed automatically by AD, rotated every 30 days, never known to any human. Can be used across multiple servers in a farm.
+2. **Standard service account** — a regular AD user account with a manually set password. Works but requires manual password management.
+3. **Built-in account** — running as LocalSystem or NetworkService. Not recommended; lacks the isolation and auditability of a dedicated account.
+
+This guide uses gMSA. If your environment's policies require a standard service account instead, the `Install-AdfsFarm` command in [Step 1.4](#14-configure-the-adfs-farm) accepts a `-ServiceAccountCredential` parameter instead of `-GroupServiceAccountIdentifier`.
+
+**One-time setup on the domain controller (skip if already done):**
+
+The AD forest needs a KDS root key before it can generate gMSA passwords. Check if one already exists by running this on the domain controller:
+
+```powershell
+Get-KdsRootKey
+```
+
+If no keys are returned, create one. Run this on the domain controller:
+
+```powershell
+Add-KdsRootKey -EffectiveImmediately
+```
+
+The `-EffectiveImmediately` parameter is a misnomer. In production, the key isn't usable until 10 hours after creation (the delay allows the key to replicate across all domain controllers). In a lab environment, you can force it to be immediately usable:
+
+```powershell
+Add-KdsRootKey -EffectiveTime ((Get-Date).AddHours(-10))
+```
+
+Use the dated-back version only in labs. For production, run `Add-KdsRootKey -EffectiveImmediately` and wait 10 hours before proceeding.
+
+**Create the gMSA (run from the ADFS server or any domain-joined server):**
+
+```powershell
 New-ADServiceAccount -Name "svc-adfs" `
   -DnsHostName "adfs.example.com" `
   -PrincipalsAllowedToRetrieveManagedPassword "ADFS-Server$"
 ```
 
-Replace `ADFS-Server$` with the computer account name of your ADFS member server. If you have multiple ADFS servers in a farm, use a group containing all of their computer accounts.
+Replace values:
 
-Install the gMSA on the ADFS server:
+- `svc-adfs`: the service account name. You can choose any name; `svc-adfs` is a common convention.
+- `adfs.example.com`: your federation service name (same as the TLS certificate's subject).
+- `ADFS-Server$`: the computer account name of the ADFS server. The trailing `$` is important; computer accounts in AD always end with `$`. If your ADFS server's hostname is `ADFS01`, you'd use `ADFS01$` here.
+
+If you have multiple ADFS servers in a farm, replace the single computer account with a security group containing all the ADFS server computer accounts, then use the group name instead.
+
+**Install the gMSA on the ADFS server:**
+
+This step retrieves the gMSA's password from AD and caches it locally on the server, so ADFS can use the account.
 
 ```powershell
 Install-ADServiceAccount -Identity "svc-adfs"
-Test-ADServiceAccount -Identity "svc-adfs"  # Should return True
+Test-ADServiceAccount -Identity "svc-adfs"
 ```
 
+`Test-ADServiceAccount` should return `True`. If it returns `False`, the most common causes are:
+
+- The KDS root key is not yet effective (10 hour wait in production)
+- The ADFS server's computer account is not in the `PrincipalsAllowedToRetrieveManagedPassword` list
+- The Active Directory module is not available (run `Install-WindowsFeature RSAT-AD-PowerShell`)
+
 ### 1.4 Configure the ADFS Farm
+
+Now you actually configure ADFS to run. This creates the federation service, registers the gMSA, binds the TLS certificate to the HTTPS endpoint, and initializes the configuration database.
 
 ```powershell
 $certThumbprint = "<YOUR_CERTIFICATE_THUMBPRINT>"
@@ -235,24 +320,58 @@ Install-AdfsFarm `
   -OverwriteConfiguration
 ```
 
-After the command completes, restart the server:
+Replace values:
+
+- `<YOUR_CERTIFICATE_THUMBPRINT>`: the thumbprint from [Step 1.2](#12-install-the-tls-certificate).
+- `adfs.example.com`: your federation service name. This must match the TLS certificate and must be DNS-resolvable.
+- `Corporate ADFS`: a friendly display name shown to users on the ADFS sign-in page. Customize to your organization.
+- `CORP\svc-adfs$`: your NetBIOS domain name followed by the gMSA name, with a trailing `$`. If your domain's NetBIOS name is `CONTOSO`, you'd use `CONTOSO\svc-adfs$`.
+
+The `-OverwriteConfiguration` flag tells the installer to overwrite any existing ADFS configuration. On a fresh server, this has no effect. If you're rebuilding, it wipes the previous config.
+
+The command takes 2–4 minutes. Output ends with a summary showing the federation service was configured successfully.
+
+**Restart the server:**
 
 ```powershell
 Restart-Computer
 ```
 
+After the reboot, the ADFS service starts automatically. Wait 2–3 minutes after the server comes back up before running the verification step; ADFS takes a moment to fully initialize.
+
 ### 1.5 Verify ADFS is Running
+
+Check that the ADFS service is running:
 
 ```powershell
 Get-Service adfssrv
-
-Invoke-WebRequest -Uri "https://adfs.example.com/adfs/.well-known/openid-configuration" `
-  -UseBasicParsing | Select-Object -ExpandProperty Content
 ```
 
-<Note>
-If the ADFS server resolves its own service name to an external IP (for example, through split DNS or public DNS), you may need to add a hosts file entry pointing the ADFS FQDN to `127.0.0.1` and flush DNS (`ipconfig /flushdns`) for local testing to work.
-</Note>
+`Status` should be `Running`. If it's `Stopped`, try starting it:
+
+```powershell
+Start-Service adfssrv
+Get-EventLog -LogName "AD FS/Admin" -Newest 20
+```
+
+If the service won't start, review the event log for errors. Common startup issues include certificate problems (revoked, expired, wrong key usage) and gMSA permission problems.
+
+**Test the OIDC discovery endpoint:**
+
+```powershell
+Invoke-WebRequest -Uri "https://adfs.example.com/adfs/.well-known/openid-configuration" -UseBasicParsing | Select-Object -ExpandProperty Content
+```
+
+This should return a JSON document with fields including `issuer`, `authorization_endpoint`, `token_endpoint`, and `jwks_uri`. If it does, ADFS is running and responding correctly on the internal network.
+
+**Troubleshooting:**
+
+- **"Unable to connect to the remote server"**: The service might not be listening yet (wait longer), or the hostname doesn't resolve to this server. Check with `Resolve-DnsName adfs.example.com` and verify it returns this server's IP.
+- **"Could not establish trust relationship for the SSL/TLS secure channel"**: The certificate isn't trusted by this server. If you're using an internal CA, import the CA's root certificate into the Trusted Root Certification Authorities store.
+- **"The remote name could not be resolved"**: DNS isn't configured. If the ADFS server tries to resolve its own FQDN and that FQDN's public DNS record points to the WAP (which doesn't exist yet in Step 1), local resolution will fail. Add a hosts file entry on the ADFS server pointing `adfs.example.com` to `127.0.0.1` (for example: `127.0.0.1    adfs.example.com`), then flush DNS with `ipconfig /flushdns`. This makes the ADFS server resolve its own name to itself, bypassing public DNS. You'll remove this entry later once WAP is in place and public DNS points correctly.
+- **Returns HTML instead of JSON**: You hit an error page, not the OIDC endpoint. Check the URL; it's case-sensitive and `.well-known/openid-configuration` must be exact.
+
+At the end of this step, you have a functioning ADFS server accepting requests on the internal network. It is not yet reachable from the internet; that's handled by WAP in [Step 5](#step-5-install-and-configure-web-application-proxy). Proceed to [Step 2](#step-2-configure-the-oidc-application-group) to configure the OIDC application group that NetBird will use.
 
 ---
 
@@ -435,69 +554,196 @@ Set-AdfsResponseHeaders -CORSTrustedOrigins @("https://<NETBIRD_DOMAIN>")
 
 The WAP server sits in the DMZ and proxies ADFS traffic from the internet to the internal ADFS server. External clients never connect directly to ADFS. If the DMZ is compromised, ADFS can revoke the proxy trust and immediately cut off all external access.
 
-### 5.1 Prepare the WAP Server
+### 5.1 Provision the WAP Server
 
-The WAP server:
+Before starting this step, you need a second Windows Server, separate from the ADFS server. WAP cannot be installed on the same server as ADFS; Microsoft explicitly blocks this.
 
-- Should be in the DMZ, separated from the corporate network by a firewall
-- Can be non-domain-joined for stronger isolation (recommended for high-security environments). If non-domain-joined, it must be able to resolve the ADFS service name to the ADFS server's internal IP.
-- Needs the same TLS certificate installed that is used on the ADFS server
-- Needs TCP 443 inbound from the internet and TCP 443 outbound to the ADFS server
+**Server specifications:**
 
-If non-domain-joined, add a hosts file entry on the WAP server so it can resolve the ADFS service name:
+- Windows Server 2016 or later (Windows Server 2022 or 2025 recommended)
+- Minimum 2 vCPU, 4 GB RAM, 60 GB disk (standard Windows Server sizing)
+- Placed in your DMZ network segment, not the corporate LAN
+- A single network interface is sufficient (the WAP handles inbound from internet and outbound to ADFS on the same NIC, separated by firewall rules)
 
+**Domain join decision:**
+
+- **Non-domain-joined (recommended for high-security environments):** Stronger isolation. If the WAP is compromised, the attacker has no AD credentials to pivot with. This is the Microsoft-recommended configuration for internet-facing WAP deployments.
+- **Domain-joined:** Simpler to manage (Kerberos, group policy, centralized auth for admins) but increases blast radius if compromised. Only use this in lower-sensitivity environments.
+
+The rest of this guide assumes non-domain-joined. If you choose domain-joined, the installation commands are the same; only the name resolution step below differs.
+
+**Network requirements (firewall rules that must exist before you proceed):**
+
+| Direction | Source | Destination | Port | Purpose |
+| --- | --- | --- | --- | --- |
+| Inbound | Internet | WAP | TCP 443 | External authentication requests |
+| Outbound | WAP | ADFS server (internal IP) | TCP 443 | Proxied requests to ADFS |
+| Outbound | WAP | Public DNS or internal DNS | UDP 53 | Name resolution |
+
+No other traffic should be permitted from the DMZ to the corporate LAN. If the DMZ firewall allows broader access, tighten it before proceeding.
+
+**Name resolution setup (non-domain-joined WAP):**
+
+Since the WAP is not domain-joined, it does not use your internal DNS by default. It needs to resolve the ADFS service name (e.g., `adfs.example.com`) to the ADFS server's **internal IP address**, not the WAP's own public IP.
+
+Open `C:\Windows\System32\drivers\etc\hosts` in Notepad (run as Administrator) and add a line like `<ADFS_INTERNAL_IP>    adfs.example.com`, replacing `<ADFS_INTERNAL_IP>` with the actual internal IP of your ADFS server (for example, `10.0.1.50`). Save the file.
+
+Test the name resolution from PowerShell on the WAP:
+
+```powershell
+ping adfs.example.com
 ```
-<ADFS_INTERNAL_IP>  adfs.example.com
+
+This should resolve to the internal IP and (if the firewall rule from the table above is in place) should also succeed. If ping fails but the IP is correct, ICMP might be blocked by the firewall; that's fine as long as TCP 443 works. Test TCP 443 directly:
+
+```powershell
+Test-NetConnection -ComputerName adfs.example.com -Port 443
 ```
 
-Import the TLS certificate into the WAP server's Personal store, the same way as on the ADFS server ([Step 1.2](#12-install-the-tls-certificate)).
+`TcpTestSucceeded : True` confirms the network path works.
+
+**Install the TLS certificate:**
+
+WAP must have the exact same TLS certificate installed that ADFS uses, with the same thumbprint. This is not a second certificate for the same domain; it is literally the same certificate file. Export it from the ADFS server (including the private key) and import it into the WAP server's Local Computer Personal store.
+
+On the ADFS server, export the cert to a PFX file:
+
+```powershell
+$pfxPassword = ConvertTo-SecureString "choose-a-strong-password" -AsPlainText -Force
+Export-PfxCertificate -Cert "Cert:\LocalMachine\My\<THUMBPRINT>" `
+  -FilePath "C:\temp\adfs-cert.pfx" `
+  -Password $pfxPassword
+```
+
+Transfer the PFX file securely to the WAP server (SMB share, secure copy, etc., not email). On the WAP server, import it:
+
+```powershell
+$pfxPassword = ConvertTo-SecureString "the-password-you-chose" -AsPlainText -Force
+Import-PfxCertificate -FilePath "C:\path\to\adfs-cert.pfx" `
+  -CertStoreLocation "Cert:\LocalMachine\My" `
+  -Password $pfxPassword
+```
+
+After transfer, delete the PFX file from both servers. It contains the private key and should not be left on disk.
+
+Verify the thumbprint matches on both servers:
+
+```powershell
+Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*adfs*" } | Select-Object Subject, Thumbprint
+```
+
+If the thumbprints differ, WAP will fail to establish the proxy trust in [Step 5.3](#53-establish-the-proxy-trust-with-adfs).
 
 ### 5.2 Install the WAP Role
+
+On the WAP server, run PowerShell as Administrator:
 
 ```powershell
 Install-WindowsFeature Web-Application-Proxy -IncludeManagementTools
 ```
 
-### 5.3 Configure WAP to Trust ADFS
+No reboot is required. This installs the Remote Access role with the Web Application Proxy component and the management console.
+
+### 5.3 Establish the Proxy Trust with ADFS
+
+**What this step does:** It creates a cryptographic trust between the WAP server and the ADFS server. After this runs, the ADFS server recognizes the WAP as an authorized proxy and will accept forwarded authentication requests from it. You only run this once; the trust persists until you explicitly revoke it.
+
+**What you need before running this:**
+
+- The ADFS server must be running and reachable from the WAP on TCP 443 (test with the `Test-NetConnection` command from [Step 5.1](#51-provision-the-wap-server))
+- The TLS certificate must be installed on the WAP with the same thumbprint as on ADFS
+- You need domain credentials that have **local administrator rights on the ADFS server**. These are used once during this command to authenticate to the ADFS server and create the trust relationship. They are not stored; after the command completes, the WAP uses a certificate-based trust, not these credentials.
+
+**Get the certificate thumbprint:**
+
+On the WAP server, run:
+
+```powershell
+Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*adfs*" } | Select-Object Thumbprint
+```
+
+Copy the thumbprint value.
+
+**Run the installation command:**
 
 ```powershell
 $adfsCredential = Get-Credential
-# Enter domain credentials that have local admin rights on the ADFS server.
-# These are used once to establish the proxy trust and are not stored.
+```
 
+A Windows credential dialog opens. Enter the domain account in `DOMAIN\username` format (for example, `CORP\adfs-admin`) and its password. Press OK.
+
+Then run the actual WAP configuration:
+
+```powershell
 Install-WebApplicationProxy `
-  -CertificateThumbprint "<SAME_THUMBPRINT_AS_ADFS>" `
+  -CertificateThumbprint "<PASTE_THUMBPRINT_HERE>" `
   -FederationServiceName "adfs.example.com" `
   -FederationServiceTrustCredential $adfsCredential
 ```
 
+Replace `<PASTE_THUMBPRINT_HERE>` with the thumbprint you copied, and `adfs.example.com` with your actual ADFS service FQDN.
+
+The command takes 30–60 seconds. It will:
+
+1. Open a TLS connection to `adfs.example.com` on TCP 443 (which resolves to the internal ADFS IP via your hosts file)
+2. Authenticate to the ADFS server using the credentials you provided
+3. Register the WAP server with ADFS as a trusted proxy
+4. Install a machine certificate on the WAP that ADFS will recognize for future trust operations
+5. Start the `appproxysvc` and `adfssrv` related services
+
+**Expected successful output:**
+
+```
+PublishedApplicationName : Device Registration Service
+ADFSUrl                  : https://adfs.example.com/
+```
+
+If you see errors, the most common causes are:
+
+- Firewall blocking TCP 443 from WAP to ADFS (test with `Test-NetConnection`)
+- Name resolution issue: `adfs.example.com` resolves to the wrong IP (check the hosts file)
+- Wrong thumbprint (certificate not installed, or a different certificate with a different thumbprint)
+- Credentials lack local admin rights on the ADFS server
+- ADFS service not running on the ADFS server
+
 ### 5.4 Verify the Proxy Trust
 
-From the WAP server:
+On the WAP server:
 
 ```powershell
 Get-WebApplicationProxyHealth
 ```
 
-All components should show as healthy. If not, verify:
+Every component in the output should show `State: Healthy`. If any component shows unhealthy, the output includes diagnostic details. Common issues:
 
-- TCP 443 is open from the WAP to the ADFS server through the internal firewall
-- The WAP can resolve `adfs.example.com` to the ADFS server's internal IP
-- The TLS certificate on the WAP matches the one on the ADFS server
+- `ProxyTrustRenewalFailed`: The machine certificate ADFS issued to the WAP is expiring or expired. Re-run `Install-WebApplicationProxy` to renew.
+- `ADFSServerConnectivity`: The WAP can't reach ADFS. Recheck firewall and DNS.
+- `CertificateExpired`: The TLS certificate has expired or is about to. Install a new certificate on both ADFS and WAP, then update the WAP configuration.
 
-### 5.5 Test External Access
+### 5.5 Test External Access Through the WAP
 
-From an external machine, navigate to:
+From a machine outside your corporate network (your laptop on a home or cellular connection works), open a browser and navigate to:
 
 ```
 https://adfs.example.com/adfs/.well-known/openid-configuration
 ```
 
-DNS should resolve to the WAP's public IP. The WAP proxies the request to the internal ADFS server, and you should see the OIDC discovery JSON.
+For this to work:
+
+- Public DNS must resolve `adfs.example.com` to the WAP server's public IP (not the ADFS server's internal IP, which isn't routable from the internet)
+- The DMZ firewall must allow inbound TCP 443 from the internet to the WAP
+
+If successful, you will see the OIDC discovery JSON returned. The connection path is: your browser → internet → DMZ firewall → WAP (TLS termination) → new connection to internal ADFS server → response back through the same path.
+
+If you see a TLS error, verify the WAP's certificate is the same one as on ADFS. If you see a connection timeout, check the DMZ firewall rule and public DNS. If you see a 502 or 503 from the WAP, the proxy trust is probably broken; run `Get-WebApplicationProxyHealth` to diagnose.
 
 ---
 
 ## Step 6: Install and Configure the Duo ADFS MFA Adapter
+
+<Note>
+This step is optional. Skip it if you don't need MFA or plan to enforce it through a different mechanism (e.g., a conditional access policy, a different MFA adapter, or smart-card authentication).
+</Note>
 
 The Duo adapter is installed on the **ADFS server** (internal network), not on the WAP.
 
@@ -628,7 +874,7 @@ This request routes through the WAP and should return the OIDC discovery documen
 1. Log out of the NetBird Dashboard
 2. On the login page, click the **ADFS** button
 3. You are redirected to ADFS (through the WAP)
-4. Sign in with AD credentials and complete the Duo MFA challenge
+4. Sign in with AD credentials (and complete the Duo MFA challenge if you configured it in [Step 6](#step-6-install-and-configure-the-duo-adfs-mfa-adapter))
 5. Confirm you are redirected back to the NetBird Dashboard as the authenticated user
 6. Verify the user's display name, email, and group memberships appear correctly
 
@@ -648,14 +894,14 @@ Confirm the response includes `issuer`, `authorization_endpoint`, `token_endpoin
 
 ### Test the Duo MFA Flow (through WAP)
 
-Navigate to `https://<ADFS_FQDN>/adfs/ls/idpinitiatedsignon` from an external machine. Sign in with an AD account and verify that the Duo MFA prompt appears.
+If you configured Duo in [Step 6](#step-6-install-and-configure-the-duo-adfs-mfa-adapter), navigate to `https://<ADFS_FQDN>/adfs/ls/idpinitiatedsignon` from an external machine. Sign in with an AD account and verify that the Duo MFA prompt appears.
 
 ### Test the Full NetBird Login
 
 1. Open the NetBird dashboard
 2. The login page should redirect to ADFS (through the WAP)
 3. Enter AD credentials
-4. Complete the Duo MFA challenge
+4. Complete the Duo MFA challenge (if Duo was configured)
 5. Confirm you are redirected back to the NetBird dashboard as the authenticated user
 6. Verify the user's display name, email, and group memberships appear correctly
 
@@ -712,7 +958,7 @@ If the ADFS server resolves its own FQDN to an external IP, loopback traffic may
 | Web API | Resource | NetBird - Web API |
 | Claim Rules | Issuance Transform | Send LDAP Attributes, Send Display Name, Query Group Membership, Filter Group Membership, Send UPN, Override sub claim |
 | CORS | Trusted Origin | `https://<NETBIRD_DOMAIN>` |
-| MFA | Additional Authentication | Duo Authentication for AD FS |
+| MFA (optional) | Additional Authentication | Duo Authentication for AD FS |
 
 ### NetBird Identity Provider Values
 
