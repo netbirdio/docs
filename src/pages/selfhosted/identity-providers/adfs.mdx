@@ -70,14 +70,14 @@ A deployed NetBird self-hosted instance with the embedded IdP enabled and the da
    +-------------------+----------------------------+       +-------+-------+
                        |                                            ^
                 [   Firewall   ]                                    |
-                TCP 443 (WAP -> ADFS only)                          |  Egress (OT -> Internet):
+                TCP 443 (WAP -> ADFS only)                          |  Egress (Restricted -> Internet):
                        |                                            |    TCP 443    -> NetBird Mgmt
                        v                                            |    UDP 3478   -> NetBird Mgmt
    +--------------------------------------+                         |    (to public FQDN; re-enters
    |             Corporate LAN            |                         |     via the inbound rules above)
    |                                      |                         |
    |  +--------------+  +--------------+  |              +----------+-------------+
-   |  | ADFS Server  |  | Domain       |  |              |    Restricted / OT     |
+   |  | ADFS Server  |  | Domain       |  |              |   Restricted Network   |
    |  | (member)     |  | Controller   |  |              |                        |
    |  |              |  | (AD DS)      |  |              |  +------------------+  |
    |  +--------------+  +--------------+  |              |  | NetBird peers    |  |
@@ -87,7 +87,7 @@ A deployed NetBird self-hosted instance with the embedded IdP enabled and the da
                                                          +------------------------+
 ```
 
-External authentication requests terminate at WAP in the DMZ and are proxied to ADFS on the corporate LAN. The NetBird management server runs an embedded IdP (Dex) that brokers the OIDC flow with ADFS: the user's browser is redirected through Dex to ADFS for sign-in, and Dex performs the server-to-server token exchange with ADFS on the back end. The ADFS server is never directly reachable from the internet. NetBird peers in restricted or OT segments make only outbound connections to the NetBird management and relay services; no inbound ports are opened on peer networks. This follows [Microsoft's recommended ADFS deployment topology](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/deployment/best-practices-securing-ad-fs) and NetBird's default peer model.
+External authentication requests terminate at WAP in the DMZ and are proxied to ADFS on the corporate LAN. The NetBird management server runs an embedded IdP (Dex) that brokers the OIDC flow with ADFS: the user's browser is redirected through Dex to ADFS for sign-in, and Dex performs the server-to-server token exchange with ADFS on the back end. The ADFS server is never directly reachable from the internet. NetBird peers in restricted network segments make only outbound connections to the NetBird management and relay services; no inbound ports are opened on peer networks. This follows [Microsoft's recommended ADFS deployment topology](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/deployment/best-practices-securing-ad-fs) and NetBird's default peer model.
 
 If the DMZ is compromised, the WAP's proxy trust can be revoked from ADFS, immediately cutting off all external authentication:
 
@@ -376,7 +376,7 @@ Set-ItemProperty 'HKLM:\Software\Duo Security\DuoAdfs' -Name Host -Value '<api-h
 
 ### Fail Closed in High-Security Environments
 
-In OT, SCADA, and similar high-security environments, set **Bypass Duo authentication when offline** to **unchecked** (fail closed). If ADFS cannot reach Duo's cloud, authentication should fail rather than bypass MFA. The risk of unauthenticated access to restricted network segments outweighs the inconvenience of a temporary lockout during a Duo outage.
+In SCADA and similar high-security environments, set **Bypass Duo authentication when offline** to **unchecked** (fail closed). If ADFS cannot reach Duo's cloud, authentication should fail rather than bypass MFA. The risk of unauthenticated access to restricted network segments outweighs the inconvenience of a temporary lockout during a Duo outage.
 
 ### Enable Duo in ADFS Authentication Methods
 
