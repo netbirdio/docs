@@ -55,39 +55,45 @@ A deployed NetBird self-hosted instance with the embedded IdP enabled and the da
 ## Architecture
 
 ```
-                    INTERNET
-                        |
-                  [  Firewall  ]
-                        |
-         +--------------+---------------+
-         |            DMZ               |
-         |                              |
-         |  Web Application Proxy       |
-         |  (TLS 443 inbound)           |
-         |                              |
-         |  NetBird Management          |
-         |  + embedded IdP (Dex)        |
-         |  (TLS 443, UDP 3478 inbound) |
-         +--------------+---------------+
-                        |
-                  [  Firewall  ]
-                        |   TCP 443 (WAP -> ADFS only)
-         +--------------+---------------+
-         |       Corporate LAN          |
-         |                              |
-         |  ADFS Server (member)        |
-         |  Domain Controller           |
-         +--------------+---------------+
-                        |
-                  [  Firewall  ]
-                        |   Outbound only from peers
-                        |   TCP 443 + UDP 3478 to NetBird
-         +--------------+---------------+
-         |    Restricted / OT Network   |
-         |                              |
-         |  NetBird peers               |
-         |  (no inbound ports)          |
-         +------------------------------+
+                            INTERNET
+                                |
+                         [   Firewall   ]
+                                |
+     +----------------------------------------------+
+     |                     DMZ                      |
+     |                                              |
+     |  +------------------+  +------------------+  |
+     |  | Web Application  |  | NetBird Mgmt     |  |
+     |  | Proxy (WAP)      |  | + Dex IdP        |  |
+     |  |                  |  |                  |  |
+     |  | TLS 443 inbound  |  | TLS 443 inbound  |  |
+     |  |                  |  | UDP 3478 inbound |  |
+     |  +------------------+  +------------------+  |
+     +----------------------------------------------+
+                                |
+                         [   Firewall   ]
+                                |   TCP 443 (WAP -> ADFS only)
+     +----------------------------------------------+
+     |                Corporate LAN                 |
+     |                                              |
+     |  +------------------+  +------------------+  |
+     |  | ADFS Server      |  | Domain           |  |
+     |  | (member)         |  | Controller       |  |
+     |  |                  |  | (AD DS)          |  |
+     |  +------------------+  +------------------+  |
+     +----------------------------------------------+
+                                |
+                         [   Firewall   ]
+                                |   Outbound only from peers
+                                |   TCP 443 + UDP 3478 to NetBird
+     +----------------------------------------------+
+     |           Restricted / OT Network            |
+     |                                              |
+     |          +-----------------------+           |
+     |          | NetBird peers         |           |
+     |          | (no inbound ports)    |           |
+     |          +-----------------------+           |
+     +----------------------------------------------+
 ```
 
 External authentication requests terminate at WAP in the DMZ and are proxied to ADFS on the corporate LAN. The NetBird management server runs an embedded IdP (Dex) that brokers the OIDC flow with ADFS: the user's browser is redirected through Dex to ADFS for sign-in, and Dex performs the server-to-server token exchange with ADFS on the back end. The ADFS server is never directly reachable from the internet. NetBird peers in restricted or OT segments make only outbound connections to the NetBird management and relay services; no inbound ports are opened on peer networks. This follows [Microsoft's recommended ADFS deployment topology](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/deployment/best-practices-securing-ad-fs) and NetBird's default peer model.
