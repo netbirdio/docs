@@ -52,6 +52,10 @@ tar xzf netbird.tar.gz -C pkg-root/usr/local/bin netbird
 chmod +x pkg-root/usr/local/bin/netbird
 ```
 
+<Warning>
+    The macOS binary tarballs from GitHub releases are **not Apple code-signed or notarized**. Only the official `.pkg` installer from [pkgs.netbird.io](https://pkgs.netbird.io) contains signed binaries. For MDM deployments, you should sign the binary with your own Developer ID Application certificate before packaging — see [Step 3](#step-3-build-the-pkg) for instructions.
+</Warning>
+
 ## Step 2: Create install scripts
 
 Create a `scripts/` directory with preinstall and postinstall scripts. These handle stopping any existing service before the upgrade and starting it after.
@@ -148,25 +152,27 @@ chmod +x scripts/postinstall
     On subsequent installs (updates), the postinstall script detects the existing configuration and skips enrollment. It only restarts the service so the new binary takes effect.
 </Note>
 
-## Step 3: Build the .pkg
+## Step 3: Sign the binary and build the .pkg
 
-Use `pkgbuild` to assemble the payload and scripts into a signed installer package:
+The binary from the tarball is unsigned. For MDM deployment, you should sign both the binary (with `codesign`) and the installer package (with `pkgbuild --sign`). These are separate signing steps that use different certificate types.
+
+### Sign the binary
+
+Use your Developer ID Application certificate to code-sign the binary before packaging:
 
 ```bash
-pkgbuild \
-  --root pkg-root \
-  --scripts scripts \
-  --identifier com.your-org.netbird-cli \
-  --version "${VERSION}" \
-  --install-location / \
-  netbird-cli-${VERSION}.pkg
+codesign --sign "Developer ID Application: Your Organization (TEAMID)" \
+  --options runtime \
+  --timestamp \
+  --force \
+  pkg-root/usr/local/bin/netbird
 ```
 
-<Warning>
-    Use a custom package identifier (e.g., `com.your-org.netbird-cli`) rather than `io.netbird.client`. The official identifier is used by the NetBird auto-updater to detect managed installs. Using it for your custom package could cause conflicts if the auto-updater is enabled on your NetBird dashboard.
-</Warning>
+The `--options runtime` flag enables the hardened runtime (required for notarization), and `--timestamp` embeds a secure timestamp from Apple's servers.
 
-To sign the package for distribution (recommended for MDM deployment), add the `--sign` flag with your Developer ID Installer certificate:
+### Build the .pkg
+
+Use `pkgbuild` to assemble the signed binary and scripts into an installer package:
 
 ```bash
 pkgbuild \
@@ -179,9 +185,28 @@ pkgbuild \
   netbird-cli-${VERSION}.pkg
 ```
 
+<Warning>
+    Use a custom package identifier (e.g., `com.your-org.netbird-cli`) rather than `io.netbird.client`. The official identifier is used by the NetBird auto-updater to detect managed installs. Using it for your custom package could cause conflicts if the auto-updater is enabled on your NetBird dashboard.
+</Warning>
+
 <Note>
-    Signing is optional for local testing but typically required by MDM solutions. You need an [Apple Developer ID Installer certificate](https://developer.apple.com/help/account/create-certificates/create-developer-id-certificates/) to sign packages for distribution outside the App Store.
+    Binary signing uses a **Developer ID Application** certificate (`codesign`), while package signing uses a **Developer ID Installer** certificate (`pkgbuild --sign`). These are different certificates — you need both for a fully signed deployment. See [Apple's documentation](https://developer.apple.com/help/account/create-certificates/create-developer-id-certificates/) for details.
 </Note>
+
+### Optional: Notarize the .pkg
+
+For full Gatekeeper compatibility, submit the signed `.pkg` to Apple for notarization:
+
+```bash
+xcrun notarytool submit netbird-cli-${VERSION}.pkg \
+  --apple-id "your@email.com" \
+  --team-id "TEAMID" \
+  --password "app-specific-password" \
+  --wait
+
+# Staple the notarization ticket to the package
+xcrun stapler staple netbird-cli-${VERSION}.pkg
+```
 
 ## Step 4: Deploy via MDM
 
@@ -227,12 +252,27 @@ You can wrap this in an MDM uninstall script or a preinstall script for a remova
 
 ## Complete build script
 
-For convenience, here is a self-contained script that builds the CLI-only `.pkg`. Save it as `build-netbird-cli-pkg.sh` and run it with the desired version and setup key:
+For convenience, here is a self-contained script that builds the CLI-only `.pkg`. It optionally signs the binary and package if signing identities are provided. Save it as `build-netbird-cli-pkg.sh`:
 
 ```bash
 #!/bin/sh
 # Usage: ./build-netbird-cli-pkg.sh <VERSION> <SETUP_KEY> [MANAGEMENT_URL]
-# Example: ./build-netbird-cli-pkg.sh 0.36.5 A1B2C3D4-E5F6-7890-ABCD-EF1234567890
+#
+# Optional environment variables for signing:
+#   APP_SIGN_ID    - Developer ID Application identity (for binary signing)
+#   PKG_SIGN_ID    - Developer ID Installer identity (for package signing)
+#   APPLE_ID       - Apple ID email (for notarization)
+#   APPLE_TEAM_ID  - Apple Team ID (for notarization)
+#   APPLE_APP_PWD  - App-specific password (for notarization)
+#
+# Example (unsigned):
+#   ./build-netbird-cli-pkg.sh 0.36.5 A1B2C3D4-E5F6-7890-ABCD-EF1234567890
+#
+# Example (signed + notarized):
+#   APP_SIGN_ID="Developer ID Application: Acme Inc (TEAMID)" \
+#   PKG_SIGN_ID="Developer ID Installer: Acme Inc (TEAMID)" \
+#   APPLE_ID="dev@acme.com" APPLE_TEAM_ID="TEAMID" APPLE_APP_PWD="xxxx-xxxx-xxxx-xxxx" \
+#   ./build-netbird-cli-pkg.sh 0.36.5 A1B2C3D4-E5F6-7890-ABCD-EF1234567890
 
 set -e
 
@@ -250,6 +290,19 @@ curl -fSL -o "${WORK_DIR}/netbird.tar.gz" \
 mkdir -p "${WORK_DIR}/root/usr/local/bin"
 tar xzf "${WORK_DIR}/netbird.tar.gz" -C "${WORK_DIR}/root/usr/local/bin" netbird
 chmod +x "${WORK_DIR}/root/usr/local/bin/netbird"
+
+# Sign the binary if a signing identity is provided
+if [ -n "${APP_SIGN_ID:-}" ]; then
+  echo "Signing binary with: ${APP_SIGN_ID}"
+  codesign --sign "${APP_SIGN_ID}" \
+    --options runtime \
+    --timestamp \
+    --force \
+    "${WORK_DIR}/root/usr/local/bin/netbird"
+else
+  echo "WARNING: No APP_SIGN_ID set — binary will be unsigned."
+  echo "Unsigned binaries trigger Gatekeeper warnings and may be blocked by MDM policies."
+fi
 
 # Build management URL flag
 MGMT_FLAG=""
@@ -300,13 +353,32 @@ EOF
 chmod +x "${WORK_DIR}/scripts/preinstall" "${WORK_DIR}/scripts/postinstall"
 
 # Build the package
+PKG_SIGN_FLAGS=""
+if [ -n "${PKG_SIGN_ID:-}" ]; then
+  echo "Signing package with: ${PKG_SIGN_ID}"
+  PKG_SIGN_FLAGS="--sign ${PKG_SIGN_ID}"
+fi
+
 pkgbuild \
   --root "${WORK_DIR}/root" \
   --scripts "${WORK_DIR}/scripts" \
   --identifier "${PKG_ID}" \
   --version "${VERSION}" \
   --install-location / \
+  ${PKG_SIGN_FLAGS} \
   "netbird-cli-${VERSION}.pkg"
+
+# Notarize if credentials are provided
+if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ] && [ -n "${APPLE_APP_PWD:-}" ]; then
+  echo "Submitting for notarization..."
+  xcrun notarytool submit "netbird-cli-${VERSION}.pkg" \
+    --apple-id "${APPLE_ID}" \
+    --team-id "${APPLE_TEAM_ID}" \
+    --password "${APPLE_APP_PWD}" \
+    --wait
+  xcrun stapler staple "netbird-cli-${VERSION}.pkg"
+  echo "Notarization complete."
+fi
 
 # Clean up
 rm -rf "${WORK_DIR}"
