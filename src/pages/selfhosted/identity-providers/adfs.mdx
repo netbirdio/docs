@@ -1,439 +1,139 @@
 import {Note} from "@/components/mdx";
 
-# ADFS with NetBird Self-Hosted
+# ADFS SSO with NetBird Self-Hosted
 
-[Active Directory Federation Services (ADFS)](https://learn.microsoft.com/en-us/windows-server/identity/active-directory-federation-services) is Microsoft's on-premises identity federation service. It lets organizations use their existing Active Directory accounts for single sign-on to external applications via OpenID Connect, OAuth 2.0, and SAML 2.0. ADFS is a common choice when on-prem AD is already the source of truth for user identity and the organization does not want to move authentication to a cloud IdP.
+[Active Directory Federation Services (AD FS)](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/ad-fs-overview) is Microsoft's on-premises federation and SSO service. When paired with a Web Application Proxy (WAP) in a DMZ, it exposes a standards-compliant OIDC endpoint that NetBird can consume through its [Generic OIDC](https://docs.netbird.io/selfhosted/identity-providers/generic-oidc) connector, without ever exposing the ADFS server directly to the internet.
 
-This guide walks through deploying ADFS as an OIDC identity provider for a self-hosted NetBird instance, following Microsoft's recommended topology (dedicated ADFS member server fronted by a Web Application Proxy in a DMZ). It also covers enforcing Cisco Duo MFA at authentication as an optional hardening step — you can skip [Step 6](#step-6-install-and-configure-the-duo-adfs-mfa-adapter) if you don't need MFA or plan to enforce it through another mechanism.
+This guide covers only the ADFS and NetBird configuration that is specific to the NetBird integration. Base infrastructure (Active Directory, the ADFS farm itself, and the WAP role) is assumed to already be set up per Microsoft's documentation.
 
-## Overview
+NetBird is added to ADFS as an OIDC relying party and configured in NetBird's Management Dashboard alongside any other identity providers and local users you have. You do not need to replace the embedded IdP.
 
-**What this guide covers:**
+## Prerequisites
 
-- Deploying ADFS on a dedicated member server (separate from the domain controller)
-- Deploying Web Application Proxy (WAP) in a DMZ to front ADFS for external access
-- Configuring an ADFS OIDC application for NetBird with the correct claim rules
-- Integrating the Duo ADFS MFA Adapter (optional)
-- Firewall rules between the zones
-- Connecting ADFS to NetBird as a generic OIDC provider
+This guide assumes the following is already in place. Set these up first, in this order, before continuing.
 
-**What this guide does not cover:**
+### Active Directory Domain Services
 
-- Active Directory Domain Services installation
-- NetBird self-hosted deployment — see the [self-hosted guide](/selfhosted/selfhosted-guide)
-- Duo Authentication Proxy setup (this guide uses the Duo ADFS Adapter, which is a separate product)
+A working Active Directory domain with a Domain Controller, and user accounts that will authenticate through NetBird. See [Install Active Directory Domain Services](https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/deploy/install-active-directory-domain-services--level-100-).
 
----
+Each user that will authenticate through NetBird must have the following attributes populated:
+
+| AD Attribute | Purpose in NetBird |
+| --- | --- |
+| `userPrincipalName` | User identifier |
+| `mail` | Email address |
+| `displayName` | Display name in the dashboard |
+| `givenName` | First name |
+| `sn` | Last name |
+
+Populate any missing attributes with `Set-ADUser` before proceeding. If `displayName`, `givenName`, or `sn` is empty, NetBird falls back to displaying the UPN.
+
+At least two AD security groups with a shared naming prefix (for example `NetBird-Users`, `NetBird-Admins`) should exist if you plan to use group-based access policies in NetBird. **Each user whose access you want policy-gated must be a member of two or more of these groups.** See [JWT Group Sync](#23-jwt-group-sync) below for why this matters.
+
+### ADFS Server
+
+A dedicated, domain-joined member server (not the Domain Controller) with the ADFS role installed and the federation farm configured. See [Deploying a Federation Server Farm](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/deployment/deploying-a-federation-server-farm).
+
+> **Important: RSA-keyed TLS certificate.** ADFS does not accept ECDSA certificates for the Service Communications role. `Install-AdfsFarm` will reject them with a misleading `ID8025` error. Many ACME clients (Let's Encrypt, certbot, acme.sh) now default to ECDSA. Force RSA at issuance time (for example `certbot --key-type rsa --rsa-key-size 2048`).
+
+### Web Application Proxy
+
+A separate Windows Server placed in the DMZ (not domain-joined recommended), with the Web Application Proxy role installed and the proxy trust with ADFS established. See [Web Application Proxy in Windows Server](https://learn.microsoft.com/en-us/windows-server/remote/remote-access/web-application-proxy/web-app-proxy-windows-server).
+
+The same TLS certificate used on the ADFS server must be installed on the WAP server with the same thumbprint.
+
+### DNS
+
+* Public DNS for `<ADFS_FQDN>` points at the WAP's public IP.
+* Internal DNS for `<ADFS_FQDN>` points at the ADFS server's internal IP.
+* Public DNS for `<NETBIRD_FQDN>` points at the NetBird management host's public IP.
+
+### NetBird Self-Hosted
+
+A deployed NetBird self-hosted instance with the embedded IdP enabled and the dashboard reachable. See the [Self-Hosting Quickstart Guide](https://docs.netbird.io/selfhosted/selfhosted-quickstart).
 
 ## Architecture
 
 ```
-                        INTERNET
-                            |
-                       [ Firewall ]
-                            |
-                  +---------+---------+
-                  |       DMZ         |
-                  |                   |
-                  |  Web Application  |
-                  |  Proxy (WAP)      |
-                  |  TCP 443 inbound  |
-                  |                   |
-                  |  NetBird Mgmt     |
-                  |  TCP 443, UDP 3478|
-                  |  inbound          |
-                  +---------+---------+
-                            |
-                       [ Firewall ]
-                            | TCP 443 only
-                            | (WAP to ADFS)
-                  +---------+---------+
-                  |  Corporate LAN    |
-                  |                   |
-                  |  ADFS Server      |
-                  |  (member server)  |
-                  |                   |
-                  |  Domain           |
-                  |  Controller       |
-                  +-------------------+
+                    INTERNET
+                        |
+                  [  Firewall  ]
+                        |
+         +--------------+---------------+
+         |            DMZ               |
+         |                              |
+         |  Web Application Proxy       |
+         |  (TLS 443 inbound)           |
+         |                              |
+         |  NetBird Management          |
+         |  + embedded IdP (Dex)        |
+         |  (TLS 443, UDP 3478 inbound) |
+         +--------------+---------------+
+                        |
+                  [  Firewall  ]
+                        |   TCP 443 (WAP -> ADFS only)
+         +--------------+---------------+
+         |       Corporate LAN          |
+         |                              |
+         |  ADFS Server (member)        |
+         |  Domain Controller           |
+         +--------------+---------------+
+                        |
+                  [  Firewall  ]
+                        |   Outbound only from peers
+                        |   TCP 443 + UDP 3478 to NetBird
+         +--------------+---------------+
+         |    Restricted / OT Network   |
+         |                              |
+         |  NetBird peers               |
+         |  (no inbound ports)          |
+         +------------------------------+
 ```
 
-This topology follows Microsoft's recommended deployment for ADFS:
+External authentication requests terminate at WAP in the DMZ and are proxied to ADFS on the corporate LAN. The NetBird management server runs an embedded IdP (Dex) that brokers the OIDC flow with ADFS: the user's browser is redirected through Dex to ADFS for sign-in, and Dex performs the server-to-server token exchange with ADFS on the back end. The ADFS server is never directly reachable from the internet. NetBird peers in restricted or OT segments make only outbound connections to the NetBird management and relay services; no inbound ports are opened on peer networks. This follows [Microsoft's recommended ADFS deployment topology](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/deployment/best-practices-securing-ad-fs) and NetBird's default peer model.
 
-- The **Domain Controller** stays on the internal corporate network. It has no path to the internet, direct or indirect.
-- The **ADFS Server** runs on a separate, domain-joined member server on the corporate network. Token signing keys never leave this server, and external devices never connect to it directly.
-- The **Web Application Proxy (WAP)** sits in the DMZ. It terminates external TLS connections and creates new internal connections to ADFS. If the DMZ is compromised, ADFS can revoke the proxy trust certificate, immediately cutting off all external access.
-- The **NetBird management/signal/relay server** also sits in the DMZ (or a separate public-facing segment), accessible to peers.
-
----
-
-## Server Roles Summary
-
-| Server | Network Zone | Domain Joined | Roles |
-| --- | --- | --- | --- |
-| Domain Controller | Corporate LAN | Yes (DC) | AD DS, DNS |
-| ADFS Server | Corporate LAN | Yes (member) | ADFS, Duo ADFS Adapter (if using Duo MFA) |
-| Web Application Proxy | DMZ | Optional (recommended: no) | Remote Access (WAP role) |
-| NetBird Management | DMZ | No | NetBird management, signal, relay, STUN |
-
-<Note>
-The ADFS role must not be installed on the domain controller. The domain controller holds the AD database and Kerberos keys; combining it with an internet-proxied service creates an unnecessary attack surface.
-</Note>
-
----
-
-## Firewall Rules
-
-### DMZ to Internet (WAP and NetBird)
-
-| Source | Destination | Port | Protocol | Purpose |
-| --- | --- | --- | --- | --- |
-| Internet | WAP | 443 | TCP | ADFS authentication (OIDC login flow) |
-| Internet | NetBird Mgmt | 443 | TCP | Dashboard, signal, peer management |
-| Internet | NetBird Mgmt | 3478 | UDP | STUN (peer connection negotiation) |
-
-### DMZ to Corporate LAN
-
-| Source | Destination | Port | Protocol | Purpose |
-| --- | --- | --- | --- | --- |
-| WAP | ADFS Server | 443 | TCP | Proxy ADFS traffic to internal server |
-
-No other traffic from the DMZ should reach the corporate LAN. This is the critical boundary.
-
-### Corporate LAN Internal
-
-| Source | Destination | Port | Protocol | Purpose |
-| --- | --- | --- | --- | --- |
-| ADFS Server | Domain Controller | 389/636 | TCP | LDAP/LDAPS for directory and attribute lookups (claim data) |
-| ADFS Server | Domain Controller | 88 | TCP/UDP | Kerberos |
-| ADFS Server | Domain Controller | 53 | TCP/UDP | DNS |
-| ADFS Server | Duo Cloud (`*.duosecurity.com`) | 443 | TCP | Duo MFA verification (outbound, only if using Duo MFA) |
-
----
-
-## Prerequisites
-
-- Windows Server 2016 or later for the ADFS server (Windows Server 2025 recommended)
-- Windows Server 2016 or later for the WAP server (can be a different version than the ADFS server)
-- A functioning Active Directory domain with user accounts
-- A TLS certificate for the ADFS service name (e.g., `adfs.example.com`), issued by a CA trusted by both internal and external clients. The same certificate must be installed on both the ADFS server and the WAP server.
-- A Cisco Duo account (Essentials, Advantage, or Premier plan) — only required if you plan to enforce Duo MFA in [Step 6](#step-6-install-and-configure-the-duo-adfs-mfa-adapter)
-- A deployed NetBird self-hosted instance
-- DNS configured so that:
-    - External DNS resolves the ADFS service name to the WAP's public IP (or DMZ load balancer)
-    - Internal DNS resolves the ADFS service name to the ADFS server's internal IP (or internal load balancer)
-
-### Duo Authentication Proxy vs. Duo ADFS Adapter
-
-If your organization currently uses the Duo Authentication Proxy for RADIUS or LDAP-based MFA (for example, for VPN access), note that the **Duo ADFS MFA Adapter** is a separate product. Both coexist under the same Duo tenant, and users already enrolled in Duo do not need to re-enroll. The Duo Auth Proxy continues to function as-is for its existing integrations.
-
-The Duo Authentication Proxy does not support OIDC. It only handles RADIUS and LDAP, and cannot serve as an identity provider for NetBird.
-
----
-
-## Active Directory: User Attribute Requirements
-
-ADFS will pull user attributes from Active Directory and include them as claims in the OIDC tokens sent to NetBird. The following AD attributes must be populated for each user:
-
-| AD Attribute | Maps to OIDC Claim | Purpose in NetBird |
-| --- | --- | --- |
-| `mail` | `email` | User email address |
-| `displayName` | `name` | Display name in the dashboard |
-| `givenName` | `given_name` | First name |
-| `sn` | `family_name` | Last name |
-| `userPrincipalName` | `upn` | User identifier (see [Step 3](#step-3-configure-claim-transform-rules)) |
-
-Verify that your user objects have these attributes populated:
+If the DMZ is compromised, the WAP's proxy trust can be revoked from ADFS, immediately cutting off all external authentication:
 
 ```powershell
-Get-ADUser -Identity <username> -Properties displayName, givenName, sn, mail | Format-List
+Set-AdfsProperties -ProxyTrustTokenLifetime 0
+Restart-Service adfssrv
 ```
 
-If `displayName`, `givenName`, or `sn` are empty, NetBird will fall back to displaying the UPN as the user name. Populate these attributes before proceeding:
+## Step 1: Configure ADFS for NetBird
 
-```powershell
-Set-ADUser -Identity <username> -GivenName "First" -Surname "Last" -DisplayName "First Last"
-```
+Run all commands on the ADFS server in an elevated PowerShell session as a Domain Administrator.
 
-### Optional: Custom UPN Suffix
+In this step you will create a confidential OIDC client application and the supporting claim rules in ADFS. The redirect URI is fixed (`https://<NETBIRD_FQDN>/oauth2/callback`) and is registered now; [Step 2](#step-2-configure-netbird) simply confirms it matches what the dashboard expects.
 
-By default, user UPNs use the internal AD domain (e.g., `alice@corp.example.local`). If you prefer a cleaner login experience using your public domain:
-
-```powershell
-Get-ADForest | Set-ADForest -UPNSuffixes @{Add="example.com"}
-Set-ADUser -Identity <username> -UserPrincipalName "alice@example.com"
-```
-
-<Note>
-Changing UPNs in a production environment can affect other services that depend on them (Kerberos delegation, certificate-based authentication, federated services). Evaluate the impact before modifying existing user UPNs.
-</Note>
-
----
-
-## Step 1: Install and Configure ADFS on the Member Server
-
-This step installs the ADFS role on a dedicated Windows Server, creates a service account for ADFS to run as, and configures the federation farm. At the end, you'll have a working ADFS server that's reachable on the internal network. Exposing it externally is handled by the WAP in [Step 5](#step-5-install-and-configure-web-application-proxy).
-
-Before starting, make sure you've already provisioned the ADFS server itself. It should be:
-
-- A Windows Server 2016 or later VM (Windows Server 2022 or 2025 recommended)
-- Sized at minimum 2 vCPU, 8 GB RAM, 80 GB disk
-- Joined to your Active Directory domain (this is required; unlike WAP, ADFS must be domain-joined)
-- Placed on the internal corporate LAN, not in the DMZ
-- Not the domain controller itself; ADFS requires a separate server
-
-All commands below run on the ADFS server in an elevated PowerShell session unless otherwise noted.
-
-### 1.1 Install the ADFS Role
-
-```powershell
-Install-WindowsFeature ADFS-Federation -IncludeManagementTools
-```
-
-This installs the ADFS role binaries and the AD FS Management console. The role is installed but not yet configured; no services are started at this point. The command takes 1–2 minutes and does not require a reboot.
-
-Verify the installation completed:
-
-```powershell
-Get-WindowsFeature ADFS-Federation
-```
-
-The `InstallState` column should show `Installed`.
-
-### 1.2 Install the TLS Certificate
-
-ADFS requires a TLS certificate whose subject or SAN matches your federation service name (e.g., `adfs.example.com`). This certificate is used for:
-
-- The HTTPS endpoint that browsers connect to for authentication
-- The TLS binding that WAP uses when proxying traffic to ADFS
-- Token signing and encryption (ADFS can use self-signed certs for these internally, but using the same public cert simplifies management)
-
-The certificate must be issued by a CA that both internal and external clients trust. For production, use a public CA (Let's Encrypt, DigiCert, Sectigo, etc.) so external users don't get certificate warnings. The certificate must include the private key.
-
-**Importing a PFX file (most common):**
-
-If your certificate was provided as a PFX (or PFX-renamed-to-P12) file with a password:
-
-```powershell
-$pfxPassword = ConvertTo-SecureString "your-pfx-password" -AsPlainText -Force
-
-Import-PfxCertificate -FilePath "C:\path\to\adfs.pfx" `
-  -CertStoreLocation "Cert:\LocalMachine\My" `
-  -Password $pfxPassword
-```
-
-The certificate is imported into the Local Computer's Personal certificate store. This is where ADFS and WAP both look for certificates.
-
-**Get the thumbprint for later use:**
-
-```powershell
-Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*adfs*" } | Format-List Subject, Thumbprint, NotAfter
-```
-
-Copy the thumbprint value. You'll paste it into the ADFS farm installation command in [Step 1.4](#1-4-configure-the-adfs-farm), and you'll need it again in [Step 5](#step-5-install-and-configure-web-application-proxy) when configuring WAP.
-
-Also note the `NotAfter` date. Set a calendar reminder 30 days before this date so you can renew the certificate before it expires. An expired cert breaks all authentication.
-
-**Verify the certificate works:**
-
-```powershell
-Test-Certificate -Cert (Get-ChildItem Cert:\LocalMachine\My\<THUMBPRINT>) -Policy SSL
-```
-
-This returns `True` if the certificate chains successfully to a trusted root CA. If it returns `False`, your CA's intermediate or root certificates may not be installed on this server.
-
-### 1.3 Create a Group Managed Service Account (gMSA)
-
-ADFS needs an identity to run its services under. You have three options:
-
-1. **Group Managed Service Account (gMSA)** — recommended for production. Password is managed automatically by AD, rotated every 30 days, never known to any human. Can be used across multiple servers in a farm.
-2. **Standard service account** — a regular AD user account with a manually set password. Works but requires manual password management.
-3. **Built-in account** — running as LocalSystem or NetworkService. Not recommended; lacks the isolation and auditability of a dedicated account.
-
-This guide uses gMSA. If your environment's policies require a standard service account instead, the `Install-AdfsFarm` command in [Step 1.4](#1-4-configure-the-adfs-farm) accepts a `-ServiceAccountCredential` parameter instead of `-GroupServiceAccountIdentifier`.
-
-**One-time setup on the domain controller (skip if already done):**
-
-The AD forest needs a KDS root key before it can generate gMSA passwords. Check if one already exists by running this on the domain controller:
-
-```powershell
-Get-KdsRootKey
-```
-
-If no keys are returned, create one. Run this on the domain controller:
-
-```powershell
-Add-KdsRootKey -EffectiveImmediately
-```
-
-The `-EffectiveImmediately` parameter is a misnomer. In production, the key isn't usable until 10 hours after creation (the delay allows the key to replicate across all domain controllers). In a lab environment, you can force it to be immediately usable:
-
-```powershell
-Add-KdsRootKey -EffectiveTime ((Get-Date).AddHours(-10))
-```
-
-Use the dated-back version only in labs. For production, run `Add-KdsRootKey -EffectiveImmediately` and wait 10 hours before proceeding.
-
-**Create the gMSA (run from the ADFS server or any domain-joined server):**
-
-```powershell
-New-ADServiceAccount -Name "svc-adfs" `
-  -DnsHostName "adfs.example.com" `
-  -PrincipalsAllowedToRetrieveManagedPassword "ADFS-Server$"
-```
-
-Replace values:
-
-- `svc-adfs`: the service account name. You can choose any name; `svc-adfs` is a common convention.
-- `adfs.example.com`: your federation service name (same as the TLS certificate's subject).
-- `ADFS-Server$`: the computer account name of the ADFS server. The trailing `$` is important; computer accounts in AD always end with `$`. If your ADFS server's hostname is `ADFS01`, you'd use `ADFS01$` here.
-
-If you have multiple ADFS servers in a farm, replace the single computer account with a security group containing all the ADFS server computer accounts, then use the group name instead.
-
-**Install the gMSA on the ADFS server:**
-
-This step retrieves the gMSA's password from AD and caches it locally on the server, so ADFS can use the account.
-
-```powershell
-Install-ADServiceAccount -Identity "svc-adfs"
-Test-ADServiceAccount -Identity "svc-adfs"
-```
-
-`Test-ADServiceAccount` should return `True`. If it returns `False`, the most common causes are:
-
-- The KDS root key is not yet effective (10 hour wait in production)
-- The ADFS server's computer account is not in the `PrincipalsAllowedToRetrieveManagedPassword` list
-- The Active Directory module is not available (run `Install-WindowsFeature RSAT-AD-PowerShell`)
-
-### 1.4 Configure the ADFS Farm
-
-Now you actually configure ADFS to run. This creates the federation service, registers the gMSA, binds the TLS certificate to the HTTPS endpoint, and initializes the configuration database.
-
-```powershell
-$certThumbprint = "<YOUR_CERTIFICATE_THUMBPRINT>"
-
-Install-AdfsFarm `
-  -CertificateThumbprint $certThumbprint `
-  -FederationServiceName "adfs.example.com" `
-  -FederationServiceDisplayName "Corporate ADFS" `
-  -GroupServiceAccountIdentifier "CORP\svc-adfs$" `
-  -OverwriteConfiguration
-```
-
-Replace values:
-
-- `<YOUR_CERTIFICATE_THUMBPRINT>`: the thumbprint from [Step 1.2](#1-2-install-the-tls-certificate).
-- `adfs.example.com`: your federation service name. This must match the TLS certificate and must be DNS-resolvable.
-- `Corporate ADFS`: a friendly display name shown to users on the ADFS sign-in page. Customize to your organization.
-- `CORP\svc-adfs$`: your NetBIOS domain name followed by the gMSA name, with a trailing `$`. If your domain's NetBIOS name is `CONTOSO`, you'd use `CONTOSO\svc-adfs$`.
-
-The `-OverwriteConfiguration` flag tells the installer to overwrite any existing ADFS configuration. On a fresh server, this has no effect. If you're rebuilding, it wipes the previous config.
-
-The command takes 2–4 minutes. Output ends with a summary showing the federation service was configured successfully.
-
-**Restart the server:**
-
-```powershell
-Restart-Computer
-```
-
-After the reboot, the ADFS service starts automatically. Wait 2–3 minutes after the server comes back up before running the verification step; ADFS takes a moment to fully initialize.
-
-### 1.5 Verify ADFS is Running
-
-Check that the ADFS service is running:
-
-```powershell
-Get-Service adfssrv
-```
-
-`Status` should be `Running`. If it's `Stopped`, try starting it:
-
-```powershell
-Start-Service adfssrv
-Get-WinEvent -LogName "AD FS/Admin" -MaxEvents 20
-```
-
-If the service won't start, review the event log for errors. Common startup issues include certificate problems (revoked, expired, wrong key usage) and gMSA permission problems.
-
-**Test the OIDC discovery endpoint:**
-
-```powershell
-Invoke-WebRequest -Uri "https://adfs.example.com/adfs/.well-known/openid-configuration" -UseBasicParsing | Select-Object -ExpandProperty Content
-```
-
-This should return a JSON document with fields including `issuer`, `authorization_endpoint`, `token_endpoint`, and `jwks_uri`. If it does, ADFS is running and responding correctly on the internal network.
-
-**Troubleshooting:**
-
-- **"Unable to connect to the remote server"**: The service might not be listening yet (wait longer), or the hostname doesn't resolve to this server. Check with `Resolve-DnsName adfs.example.com` and verify it returns this server's IP.
-- **"Could not establish trust relationship for the SSL/TLS secure channel"**: The certificate isn't trusted by this server. If you're using an internal CA, import the CA's root certificate into the Trusted Root Certification Authorities store.
-- **"The remote name could not be resolved"**: DNS isn't configured. If the ADFS server tries to resolve its own FQDN and that FQDN's public DNS record points to the WAP (which doesn't exist yet in Step 1), local resolution will fail. Add a hosts file entry on the ADFS server pointing `adfs.example.com` to `127.0.0.1` (for example: `127.0.0.1    adfs.example.com`), then flush DNS with `ipconfig /flushdns`. This makes the ADFS server resolve its own name to itself, bypassing public DNS. You'll remove this entry later once WAP is in place and public DNS points correctly.
-- **Returns HTML instead of JSON**: You hit an error page, not the OIDC endpoint. Check the URL; it's case-sensitive and `.well-known/openid-configuration` must be exact.
-
-At the end of this step, you have a functioning ADFS server accepting requests on the internal network. It is not yet reachable from the internet; that's handled by WAP in [Step 5](#step-5-install-and-configure-web-application-proxy). Proceed to [Step 2](#step-2-configure-the-oidc-application-group) to configure the OIDC application group that NetBird will use.
-
----
-
-## Step 2: Configure the OIDC Application Group
-
-You'll configure ADFS as an external OIDC identity provider that NetBird can add via **Settings > Identity Providers** in the Management Dashboard. NetBird generates a redirect URL that must be registered in ADFS, so you'll pause mid-way through this step to fetch that URL from the NetBird Dashboard.
-
-### 2.1 Generate a Client ID
-
-```powershell
-$clientId = [guid]::NewGuid().ToString()
-Write-Host "Client ID: $clientId"
-```
-
-Record this value. You will use it in multiple steps and when configuring NetBird.
-
-### 2.2 Create the Application Group
+### 1.1 Create the Application Group
 
 ```powershell
 New-AdfsApplicationGroup -Name "NetBird" -ApplicationGroupIdentifier "NetBird"
 ```
 
-### 2.3 Get the Redirect URL from NetBird
+### 1.2 Add a Server Application (Confidential Client)
 
-1. Log in to your NetBird Dashboard in another browser tab
-2. Navigate to **Settings > Identity Providers**
-3. Click **Add Identity Provider**
-4. Select **Generic OIDC** from the type dropdown
-5. Fill in:
-
-   | Field | Value |
-   | --- | --- |
-   | Name | `ADFS` (or your preferred display name) |
-   | Client ID | The GUID from [Step 2.1](#2-1-generate-a-client-id) |
-   | Client Secret | Enter a placeholder (you will replace it in [Step 7](#step-7-complete-net-bird-configuration)) |
-   | Issuer | `https://<ADFS_FQDN>/adfs` |
-
-6. NetBird displays a **Redirect URL** — copy this value. Do **not** click **Save** yet; you'll return to this tab in [Step 7](#step-7-complete-net-bird-configuration).
-
-### 2.4 Add a Server Application (Confidential Client)
-
-Create a confidential OIDC client in ADFS with a generated client secret. NetBird's Dashboard IdP flow exchanges the authorization code using the client secret, so ADFS must be configured as a **Server Application**, not a Native Application.
+NetBird's embedded IdP (Dex) acts as a confidential OIDC client and exchanges the authorization code with ADFS server-to-server using a client secret. Use a **Server Application**, not a Native Application.
 
 ```powershell
+$clientId = [guid]::NewGuid().ToString()
+
 $serverApp = Add-AdfsServerApplication `
   -Name "NetBird - Server App" `
   -ApplicationGroupIdentifier "NetBird" `
   -Identifier $clientId `
-  -RedirectUri @("<REDIRECT_URL_FROM_NETBIRD>") `
+  -RedirectUri @("https://<NETBIRD_FQDN>/oauth2/callback") `
   -GenerateClientSecret
 
-$clientSecret = $serverApp.ClientSecret
-Write-Host "Client Secret: $clientSecret"
+Write-Host "Client ID:     $clientId"
+Write-Host "Client Secret: $($serverApp.ClientSecret)"
 ```
 
-Replace `<REDIRECT_URL_FROM_NETBIRD>` with the URL you copied in [Step 2.3](#2-3-get-the-redirect-url-from-net-bird). Record the client secret — you'll paste it into NetBird in [Step 7](#step-7-complete-net-bird-configuration). ADFS does not display the secret again, so if you lose it you'll need to regenerate it with `Set-AdfsServerApplication ... -GenerateClientSecret`.
+Record both the **Client ID** and **Client Secret**. You will paste them into the NetBird dashboard in Step 2.
 
-### 2.5 Add a Web API
+### 1.3 Add a Web API
 
-<Note>
-This guide uses the same identifier (`$clientId`) for the Server Application and the Web API for simplicity. `Grant-AdfsApplicationPermission` in [Step 2.6](#2-6-grant-oidc-permissions) links them explicitly. In larger environments you may see the Web API use a distinct resource URI like `api://netbird`; both patterns are valid.
-</Note>
+The Web API resource shares the same identifier as the Server Application so the permission grant in Step 1.4 binds them together.
 
 ```powershell
 Add-AdfsWebApiApplication `
@@ -443,35 +143,36 @@ Add-AdfsWebApiApplication `
   -AccessControlPolicyName "Permit everyone"
 ```
 
-### 2.6 Grant OIDC Permissions
+### 1.4 Grant OIDC Permissions
 
 ```powershell
 Grant-AdfsApplicationPermission `
   -ClientRoleIdentifier $clientId `
   -ServerRoleIdentifier $clientId `
-  -ScopeNames "openid","profile","email"
+  -ScopeNames "openid","profile","email","allatclaims"
 ```
 
----
+The first three scopes are the standard OIDC scope set. The fourth, `allatclaims`, is ADFS-specific: it is the mechanism that promotes claims emitted by the issuance transform rules (Step 1.6) into the **id_token** in addition to the access token. Stock ADFS issues only `sub`, `upn`, `unique_name`, and `sid` in the id_token; `name`, `email`, and `groups` only appear there when the client requests `allatclaims`. NetBird's "Microsoft AD FS" identity-provider type adds `allatclaims` to the request automatically (see Step 2.1).
 
-## Step 3: Configure Claim Transform Rules
+### 1.5 Register the `groups` and `name` Claim Descriptions
 
-By default, the OIDC tokens ADFS issues only include a user's Windows account name. NetBird needs more than that — email, display name, first and last name, a URL-safe user identifier, and optionally AD group memberships — to populate the dashboard and evaluate access policies. You fill that gap with **issuance transform rules**: claim-language snippets attached to the Web API that tell ADFS which AD attributes to look up for each authenticating user and which OIDC claims to emit them as.
+ADFS only emits short-named claims (like `groups` and `name`) in the OIDC token if they are registered in the global claim description registry. The `email`, `given_name`, `family_name`, and `upn` types are pre-registered; `groups` and `name` are not. (The built-in `Name` description maps to ShortName `unique_name`, which Dex won't read as `name`.) Without this step the claim rules in 1.6 run successfully but those two claims are stripped from the JWT.
 
-Here's what each rule does:
+```powershell
+Add-AdfsClaimDescription -Name 'Groups' -ClaimType 'groups' -ShortName 'groups' `
+  -IsAccepted $true -IsOffered $true -IsRequired $false `
+  -Notes 'NetBird group memberships filtered by claim rule'
 
-- **Rule 1 — LDAP attributes:** emits `email`, `given_name`, and `family_name` from the AD `mail`, `givenName`, and `sn` attributes.
-- **Rule 2 — Display name:** emits the `name` claim from the AD `displayName` attribute. Kept separate from Rule 1 to avoid a duplicate-`name` issue that would break NetBird's user display (see the first Note after the code block).
-- **Rule 3a — Group query:** reads every AD group the user belongs to into a temporary claim type.
-- **Rule 3b — Group filter:** narrows the temporary claim to groups matching your naming convention and re-emits them as the `groups` claim NetBird consumes.
-- **Rule 4 — UPN:** emits the `upn` claim from the AD `userPrincipalName` attribute. Rule 5 depends on this.
-- **Rule 5 — `sub` override:** replaces ADFS's default base64-encoded pairwise `sub` with the UPN so the user identifier is URL-safe (see the second Note after the code block).
+Add-AdfsClaimDescription -Name 'OIDC Name' -ClaimType 'name' -ShortName 'name' `
+  -IsAccepted $true -IsOffered $true -IsRequired $false `
+  -Notes 'NetBird display name claim emitted by Web API issuance rule'
 
-<Note>
-Rules **3a** and **3b** are only needed if you plan to enable [JWT Group Sync](#7-3-enable-jwt-group-sync) so NetBird can mirror AD group memberships. If you don't need group sync, skip both rules and omit `$groupQueryRule + $groupFilterRule` from the `Set-AdfsWebApiApplication` call at the bottom of this step. Rule 3b alone is not useful without 3a — 3a emits groups into the temporary claim type `http://temp/groups`, and 3b filters them and re-emits as the `groups` claim NetBird actually reads.
-</Note>
+Restart-Service adfssrv -Force
+```
 
-Add these issuance transform rules to the Web API:
+### 1.6 Configure Claim Transform Rules
+
+NetBird's generic OIDC connector expects the following claims in the ID token: `sub` (provided by ADFS automatically), `email`, `name`, and optionally `groups` for JWT group sync. Apply all rules in a single call so they are registered together.
 
 ```powershell
 # Rule 1: Send user attributes (email, first name, last name)
@@ -488,7 +189,7 @@ c:[Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccou
    param = c.Value);
 "@
 
-# Rule 2: Send display name
+# Rule 2: Send display name using the short claim type "name"
 $nameRule = @"
 @RuleName = "Send Display Name"
 c:[Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname",
@@ -499,509 +200,230 @@ c:[Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccou
    param = c.Value);
 "@
 
-# Rule 3a: Query all groups into a temporary claim type
+# Rule 3a: Query all group DNs into a temporary claim type via memberOf
 $groupQueryRule = @"
 @RuleName = "Query Group Membership"
 c:[Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname",
    Issuer == "AD AUTHORITY"]
-=> issue(store = "Active Directory",
+=> add(store = "Active Directory",
    types = ("http://temp/groups"),
-   query = ";tokenGroups(unqualifiedName);{0}",
+   query = ";memberOf;{0}",
    param = c.Value);
 "@
 
-# Rule 3b: Filter to only emit groups starting with "NetBird-"
-# Adjust the regex pattern to match your naming convention.
-# Examples:
-#   "^NetBird-"             matches NetBird-Users, NetBird-Admins, etc.
-#   "^(NetBird-|Ops-)"      matches NetBird- and Ops- prefixed groups
+# Rule 3b: Filter group DNs to those whose CN starts with "NetBird-",
+# extract the CN value, and emit as the "groups" claim.
+# Adjust the regex to match your naming convention.
+#
+# In a PowerShell `@"..."@` here-string, `$variable` is interpolated, so the
+# regex anchor and backreference must be backtick-escaped (`` `$ `` and `` `$1 ``).
+# Writing `\$` and `\$1` would store a literal `\` in the rule, the regex would
+# fail to match, and groups would be emitted as full DNs.
 $groupFilterRule = @"
 @RuleName = "Filter Group Membership"
-c:[Type == "http://temp/groups", Value =~ "^NetBird-"]
-=> issue(Type = "groups", Value = c.Value);
+c:[Type == "http://temp/groups", Value =~ "(?i)^CN=NetBird-"]
+=> issue(Type = "groups", Value = RegExReplace(c.Value, "(?i)^CN=([^,]+),.*`$", "`$1"));
 "@
 
-# Rule 4: Send UPN
-$upnRule = @"
-@RuleTemplate = "LdapClaims"
-@RuleName = "Send UPN"
-c:[Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname",
-   Issuer == "AD AUTHORITY"]
-=> issue(store = "Active Directory",
-   types = ("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"),
-   query = ";userPrincipalName;{0}",
-   param = c.Value);
-"@
-
-# Rule 5: Override the default sub claim with the UPN
-$subRule = @"
-@RuleName = "Override sub claim"
-c:[Type == "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"]
-=> issue(Type = "sub", Value = c.Value);
-"@
-
-# Apply all rules
 Set-AdfsWebApiApplication `
   -TargetName "NetBird - Web API" `
-  -IssuanceTransformRules ($ldapRule + $nameRule + $groupQueryRule + $groupFilterRule + $upnRule + $subRule)
+  -IssuanceTransformRules ($ldapRule + $nameRule + $groupQueryRule + $groupFilterRule)
 ```
 
-<Note>
-The `name` claim must be emitted in its own rule (Rule 2) using the short claim type `"name"`. Do not include `displayName` in Rule 1 using the full schema URI `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name`. ADFS implicitly emits a `name` claim containing the Windows account name (for example, `CORP\alice`). If Rule 1 also emits a `name` claim through the schema URI, the token will contain a `name` array with two values, which NetBird cannot parse correctly.
-</Note>
+A note on Rule 2: it emits via the short claim type `"name"` (registered in Step 1.5). Standard ADFS auto-emits `unique_name` from `windowsaccountname`, not `name`, so there is no array-of-two collision to defend against. The collision only appears if you extend Rule 1 to also emit `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name`, which would put two values into a single `name` claim.
 
-<Note>
-**Why the sub override (Rule 5) is required:** ADFS generates base64-encoded pairwise subject identifiers for the `sub` claim by default. Base64 encoding can produce `/`, `+`, and `=` characters. When NetBird uses the `sub` claim as the user identifier in API URL paths, the `/` characters are interpreted as path separators, causing 404 errors. Emitting `sub` from the UPN (Rule 5) provides a URL-safe, human-readable identifier instead. As an additional safeguard, set `NETBIRD_AUTH_USER_ID_CLAIM="upn"` in NetBird's `setup.env` so NetBird uses the UPN claim directly rather than relying on the overridden `sub`.
-</Note>
+## Step 2: Configure NetBird
 
-Groups are filtered at the ADFS level so only relevant groups appear in the JWT and get synced into NetBird.
+### 2.1 Add ADFS as an Identity Provider
+
+1. Log in to your NetBird Dashboard.
+2. Navigate to **Settings** > **Identity Providers**.
+3. Click **Add Identity Provider**.
+4. Fill in the fields:
+
+| Field | Value |
+| --- | --- |
+| Provider Type | Microsoft AD FS |
+| Name | `ADFS` (or whatever label you want shown on the login button) |
+| Issuer URL | `https://<ADFS_FQDN>/adfs` |
+| Client ID | The Client ID from Step 1.2 |
+| Client Secret | The Client Secret from Step 1.2 |
+
+5. The **Redirect / Callback URL** field is pre-populated with `https://<NETBIRD_FQDN>/oauth2/callback`. Confirm visually that this matches the redirect URI you registered on the ADFS Server Application in Step 1.2. They should be identical.
+6. Click **Save**.
+
+### 2.2 Test the Connection
+
+1. Log out of the NetBird dashboard.
+2. On the login page you should now see a button labelled with the name you chose in Step 2.1.
+3. Click it. The browser should redirect to ADFS (through WAP), prompt for AD credentials, complete any MFA configured at the ADFS layer (see the [Duo appendix](#appendix-duo-adfs-mfa-adapter) below), then redirect back to NetBird.
+4. Confirm you land on the dashboard with your display name and email populated.
+
+### 2.3 JWT Group Sync
+
+To synchronize AD group memberships into NetBird for use in access control policies:
+
+1. In the NetBird dashboard, navigate to **Settings** > **Groups**.
+2. Enable **JWT group sync**.
+3. Set the **JWT claim** name to `groups`.
+4. Optionally configure **JWT allow groups** to restrict access to specific group names.
+
+After enabling, log out and back in. Group membership is read from the token at authentication time, so changes do not apply until the next login.
+
+> **Known limitation: single-group users.** ADFS's OIDC endpoint serializes a claim as a bare JSON string when only one claim of that type is issued (`"groups": "NetBird-Users"`), and as a JSON array when two or more fire (`"groups": ["NetBird-Users", "NetBird-Admins"]`). Some downstream parsers only handle the array form. Ensure every user whose access you want policy-gated belongs to at least two groups matching your "Filter Group Membership" regex.
 
 ---
 
-## Step 4: Enable CORS
+## Troubleshooting
 
-The NetBird dashboard makes cross-origin requests to ADFS during the OIDC authentication flow. ADFS does not enable CORS by default, and without it the browser will silently block the token response even though ADFS returns a successful result.
+### "Invalid redirect URI" error after sign-in
+
+The redirect URI registered on the ADFS Server Application does not exactly match the one Dex sent. Confirm the value registered on the Server Application is exactly `https://<NETBIRD_FQDN>/oauth2/callback`: same protocol, no trailing slash, no path suffix. You can verify with:
 
 ```powershell
-Set-AdfsResponseHeaders -EnableCORS $true
-Set-AdfsResponseHeaders -CORSTrustedOrigins @("https://<NETBIRD_DOMAIN>")
+Get-AdfsServerApplication -Name "NetBird - Server App" | Select-Object -ExpandProperty RedirectUri
 ```
+
+If it still doesn't match, re-run the `Add-AdfsServerApplication` block in Step 1.2 with the literal URL above.
+
+### Login returns a 400 error on token exchange
+
+The ADFS application is configured as a Native Application (public client) instead of a Server Application (confidential client), so ADFS rejects the token request when Dex sends a client secret. Recreate the application using `Add-AdfsServerApplication -GenerateClientSecret` per Step 1.2 and re-run the dashboard configuration.
+
+### Token validation fails with "issuer mismatch"
+
+The issuer URL configured in the NetBird dashboard must exactly match the `iss` claim in tokens issued by ADFS. ADFS's issuer is typically `https://<ADFS_FQDN>/adfs` (no trailing slash). Confirm by inspecting the JSON returned at `https://<ADFS_FQDN>/adfs/.well-known/openid-configuration`.
+
+### Users appear without a name or email
+
+Verify that the AD user objects have `displayName`, `givenName`, `sn`, and `mail` populated. Then verify the `email` and `name` claims are reaching the token by decoding the ID token at [jwt.io](https://jwt.io). If the claims are missing, the claim transform rules in Step 1.6 did not register correctly; rerun the `Set-AdfsWebApiApplication` block.
+
+### Display name shows as the UPN instead of the user's full name
+
+Rule 2 in Step 1.6 reads `displayName` from Active Directory. If that attribute is empty on the AD user object, Rule 2 emits nothing, no `name` claim reaches the token, and NetBird falls back to displaying the UPN per the [Prerequisites](#active-directory-domain-services) note. Confirm `displayName` is populated:
+
+```powershell
+Get-ADUser -Identity <samAccountName> -Properties displayName |
+  Select-Object samAccountName, displayName
+```
+
+If empty, set it with `Set-ADUser -Identity <samAccountName> -DisplayName "<Full Name>"` and have the user log out and back in.
+
+### Login fails with `error=server_error&error_description=MSIS9604`
+
+ADFS cannot reach the AD Global Catalog. Confirm TCP 3268 is open from the ADFS server to the Domain Controller. The `Query Group Membership` rule uses a Global Catalog lookup to resolve group DNs.
+
+### Group sync shows zero groups for a user
+
+Either the `groups` claim description was never registered (rerun the `groups` registration in Step 1.5), the user belongs to no groups matching the filter regex in Rule 3b, or the user belongs to exactly one matching group and is hitting the [single-group serialization edge case](#23-jwt-group-sync).
+
+### NetBird management container cannot reach ADFS at startup
+
+If NetBird and WAP share a VPC, the NetBird host's request to `<ADFS_FQDN>` may time out because most cloud VPCs do not hairpin traffic to their own public IPs. Add a `/etc/hosts` entry on the NetBird host mapping `<ADFS_FQDN>` to the WAP's internal IP, or configure split-horizon DNS in the VPC.
 
 ---
 
-## Step 5: Install and Configure Web Application Proxy
-
-The WAP server sits in the DMZ and proxies ADFS traffic from the internet to the internal ADFS server. External clients never connect directly to ADFS. If the DMZ is compromised, ADFS can revoke the proxy trust and immediately cut off all external access.
-
-### 5.1 Provision the WAP Server
-
-Before starting this step, you need a second Windows Server, separate from the ADFS server. WAP cannot be installed on the same server as ADFS; Microsoft explicitly blocks this.
-
-**Server specifications:**
-
-- Windows Server 2016 or later (Windows Server 2022 or 2025 recommended)
-- Minimum 2 vCPU, 4 GB RAM, 60 GB disk (standard Windows Server sizing)
-- Placed in your DMZ network segment, not the corporate LAN
-- A single network interface is sufficient (the WAP handles inbound from internet and outbound to ADFS on the same NIC, separated by firewall rules)
-
-**Domain join decision:**
-
-- **Non-domain-joined (recommended for high-security environments):** Stronger isolation. If the WAP is compromised, the attacker has no AD credentials to pivot with. This is the Microsoft-recommended configuration for internet-facing WAP deployments.
-- **Domain-joined:** Simpler to manage (Kerberos, group policy, centralized auth for admins) but increases blast radius if compromised. Only use this in lower-sensitivity environments.
-
-The rest of this guide assumes non-domain-joined. If you choose domain-joined, the installation commands are the same; only the name resolution step below differs.
-
-**Network requirements (firewall rules that must exist before you proceed):**
-
-| Direction | Source | Destination | Port | Purpose |
-| --- | --- | --- | --- | --- |
-| Inbound | Internet | WAP | TCP 443 | External authentication requests |
-| Outbound | WAP | ADFS server (internal IP) | TCP 443 | Proxied requests to ADFS |
-| Outbound | WAP | Public DNS or internal DNS | UDP 53 | Name resolution |
-
-No other traffic should be permitted from the DMZ to the corporate LAN. If the DMZ firewall allows broader access, tighten it before proceeding.
-
-**Name resolution setup (non-domain-joined WAP):**
-
-Since the WAP is not domain-joined, it does not use your internal DNS by default. It needs to resolve the ADFS service name (e.g., `adfs.example.com`) to the ADFS server's **internal IP address**, not the WAP's own public IP.
-
-Open `C:\Windows\System32\drivers\etc\hosts` in Notepad (run as Administrator) and add a line like `<ADFS_INTERNAL_IP>    adfs.example.com`, replacing `<ADFS_INTERNAL_IP>` with the actual internal IP of your ADFS server (for example, `10.0.1.50`). Save the file.
-
-Test the name resolution from PowerShell on the WAP:
-
-```powershell
-ping adfs.example.com
-```
-
-This should resolve to the internal IP and (if the firewall rule from the table above is in place) should also succeed. If ping fails but the IP is correct, ICMP might be blocked by the firewall; that's fine as long as TCP 443 works. Test TCP 443 directly:
-
-```powershell
-Test-NetConnection -ComputerName adfs.example.com -Port 443
-```
-
-`TcpTestSucceeded : True` confirms the network path works.
-
-**Install the TLS certificate:**
-
-WAP must have the exact same TLS certificate installed that ADFS uses, with the same thumbprint. This is not a second certificate for the same domain; it is literally the same certificate file. Export it from the ADFS server (including the private key) and import it into the WAP server's Local Computer Personal store.
-
-On the ADFS server, export the cert to a PFX file:
-
-```powershell
-$pfxPassword = ConvertTo-SecureString "choose-a-strong-password" -AsPlainText -Force
-Export-PfxCertificate -Cert "Cert:\LocalMachine\My\<THUMBPRINT>" `
-  -FilePath "C:\temp\adfs-cert.pfx" `
-  -Password $pfxPassword
-```
-
-Transfer the PFX file securely to the WAP server (SMB share, secure copy, etc., not email). On the WAP server, import it:
-
-```powershell
-$pfxPassword = ConvertTo-SecureString "the-password-you-chose" -AsPlainText -Force
-Import-PfxCertificate -FilePath "C:\path\to\adfs-cert.pfx" `
-  -CertStoreLocation "Cert:\LocalMachine\My" `
-  -Password $pfxPassword
-```
-
-After transfer, delete the PFX file from both servers. It contains the private key and should not be left on disk.
-
-Verify the thumbprint matches on both servers:
-
-```powershell
-Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*adfs*" } | Select-Object Subject, Thumbprint
-```
-
-If the thumbprints differ, WAP will fail to establish the proxy trust in [Step 5.3](#5-3-establish-the-proxy-trust-with-adfs).
-
-### 5.2 Install the WAP Role
-
-On the WAP server, run PowerShell as Administrator:
-
-```powershell
-Install-WindowsFeature Web-Application-Proxy -IncludeManagementTools
-```
-
-No reboot is required. This installs the Remote Access role with the Web Application Proxy component and the management console.
-
-### 5.3 Establish the Proxy Trust with ADFS
-
-**What this step does:** It creates a cryptographic trust between the WAP server and the ADFS server. After this runs, the ADFS server recognizes the WAP as an authorized proxy and will accept forwarded authentication requests from it. You only run this once; the trust persists until you explicitly revoke it.
-
-**What you need before running this:**
-
-- The ADFS server must be running and reachable from the WAP on TCP 443 (test with the `Test-NetConnection` command from [Step 5.1](#5-1-provision-the-wap-server))
-- The TLS certificate must be installed on the WAP with the same thumbprint as on ADFS
-- You need domain credentials that have **local administrator rights on the ADFS server**. These are used once during this command to authenticate to the ADFS server and create the trust relationship. They are not stored; after the command completes, the WAP uses a certificate-based trust, not these credentials.
-
-**Get the certificate thumbprint:**
-
-On the WAP server, run:
-
-```powershell
-Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*adfs*" } | Select-Object Thumbprint
-```
-
-Copy the thumbprint value.
-
-**Run the installation command:**
-
-```powershell
-$adfsCredential = Get-Credential
-```
-
-A Windows credential dialog opens. Enter the domain account in `DOMAIN\username` format (for example, `CORP\adfs-admin`) and its password. Press OK.
-
-Then run the actual WAP configuration:
-
-```powershell
-Install-WebApplicationProxy `
-  -CertificateThumbprint "<PASTE_THUMBPRINT_HERE>" `
-  -FederationServiceName "adfs.example.com" `
-  -FederationServiceTrustCredential $adfsCredential
-```
-
-Replace `<PASTE_THUMBPRINT_HERE>` with the thumbprint you copied, and `adfs.example.com` with your actual ADFS service FQDN.
-
-The command takes 30–60 seconds. It will:
-
-1. Open a TLS connection to `adfs.example.com` on TCP 443 (which resolves to the internal ADFS IP via your hosts file)
-2. Authenticate to the ADFS server using the credentials you provided
-3. Register the WAP server with ADFS as a trusted proxy
-4. Install a machine certificate on the WAP that ADFS will recognize for future trust operations
-5. Start the `appproxysvc` and `adfssrv` related services
-
-**Expected successful output:**
-
-```
-PublishedApplicationName : Device Registration Service
-ADFSUrl                  : https://adfs.example.com/
-```
-
-If you see errors, the most common causes are:
-
-- Firewall blocking TCP 443 from WAP to ADFS (test with `Test-NetConnection`)
-- Name resolution issue: `adfs.example.com` resolves to the wrong IP (check the hosts file)
-- Wrong thumbprint (certificate not installed, or a different certificate with a different thumbprint)
-- Credentials lack local admin rights on the ADFS server
-- ADFS service not running on the ADFS server
-
-### 5.4 Verify the Proxy Trust
-
-On the WAP server:
-
-```powershell
-Get-WebApplicationProxyHealth
-```
-
-Every component in the output should show `State: Healthy`. If any component shows unhealthy, the output includes diagnostic details. Common issues:
-
-- `ProxyTrustRenewalFailed`: The machine certificate ADFS issued to the WAP is expiring or expired. Re-run `Install-WebApplicationProxy` to renew.
-- `ADFSServerConnectivity`: The WAP can't reach ADFS. Recheck firewall and DNS.
-- `CertificateExpired`: The TLS certificate has expired or is about to. Install a new certificate on both ADFS and WAP, then update the WAP configuration.
-
-### 5.5 Test External Access Through the WAP
-
-From a machine outside your corporate network (your laptop on a home or cellular connection works), open a browser and navigate to:
-
-```
-https://adfs.example.com/adfs/.well-known/openid-configuration
-```
-
-For this to work:
-
-- Public DNS must resolve `adfs.example.com` to the WAP server's public IP (not the ADFS server's internal IP, which isn't routable from the internet)
-- The DMZ firewall must allow inbound TCP 443 from the internet to the WAP
-
-If successful, you will see the OIDC discovery JSON returned. The connection path is: your browser → internet → DMZ firewall → WAP (TLS termination) → new connection to internal ADFS server → response back through the same path.
-
-If you see a TLS error, verify the WAP's certificate is the same one as on ADFS. If you see a connection timeout, check the DMZ firewall rule and public DNS. If you see a 502 or 503 from the WAP, the proxy trust is probably broken; run `Get-WebApplicationProxyHealth` to diagnose.
+## Related Resources
+
+* [Generic OIDC Provider with NetBird Self-Hosted](https://docs.netbird.io/selfhosted/identity-providers/generic-oidc)
+* [Deploying a Federation Server Farm](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/deployment/deploying-a-federation-server-farm)
+* [Web Application Proxy in Windows Server](https://learn.microsoft.com/en-us/windows-server/remote/remote-access/web-application-proxy/web-app-proxy-windows-server)
+* [Best Practices for Securing AD FS](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/deployment/best-practices-securing-ad-fs)
 
 ---
 
-## Step 6: Install and Configure the Duo ADFS MFA Adapter
+## Appendix: Duo ADFS MFA Adapter
 
-<Note>
-This step is optional. Skip it if you don't need MFA or plan to enforce it through a different mechanism (e.g., a conditional access policy, a different MFA adapter, or smart-card authentication).
-</Note>
+Adding Cisco Duo as a second factor at the ADFS layer means every NetBird login (dashboard and CLI) is automatically MFA-protected, without any NetBird-side configuration. Because Duo is enforced at the ADFS authentication step, it is independent of how NetBird brokers the OIDC flow. This appendix covers only the parts of the Duo adapter setup that tend to interact with an ADFS + NetBird deployment. For generic Duo tenant configuration, see Duo's documentation.
 
-The Duo adapter is installed on the **ADFS server** (internal network), not on the WAP.
+### Duo Authentication Proxy is not the same thing
 
-### 6.1 Create the Application in Duo
+If your organization already uses the [Duo Authentication Proxy](https://duo.com/docs/authproxy-overview) for RADIUS or LDAP-based MFA (for example, with a VPN), note that the **Duo ADFS MFA Adapter** is a separate product. Both coexist under the same Duo tenant. Users already enrolled in Duo do not need to re-enroll. The Auth Proxy does not support OIDC and cannot serve as an identity provider for NetBird on its own.
 
-1. Log into the Duo Admin Panel at [https://admin.duosecurity.com](https://admin.duosecurity.com)
-2. Navigate to **Applications > Protect an Application**
-3. Search for **Microsoft ADFS** and click **Protect**
-4. Record the **Client ID**, **Client Secret**, and **API Hostname**
-5. Under the **User access** section, select **Enable for all users** (or configure per your access policy)
+### Prerequisites
 
-### 6.2 Install the Adapter
+* A Duo tenant (Essentials, Advantage, or Premier) with a [Microsoft ADFS application](https://duo.com/docs/adfs) protected in the Duo Admin Panel. Record the Client ID (starts with `DI`), Client Secret, and API Hostname (`api-xxxxxxxx.duosecurity.com`).
+* Outbound TCP 443 from the ADFS server to `*.duosecurity.com`.
+* Every user who will authenticate through ADFS must be pre-enrolled in Duo with a username matching the AD `samAccountName` (or `CORP\samAccountName`, depending on the adapter's `UseUpnUsername` setting) and either an enrolled device or a bypass code. Unknown users are routed to Duo's self-enrollment portal and exit the OIDC flow without returning a token, which looks like a silent failure to the operator.
 
-Download the latest Duo ADFS adapter from [https://dl.duosecurity.com/duo-adfs3-latest.msi](https://dl.duosecurity.com/duo-adfs3-latest.msi) and run it on the ADFS server as an administrator.
+### Install the Adapter
 
-When prompted, provide the Client ID, Client Secret, and API Hostname from the Duo Admin Panel.
+Download the latest Duo ADFS adapter from `https://dl.duosecurity.com/duo-adfs3-latest.msi` and run it on the ADFS server. Provide the Client ID, Client Secret, and API Hostname when prompted.
 
-<Note>
-**Windows Server 2025:** Duo ADFS adapter v2.3.0 or later is required.
-</Note>
+Windows Server 2025 requires adapter v2.3.0 or later.
 
-<Note>
-**Fail-closed recommendation:** For production deployments, leave **"Bypass Duo authentication when offline"** unchecked. If the ADFS server cannot reach Duo's cloud, authentication should fail rather than bypass MFA. The trade-off is that legitimate users will also be locked out during a Duo outage.
-</Note>
+For silent installs, pass both the v2.4+ property names and the legacy ones:
 
-<Note>
-**Outbound connectivity requirement:** The ADFS server must be able to reach `*.duosecurity.com` on TCP 443. Ensure your egress firewall rules permit this. The Duo adapter does not function without cloud connectivity.
-</Note>
+```cmd
+msiexec /i duo-adfs3-latest.msi /qn /L*v duo_msi.log ^
+  DUO_CLIENT_ID=<ikey> DUO_CLIENT_SECRET=<skey> ^
+  DUO_API_HOSTNAME=<api-hostname> DUO_FAIL_OPEN=false ^
+  IKEY=<ikey> SKEY=<skey> HOST=<api-hostname> FAILOPEN=0
+```
 
-### 6.3 Enable Duo in ADFS Authentication Methods
+After install, verify the registry values are populated:
 
-1. Open **AD FS Management** on the ADFS server
-2. Navigate to **Service > Authentication Methods**
-3. Click **Edit** under "Multi-factor Authentication Methods"
-4. On the **Additional** tab, check **Duo Authentication for AD FS**
-5. Click **OK**
+```powershell
+Get-ItemProperty 'HKLM:\Software\Duo Security\DuoAdfs' |
+  Select Client_Id, Host, FailOpen, DuoVersion
+```
 
-### 6.4 Configure an MFA Policy
+If `Host` is empty the silent install partially failed. Set it manually and re-run Duo's registration script:
 
-To require MFA for all logins:
+```powershell
+Set-ItemProperty 'HKLM:\Software\Duo Security\DuoAdfs' -Name Host -Value '<api-hostname>'
+& 'C:\Program Files\Duo Security\DuoAdfs\RegisterAdfsPshell.ps1' -productVersion '2.4.1.0'
+```
+
+### Fail Closed in High-Security Environments
+
+In OT, SCADA, and similar high-security environments, set **Bypass Duo authentication when offline** to **unchecked** (fail closed). If ADFS cannot reach Duo's cloud, authentication should fail rather than bypass MFA. The risk of unauthenticated access to restricted network segments outweighs the inconvenience of a temporary lockout during a Duo outage.
+
+### Enable Duo in ADFS Authentication Methods
+
+```powershell
+$current = (Get-AdfsGlobalAuthenticationPolicy).AdditionalAuthenticationProvider
+Set-AdfsGlobalAuthenticationPolicy -AdditionalAuthenticationProvider ($current + 'DuoAdfsAdapter')
+```
+
+The provider's PowerShell `Name` is `DuoAdfsAdapter` (no spaces), even though the GUI label reads "Duo Authentication for AD FS". Using the GUI label in `Set-AdfsGlobalAuthenticationPolicy` returns `PS0208: Authentication provider name '...' does not correspond to a valid authentication provider`.
+
+### MFA Policy
+
+To require MFA for all logins (intranet and extranet):
 
 ```powershell
 Set-AdfsAdditionalAuthenticationRule `
   -AdditionalAuthenticationRules '=> issue(Type = "http://schemas.microsoft.com/ws/2008/06/identity/claims/authenticationmethod", Value = "http://schemas.microsoft.com/claims/multipleauthn");'
 ```
 
-For more granular policies (for example, MFA only for extranet access, specific groups, or specific relying parties), refer to the [Microsoft AD FS MFA documentation](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/operations/configure-additional-authentication-methods-for-ad-fs) and the [Duo AD FS advanced configuration guide](https://duo.com/docs/adfs).
+To require MFA only for external access (through WAP), leaving direct intranet sessions unchallenged:
 
-<Note>
-ADFS can differentiate between requests originating from the corporate network (via direct access) and requests coming from the internet (via the WAP). This allows you to enforce MFA only for external access while allowing internal users to authenticate without a second factor. This is configured through AD FS access control policies.
-</Note>
+```powershell
+Set-AdfsAdditionalAuthenticationRule `
+  -AdditionalAuthenticationRules 'c:[Type == "http://schemas.microsoft.com/2012/01/requestcontext/claims/x-ms-proxy"] => issue(Type = "http://schemas.microsoft.com/ws/2008/06/identity/claims/authenticationmethod", Value = "http://schemas.microsoft.com/claims/multipleauthn");'
+```
 
-### 6.5 Test the MFA Flow
+For more granular policies (specific groups, specific relying parties), see the [Microsoft AD FS MFA documentation](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/operations/configure-additional-authentication-methods-for-ad-fs) and the [Duo AD FS Advanced Configuration Guide](https://duo.com/docs/adfs).
 
-Enable the IdP-initiated sign-on page for testing:
+### Test the MFA Flow
+
+Temporarily enable the IdP-initiated sign-on page for testing:
 
 ```powershell
 Set-AdfsProperties -EnableIdPInitiatedSignOnPage $true
 ```
 
-From an external machine, navigate to `https://adfs.example.com/adfs/ls/idpinitiatedsignon`, sign in with an AD account, and verify that the Duo MFA prompt appears and completes successfully. This traffic should route through the WAP.
+From an external machine, browse to `https://<ADFS_FQDN>/adfs/ls/idpinitiatedsignon`. Sign in with an AD account and confirm the Duo prompt appears and completes.
 
----
-
-## Step 7: Complete NetBird Configuration
-
-### 7.1 Finish Adding the Identity Provider
-
-Return to the NetBird Dashboard tab you opened in [Step 2.3](#2-3-get-the-redirect-url-from-net-bird):
-
-1. Replace the placeholder **Client Secret** field with the secret generated in [Step 2.4](#2-4-add-a-server-application-confidential-client)
-2. Verify the other values:
-
-   | Field | Value |
-   | --- | --- |
-   | Type | Generic OIDC |
-   | Name | `ADFS` (or your chosen display name) |
-   | Client ID | The GUID from [Step 2.1](#2-1-generate-a-client-id) |
-   | Client Secret | From [Step 2.4](#2-4-add-a-server-application-confidential-client) |
-   | Issuer | `https://<ADFS_FQDN>/adfs` |
-
-3. Click **Save**
-
-### 7.2 Verify the Redirect URI
-
-If you misplace the Redirect URL later, you can list the URIs currently registered on the ADFS Server Application:
+Disable the page again when done. The IdP-initiated sign-on endpoint is a known phishing and credential-harvesting surface in production:
 
 ```powershell
-Get-AdfsServerApplication -Name "NetBird - Server App" | Select-Object -ExpandProperty RedirectUri
+Set-AdfsProperties -EnableIdPInitiatedSignOnPage $false
 ```
 
-To update them (for example, if NetBird regenerates the URL after reconfiguration):
+### Troubleshooting: Duo
 
-```powershell
-Set-AdfsServerApplication `
-  -TargetName "NetBird - Server App" `
-  -RedirectUri @("<REDIRECT_URL_FROM_NETBIRD>")
-```
-
-### 7.3 Enable JWT Group Sync
-
-To synchronize AD group memberships into NetBird for use in access control policies:
-
-1. In the NetBird Dashboard, navigate to **Settings > Groups**
-2. Toggle **Enable JWT group sync**
-3. Set the JWT claim name to `groups`
-
-Groups appear in NetBird using the short names from the token (for example, `NetBird-Users`), filtered by the regex in your "Filter Group Membership" claim rule. Only groups matching the filter will appear in NetBird. Groups are synced at login time — when a user authenticates, their current group memberships are read from the token.
-
-<Note>
-Groups with matching names in NetBird and ADFS will **not** sync. To import a group from ADFS, first delete the existing group with that name in NetBird.
-</Note>
-
-### 7.4 TLS Verification
-
-The NetBird management server must trust the TLS certificate on the ADFS/WAP endpoint. If you are using a certificate from a public CA, this works automatically. If you are using an internal CA, add the CA certificate to the trust store on the NetBird server.
-
-Verify from the NetBird server:
-
-```bash
-curl -s https://<ADFS_FQDN>/adfs/.well-known/openid-configuration | jq .
-```
-
-This request routes through the WAP and should return the OIDC discovery document with no TLS errors.
-
-### 7.5 Test the Login
-
-1. Log out of the NetBird Dashboard
-2. On the login page, click the **ADFS** button
-3. You are redirected to ADFS (through the WAP)
-4. Sign in with AD credentials (and complete the Duo MFA challenge if you configured it in [Step 6](#step-6-install-and-configure-the-duo-adfs-mfa-adapter))
-5. Confirm you are redirected back to the NetBird Dashboard as the authenticated user
-6. Verify the user's display name, email, and group memberships appear correctly
-
----
-
-## Verification
-
-### Test the ADFS OIDC Endpoint (through WAP)
-
-From an external machine:
-
-```
-https://<ADFS_FQDN>/adfs/.well-known/openid-configuration
-```
-
-Confirm the response includes `issuer`, `authorization_endpoint`, `token_endpoint`, and `jwks_uri`.
-
-### Test the Duo MFA Flow (through WAP)
-
-If you configured Duo in [Step 6](#step-6-install-and-configure-the-duo-adfs-mfa-adapter), navigate to `https://<ADFS_FQDN>/adfs/ls/idpinitiatedsignon` from an external machine. Sign in with an AD account and verify that the Duo MFA prompt appears.
-
-### Test the Full NetBird Login
-
-1. Open the NetBird dashboard
-2. The login page should redirect to ADFS (through the WAP)
-3. Enter AD credentials
-4. Complete the Duo MFA challenge (if Duo was configured)
-5. Confirm you are redirected back to the NetBird dashboard as the authenticated user
-6. Verify the user's display name, email, and group memberships appear correctly
-
----
-
-## Troubleshooting
-
-### Login returns a 400 error on token exchange
-
-The ADFS application is most likely configured as a Native Application (public client) instead of a Server Application (confidential client). NetBird's Dashboard IdP flow sends a `client_secret` during token exchange, which ADFS will reject if the app was created with `Add-AdfsNativeClientApplication`. Delete the Native Application and recreate it using `Add-AdfsServerApplication` per [Step 2.4](#2-4-add-a-server-application-confidential-client), then re-grant permissions per [Step 2.6](#2-6-grant-oidc-permissions). Also verify the client secret pasted into NetBird matches the one generated in ADFS.
-
-### Dashboard login silently fails with no error
-
-CORS is not configured on ADFS. The browser is blocking the cross-origin token response. Run the commands in [Step 4](#step-4-enable-cors).
-
-### "Access denied: Your Duo account doesn't have access to this application"
-
-In the Duo Admin Panel, open the Microsoft ADFS application and set User access to "Enable for all users", or add the relevant Duo groups.
-
-### Users appear without a name or email in NetBird
-
-Verify that the AD user objects have `displayName`, `givenName`, `sn`, and `mail` attributes populated, and that the LDAP and Display Name claim rules from [Step 3](#step-3-configure-claim-transform-rules) are attached to the Web API. Decode a fresh id\_token with a JWT inspector to confirm `email`, `name`, `given_name`, and `family_name` are present.
-
-### User display name shows as "CORP" or an array instead of the real name
-
-The ADFS `name` claim contains two values: one from the implicit Windows account name and one from your LDAP rule. Reconfigure the claim rules per [Step 3](#step-3-configure-claim-transform-rules), using a dedicated rule (Rule 2) that emits `displayName` with the short claim type `"name"` instead of the schema URI.
-
-### NetBird API returns 404 for user operations
-
-The ADFS `sub` claim contains base64 characters (`/`, `+`, `=`) that break URL path routing. Two fixes work together:
-
-1. Verify that the "Override sub claim" rule (Rule 5 in [Step 3](#step-3-configure-claim-transform-rules)) is active on the Web API.
-2. Set `NETBIRD_AUTH_USER_ID_CLAIM="upn"` in NetBird's `setup.env` so NetBird uses the UPN claim directly.
-
-If both are in place and the error persists, decode a fresh id\_token and confirm the `sub` value is now the UPN (for example, `alice@example.com`) rather than a base64 string.
-
-### Redirect URI mismatch errors
-
-The redirect URI in the ADFS Server Application must exactly match the one NetBird displays in **Settings > Identity Providers**. Check the `redirect_uri` parameter in the browser's network tab during a login attempt and compare it to the ADFS configuration. Update with `Set-AdfsServerApplication -TargetName "NetBird - Server App" -RedirectUri @("<REDIRECT_URL_FROM_NETBIRD>")` if they differ.
-
-### WAP cannot connect to ADFS
-
-Verify that TCP 443 is open from WAP to ADFS through the internal firewall, that the WAP can resolve the ADFS service name to the ADFS server's internal IP, and that the TLS certificate on the WAP matches the one on the ADFS server (same thumbprint). Run `Get-WebApplicationProxyHealth` on the WAP to diagnose.
-
-### OIDC discovery endpoint unreachable from the ADFS server itself
-
-If the ADFS server resolves its own FQDN to an external IP, loopback traffic may fail depending on your network configuration. Add a hosts file entry mapping the ADFS FQDN to `127.0.0.1` on the ADFS server, then run `ipconfig /flushdns`.
-
----
-
-## Reference: Configuration Summary
-
-### ADFS Configuration
-
-| Component | Type | Name |
-| --- | --- | --- |
-| Application Group | - | NetBird |
-| Server Application | Confidential client (client secret) | NetBird - Server App |
-| Web API | Resource | NetBird - Web API |
-| Claim Rules | Issuance Transform | Send LDAP Attributes, Send Display Name, Query Group Membership, Filter Group Membership, Send UPN, Override sub claim |
-| CORS | Trusted Origin | `https://<NETBIRD_DOMAIN>` |
-| MFA (optional) | Additional Authentication | Duo Authentication for AD FS |
-
-### NetBird Identity Provider Values
-
-Entered in **Settings > Identity Providers > Add Identity Provider** in the NetBird Dashboard.
-
-| Field | Value |
-| --- | --- |
-| Type | Generic OIDC |
-| Name | `ADFS` (display name on the login page) |
-| Issuer | `https://<ADFS_FQDN>/adfs` |
-| Client ID | The GUID generated in [Step 2.1](#2-1-generate-a-client-id) |
-| Client Secret | Generated by `Add-AdfsServerApplication` in [Step 2.4](#2-4-add-a-server-application-confidential-client) |
-| Redirect URL | Generated by NetBird; registered in ADFS in [Step 2.4](#2-4-add-a-server-application-confidential-client) |
-
----
-
-## Related Resources
-
-- [Microsoft AD FS documentation](https://learn.microsoft.com/en-us/windows-server/identity/active-directory-federation-services)
-- [Microsoft Web Application Proxy documentation](https://learn.microsoft.com/en-us/windows-server/remote/remote-access/web-application-proxy/web-application-proxy-in-windows-server)
-- [Duo AD FS documentation](https://duo.com/docs/adfs)
-- [NetBird Generic OIDC reference](/selfhosted/identity-providers/generic-oidc)
+* **"Access denied: Your Duo account doesn't have access to this application":** In the Duo Admin Panel, open the Microsoft ADFS application and set User access to "Enable for all users" or add the relevant Duo groups.
+* **User lands back at the relying party with no token after sign-in:** The user was not pre-enrolled in Duo and was sent to `/v4/enroll`, which exits the OIDC flow without completing MFA. Pre-create the user in Duo Admin Panel > Users with a username matching the AD `samAccountName`.
+* **Adapter fails to contact Duo:** Confirm outbound TCP 443 from ADFS to `*.duosecurity.com`.
