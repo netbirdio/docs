@@ -34,7 +34,9 @@ At least two AD security groups with a shared naming prefix (for example `NetBir
 
 A dedicated, domain-joined member server (not the Domain Controller) with the ADFS role installed and the federation farm configured. See [Deploying a Federation Server Farm](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/deployment/deploying-a-federation-server-farm).
 
-> **Important: RSA-keyed TLS certificate.** ADFS does not accept ECDSA certificates for the Service Communications role. `Install-AdfsFarm` will reject them with a misleading `ID8025` error. Many ACME clients (Let's Encrypt, certbot, acme.sh) now default to ECDSA. Force RSA at issuance time (for example `certbot --key-type rsa --rsa-key-size 2048`).
+<Note>
+**RSA-keyed TLS certificate required.** ADFS does not accept ECDSA certificates for the Service Communications role. `Install-AdfsFarm` will reject them with a misleading `ID8025` error. Many ACME clients (Let's Encrypt, certbot, acme.sh) now default to ECDSA. Force RSA at issuance time (for example `certbot --key-type rsa --rsa-key-size 2048`).
+</Note>
 
 ### Web Application Proxy
 
@@ -55,45 +57,34 @@ A deployed NetBird self-hosted instance with the embedded IdP enabled and the da
 ## Architecture
 
 ```
-                            INTERNET
-                                |
-                         [   Firewall   ]
-                                |
-     +----------------------------------------------+
-     |                     DMZ                      |
-     |                                              |
-     |  +------------------+  +------------------+  |
-     |  | Web Application  |  | NetBird Mgmt     |  |
-     |  | Proxy (WAP)      |  | + Dex IdP        |  |
-     |  |                  |  |                  |  |
-     |  | TLS 443 inbound  |  | TLS 443 inbound  |  |
-     |  |                  |  | UDP 3478 inbound |  |
-     |  +------------------+  +------------------+  |
-     +----------------------------------------------+
-                                |
-                         [   Firewall   ]
-                                |   TCP 443 (WAP -> ADFS only)
-     +----------------------------------------------+
-     |                Corporate LAN                 |
-     |                                              |
-     |  +------------------+  +------------------+  |
-     |  | ADFS Server      |  | Domain           |  |
-     |  | (member)         |  | Controller       |  |
-     |  |                  |  | (AD DS)          |  |
-     |  +------------------+  +------------------+  |
-     +----------------------------------------------+
-                                |
-                         [   Firewall   ]
-                                |   Outbound only from peers
-                                |   TCP 443 + UDP 3478 to NetBird
-     +----------------------------------------------+
-     |           Restricted / OT Network            |
-     |                                              |
-     |          +-----------------------+           |
-     |          | NetBird peers         |           |
-     |          | (no inbound ports)    |           |
-     |          +-----------------------+           |
-     +----------------------------------------------+
+   +------------------------------------------------+
+   |                      DMZ                       |       Inbound (Internet -> DMZ):
+   |                                                |         TCP 443      -> WAP
+   |  +------------------+    +------------------+  |         TCP 80, 443  -> NetBird Mgmt
+   |  | Web Application  | <--| NetBird Mgmt     |  |         UDP 3478     -> NetBird Mgmt
+   |  | Proxy (WAP)      |    | + Dex IdP        |  |
+   |  +------------------+    +------------------+  |       +---------------+
+   |          OIDC back-channel (intra-DMZ):        | <---- |               |
+   |          Dex -> WAP -> ADFS                    |       |   INTERNET    |
+   |          (discovery, token exchange, JWKS)     |       |               |
+   +-------------------+----------------------------+       +-------+-------+
+                       |                                            ^
+                [   Firewall   ]                                    |
+                TCP 443 (WAP -> ADFS only)                          |  Egress (OT -> Internet):
+                       |                                            |    TCP 443    -> NetBird Mgmt
+                       v                                            |    UDP 3478   -> NetBird Mgmt
+   +--------------------------------------+                         |    (to public FQDN; re-enters
+   |             Corporate LAN            |                         |     via the inbound rules above)
+   |                                      |                         |
+   |  +--------------+  +--------------+  |              +----------+-------------+
+   |  | ADFS Server  |  | Domain       |  |              |    Restricted / OT     |
+   |  | (member)     |  | Controller   |  |              |                        |
+   |  |              |  | (AD DS)      |  |              |  +------------------+  |
+   |  +--------------+  +--------------+  |              |  | NetBird peers    |  |
+   +--------------------------------------+              |  | (no inbound      |  |
+                                                         |  |  ports)          |  |
+                                                         |  +------------------+  |
+                                                         +------------------------+
 ```
 
 External authentication requests terminate at WAP in the DMZ and are proxied to ADFS on the corporate LAN. The NetBird management server runs an embedded IdP (Dex) that brokers the OIDC flow with ADFS: the user's browser is redirected through Dex to ADFS for sign-in, and Dex performs the server-to-server token exchange with ADFS on the back end. The ADFS server is never directly reachable from the internet. NetBird peers in restricted or OT segments make only outbound connections to the NetBird management and relay services; no inbound ports are opened on peer networks. This follows [Microsoft's recommended ADFS deployment topology](https://learn.microsoft.com/en-us/windows-server/identity/ad-fs/deployment/best-practices-securing-ad-fs) and NetBird's default peer model.
@@ -276,7 +267,9 @@ To synchronize AD group memberships into NetBird for use in access control polic
 
 After enabling, log out and back in. Group membership is read from the token at authentication time, so changes do not apply until the next login.
 
-> **Known limitation: single-group users.** ADFS's OIDC endpoint serializes a claim as a bare JSON string when only one claim of that type is issued (`"groups": "NetBird-Users"`), and as a JSON array when two or more fire (`"groups": ["NetBird-Users", "NetBird-Admins"]`). Some downstream parsers only handle the array form. Ensure every user whose access you want policy-gated belongs to at least two groups matching your "Filter Group Membership" regex.
+<Note>
+**Known limitation: single-group users.** ADFS's OIDC endpoint serializes a claim as a bare JSON string when only one claim of that type is issued (`"groups": "NetBird-Users"`), and as a JSON array when two or more fire (`"groups": ["NetBird-Users", "NetBird-Admins"]`). Some downstream parsers only handle the array form. Ensure every user whose access you want policy-gated belongs to at least two groups matching your "Filter Group Membership" regex.
+</Note>
 
 ---
 

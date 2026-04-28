@@ -476,7 +476,10 @@ export const docsNavigation = [
             isOpen: true,
             links: [
               { title: 'Operator', href: '/manage/integrations/kubernetes' },
-              { title: 'Gateway API beta', href: '/manage/integrations/kubernetes/gateway-api-beta' },
+              {
+                title: 'Gateway API beta',
+                href: '/manage/integrations/kubernetes/gateway-api-beta',
+              },
             ],
           },
         ],
@@ -605,7 +608,7 @@ export const docsNavigation = [
                 href: '/selfhosted/identity-providers/pocketid',
               },
               {
-                title: 'ADFS',
+                title: 'AD FS',
                 href: '/selfhosted/identity-providers/adfs',
               },
             ],
@@ -842,7 +845,8 @@ function NavigationGroup({ group, className, hasChildren }) {
         onClick={() => {
           setIsOpen(!isOpen)
           if (!isOpen) {
-            if (!isActiveGroup && group.links[0]?.href) router.push(group.links[0].href)
+            if (!isActiveGroup && group.links[0]?.href)
+              router.push(group.links[0].href)
             setActiveHighlight()
           } else {
             setActiveHighlight(group.title)
