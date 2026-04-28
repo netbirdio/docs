@@ -1,0 +1,316 @@
+import {Note, Warning} from "@/components/mdx";
+
+# Building a CLI-Only .pkg for macOS MDM Deployment
+
+When deploying NetBird across a fleet of macOS devices using an MDM solution (Jamf Pro, Kandji, Munki, etc.), you may want a headless, CLI-only installation without the desktop UI. The official `.pkg` from [pkgs.netbird.io](https://pkgs.netbird.io) bundles the full NetBird.app, which includes the menu bar UI. This guide shows you how to build a custom `.pkg` that installs only the `netbird` CLI binary and registers it as a launchd daemon.
+
+This approach is useful when:
+
+* You are deploying to headless servers or CI/CD runners that have no user session
+* You want to minimize the footprint on managed endpoints
+* Your MDM workflow requires a `.pkg` artifact (rather than a raw binary or install script)
+* You need to control exactly which version is deployed across your fleet
+
+## Prerequisites
+
+* A Mac with `pkgbuild` available (included with Xcode Command Line Tools)
+* Access to your MDM solution with permissions to upload packages and create deployment policies
+* A NetBird [setup key](/manage/peers/register-machines-using-setup-keys) for initial enrollment (reusable keys are recommended for fleet deployments)
+
+## How the CLI-only install works
+
+The standard NetBird `.pkg` installer places `NetBird.app` into `/Applications` and symlinks the binary to `/usr/local/bin/netbird`. A CLI-only install skips the app bundle entirely and places the `netbird` binary directly in `/usr/local/bin/`.
+
+When you run `netbird service install`, it creates a launchd daemon plist at `/Library/LaunchDaemons/netbird.plist`. The service runs as root, which is required for creating and managing the WireGuard network interface (`utun` device).
+
+<Note>
+    The NetBird daemon stores its configuration in `/var/lib/netbird/` by default. Once a peer is enrolled (via SSO or setup key), the configuration persists across reinstalls. Subsequent package updates only need to restart the service — no re-enrollment is required.
+</Note>
+
+## Step 1: Download the CLI binary
+
+Download the appropriate tarball from the [NetBird GitHub releases](https://github.com/netbirdio/netbird/releases/latest) page. Each release publishes architecture-specific and universal macOS binaries:
+
+```bash
+# Set the version you want to deploy
+VERSION="0.36.5"
+
+# Universal binary (recommended — works on both Intel and Apple Silicon):
+curl -L -o netbird.tar.gz \
+  "https://github.com/netbirdio/netbird/releases/download/v${VERSION}/netbird_${VERSION}_darwin_all.tar.gz"
+
+# Or architecture-specific:
+# Apple Silicon: netbird_${VERSION}_darwin_arm64.tar.gz
+# Intel: netbird_${VERSION}_darwin_amd64.tar.gz
+```
+
+Extract the binary:
+
+```bash
+mkdir -p pkg-root/usr/local/bin
+tar xzf netbird.tar.gz -C pkg-root/usr/local/bin netbird
+chmod +x pkg-root/usr/local/bin/netbird
+```
+
+## Step 2: Create install scripts
+
+Create a `scripts/` directory with preinstall and postinstall scripts. These handle stopping any existing service before the upgrade and starting it after.
+
+```bash
+mkdir -p scripts
+```
+
+### Preinstall script
+
+The preinstall script stops any running NetBird service to allow the binary to be replaced cleanly:
+
+```bash
+cat > scripts/preinstall << 'PREINSTALL'
+#!/bin/sh
+
+LOG_FILE=/var/log/netbird/client_pre_install.log
+AGENT=/usr/local/bin/netbird
+
+mkdir -p /var/log/netbird/
+
+{
+    echo "=== NetBird CLI preinstall: $(date) ==="
+
+    # Check if netbird was installed with Homebrew
+    if command -v brew >/dev/null 2>&1; then
+        if brew list --formula 2>/dev/null | grep -q netbird; then
+            echo "NetBird was installed with Homebrew. Please use Homebrew to manage the package."
+            exit 1
+        fi
+    fi
+
+    # Stop the running service if it exists
+    if [ -f "$AGENT" ]; then
+        $AGENT service stop 2>/dev/null || true
+    fi
+
+    echo "Preinstall complete"
+    exit 0
+} >> "$LOG_FILE" 2>&1
+PREINSTALL
+
+chmod +x scripts/preinstall
+```
+
+### Postinstall script
+
+The postinstall script installs the launchd daemon service and optionally enrolls the peer with a setup key on first install:
+
+```bash
+cat > scripts/postinstall << 'POSTINSTALL'
+#!/bin/sh
+
+LOG_FILE=/var/log/netbird/client_post_install.log
+AGENT=/usr/local/bin/netbird
+
+mkdir -p /var/log/netbird/
+
+{
+    echo "=== NetBird CLI postinstall: $(date) ==="
+
+    # Install and start the daemon service
+    $AGENT service install 2>/dev/null || true
+    $AGENT service start || {
+        echo "ERROR: Failed to start NetBird service"
+        exit 1
+    }
+
+    # Enroll the peer if not already configured.
+    # The config file exists once the peer has been enrolled at least once.
+    CONFIG_FILE="/var/lib/netbird/config.json"
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "First install detected — enrolling with setup key"
+        # Replace YOUR_SETUP_KEY with your actual reusable setup key.
+        # For self-hosted deployments, add: --management-url https://your-management.example.com
+        $AGENT up --setup-key YOUR_SETUP_KEY
+    else
+        echo "Existing configuration found — skipping enrollment"
+    fi
+
+    echo "Postinstall complete"
+    exit 0
+} >> "$LOG_FILE" 2>&1
+POSTINSTALL
+
+chmod +x scripts/postinstall
+```
+
+<Warning>
+    Replace `YOUR_SETUP_KEY` with an actual [reusable setup key](/manage/peers/register-machines-using-setup-keys) from your NetBird dashboard. For self-hosted deployments, also add the `--management-url` flag. Do not commit setup keys to version control — consider injecting them at build time via your CI/CD pipeline or MDM variables.
+</Warning>
+
+<Note>
+    On subsequent installs (updates), the postinstall script detects the existing configuration and skips enrollment. It only restarts the service so the new binary takes effect.
+</Note>
+
+## Step 3: Build the .pkg
+
+Use `pkgbuild` to assemble the payload and scripts into a signed installer package:
+
+```bash
+pkgbuild \
+  --root pkg-root \
+  --scripts scripts \
+  --identifier com.your-org.netbird-cli \
+  --version "${VERSION}" \
+  --install-location / \
+  netbird-cli-${VERSION}.pkg
+```
+
+<Warning>
+    Use a custom package identifier (e.g., `com.your-org.netbird-cli`) rather than `io.netbird.client`. The official identifier is used by the NetBird auto-updater to detect managed installs. Using it for your custom package could cause conflicts if the auto-updater is enabled on your NetBird dashboard.
+</Warning>
+
+To sign the package for distribution (recommended for MDM deployment), add the `--sign` flag with your Developer ID Installer certificate:
+
+```bash
+pkgbuild \
+  --root pkg-root \
+  --scripts scripts \
+  --identifier com.your-org.netbird-cli \
+  --version "${VERSION}" \
+  --install-location / \
+  --sign "Developer ID Installer: Your Organization (TEAMID)" \
+  netbird-cli-${VERSION}.pkg
+```
+
+<Note>
+    Signing is optional for local testing but typically required by MDM solutions. You need an [Apple Developer ID Installer certificate](https://developer.apple.com/help/account/create-certificates/create-developer-id-certificates/) to sign packages for distribution outside the App Store.
+</Note>
+
+## Step 4: Deploy via MDM
+
+Upload the `.pkg` to your MDM solution and create a deployment policy. The exact steps vary by platform:
+
+* **Jamf Pro**: Upload the package under `Settings > Computer Management > Packages`, then create a policy with appropriate triggers (enrollment, recurring check-in). See [Deploying NetBird with Jamf Pro](/manage/integrations/mdm-deployment/jamf-pro-netbird-integration) for detailed instructions.
+* **Kandji**: Create a Custom App library item with the `Installer Package` option. See [Deploying NetBird with Kandji](/manage/integrations/mdm-deployment/kandji-netbird-integration) for detailed instructions.
+* **Munki**: Import the `.pkg` into your Munki repository using `munkiimport` and assign it to the appropriate manifest.
+* **Microsoft Intune**: Upload as a macOS LOB app. See [Deploying NetBird with Intune](/manage/integrations/mdm-deployment/intune-netbird-integration) for detailed instructions.
+
+## Managing updates
+
+Because the CLI-only install does not have the `io.netbird.client` package receipt, the NetBird [automatic update](/manage/peers/auto-update) feature does not work for these deployments. You must manage updates through one of these approaches:
+
+### Push updated .pkg via MDM
+
+Build a new `.pkg` with the updated binary (repeating Steps 1-3) and deploy it through your MDM. The preinstall script stops the running service, the new binary replaces the old one, and the postinstall script restarts the service. No re-enrollment is needed.
+
+### Use the install script with UPDATE_NETBIRD
+
+For machines where you can run scripts remotely (via MDM script execution or SSH), use the install script's update mode:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | USE_BIN_INSTALL=true SKIP_UI_APP=true UPDATE_NETBIRD=true sh
+```
+
+This downloads the latest binary, replaces the existing one, and restarts the service.
+
+## Uninstalling
+
+To remove a CLI-only NetBird install:
+
+```bash
+sudo netbird down
+sudo netbird service stop
+sudo netbird service uninstall
+sudo rm /usr/local/bin/netbird
+sudo rm -rf /var/lib/netbird/
+sudo rm -rf /var/log/netbird/
+```
+
+You can wrap this in an MDM uninstall script or a preinstall script for a removal package.
+
+## Complete build script
+
+For convenience, here is a self-contained script that builds the CLI-only `.pkg`. Save it as `build-netbird-cli-pkg.sh` and run it with the desired version and setup key:
+
+```bash
+#!/bin/sh
+# Usage: ./build-netbird-cli-pkg.sh <VERSION> <SETUP_KEY> [MANAGEMENT_URL]
+# Example: ./build-netbird-cli-pkg.sh 0.36.5 A1B2C3D4-E5F6-7890-ABCD-EF1234567890
+
+set -e
+
+VERSION="${1:?Usage: $0 <VERSION> <SETUP_KEY> [MANAGEMENT_URL]}"
+SETUP_KEY="${2:?Usage: $0 <VERSION> <SETUP_KEY> [MANAGEMENT_URL]}"
+MANAGEMENT_URL="${3:-}"
+PKG_ID="com.your-org.netbird-cli"
+WORK_DIR=$(mktemp -d)
+
+echo "Building NetBird CLI .pkg v${VERSION}..."
+
+# Download and extract
+curl -fSL -o "${WORK_DIR}/netbird.tar.gz" \
+  "https://github.com/netbirdio/netbird/releases/download/v${VERSION}/netbird_${VERSION}_darwin_all.tar.gz"
+mkdir -p "${WORK_DIR}/root/usr/local/bin"
+tar xzf "${WORK_DIR}/netbird.tar.gz" -C "${WORK_DIR}/root/usr/local/bin" netbird
+chmod +x "${WORK_DIR}/root/usr/local/bin/netbird"
+
+# Build management URL flag
+MGMT_FLAG=""
+if [ -n "$MANAGEMENT_URL" ]; then
+  MGMT_FLAG="--management-url ${MANAGEMENT_URL}"
+fi
+
+# Create scripts
+mkdir -p "${WORK_DIR}/scripts"
+
+cat > "${WORK_DIR}/scripts/preinstall" << 'EOF'
+#!/bin/sh
+AGENT=/usr/local/bin/netbird
+mkdir -p /var/log/netbird/
+{
+    echo "=== NetBird CLI preinstall: $(date) ==="
+    if command -v brew >/dev/null 2>&1; then
+        if brew list --formula 2>/dev/null | grep -q netbird; then
+            echo "NetBird installed via Homebrew. Aborting."
+            exit 1
+        fi
+    fi
+    [ -f "$AGENT" ] && $AGENT service stop 2>/dev/null || true
+    echo "Preinstall complete"
+    exit 0
+} >> /var/log/netbird/client_pre_install.log 2>&1
+EOF
+
+cat > "${WORK_DIR}/scripts/postinstall" << EOF
+#!/bin/sh
+AGENT=/usr/local/bin/netbird
+mkdir -p /var/log/netbird/
+{
+    echo "=== NetBird CLI postinstall: \$(date) ==="
+    \$AGENT service install 2>/dev/null || true
+    \$AGENT service start || { echo "ERROR: Failed to start service"; exit 1; }
+    if [ ! -f "/var/lib/netbird/config.json" ]; then
+        echo "First install — enrolling with setup key"
+        \$AGENT up --setup-key ${SETUP_KEY} ${MGMT_FLAG}
+    else
+        echo "Existing config found — skipping enrollment"
+    fi
+    echo "Postinstall complete"
+    exit 0
+} >> /var/log/netbird/client_post_install.log 2>&1
+EOF
+
+chmod +x "${WORK_DIR}/scripts/preinstall" "${WORK_DIR}/scripts/postinstall"
+
+# Build the package
+pkgbuild \
+  --root "${WORK_DIR}/root" \
+  --scripts "${WORK_DIR}/scripts" \
+  --identifier "${PKG_ID}" \
+  --version "${VERSION}" \
+  --install-location / \
+  "netbird-cli-${VERSION}.pkg"
+
+# Clean up
+rm -rf "${WORK_DIR}"
+
+echo "Built: netbird-cli-${VERSION}.pkg"
+echo "Upload this package to your MDM solution for deployment."
+```

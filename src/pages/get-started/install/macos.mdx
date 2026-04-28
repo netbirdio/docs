@@ -1,4 +1,4 @@
-import {Note} from "@/components/mdx";
+import {Note, Warning} from "@/components/mdx";
 
 # MacOS Installation
 
@@ -9,6 +9,8 @@ The NetBird client (agent) allows a peer to join a pre-existing NetBird deployme
 ```bash
 curl -fsSL https://pkgs.netbird.io/install.sh | sh
 ```
+
+This installs the full NetBird application, including the desktop UI and the daemon service.
 
 ### Package install
 
@@ -47,41 +49,62 @@ brew unlink netbird
   sudo netbird service start
 ```
 
-### Binary Install
-**Installation from binary (CLI only)**
+### CLI-only install (binary)
+
+If you need only the CLI client without the desktop UI — for example, on headless servers or for MDM/fleet deployments — you can install the standalone binary directly.
+
+#### One-command binary install
+
+The install script supports a binary-only mode that downloads the tarball, extracts the `netbird` binary to `/usr/local/bin/`, and registers the launchd daemon:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | USE_BIN_INSTALL=true SKIP_UI_APP=true sh
+```
+
+To update an existing binary install, add the `UPDATE_NETBIRD` flag:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | USE_BIN_INSTALL=true SKIP_UI_APP=true UPDATE_NETBIRD=true sh
+```
+
+#### Manual binary install
 
 1. Checkout NetBird [releases](https://github.com/netbirdio/netbird/releases/latest)
-2. Download the latest release:
+2. Download the latest release for macOS:
 ```bash
-  curl -L -o ./netbird_<VERSION>.tar.gz https://github.com/netbirdio/netbird/releases/download/v<VERSION>/netbird_<VERSION>_<OS>_<Arch>.tar.gz
+  # For Apple Silicon (M1, M2, M3, M4):
+  curl -L -o ./netbird.tar.gz https://github.com/netbirdio/netbird/releases/download/v<VERSION>/netbird_<VERSION>_darwin_arm64.tar.gz
+
+  # For Intel:
+  curl -L -o ./netbird.tar.gz https://github.com/netbirdio/netbird/releases/download/v<VERSION>/netbird_<VERSION>_darwin_amd64.tar.gz
+
+  # Universal binary (works on both architectures):
+  curl -L -o ./netbird.tar.gz https://github.com/netbirdio/netbird/releases/download/v<VERSION>/netbird_<VERSION>_darwin_all.tar.gz
 ```
 
 <Note>
-
-    You need to replace some variables from the URL above:
-
-    - Replace **VERSION** with the latest released version.
-    - Replace **OS** with "linux", "darwin" for MacOS or "windows"
-    - Replace **Arch** with your target system CPU architecture
-
+    Replace **VERSION** with the latest released version (e.g., `0.36.5`). You can find version numbers on the [releases page](https://github.com/netbirdio/netbird/releases/latest).
 </Note>
 
-3. Decompress
+3. Extract and install the binary:
 ```bash
-  tar xzf ./netbird_<VERSION>.tar.gz
-  sudo mv netbird /usr/bin/netbird
-  sudo chown root:root /usr/bin/netbird
-  sudo chmod +x /usr/bin/netbird
+  tar xzf ./netbird.tar.gz
+  sudo mv netbird /usr/local/bin/netbird
+  sudo chown root:wheel /usr/local/bin/netbird
+  sudo chmod +x /usr/local/bin/netbird
 ```
-After that you may need to add /usr/bin in your PATH environment variable:
-````bash
-  export PATH=$PATH:/usr/bin
-````
-4. Install and run the service
+4. Install and start the daemon service:
 ```bash
   sudo netbird service install
   sudo netbird service start
 ```
+
+This creates a launchd daemon at `/Library/LaunchDaemons/netbird.plist` that runs as root (required for managing the WireGuard network interface).
+
+<Warning>
+    Automatic updates via the NetBird dashboard do **not** work for binary-only installs. The auto-updater requires the official `.pkg` installer (it checks for the `io.netbird.client` package receipt). For binary installs, you must update manually or push updates through your MDM solution. See [Building a CLI-Only .pkg for MDM Deployment](/manage/integrations/mdm-deployment/macos-cli-pkg-deployment) for a managed approach.
+</Warning>
+
 ## Running NetBird with SSO Login
 ### Desktop UI Application
 If you installed the Desktop UI client, you can launch it and click on Connect.
