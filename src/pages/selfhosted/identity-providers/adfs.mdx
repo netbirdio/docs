@@ -197,35 +197,67 @@ c:[Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccou
    param = c.Value);
 "@
 
-# Rule 3a: Query all group DNs into a temporary claim type via memberOf
-$groupQueryRule = @"
-@RuleName = "Query Group Membership"
-c:[Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname",
+# Rule 3: Query group membership via tokenGroups (CN-only short names),
+# then filter to groups whose name starts with "NetBird-".
+# Adjust the regex to match your naming convention, or remove the filter
+# stage entirely to emit all of the user's groups.
+$groupRule = @"
+@RuleName = "Send Group Membership"
+c1:[Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname",
    Issuer == "AD AUTHORITY"]
 => add(store = "Active Directory",
    types = ("http://temp/groups"),
-   query = ";memberOf;{0}",
-   param = c.Value);
-"@
+   query = ";tokenGroups;{0}",
+   param = c1.Value);
 
-# Rule 3b: Filter group DNs to those whose CN starts with "NetBird-",
-# extract the CN value, and emit as the "groups" claim.
-# Adjust the regex to match your naming convention.
-#
-# In a PowerShell `@"..."@` here-string, `$variable` is interpolated, so the
-# regex anchor and backreference must be backtick-escaped (`` `$ `` and `` `$1 ``).
-# Writing `\$` and `\$1` would store a literal `\` in the rule, the regex would
-# fail to match, and groups would be emitted as full DNs.
-$groupFilterRule = @"
-@RuleName = "Filter Group Membership"
-c:[Type == "http://temp/groups", Value =~ "(?i)^CN=NetBird-"]
-=> issue(Type = "groups", Value = RegExReplace(c.Value, "(?i)^CN=([^,]+),.*`$", "`$1"));
+c2:[Type == "http://temp/groups", Value =~ "(?i)^NetBird-"]
+=> issue(Type = "groups", Value = c2.Value);
 "@
 
 Set-AdfsWebApiApplication `
   -TargetName "NetBird - Web API" `
-  -IssuanceTransformRules ($ldapRule + $nameRule + $groupQueryRule + $groupFilterRule)
+  -IssuanceTransformRules ($ldapRule + $nameRule + $groupRule)
 ```
+
+<Note>
+**Customizing the group filter.** The `(?i)^NetBird-` regex on the second clause of Rule 3 (`c2:[Type == "http://temp/groups", Value =~ "..."]`) is the only line that needs to change to match a different AD naming convention. Common variations:
+
+*Different prefix* — swap `NetBird-` for whatever your AD already uses (`VPN-`, `SEC-`, `App-`):
+
+```
+c2:[Type == "http://temp/groups", Value =~ "(?i)^VPN-"]
+=> issue(Type = "groups", Value = c2.Value);
+```
+
+*Suffix instead of prefix* — for orgs that append the app name (`Engineering-NetBird`, `Finance-NetBird`):
+
+```
+c2:[Type == "http://temp/groups", Value =~ "(?i)-NetBird`$"]
+=> issue(Type = "groups", Value = c2.Value);
+```
+
+The `$` end-of-string anchor must be backtick-escaped (`` `$ ``) inside the PowerShell here-string, otherwise PowerShell tries to interpolate it as a variable and the rule stores a broken regex.
+
+*Multiple prefixes* — alternation, useful when running NetBird alongside legacy ZTNA naming:
+
+```
+c2:[Type == "http://temp/groups", Value =~ "(?i)^(NetBird|ZTNA)-"]
+=> issue(Type = "groups", Value = c2.Value);
+```
+
+*Send all groups (no filter)* — collapse Rule 3 to a single-stage rule that issues directly from `tokenGroups`:
+
+```
+c1:[Type == "http://schemas.microsoft.com/ws/2008/06/identity/claims/windowsaccountname",
+   Issuer == "AD AUTHORITY"]
+=> issue(store = "Active Directory",
+   types = ("groups"),
+   query = ";tokenGroups;{0}",
+   param = c1.Value);
+```
+
+This emits every group the user belongs to. In larger tenants the resulting JWT can exceed default reverse-proxy header size limits, so prefer a filter unless you've sized the deployment for it.
+</Note>
 
 A note on Rule 2: it emits via the short claim type `"name"` (registered in Step 1.5). Standard ADFS auto-emits `unique_name` from `windowsaccountname`, not `name`, so there is no array-of-two collision to defend against. The collision only appears if you extend Rule 1 to also emit `http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name`, which would put two values into a single `name` claim.
 
@@ -306,11 +338,11 @@ If empty, set it with `Set-ADUser -Identity <samAccountName> -DisplayName "<Full
 
 ### Login fails with `error=server_error&error_description=MSIS9604`
 
-ADFS cannot reach the AD Global Catalog. Confirm TCP 3268 is open from the ADFS server to the Domain Controller. The `Query Group Membership` rule uses a Global Catalog lookup to resolve group DNs.
+ADFS cannot reach the AD Global Catalog. Confirm TCP 3268 is open from the ADFS server to the Domain Controller. The `Send Group Membership` rule resolves the user's `tokenGroups` via a Global Catalog lookup.
 
 ### Group sync shows zero groups for a user
 
-Either the `groups` claim description was never registered (rerun the `groups` registration in Step 1.5), or the user belongs to no groups matching the filter regex in Rule 3b.
+Either the `groups` claim description was never registered (rerun the `groups` registration in Step 1.5), or the user belongs to no groups matching the filter regex in Rule 3.
 
 ### NetBird management container cannot reach ADFS at startup
 
