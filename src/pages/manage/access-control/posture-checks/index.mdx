@@ -43,13 +43,14 @@ This posture check lets you precisely control network access by specifying which
 
 The check evaluates a peer against two sources of address information:
 
-- **The peer's local network interfaces** — the IP ranges configured on the device's NICs (e.g. the office LAN `192.168.1.0/24` the device is plugged into).
-- **The peer's public connection IP** — the source IP the NetBird management server observes when the peer connects (i.e. the egress / NAT'd IP). This is matched as a single host, so use a `/32` for IPv4 or a `/128` for IPv6.
+- **The peer's local network interfaces** — the IP addresses configured on the device's NICs (e.g. the office LAN `192.168.1.0/24` the device is plugged into).
+- **The peer's public connection IP** — the source IP the NetBird management server observes when the peer connects (i.e. the egress / NAT'd IP).
 
-Both IPv4 and IPv6 ranges are supported. A few examples:
+A configured range matches when it contains any of these addresses, so the same check covers both private subnets and public CIDRs. Both IPv4 and IPv6 are supported. A few examples:
 
 - Block a single office public IPv4: `203.0.113.10/32`
-- Block an entire IPv4 network: `192.168.1.0/24`
+- Allow a public ISP/office block: `1.0.0.0/24` or `3.0.0.0/23`
+- Block an entire private network: `192.168.1.0/24`
 - Block a single IPv6 host: `2001:db8::1/128`
 - Block an IPv6 prefix: `2001:db8::/48`
 
@@ -120,7 +121,9 @@ Following these steps, you can effectively implement and manage NetBird's Postur
 
 ### Peer Network Range Check on Mobile Platforms
 
-The Peer Network Range posture check is not supported on iOS and Android clients. These operating systems do not allow applications to fetch local IP information, which prevents the posture check from evaluating the device's network range.
+iOS and Android do not allow applications to enumerate the device's local network interfaces, so ranges intended to match a peer's **local NIC IPs** (e.g. an office LAN like `192.168.1.0/24`) cannot be evaluated on those platforms.
+
+Ranges that target the **public connection IP** still work on mobile, because the management server observes that source IP itself — it does not depend on anything the client reports. So public CIDRs (e.g. `203.0.113.10/32`, `1.0.0.0/24`) and public-IP-based deny/allow rules behave the same on mobile as on desktop.
 
 **Affected platforms:**
 - iOS
@@ -128,15 +131,16 @@ The Peer Network Range posture check is not supported on iOS and Android clients
 
 **Impact:**
 
-When a policy with a Peer Network Range posture check is applied to mobile clients, the check cannot be evaluated. This may cause routes to become unavailable on these devices, even when the device is outside the blocked network range.
+If a policy's Peer Network Range posture check relies on local NIC ranges, the check cannot match on mobile clients and routes gated by that policy may become unavailable on those devices — even when the device is outside the blocked local range.
 
 **Recommendation:**
 
-If your deployment includes iOS or Android clients, consider one of the following approaches:
+If your deployment includes iOS or Android clients and you need to gate on local network membership, consider one of the following:
 
-- Create separate policies for mobile clients that do not include Peer Network Range posture checks
+- Create separate policies for mobile clients that do not include local-NIC-based Peer Network Range posture checks
 - Use alternative posture checks (such as Geo Location) that are supported on mobile platforms
-- Apply Peer Network Range posture checks only to policies targeting desktop platforms (Windows, macOS, Linux)
+- Use Peer Network Range checks based on the **public connection IP**, which work on every platform
+- Apply local-NIC-based Peer Network Range posture checks only to policies targeting desktop platforms (Windows, macOS, Linux)
 
 ## Get started with NetBird
 <p float="center" >
