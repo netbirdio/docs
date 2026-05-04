@@ -443,6 +443,10 @@ export const docsNavigation = [
           { title: 'Auto Update', href: '/manage/peers/auto-update' },
           { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
           {
+            title: 'Client Metrics',
+            href: '/manage/client-metrics',
+          },
+          {
             title: 'Notifications',
             href: '/manage/settings/notifications',
           },
