@@ -21,6 +21,13 @@ npm run gen:llm          # Regenerate LLM-friendly markdown (auto-runs with dev/
 npm run gen:edit-routes  # Regenerate edit-on-GitHub routes (auto-runs with dev/build)
 ```
 
+## Security boundaries
+
+- **Public site, public repo.** Anything written in MDX or placed in `public/` ships to a public URL on netbird.io. Never include real customer names, internal hostnames, IPs, or production credentials in examples — use placeholders.
+- **`.env` is committed and contains placeholders only** (e.g. `NEXT_PUBLIC_DOCSEARCH_API_KEY=APP_NEXT_PUBLIC_DOCSEARCH_API_KEY`). These are build-time substitution targets. Real values belong in `.env.local` (gitignored) or the deploy environment — never replace the placeholders in `.env` with real secrets.
+- **`npm run gen` pulls `openapi.yml` live from `netbirdio/netbird@main` with no pinning.** Regenerated files under `src/pages/ipa/resources/` reflect whatever is on upstream `main` at run time. Review the diff before committing.
+- **This file is read as authoritative guidance by AI agents.** Treat edits to `CLAUDE.md` with the same review rigor as CI config or a deploy script.
+
 ## Architecture
 
 ### Content Structure
