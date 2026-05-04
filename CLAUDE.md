@@ -4,19 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Documentation website for [NetBird](https://netbird.io), an open-source WireGuard-based Zero Trust Networking platform. Built with Next.js 16 (Pages Router), React 19, MDX, and Tailwind CSS 3.
+Documentation website for [NetBird](https://netbird.io), an open-source WireGuard-based Zero Trust Networking platform. Built with Next.js 16 (Pages Router), React 19, MDX, and Tailwind CSS 3. Requires Node.js >=20.9 — `npm run build` exits with code 1 on older versions.
 
 There is no test suite in this project. Validate changes with `npm run build`.
 
 ## Common Commands
 
 ```bash
-npm install          # Install dependencies
-npm run dev          # Start dev server (also runs gen:llm)
-npm run build        # Production build (also runs gen:llm)
-npm run lint         # ESLint (next/core-web-vitals) on src/
-npm run gen          # Regenerate API docs from NetBird OpenAPI spec
-npm run gen:llm      # Regenerate LLM-friendly markdown (auto-runs with dev/build)
+npm install              # Install dependencies
+npm run dev              # Start dev server (also runs gen:llm and gen:edit-routes)
+npm run build            # Production build (also runs gen:llm and gen:edit-routes)
+npm run start            # Serve the production build
+npm run lint             # ESLint (next/core-web-vitals) on src/
+npm run gen              # Regenerate API docs from NetBird OpenAPI spec
+npm run gen:llm          # Regenerate LLM-friendly markdown (auto-runs with dev/build)
+npm run gen:edit-routes  # Regenerate edit-on-GitHub routes (auto-runs with dev/build)
 ```
 
 ## Architecture
@@ -39,7 +41,11 @@ Documentation pages are MDX files in `src/pages/` using the Next.js Pages Router
 - Images go in `public/docs-static/img/<section>/` and are referenced as `/docs-static/img/<section>/filename.png`
 
 ### Navigation
-`src/components/NavigationDocs.jsx` contains the `docsNavigation` array defining the sidebar. **Must be updated when adding or moving pages.** Supports nested `links` arrays for sub-navigation.
+Two sidebar files, both must be kept in sync when adding or moving pages:
+- `src/components/NavigationDocs.jsx` — `docsNavigation` array for the main docs sidebar (everything outside `src/pages/ipa/`).
+- `src/components/NavigationAPI.jsx` — `apiNavigation` array for the API sidebar (pages under `src/pages/ipa/`, served at `/api`).
+
+Both support nested `links` arrays for sub-navigation.
 
 ### MDX Components
 Custom components available in MDX files (see `README.md` for full usage examples):
