@@ -588,6 +588,10 @@ export const docsNavigation = [
             href: '/selfhosted/identity-providers/disable-local-authentication',
           },
           {
+            title: 'Enable MFA for local users',
+            href: '/selfhosted/identity-providers/enable-local-mfa'
+          },
+          {
             title: 'Self-hosted IdPs',
             isOpen: true,
             links: [
