@@ -585,70 +585,108 @@ export const docsNavigation = [
             href: '/selfhosted/identity-providers',
           },
           {
-            title: 'Local User Management',
-            href: '/selfhosted/identity-providers/local',
-          },
-          {
-            title: 'Disable Local Auth',
-            href: '/selfhosted/identity-providers/disable-local-authentication',
-          },
-          {
-            title: 'Self-hosted IdPs',
-            isOpen: true,
+            title: 'Local Users',
+            isOpen: false,
             links: [
               {
-                title: 'Generic OIDC',
-                href: '/selfhosted/identity-providers/generic-oidc',
+                title: 'Local User Management',
+                href: '/selfhosted/identity-providers/local',
               },
               {
-                title: 'Zitadel',
-                href: '/selfhosted/identity-providers/zitadel',
-              },
-              {
-                title: 'Authentik',
-                href: '/selfhosted/identity-providers/authentik',
-              },
-              {
-                title: 'Keycloak',
-                href: '/selfhosted/identity-providers/keycloak',
-              },
-              {
-                title: 'PocketID',
-                href: '/selfhosted/identity-providers/pocketid',
-              },
-              {
-                title: 'AD FS',
-                href: '/selfhosted/identity-providers/adfs',
+                title: 'Disable Local Auth',
+                href: '/selfhosted/identity-providers/disable-local-authentication',
               },
             ],
           },
           {
-            title: 'Managed IdPs',
-            isOpen: true,
+            title: 'Identity Provider Connectors',
+            isOpen: false,
             links: [
               {
-                title: 'Google Workspace',
-                href: '/selfhosted/identity-providers/managed/google-workspace',
+                title: 'Self-hosted IdPs',
+                isOpen: true,
+                links: [
+                  {
+                    title: 'Generic OIDC',
+                    href: '/selfhosted/identity-providers/generic-oidc',
+                  },
+                  {
+                    title: 'Zitadel',
+                    href: '/selfhosted/identity-providers/zitadel',
+                  },
+                  {
+                    title: 'Authentik',
+                    href: '/selfhosted/identity-providers/authentik',
+                  },
+                  {
+                    title: 'Keycloak',
+                    href: '/selfhosted/identity-providers/keycloak',
+                  },
+                  {
+                    title: 'PocketID',
+                    href: '/selfhosted/identity-providers/pocketid',
+                  },
+                  {
+                    title: 'AD FS',
+                    href: '/selfhosted/identity-providers/adfs',
+                  },
+                ],
               },
               {
-                title: 'Microsoft Entra ID',
-                href: '/selfhosted/identity-providers/managed/microsoft-entra-id',
+                title: 'Managed IdPs',
+                isOpen: true,
+                links: [
+                  {
+                    title: 'Google Workspace',
+                    href: '/selfhosted/identity-providers/managed/google-workspace',
+                  },
+                  {
+                    title: 'Microsoft Entra ID',
+                    href: '/selfhosted/identity-providers/managed/microsoft-entra-id',
+                  },
+                  {
+                    title: 'JumpCloud',
+                    href: '/selfhosted/identity-providers/managed/jumpcloud',
+                  },
+                  {
+                    title: 'Auth0',
+                    href: '/selfhosted/identity-providers/managed/auth0',
+                  },
+                  {
+                    title: 'Duo',
+                    href: '/selfhosted/identity-providers/managed/duo',
+                  },
+                  {
+                    title: 'Okta',
+                    href: '/selfhosted/identity-providers/managed/okta',
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            title: 'Provision Users & Groups',
+            isOpen: false,
+            links: [
+              {
+                title: 'Microsoft Entra ID (API)',
+                href: '/manage/team/idp-sync/embedded/microsoft-entra-id-sync',
+              },
+              {
+                title: 'Microsoft Entra ID (SCIM)',
+                href: '/manage/team/idp-sync/embedded/microsoft-entra-id-scim-sync',
+              },
+              {
+                title: 'Google Workspace',
+                href: '/manage/team/idp-sync/embedded/google-workspace-sync',
               },
               {
                 title: 'JumpCloud',
-                href: '/selfhosted/identity-providers/managed/jumpcloud',
+                href: '/manage/team/idp-sync/embedded/jumpcloud-sync',
               },
               {
-                title: 'Auth0',
-                href: '/selfhosted/identity-providers/managed/auth0',
-              },
-              {
-                title: 'Duo',
-                href: '/selfhosted/identity-providers/managed/duo',
-              },
-              {
-                title: 'Okta',
-                href: '/selfhosted/identity-providers/managed/okta',
+                title: 'Keycloak',
+                href: '/manage/team/idp-sync/embedded/keycloak-sync',
               },
             ],
           },
