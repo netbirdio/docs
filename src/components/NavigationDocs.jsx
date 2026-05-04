@@ -462,6 +462,10 @@ export const docsNavigation = [
             isOpen: true,
             links: [
               {
+                title: 'macOS CLI-Only .pkg',
+                href: '/manage/integrations/mdm-deployment/macos-cli-pkg-deployment',
+              },
+              {
                 title: 'Deploy with Jamf Pro',
                 href: '/manage/integrations/mdm-deployment/jamf-pro-netbird-integration',
               },
