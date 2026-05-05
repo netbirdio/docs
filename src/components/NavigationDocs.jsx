@@ -511,6 +511,10 @@ export const docsNavigation = [
             href: '/manage/for-partners/msp-portal',
           },
           {
+            title: 'Distributors',
+            href: '/manage/for-partners/distributor-portal',
+          },
+          {
             title: 'Acronis NetBird integration',
             href: '/manage/for-partners/acronis-integration',
           },
