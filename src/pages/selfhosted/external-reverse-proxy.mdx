@@ -1,6 +1,6 @@
 # External Reverse Proxy Setup for Self-Hosted NetBird
 
-NetBird includes a built-in Traefik reverse proxy that handles TLS certificates automatically via Let's Encrypt. However, if you already have an existing reverse proxy (Nginx, Caddy, etc.), you can configure NetBird to work with it instead.
+NetBird includes a built-in Traefik reverse proxy that handles TLS certificates automatically via Let's Encrypt. However, if you already have an existing reverse proxy (Nginx, Caddy, BunkerWeb, etc.), you can configure NetBird to work with it instead.
 
 <Note>
 This is not to be confused with the NetBird reverse proxy service that launched with v0.65.0. The NetBird reverse proxy feature is only compatible with Traefik because it requires TLS passthrough, which Traefik supports natively. To learn more about using NetBird as a reverse proxy, see the [NetBird Proxy documentation](/manage/reverse-proxy).
@@ -505,6 +505,267 @@ location ~ ^/(api|oauth2)/ {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
 }
+```
+
+---
+
+#### BunkerWeb (Combined)
+
+[BunkerWeb](https://www.bunkerweb.io) is an open-source Web Application Firewall (WAF) built on top of NGINX. Starting with **BunkerWeb 1.6.9**, the gRPC plugin makes it possible to use BunkerWeb as a reverse proxy and WAF in front of self-hosted NetBird.
+
+<Note>
+**BunkerWeb as an external reverse proxy** protects the NetBird control plane (management API, dashboard, and connection handshakes). This is separate from [NetBird's own reverse proxy feature](/selfhosted/migration/enable-reverse-proxy), which requires Traefik with TLS passthrough and is used to expose internal services through the NetBird network. BunkerWeb does not replace that feature.
+</Note>
+
+<Warning>
+BunkerWeb's gRPC locations automatically disable ModSecurity (CRS), so gRPC payload streams between NetBird clients and the signal/management services are **not** inspected by the WAF. BunkerWeb still protects HTTP routes (`/api/*`, `/oauth2/*`), the dashboard, and the initial WebSocket handshake surface. The NetBird template ships CRS exclusion rules for known OAuth2 false positives (rules 931100 and 934110 on `/oauth2/auth` and `/oauth2/token`). If you are not using the template, add these exclusions to your ModSecurity configuration:
+
+```
+SecRule REQUEST_FILENAME "/oauth2/auth" "id:3000000,ctl:ruleRemoveById=931100,ctl:ruleRemoveById=934110,nolog"
+SecRule REQUEST_FILENAME "/oauth2/token" "id:3000001,ctl:ruleRemoveById=931100,ctl:ruleRemoveById=934110,nolog"
+```
+</Warning>
+
+##### Existing BunkerWeb with Docker labels (Combined)
+
+If you already have BunkerWeb running with Docker autoconf, add the BunkerWeb network to your NetBird services and configure routing via Docker labels on the `netbird-server` container. This is the same pattern used by the [Traefik labels approach](#traefik-combined). Replace `netbird.example.com` with your domain.
+
+```yaml
+services:
+  netbird-dashboard:
+    image: netbirdio/dashboard:latest
+    networks:
+      - netbird-net
+      - bw-services
+    # ... dashboard environment config
+
+  netbird-server:
+    image: netbirdio/netbird-server:latest
+    networks:
+      - netbird-net
+      - bw-services
+    ports:
+      - '3478:3478/udp'
+    volumes:
+      - netbird_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml
+    command: ["--config", "/etc/netbird/config.yaml"]
+    labels:
+      bunkerweb.SERVER_NAME: "netbird.example.com"
+      bunkerweb.ALLOWED_METHODS: "GET|POST|HEAD|OPTIONS|PUT|DELETE|PATCH"
+      bunkerweb.USE_REVERSE_PROXY: "yes"
+      bunkerweb.REVERSE_PROXY_INTERCEPT_ERRORS: "no"
+      # WebSocket: relay
+      bunkerweb.REVERSE_PROXY_URL: "/relay"
+      bunkerweb.REVERSE_PROXY_HOST: "http://netbird-server"
+      bunkerweb.REVERSE_PROXY_WS: "yes"
+      bunkerweb.REVERSE_PROXY_READ_TIMEOUT: "1d"
+      # WebSocket: ws-proxy (signal + management)
+      bunkerweb.REVERSE_PROXY_URL_1: "/ws-proxy/"
+      bunkerweb.REVERSE_PROXY_HOST_1: "http://netbird-server"
+      bunkerweb.REVERSE_PROXY_WS_1: "yes"
+      bunkerweb.REVERSE_PROXY_READ_TIMEOUT_1: "1d"
+      # HTTP: API
+      bunkerweb.REVERSE_PROXY_URL_2: "/api/"
+      bunkerweb.REVERSE_PROXY_HOST_2: "http://netbird-server"
+      # HTTP: OAuth2
+      bunkerweb.REVERSE_PROXY_URL_3: "/oauth2/"
+      bunkerweb.REVERSE_PROXY_HOST_3: "http://netbird-server"
+      bunkerweb.REVERSE_PROXY_READ_TIMEOUT_3: "1d"
+      # gRPC plugin (requires BunkerWeb >= 1.6.9)
+      bunkerweb.USE_GRPC: "yes"
+      bunkerweb.GRPC_URL: "/signalexchange.SignalExchange/"
+      bunkerweb.GRPC_HOST: "grpc://netbird-server:80"
+      bunkerweb.GRPC_SOCKET_KEEPALIVE: "on"
+      bunkerweb.GRPC_READ_TIMEOUT: "1d"
+      bunkerweb.GRPC_SEND_TIMEOUT: "1d"
+      bunkerweb.GRPC_URL_1: "/management.ManagementService/"
+      bunkerweb.GRPC_HOST_1: "grpc://netbird-server:80"
+      bunkerweb.GRPC_SOCKET_KEEPALIVE_1: "on"
+      bunkerweb.GRPC_READ_TIMEOUT_1: "1d"
+      bunkerweb.GRPC_SEND_TIMEOUT_1: "1d"
+      # Dashboard catch-all (must be last)
+      bunkerweb.REVERSE_PROXY_URL_999: "/"
+      bunkerweb.REVERSE_PROXY_HOST_999: "http://netbird-dashboard"
+      # CRS exclusion rules for OAuth2 false positives
+      bunkerweb.CUSTOM_CONF_MODSEC_remove-false-positives: |
+        SecRule REQUEST_FILENAME "/oauth2/auth" "id:3000000,ctl:ruleRemoveById=931100,ctl:ruleRemoveById=934110,nolog"
+        SecRule REQUEST_FILENAME "/oauth2/token" "id:3000001,ctl:ruleRemoveById=931100,ctl:ruleRemoveById=934110,nolog"
+
+networks:
+  netbird-net:
+  bw-services:
+    external: true
+
+volumes:
+  netbird_data:
+```
+
+<Note>
+Both `netbird-dashboard` and `netbird-server` must join the BunkerWeb autoconf network (typically `bw-services`). The `bunkerweb.CUSTOM_CONF_MODSEC_*` label inlines the CRS exclusion rules directly — no separate file is needed.
+
+`CLIENT_HEADER_TIMEOUT` and `CLIENT_BODY_TIMEOUT` are global settings that cannot be set via labels. Ensure your BunkerWeb instance has these set to `1d` for long-lived gRPC and WebSocket connections.
+</Note>
+
+##### BunkerWeb standalone stack (Combined)
+
+The following Docker Compose snippet deploys a full BunkerWeb stack (bunkerweb, scheduler, docker-proxy) alongside NetBird. Use this if you do not already have BunkerWeb running. All services must share the same Docker network. Replace `netbird.example.com` with your domain. Adjust `AUTO_LETS_ENCRYPT` and other BunkerWeb global settings to match your environment.
+
+```yaml
+x-bw-env: &bw-env
+  API_WHITELIST_IP: "127.0.0.0/8 10.20.30.0/24"
+
+services:
+  bunkerweb:
+    image: bunkerity/bunkerweb:1.6.9
+    ports:
+      - "80:8080/tcp"
+      - "443:8443/tcp"
+      - "443:8443/udp"
+    environment:
+      <<: *bw-env
+    networks:
+      - bw-universe
+      - bw-services
+
+  bw-scheduler:
+    image: bunkerity/bunkerweb-scheduler:1.6.9
+    depends_on:
+      - bunkerweb
+    environment:
+      <<: *bw-env
+      BUNKERWEB_INSTANCES: "bunkerweb"
+      SERVER_NAME: "netbird.example.com"
+      MULTISITE: "yes"
+      AUTO_LETS_ENCRYPT: "yes"
+      # Required for long-lived gRPC and WebSocket connections
+      CLIENT_HEADER_TIMEOUT: "1d"
+      CLIENT_BODY_TIMEOUT: "1d"
+      # gRPC plugin (requires BunkerWeb >= 1.6.9)
+      netbird.example.com_USE_GRPC: "yes"
+      netbird.example.com_GRPC_URL: "/signalexchange.SignalExchange/"
+      netbird.example.com_GRPC_HOST: "grpc://netbird-server:80"
+      netbird.example.com_GRPC_SOCKET_KEEPALIVE: "on"
+      netbird.example.com_GRPC_READ_TIMEOUT: "1d"
+      netbird.example.com_GRPC_SEND_TIMEOUT: "1d"
+      netbird.example.com_GRPC_URL_1: "/management.ManagementService/"
+      netbird.example.com_GRPC_HOST_1: "grpc://netbird-server:80"
+      netbird.example.com_GRPC_SOCKET_KEEPALIVE_1: "on"
+      netbird.example.com_GRPC_READ_TIMEOUT_1: "1d"
+      netbird.example.com_GRPC_SEND_TIMEOUT_1: "1d"
+      # Reverse proxy
+      netbird.example.com_USE_REVERSE_PROXY: "yes"
+      netbird.example.com_REVERSE_PROXY_INTERCEPT_ERRORS: "no"
+      # WebSocket: relay
+      netbird.example.com_REVERSE_PROXY_URL: "/relay"
+      netbird.example.com_REVERSE_PROXY_HOST: "http://netbird-server"
+      netbird.example.com_REVERSE_PROXY_WS: "yes"
+      netbird.example.com_REVERSE_PROXY_READ_TIMEOUT: "1d"
+      # WebSocket: ws-proxy (signal + management)
+      netbird.example.com_REVERSE_PROXY_URL_1: "/ws-proxy/"
+      netbird.example.com_REVERSE_PROXY_HOST_1: "http://netbird-server"
+      netbird.example.com_REVERSE_PROXY_WS_1: "yes"
+      netbird.example.com_REVERSE_PROXY_READ_TIMEOUT_1: "1d"
+      # HTTP: API
+      netbird.example.com_REVERSE_PROXY_URL_2: "/api/"
+      netbird.example.com_REVERSE_PROXY_HOST_2: "http://netbird-server"
+      # HTTP: OAuth2
+      netbird.example.com_REVERSE_PROXY_URL_3: "/oauth2/"
+      netbird.example.com_REVERSE_PROXY_HOST_3: "http://netbird-server"
+      netbird.example.com_REVERSE_PROXY_READ_TIMEOUT_3: "1d"
+      # Dashboard catch-all (must be last)
+      netbird.example.com_REVERSE_PROXY_URL_999: "/"
+      netbird.example.com_REVERSE_PROXY_HOST_999: "http://dashboard"
+      # CRS exclusion rules for OAuth2 false positives
+      CUSTOM_CONF_MODSEC_remove-false-positives: |
+        SecRule REQUEST_FILENAME "/oauth2/auth" "id:3000000,ctl:ruleRemoveById=931100,ctl:ruleRemoveById=934110,nolog"
+        SecRule REQUEST_FILENAME "/oauth2/token" "id:3000001,ctl:ruleRemoveById=931100,ctl:ruleRemoveById=934110,nolog"
+    volumes:
+      - bw-data:/data
+    networks:
+      - bw-universe
+
+  dashboard:
+    image: netbirdio/dashboard:latest
+    networks:
+      - bw-services
+    # ... other config
+
+  netbird-server:
+    image: netbirdio/netbird-server:latest
+    ports:
+      - '3478:3478/udp'
+    volumes:
+      - netbird_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml
+    command: ["--config", "/etc/netbird/config.yaml"]
+    networks:
+      - bw-services
+    # ... other config
+
+networks:
+  bw-universe:
+    name: bw-universe
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.20.30.0/24
+  bw-services:
+    name: bw-services
+
+volumes:
+  bw-data:
+  netbird_data:
+```
+
+##### BunkerWeb running on host (Combined)
+
+If BunkerWeb is installed directly on the host, use the same environment variables in your BunkerWeb configuration file (typically `/etc/bunkerweb/variables.env`), replacing container names with `127.0.0.1` and the corresponding host ports:
+
+```ini
+SERVER_NAME=netbird.example.com
+MULTISITE=yes
+AUTO_LETS_ENCRYPT=yes
+# Required for long-lived gRPC and WebSocket connections
+CLIENT_HEADER_TIMEOUT=1d
+CLIENT_BODY_TIMEOUT=1d
+
+# gRPC plugin (requires BunkerWeb >= 1.6.9)
+netbird.example.com_USE_GRPC=yes
+netbird.example.com_GRPC_URL=/signalexchange.SignalExchange/
+netbird.example.com_GRPC_HOST=grpc://127.0.0.1:8081
+netbird.example.com_GRPC_SOCKET_KEEPALIVE=on
+netbird.example.com_GRPC_READ_TIMEOUT=1d
+netbird.example.com_GRPC_SEND_TIMEOUT=1d
+netbird.example.com_GRPC_URL_1=/management.ManagementService/
+netbird.example.com_GRPC_HOST_1=grpc://127.0.0.1:8081
+netbird.example.com_GRPC_SOCKET_KEEPALIVE_1=on
+netbird.example.com_GRPC_READ_TIMEOUT_1=1d
+netbird.example.com_GRPC_SEND_TIMEOUT_1=1d
+
+# Reverse proxy
+netbird.example.com_USE_REVERSE_PROXY=yes
+netbird.example.com_REVERSE_PROXY_INTERCEPT_ERRORS=no
+# WebSocket: relay
+netbird.example.com_REVERSE_PROXY_URL=/relay
+netbird.example.com_REVERSE_PROXY_HOST=http://127.0.0.1:8081
+netbird.example.com_REVERSE_PROXY_WS=yes
+netbird.example.com_REVERSE_PROXY_READ_TIMEOUT=1d
+# WebSocket: ws-proxy (signal + management)
+netbird.example.com_REVERSE_PROXY_URL_1=/ws-proxy/
+netbird.example.com_REVERSE_PROXY_HOST_1=http://127.0.0.1:8081
+netbird.example.com_REVERSE_PROXY_WS_1=yes
+netbird.example.com_REVERSE_PROXY_READ_TIMEOUT_1=1d
+# HTTP: API
+netbird.example.com_REVERSE_PROXY_URL_2=/api/
+netbird.example.com_REVERSE_PROXY_HOST_2=http://127.0.0.1:8081
+# HTTP: OAuth2
+netbird.example.com_REVERSE_PROXY_URL_3=/oauth2/
+netbird.example.com_REVERSE_PROXY_HOST_3=http://127.0.0.1:8081
+netbird.example.com_REVERSE_PROXY_READ_TIMEOUT_3=1d
+# Dashboard catch-all (must be last)
+netbird.example.com_REVERSE_PROXY_URL_999=/
+netbird.example.com_REVERSE_PROXY_HOST_999=http://127.0.0.1:8080
 ```
 
 ---
@@ -1402,12 +1663,263 @@ location /management.ManagementService/ {
 
 ---
 
+#### BunkerWeb (Multi-Container)
+
+For legacy multi-container deployments, configure BunkerWeb to route each path to the appropriate service container. See the [BunkerWeb combined container section](#bunker-web-combined) for background on BunkerWeb's gRPC plugin and WAF behavior.
+
+##### Existing BunkerWeb with Docker labels (Multi-Container)
+
+If you already have BunkerWeb running with Docker autoconf, add the BunkerWeb network and labels to each NetBird service container. Unlike the combined container, each path must route to the correct backend container. Replace `netbird.example.com` with your domain.
+
+```yaml
+services:
+  netbird-dashboard:
+    image: netbirdio/dashboard:latest
+    networks:
+      - netbird-net
+      - bw-services
+    # ... dashboard environment config
+
+  signal:
+    image: netbirdio/signal:latest
+    networks:
+      - netbird-net
+      - bw-services
+    # ... other config
+
+  relay:
+    image: netbirdio/relay:latest
+    networks:
+      - netbird-net
+      - bw-services
+    # ... other config
+
+  management:
+    image: netbirdio/management:latest
+    networks:
+      - netbird-net
+      - bw-services
+    labels:
+      bunkerweb.SERVER_NAME: "netbird.example.com"
+      bunkerweb.ALLOWED_METHODS: "GET|POST|HEAD|OPTIONS|PUT|DELETE|PATCH"
+      bunkerweb.USE_REVERSE_PROXY: "yes"
+      bunkerweb.REVERSE_PROXY_INTERCEPT_ERRORS: "no"
+      # WebSocket: relay
+      bunkerweb.REVERSE_PROXY_URL: "/relay"
+      bunkerweb.REVERSE_PROXY_HOST: "http://relay"
+      bunkerweb.REVERSE_PROXY_WS: "yes"
+      bunkerweb.REVERSE_PROXY_READ_TIMEOUT: "1d"
+      # WebSocket: signal
+      bunkerweb.REVERSE_PROXY_URL_1: "/ws-proxy/signal"
+      bunkerweb.REVERSE_PROXY_HOST_1: "http://signal"
+      bunkerweb.REVERSE_PROXY_WS_1: "yes"
+      bunkerweb.REVERSE_PROXY_READ_TIMEOUT_1: "1d"
+      # WebSocket: management
+      bunkerweb.REVERSE_PROXY_URL_2: "/ws-proxy/management"
+      bunkerweb.REVERSE_PROXY_HOST_2: "http://management"
+      bunkerweb.REVERSE_PROXY_WS_2: "yes"
+      bunkerweb.REVERSE_PROXY_READ_TIMEOUT_2: "1d"
+      # HTTP: API
+      bunkerweb.REVERSE_PROXY_URL_3: "/api/"
+      bunkerweb.REVERSE_PROXY_HOST_3: "http://management"
+      # HTTP: OAuth2
+      bunkerweb.REVERSE_PROXY_URL_4: "/oauth2/"
+      bunkerweb.REVERSE_PROXY_HOST_4: "http://management"
+      bunkerweb.REVERSE_PROXY_READ_TIMEOUT_4: "1d"
+      # gRPC plugin (requires BunkerWeb >= 1.6.9)
+      bunkerweb.USE_GRPC: "yes"
+      bunkerweb.GRPC_URL: "/signalexchange.SignalExchange/"
+      bunkerweb.GRPC_HOST: "grpc://signal:10000"
+      bunkerweb.GRPC_SOCKET_KEEPALIVE: "on"
+      bunkerweb.GRPC_READ_TIMEOUT: "1d"
+      bunkerweb.GRPC_SEND_TIMEOUT: "1d"
+      bunkerweb.GRPC_URL_1: "/management.ManagementService/"
+      bunkerweb.GRPC_HOST_1: "grpc://management:80"
+      bunkerweb.GRPC_SOCKET_KEEPALIVE_1: "on"
+      bunkerweb.GRPC_READ_TIMEOUT_1: "1d"
+      bunkerweb.GRPC_SEND_TIMEOUT_1: "1d"
+      # Dashboard catch-all (must be last)
+      bunkerweb.REVERSE_PROXY_URL_999: "/"
+      bunkerweb.REVERSE_PROXY_HOST_999: "http://netbird-dashboard"
+      # CRS exclusion rules for OAuth2 false positives
+      bunkerweb.CUSTOM_CONF_MODSEC_remove-false-positives: |
+        SecRule REQUEST_FILENAME "/oauth2/auth" "id:3000000,ctl:ruleRemoveById=931100,ctl:ruleRemoveById=934110,nolog"
+        SecRule REQUEST_FILENAME "/oauth2/token" "id:3000001,ctl:ruleRemoveById=931100,ctl:ruleRemoveById=934110,nolog"
+    # ... other config
+
+networks:
+  netbird-net:
+  bw-services:
+    external: true
+```
+
+<Note>
+`CLIENT_HEADER_TIMEOUT` and `CLIENT_BODY_TIMEOUT` are global settings that cannot be set via labels. Ensure your BunkerWeb instance has these set to `1d` for long-lived gRPC and WebSocket connections.
+</Note>
+
+##### BunkerWeb standalone stack (Multi-Container)
+
+```yaml
+x-bw-env: &bw-env
+  API_WHITELIST_IP: "127.0.0.0/8 10.20.30.0/24"
+
+services:
+  bunkerweb:
+    image: bunkerity/bunkerweb:1.6.9
+    ports:
+      - "80:8080/tcp"
+      - "443:8443/tcp"
+      - "443:8443/udp"
+    environment:
+      <<: *bw-env
+    networks:
+      - bw-universe
+      - bw-services
+
+  bw-scheduler:
+    image: bunkerity/bunkerweb-scheduler:1.6.9
+    depends_on:
+      - bunkerweb
+    environment:
+      <<: *bw-env
+      BUNKERWEB_INSTANCES: "bunkerweb"
+      SERVER_NAME: "netbird.example.com"
+      MULTISITE: "yes"
+      AUTO_LETS_ENCRYPT: "yes"
+      # Required for long-lived gRPC and WebSocket connections
+      CLIENT_HEADER_TIMEOUT: "1d"
+      CLIENT_BODY_TIMEOUT: "1d"
+      # gRPC plugin (requires BunkerWeb >= 1.6.9)
+      netbird.example.com_USE_GRPC: "yes"
+      netbird.example.com_GRPC_URL: "/signalexchange.SignalExchange/"
+      netbird.example.com_GRPC_HOST: "grpc://signal:10000"
+      netbird.example.com_GRPC_SOCKET_KEEPALIVE: "on"
+      netbird.example.com_GRPC_READ_TIMEOUT: "1d"
+      netbird.example.com_GRPC_SEND_TIMEOUT: "1d"
+      netbird.example.com_GRPC_URL_1: "/management.ManagementService/"
+      netbird.example.com_GRPC_HOST_1: "grpc://management:80"
+      netbird.example.com_GRPC_SOCKET_KEEPALIVE_1: "on"
+      netbird.example.com_GRPC_READ_TIMEOUT_1: "1d"
+      netbird.example.com_GRPC_SEND_TIMEOUT_1: "1d"
+      # Reverse proxy
+      netbird.example.com_USE_REVERSE_PROXY: "yes"
+      netbird.example.com_REVERSE_PROXY_INTERCEPT_ERRORS: "no"
+      # WebSocket: relay
+      netbird.example.com_REVERSE_PROXY_URL: "/relay"
+      netbird.example.com_REVERSE_PROXY_HOST: "http://relay"
+      netbird.example.com_REVERSE_PROXY_WS: "yes"
+      netbird.example.com_REVERSE_PROXY_READ_TIMEOUT: "1d"
+      # WebSocket: signal
+      netbird.example.com_REVERSE_PROXY_URL_1: "/ws-proxy/signal"
+      netbird.example.com_REVERSE_PROXY_HOST_1: "http://signal"
+      netbird.example.com_REVERSE_PROXY_WS_1: "yes"
+      netbird.example.com_REVERSE_PROXY_READ_TIMEOUT_1: "1d"
+      # WebSocket: management
+      netbird.example.com_REVERSE_PROXY_URL_2: "/ws-proxy/management"
+      netbird.example.com_REVERSE_PROXY_HOST_2: "http://management"
+      netbird.example.com_REVERSE_PROXY_WS_2: "yes"
+      netbird.example.com_REVERSE_PROXY_READ_TIMEOUT_2: "1d"
+      # HTTP: API
+      netbird.example.com_REVERSE_PROXY_URL_3: "/api/"
+      netbird.example.com_REVERSE_PROXY_HOST_3: "http://management"
+      # HTTP: OAuth2
+      netbird.example.com_REVERSE_PROXY_URL_4: "/oauth2/"
+      netbird.example.com_REVERSE_PROXY_HOST_4: "http://management"
+      netbird.example.com_REVERSE_PROXY_READ_TIMEOUT_4: "1d"
+      # Dashboard catch-all (must be last)
+      netbird.example.com_REVERSE_PROXY_URL_999: "/"
+      netbird.example.com_REVERSE_PROXY_HOST_999: "http://dashboard"
+      # CRS exclusion rules for OAuth2 false positives
+      CUSTOM_CONF_MODSEC_remove-false-positives: |
+        SecRule REQUEST_FILENAME "/oauth2/auth" "id:3000000,ctl:ruleRemoveById=931100,ctl:ruleRemoveById=934110,nolog"
+        SecRule REQUEST_FILENAME "/oauth2/token" "id:3000001,ctl:ruleRemoveById=931100,ctl:ruleRemoveById=934110,nolog"
+    volumes:
+      - bw-data:/data
+    networks:
+      - bw-universe
+
+  # ... NetBird services (dashboard, signal, relay, management, coturn)
+  # Ensure all services are on the bw-services network
+  # coturn must expose 3478:3478/udp directly (not through BunkerWeb)
+
+networks:
+  bw-universe:
+    name: bw-universe
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.20.30.0/24
+  bw-services:
+    name: bw-services
+
+volumes:
+  bw-data:
+```
+
+##### BunkerWeb running on host (Multi-Container)
+
+For host-based installations, configure the following in your BunkerWeb variables file (typically `/etc/bunkerweb/variables.env`):
+
+```ini
+SERVER_NAME=netbird.example.com
+MULTISITE=yes
+AUTO_LETS_ENCRYPT=yes
+# Required for long-lived gRPC and WebSocket connections
+CLIENT_HEADER_TIMEOUT=1d
+CLIENT_BODY_TIMEOUT=1d
+
+# gRPC plugin (requires BunkerWeb >= 1.6.9)
+netbird.example.com_USE_GRPC=yes
+netbird.example.com_GRPC_URL=/signalexchange.SignalExchange/
+netbird.example.com_GRPC_HOST=grpc://127.0.0.1:10000
+netbird.example.com_GRPC_SOCKET_KEEPALIVE=on
+netbird.example.com_GRPC_READ_TIMEOUT=1d
+netbird.example.com_GRPC_SEND_TIMEOUT=1d
+netbird.example.com_GRPC_URL_1=/management.ManagementService/
+netbird.example.com_GRPC_HOST_1=grpc://127.0.0.1:8081
+netbird.example.com_GRPC_SOCKET_KEEPALIVE_1=on
+netbird.example.com_GRPC_READ_TIMEOUT_1=1d
+netbird.example.com_GRPC_SEND_TIMEOUT_1=1d
+
+# Reverse proxy
+netbird.example.com_USE_REVERSE_PROXY=yes
+netbird.example.com_REVERSE_PROXY_INTERCEPT_ERRORS=no
+# WebSocket: relay
+netbird.example.com_REVERSE_PROXY_URL=/relay
+netbird.example.com_REVERSE_PROXY_HOST=http://127.0.0.1:8084
+netbird.example.com_REVERSE_PROXY_WS=yes
+netbird.example.com_REVERSE_PROXY_READ_TIMEOUT=1d
+# WebSocket: signal
+netbird.example.com_REVERSE_PROXY_URL_1=/ws-proxy/signal
+netbird.example.com_REVERSE_PROXY_HOST_1=http://127.0.0.1:8083
+netbird.example.com_REVERSE_PROXY_WS_1=yes
+netbird.example.com_REVERSE_PROXY_READ_TIMEOUT_1=1d
+# WebSocket: management
+netbird.example.com_REVERSE_PROXY_URL_2=/ws-proxy/management
+netbird.example.com_REVERSE_PROXY_HOST_2=http://127.0.0.1:8081
+netbird.example.com_REVERSE_PROXY_WS_2=yes
+netbird.example.com_REVERSE_PROXY_READ_TIMEOUT_2=1d
+# HTTP: API
+netbird.example.com_REVERSE_PROXY_URL_3=/api/
+netbird.example.com_REVERSE_PROXY_HOST_3=http://127.0.0.1:8081
+# HTTP: OAuth2
+netbird.example.com_REVERSE_PROXY_URL_4=/oauth2/
+netbird.example.com_REVERSE_PROXY_HOST_4=http://127.0.0.1:8081
+netbird.example.com_REVERSE_PROXY_READ_TIMEOUT_4=1d
+# Dashboard catch-all (must be last)
+netbird.example.com_REVERSE_PROXY_URL_999=/
+netbird.example.com_REVERSE_PROXY_HOST_999=http://127.0.0.1:8080
+```
+
+---
+
 ## Troubleshooting
 
 ### gRPC connections failing
 
 - Ensure your reverse proxy supports HTTP/2 and gRPC
 - **Nginx Proxy Manager**: Enable "HTTP/2 Support" in the SSL tab
+- **BunkerWeb**: Verify `USE_GRPC=yes` is set and you are running BunkerWeb >= 1.6.9
 - Check that `h2c` (plaintext HTTP/2) is correctly configured for gRPC upstreams
 - Verify timeout settings are long enough (gRPC connections can be long-lived)
 
@@ -1433,5 +1945,19 @@ location /management.ManagementService/ {
 - Verify gRPC routes are using `h2c://` (plaintext HTTP/2)
 - Check that WebSocket routes have proper upgrade handling
 - Ensure coturn (STUN/TURN) is accessible on UDP port 3478
+- STUN must use **direct UDP on port 3478** — it cannot be placed behind the HTTP reverse proxy
+
+### gRPC paths routed to dashboard (BunkerWeb / WAF)
+
+- If gRPC connections return HTTP errors, verify that `GRPC_URL` / `GRPC_URL_1` paths exactly match `/signalexchange.SignalExchange/` and `/management.ManagementService/` (including the trailing slash)
+- Verify that `GRPC_HOST` / `GRPC_HOST_1` use the `grpc://` prefix (not `http://`)
+- Ensure `USE_GRPC=yes` is set — without it, gRPC paths fall through to the dashboard catch-all
+- Requires BunkerWeb >= 1.6.9; older versions do not include the gRPC plugin
+
+### OAuth2 false positives under CRS (BunkerWeb / WAF)
+
+- BunkerWeb's ModSecurity with OWASP CRS may block legitimate OAuth2 requests to `/oauth2/*`
+- Known false positives on `/oauth2/auth` and `/oauth2/token` from CRS rules 931100 and 934110
+- The BunkerWeb NetBird template includes exclusion rules; if configuring manually, add the SecRule exclusions shown in the [BunkerWeb combined container section](#bunker-web-combined)
 
 For more help, see the [Troubleshooting guide](/selfhosted/troubleshooting) or reach out on [Slack](/slack-url).
