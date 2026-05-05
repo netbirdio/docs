@@ -1,0 +1,245 @@
+import { Note, Warning } from '@/components/mdx'
+import { Tiles } from '@/components/Tiles'
+
+# How Routing Peers Work
+
+A routing peer is a NetBird agent that bridges your overlay network to private networks and resources that do not run the agent. This page covers what routing peers are, how traffic flows through them, the requirements they impose on the host, how high availability and access control behave, and how to harden them.
+
+## What is a routing peer
+
+A routing peer is a NetBird peer installed inside a private network that forwards traffic between the NetBird overlay and resources that cannot or should not run the agent themselves. It is the bridge between your Zero Trust mesh and the LANs, VPCs, datacenter networks, or individual hosts you need to reach.
+
+A single peer can serve multiple roles at once. The same machine can be a client peer, a routing peer for one or more networks, and an exit node simultaneously.
+
+Because routing peers are typically headless servers, register them with [setup keys](/manage/peers/register-machines-using-setup-keys) rather than interactive login.
+
+## When to use a routing peer
+
+- **Site or LAN access.** NetBird peers need to reach resources on a remote subnet, office network, datacenter, or cloud VPC without installing the agent on every host.
+- **Domain-based access.** Traffic must be routed by FQDN or wildcard domain to services whose IPs change.
+- **Exit node.** All internet-bound traffic from a group of peers must egress through a controlled location.
+- **Kubernetes.** Pods or services need to be reachable from NetBird peers without putting an agent on every node.
+
+## Networks vs Network Routes
+
+NetBird offers two ways to configure routing peers. Both are actively maintained.
+
+**[Networks](/manage/networks) (newer, recommended where possible)**
+- Mandatory groups for both routing peers and resources. Traffic is denied by default until a policy permits it.
+- Resources are typed: IP, IP range, or domain.
+- Access control is built in from the start.
+
+**[Network Routes](/manage/network-routes) (legacy, still supported)**
+- Distribution Groups and ACL Groups are configured separately.
+- ACL Groups are optional, which means a route without them grants unrestricted access to the destination CIDR for every peer in the Distribution Group.
+- Only needed today for [exit node](/manage/network-routes/use-cases/by-scenario/exit-nodes) setups and [site-to-site](/use-cases/site-to-site) configurations. Use Networks for everything else.
+
+For a scenario-by-scenario comparison, see our [site-to-site documentation](/use-cases/site-to-site).
+
+## Mental model: how traffic flows
+
+<p>
+    <img src="/docs-static/img/manage/networks/netbird-network-routes.png" alt="Routing peer bridging NetBird overlay to a private network" className="imagewrapper-big"/>
+</p>
+
+The walkthrough below describes the **Linux kernel-mode** path, where forwarding and firewalling happen in the kernel via `nftables` / `iptables`. On other platforms, NetBird performs the same logical steps in a userspace filter, but the implementation differs.
+
+1. The originating peer encrypts the packet to the routing peer's WireGuard public key. The packet enters the tunnel at the source and exits on the routing peer's NetBird interface.
+2. The routing peer's kernel forwards the packet according to the host routing table. If the destination is on a directly attached network or reachable via the host's gateway, the packet is forwarded.
+3. Forwarded packets traverse the host firewall's **forward chain**. NetBird applies the policies attached to the route or network resource here. Policies that target the routing peer itself live in the **input chain** and are evaluated separately.
+4. If masquerade is enabled (the default), the routing peer SNATs the source IP to its own LAN-side address before the packet leaves. With masquerade disabled, the original NetBird overlay IP is preserved and the destination network must route return traffic back through the routing peer.
+5. Replies follow the reverse path. The stateful firewall on the routing peer tracks established connections so return traffic does not need an explicit policy.
+
+## Requirements
+
+### Operating system
+
+Linux, Windows, macOS, FreeBSD, Android, tvOS, and Docker peers can act as routing peers. Linux is the most common production choice because the agent runs in kernel space and integrates with native kernel firewalls (`nftables` / `iptables`). On other platforms the forwarding path runs in userspace.
+
+### IP forwarding
+
+The agent enables IP forwarding automatically on Linux. If the agent cannot modify sysctl on its own, set it yourself on the host and persist it:
+
+```bash
+# Runtime
+sudo sysctl -w net.ipv4.ip_forward=1
+sudo sysctl -w net.ipv6.conf.all.forwarding=1
+
+# Persistent
+echo "net.ipv4.ip_forward=1" | sudo tee /etc/sysctl.d/99-netbird.conf
+echo "net.ipv6.conf.all.forwarding=1" | sudo tee -a /etc/sysctl.d/99-netbird.conf
+```
+
+For containerized routing peers, set this on the **host** that runs the container — sysctl is a host-level setting and a container cannot enable IP forwarding on its own.
+
+On Windows, no extra setup is needed to forward traffic to routed subnets. Only enable `NB_ENABLE_LOCAL_FORWARDING` if you also need clients to reach services bound to the routing peer's own local addresses — for example, a dashboard or service running on the routing peer host itself:
+
+```powershell
+netbird service reconfigure --service-env NB_ENABLE_LOCAL_FORWARDING=true
+```
+
+Leave it off otherwise. Turning it on can expose localhost-bound services on the routing peer unintentionally.
+
+### Container capabilities
+
+A containerized routing peer needs `NET_ADMIN`. The Kubernetes manifest also adds `SYS_RESOURCE` and `SYS_ADMIN` for tunnel and firewall management.
+
+### Network reachability
+
+The routing peer must have direct network reachability to the resources it serves. This is the most common cause of failed deployments in cloud environments: the peer ends up in the wrong subnet, the wrong security group, or on the wrong side of a VPC peering boundary.
+
+### Cloud-specific settings
+
+- **AWS.** Disable source/destination check on the EC2 instance acting as the routing peer.
+- **GCP.** Enable IP forwarding at the instance level (`--can-ip-forward`).
+- **Azure.** Enable IP forwarding on the NIC.
+
+## High availability
+
+Multiple routing peers can serve the same network or route. Behavior depends on the **metric** you assign each routing peer in the dashboard. There are no tunable thresholds — the metric is the only HA control.
+
+### Primary / failover (different metrics)
+
+The lower-metric peer carries all traffic. The higher-metric peer is held in reserve and only takes over when the primary becomes unreachable. Failover is automatic and immediate — clients begin sending traffic through the standby as soon as the primary stops responding. When the primary comes back online, clients switch back to it immediately. Established TCP connections through the previous peer reset and applications must reconnect.
+
+**Example.** Routing Peer A has a lower metric than Routing Peer B. When Peer A goes down, all traffic fails over to Peer B. When Peer A comes back online, all traffic switches back to Peer A immediately.
+
+### Latency switching (equal metrics)
+
+When two routing peers share the same metric, each client picks the one with lower latency. A switch only happens when the latency difference exceeds **20 ms**, which prevents flapping between peers that are roughly equivalent.
+
+Useful when routing peers are geographically distributed and you want each client to land on the closest one automatically — for example, an EU-based peer and a US-based peer serving the same network, with users on both continents.
+
+### Failure domains
+
+Place HA peers in different failure domains within the same network: separate AZs in cloud, separate hypervisors or hosts on-prem.
+
+## Masquerade
+
+Masquerade is on by default. The routing peer SNATs forwarded traffic to its own LAN-side IP. This is the simplest configuration because the destination network does not need any awareness of NetBird.
+
+Turn masquerade off when:
+
+- You need source IP visibility for auditing, compliance, or application logic.
+- You want the destination network's existing firewalls to filter NetBird peers by their overlay IP.
+
+With masquerade off, you must add a return route on the destination network pointing the NetBird CIDR (default `100.64.0.0/10`) at the routing peer.
+
+<Note>
+Masquerade can only be turned off on Linux routing peers. HA also stops working with masquerade off, because return traffic must flow back through one specific routing peer's LAN address — the destination network has no way to follow a failover.
+</Note>
+
+## Access control behavior
+
+This is the subtlest part of the model and the source of most policy mistakes.
+
+### Two chains, two policy types
+
+- **Forward chain.** Packets routed *through* the peer to backend resources. Network resource policies (Networks) and ACL Groups (Network Routes) apply here.
+- **Input chain.** Packets destined to the routing peer's own IP. [Peer-to-peer policies](/manage/access-control/manage-network-access) apply here.
+
+If users need to reach both the resources behind a routing peer **and** services running on the routing peer itself (Pi-hole, monitoring, jump-host SSH), you need one policy of each kind.
+
+**Example.** A routing peer fronts the `10.10.0.0/16` office network and also runs Grafana on TCP/3000 plus SSH on TCP/22. To let the `Engineers` group reach both, create two policies:
+
+1. **Network resource policy** (forward chain): `Engineers` → `10.10.0.0/16` resource. Permits traffic *through* the routing peer.
+2. **Peer-to-peer policy** (input chain): `Engineers` → routing peer group, on TCP/22 and TCP/3000. Permits traffic *to* the routing peer.
+
+### Directionality is forced for routed traffic
+
+Policies whose destination is a network resource are always unidirectional from source to destination. The resource has no agent and cannot initiate connections back through the overlay. The bidirectional toggle is disabled in the UI for these policies.
+
+### Network Routes default-allow caveat
+
+<Warning>
+A Network Route without ACL Groups grants unrestricted access to the destination CIDR for every peer in the Distribution Group. From a Zero Trust posture this is the wrong default. Always either:
+
+- Set ACL Groups on the route, or
+- Use [Networks](/manage/networks) instead, which enforces policy by default.
+</Warning>
+
+## DNS and domain routing
+
+Routing peers can serve DNS-based routes in addition to CIDR-based ones.
+
+### Local DNS Forwarder
+
+The client runs a local DNS forwarder. Queries for a routed domain go to the routing peer's resolver:
+
+- **Port 22054** for clients on 0.59.0 and newer.
+- **Port 5353** for clients on 0.58.x and older.
+
+The Management service only flips an account to 22054 once every peer is on 0.59.0 or newer. Mixed-version accounts continue using 5353.
+
+### Routing Peer DNS Resolution
+
+Wildcard domain resources require [Routing Peer DNS Resolution](/manage/networks#enable-dns-wildcard-routing) to be enabled. With this setting on, DNS resolution happens on the routing peer rather than on the client.
+
+### Pitfall: domains and IP ranges in the same network
+
+<Warning>
+When a network contains both a domain resource and an IP-range resource, their policies can leak into each other. The routing peer enforces forwarded traffic by destination IP, and a domain that resolves into an IP-range resource's CIDR ends up covered by both policies — so a peer permitted to reach the IP range can also reach domains in that range, even if the domain policy alone would deny it. Put domain resources in a dedicated network with their own routing peers.
+</Warning>
+
+## Exit node mode
+
+An exit node is a routing peer with a `0.0.0.0/0` route. Internet-bound traffic from peers in the assigned distribution groups egresses through it.
+
+Specifics:
+
+- IPv6 is blocked to prevent leakage outside the tunnel.
+- Masquerade is on by default and required in practice.
+- The minimum policy for an exit node to function is ICMP from source group to the routing peer group.
+- Auto Apply controls whether clients use the exit node automatically (v0.55.0+) or only when manually selected.
+- Set a DNS server with match domain `ALL` to prevent DNS-based location leaks. Local DNS servers may not be reachable from the exit node in any case.
+
+## Observability and troubleshooting
+
+- `netbird status -d` shows the connection type, status, and details for every peer the client is connected to.
+- `netbird networks ls` shows which networks the client is currently using.
+- `netbird debug trace` simulates a packet against the firewall rules without sending real traffic. Useful when policies look right but traffic is dropped. On Linux this is most informative when the kernel firewall backend is active.
+- On the routing peer host:
+  - `sysctl net.ipv4.ip_forward` to confirm forwarding.
+  - `ip route` to confirm reachability to the destination CIDR.
+  - `nft list ruleset` (or `iptables-save`) to inspect the rules NetBird installed.
+
+## Common pitfalls
+
+- Skipping the AWS source/destination check disable.
+- Network Route with no ACL Groups, granting blanket access.
+- Policy to a network resource works, but SSH to the routing peer itself is denied because the input chain has no matching policy.
+- HA peers in the same AZ, defeating the purpose of HA.
+- Mixing domain and IP-range resources in the same network.
+- Exit node missing the ICMP policy, so clients can't connect to the routing peer in the first place.
+- DNS port mismatch when an account has a mix of pre-0.59 and post-0.59 peers.
+
+<Tiles
+    title="Related"
+    items={[
+        {
+            href: '/manage/networks',
+            name: 'Networks',
+            description: 'The newer, recommended way to configure routing peers and resources',
+        },
+        {
+            href: '/manage/network-routes',
+            name: 'Network Routes',
+            description: 'Legacy routing peer feature still supported for scenarios Networks does not yet cover',
+        },
+        {
+            href: '/manage/network-routes/use-cases/by-configuration/access-control',
+            name: 'Access Control on Network Routes',
+            description: 'Use ACL Groups to restrict who reaches a routed network',
+        },
+        {
+            href: '/manage/network-routes/use-cases/by-configuration/masquerade',
+            name: 'Masquerade',
+            description: 'When to enable or disable source IP rewriting on a route',
+        },
+        {
+            href: '/manage/network-routes/use-cases/by-scenario/exit-nodes',
+            name: 'Exit Nodes',
+            description: 'Route all internet-bound traffic through a controlled location',
+        },
+    ]}
+/>

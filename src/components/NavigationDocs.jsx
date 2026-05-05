@@ -184,6 +184,10 @@ export const docsNavigation = [
         links: [
           { title: 'Concept', href: '/manage/networks' },
           {
+            title: 'How Routing Peers Work',
+            href: '/manage/networks/how-routing-peers-work',
+          },
+          {
             title: 'Use Cases',
             isOpen: false,
             links: [
