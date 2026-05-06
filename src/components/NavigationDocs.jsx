@@ -96,6 +96,10 @@ export const docsNavigation = [
             title: 'Setup Keys',
             href: '/manage/peers/register-machines-using-setup-keys',
           },
+          {
+            title: 'Bootstrap via Config File',
+            href: '/manage/peers/bootstrap-via-config-file',
+          },
           { title: 'Browser Client', href: '/manage/peers/browser-client' },
           { title: 'SSH', href: '/manage/peers/ssh' },
           { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
