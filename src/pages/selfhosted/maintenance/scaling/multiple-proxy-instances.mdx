@@ -40,6 +40,37 @@ Before deploying additional proxy instances, make sure you have:
 - The ability to update DNS records to point to multiple servers
 - Access to the management server CLI to generate proxy tokens
 
+### Prepare the management server for cross-host proxies
+
+Additional proxy instances run on different hosts than the management server, so they cannot reach the management container over the Docker network. Each remote proxy connects to management via gRPC over public TLS (`https://netbird.example.com:443`), which means the management server's Traefik must be configured to route the gRPC streams used by the proxy.
+
+If you have not already done so as part of [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy#connecting-through-traefik-instead-of-docker-network), update the management server now:
+
+1. **Add the `ProxyService` gRPC path** to the existing gRPC router rule on the management host. In a standard deployment this is the `traefik.http.routers.netbird-grpc` label:
+
+   ```
+   traefik.http.routers.netbird-grpc.rule=Host(`netbird.example.com`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))
+   ```
+
+   Without `/management.ProxyService/` in this rule, Traefik falls back to the dashboard router and returns the dashboard HTML. The proxy logs this as `code = Unimplemented ... 404 (Not Found); transport: received unexpected content-type "text/html"`.
+
+2. **Disable the Traefik idle timeout** on the `websecure` entrypoint so long-lived gRPC streams between the proxy and management server are not cut off:
+
+   ```yaml
+   # docker-compose.yml on the management host
+   services:
+     traefik:
+       command:
+         # ...existing args...
+         - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=0"
+   ```
+
+3. Restart Traefik on the management host: `docker compose up -d traefik`.
+
+<Warning>
+Both changes are made on the **management server**, not on the proxy hosts. Skipping them is the most common cause of `management connection failed ... 404 (Not Found)` errors when adding a remote proxy instance.
+</Warning>
+
 ## Token management
 
 Each proxy instance authenticates with the management server using an access token. You can either generate a unique token per instance or share a single token across instances.
@@ -114,7 +145,7 @@ Create a `docker-compose.yml` on the new server:
 ```yaml
 services:
   traefik:
-    image: traefik:v3.4
+    image: traefik:v3.6
     container_name: traefik
     restart: unless-stopped
     command:
