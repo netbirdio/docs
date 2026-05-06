@@ -487,10 +487,21 @@ export const docsNavigation = [
             title: 'Kubernetes',
             isOpen: true,
             links: [
-              { title: 'Operator', href: '/manage/integrations/kubernetes' },
               {
-                title: 'Gateway API beta',
-                href: '/manage/integrations/kubernetes/gateway-api-beta',
+                title: 'Getting Started',
+                href: '/manage/integrations/kubernetes'
+              },
+              {
+                title: 'Routing Peer',
+                href: '/manage/integrations/kubernetes/routing-peer'
+              },
+              {
+                title: 'Client Sidecar',
+                href: '/manage/integrations/kubernetes/client-sidecar'
+              },
+              {
+                title: 'Gateway API',
+                href: '/manage/integrations/kubernetes/gateway-api',
               },
             ],
           },
