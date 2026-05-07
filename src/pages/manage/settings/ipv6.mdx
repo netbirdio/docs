@@ -1,10 +1,10 @@
 # IPv6 Overlay Addressing
 
 <Note>
-    IPv6 overlay addressing requires NetBird v0.68.0 or later.
+    IPv6 overlay addressing requires NetBird v0.71.0 or later.
 </Note>
 
-NetBird supports dual-stack overlay networking, where each peer can receive both an IPv4 and an IPv6 overlay address. Each account gets a unique IPv6 prefix.
+NetBird supports dual-stack overlay networking, where each peer can receive both an IPv4 and an IPv6 overlay address. Each account gets a unique IPv6 prefix (for example, `fd00:1234:5678::/64`) from which peer addresses are allocated.
 
 ## Enabling IPv6
 
@@ -19,6 +19,21 @@ When a peer belongs to an IPv6-enabled group, it receives an overlay address fro
 ### Network Range
 
 The IPv6 network range is configured alongside your IPv4 range. Valid prefix lengths are `/48` through `/112`. The default is a `/64` prefix, which provides enough addresses for most deployments.
+
+## Disabling IPv6 on a Client
+
+Individual clients can opt out of IPv6 with the `--disable-ipv6` CLI flag:
+
+```bash
+netbird up --disable-ipv6
+```
+
+This prevents the client from:
+- Receiving an IPv6 overlay address
+- Advertising IPv6 support to management
+- Accepting IPv6 traffic from remote peers
+
+The flag is also available in the desktop UI under **Settings > Disable IPv6**, and in the iOS and Android apps under **Advanced Settings**.
 
 ## How It Works
 
@@ -44,26 +59,11 @@ When an exit node route (`0.0.0.0/0`) is configured and the peer supports IPv6, 
 
 ### Network Routes
 
-[Network routes](/manage/network-routes) accept IPv6 CIDRs (for example `fd11:2::/64`) the same way as IPv4 subnets. When a route has masquerade enabled, the routing peer SNATs IPv6 egress traffic to its backend-side address, matching the IPv4 behaviour.
+[Network routes](/manage/network-routes) accept IPv6 CIDRs (for example `fd11:2::/64`) the same way as IPv4 subnets. When a route has masquerade enabled, the routing peer SNATs IPv6 egress traffic to its backend-side address, matching the IPv4 behavior.
 
 ### Domain Routes
 
-Domain-based network resources resolve both A and AAAA records. The client allocates a fake IPv4 from `240.0.0.0/8` and a fake IPv6 from `0100::/64` per resolved target, so v4-only and v6-only domains are both routable through the tunnel without collisions.
-
-## Disabling IPv6 on a Client
-
-Individual clients can opt out of IPv6 with the `--disable-ipv6` CLI flag:
-
-```bash
-netbird up --disable-ipv6
-```
-
-This prevents the client from:
-- Receiving an IPv6 overlay address
-- Advertising IPv6 support to management
-- Accepting IPv6 traffic from remote peers
-
-The flag is also available in the desktop UI under **Settings > Disable IPv6**, and in the iOS and Android apps under **Advanced Settings**.
+Domain-based network resources resolve both A and AAAA records. The client allocates a fake IPv4 from `240.0.0.0/8` and a fake IPv6 from `0100::/64` for each resolved target. This keeps v4-only and v6-only domains routable through the tunnel without address collisions.
 
 ## CLI Status
 
@@ -103,11 +103,15 @@ See the [API reference](/manage/public-api) for details.
 
 ### Peers report no IPv6 address after enabling the setting
 
-Peers only get an IPv6 address if they belong to at least one group listed in **IPv6 Enabled Groups** and if the client version supports the IPv6 overlay capability (v0.68.0+). Older agents don't advertise the capability and management skips IPv6 assignment for them.
+Peers only get an IPv6 address if they belong to at least one group listed in **IPv6 Enabled Groups** and if the client version supports the IPv6 overlay capability (v0.71.0+). Older agents don't advertise the capability and management skips IPv6 assignment for them.
 
 ### Routing peer has an IPv6 address but traffic doesn't reach the backend
 
-On a regular Linux host NetBird enables `net.ipv6.conf.all.forwarding=1` on startup. In constrained environments where that sysctl is read-only (unprivileged containers, locked-down Kubernetes pods), the write fails silently and IPv6 forwarding stays off. Enable it at the orchestrator layer when running a routing peer as a container:
+<Warning>
+On a regular Linux host NetBird enables `net.ipv6.conf.all.forwarding=1` on startup. In constrained environments where that sysctl is read-only (unprivileged containers, locked-down Kubernetes pods), the write fails silently and IPv6 forwarding stays off.
+</Warning>
+
+Enable it at the orchestrator layer when running a routing peer as a container:
 
 ```yaml
 # Docker / Podman compose
