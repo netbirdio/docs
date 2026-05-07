@@ -1,3 +1,5 @@
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { mdxAnnotations } from 'mdx-annotations'
 import { visit } from 'unist-util-visit'
 import rehypeMdxTitle from 'rehype-mdx-title'
@@ -5,6 +7,62 @@ import shiki from 'shiki'
 import { toString } from 'mdast-util-to-string'
 import * as acorn from 'acorn'
 import { slugifyWithCounter } from '@sindresorhus/slugify'
+import { LAST_UPDATED_BY_ROUTE } from '../src/lib/last-updated-routes.mjs'
+
+const PAGES_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/pages')
+
+function routeFromFilePath(filePath) {
+  if (!filePath) return null
+  const rel = path.relative(PAGES_DIR, filePath)
+  if (rel.startsWith('..')) return null
+  const noExt = rel.replace(/\.mdx$/, '')
+  const route = noExt === 'index' ? '/' : '/' + noExt.replace(/\/index$/, '')
+  return route
+}
+
+function formatLastUpdated(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '')
+  if (!m) return null
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  return `${months[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`
+}
+
+function rehypeInsertLastUpdated() {
+  return (tree, file) => {
+    const filePath = file?.path || file?.history?.[file.history.length - 1]
+    const route = routeFromFilePath(filePath)
+    if (!route) return
+    const iso = LAST_UPDATED_BY_ROUTE[route]
+    const formatted = formatLastUpdated(iso)
+    if (!formatted) return
+
+    const node = {
+      type: 'element',
+      tagName: 'p',
+      properties: {
+        className: ['not-prose', 'text-sm', 'text-slate-400', 'dark:text-zinc-500', 'mt-0', 'mb-8', 'ml-2.5'],
+      },
+      children: [
+        { type: 'text', value: 'Updated ' },
+        {
+          type: 'element',
+          tagName: 'time',
+          properties: { dateTime: iso },
+          children: [{ type: 'text', value: formatted }],
+        },
+      ],
+    }
+
+    const children = tree.children
+    for (let i = 0; i < children.length; i++) {
+      const c = children[i]
+      if (c.type === 'element' && c.tagName === 'h1') {
+        children.splice(i + 1, 0, node)
+        return
+      }
+    }
+  }
+}
 
 function rehypeParseCodeBlocks() {
   return (tree) => {
@@ -119,6 +177,7 @@ export const rehypePlugins = [
   rehypeShiki,
   rehypeSlugify,
   rehypeMdxTitle,
+  rehypeInsertLastUpdated,
   [
     rehypeAddMDXExports,
     (tree) => ({

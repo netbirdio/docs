@@ -1,0 +1,127 @@
+# Client Environment Variables
+
+The NetBird client supports environment variables for advanced configuration. These are separate from the CLI flag environment variables (like `NB_LOG_LEVEL`) which are described in the [CLI reference](/get-started/cli#environment-variables).
+
+## Setting environment variables
+
+Environment variables must be set on the **daemon process**, not the CLI. When running NetBird as a system service, use `--service-env` to persist them:
+
+```shell
+# Set during install
+sudo netbird service install --service-env NB_WG_KERNEL_DISABLED=true
+
+# Or reconfigure a running service
+sudo netbird service reconfigure --service-env NB_WG_KERNEL_DISABLED=true
+
+# Multiple variables
+sudo netbird service install --service-env NB_LOG_LEVEL=debug,NB_USE_LEGACY_ROUTING=true
+```
+
+When running in foreground mode, set them in the shell before starting:
+```shell
+NB_WG_KERNEL_DISABLED=true netbird up --foreground-mode
+```
+
+<Note>
+To clear all saved service parameters (including env vars), run `sudo netbird service reset-params` followed by `sudo netbird service reconfigure`.
+</Note>
+
+## Networking and routing
+
+| Variable | Platform | Description |
+|---|---|---|
+| `NB_USE_LEGACY_ROUTING` | Linux | Bypass the fwmark/ip-rule based routing and fall back to the simpler pre-0.26 routing method. Useful when exit nodes cause connectivity issues due to rp_filter or missing sysctl settings. |
+| `NB_SKIP_SOCKET_MARK` | Linux | Backward-compatibility alias for `NB_USE_LEGACY_ROUTING`. |
+| `NB_DISABLE_CUSTOM_ROUTING` | All | Revert to the routing behavior from before exit node support was added. No exclusion routes or fwmark-based socket routing will be used; all dialers and listeners fall back to plain `net.Dial`/`net.Listen`. Routes with a prefix of /7 or larger (e.g. default routes, 0.0.0.0/0) will be rejected. |
+| `NB_ROUTE_PROTO_FLAG` | macOS, BSD | Set a custom route flag on routes the client adds to the routing table. Accepted values: `2` (RTF_PROTO2) or `3` (RTF_PROTO3); defaults to RTF_PROTO1. Not used on Linux (Linux uses netlink with its own protocol field). |
+| `NB_DISABLE_ROUTE_CACHE` | Windows | Disable the 2-second cache on Windows routing table lookups. The client reads the OS routing table (via Win32 API) when adding or removing routes; without the cache, each operation triggers a fresh read. Only needed for debugging route conflicts. |
+
+## WireGuard and interface
+
+| Variable | Platform | Description |
+|---|---|---|
+| `NB_WG_KERNEL_DISABLED` | Linux | Skip loading the WireGuard kernel module and run entirely in userspace (wireguard-go). Use this when the kernel module is broken, missing, or conflicts with other software. |
+| `NB_WG_DEBUG` | All | Set to `true` to print low-level WireGuard protocol messages (handshakes, keypairs, timers) to the log. Very verbose. |
+| `NB_DISABLE_EBPF_WG_PROXY` | Linux | Disable the eBPF-based proxy that intercepts WireGuard UDP traffic and fall back to the classic UDP port proxy. |
+| `NB_USE_NETSTACK_MODE` | All | Run WireGuard on top of a userspace TCP/IP stack (gVisor netstack) instead of a TUN device. Required for environments without TUN support (e.g. unprivileged containers). |
+| `NB_NETSTACK_SKIP_PROXY` | All | When using netstack mode, do not start the built-in SOCKS5 proxy that exposes the WireGuard network to local applications. |
+| `NB_SOCKS5_LISTENER_PORT` | All | Override the port the netstack SOCKS5 proxy listens on (default: `1080`). Only relevant when netstack mode is active. |
+
+## Firewall
+
+| Variable | Platform | Description |
+|---|---|---|
+| `NB_SKIP_NFTABLES_CHECK` | Linux | Do not probe for nftables support at startup; go straight to the iptables backend. Useful on systems where nftables is installed but non-functional (e.g. missing kernel modules). |
+| `NB_NFTABLES_TABLE` | Linux | Name of the nftables table the client creates for ACL rules (default: `netbird`). Change this if the default name conflicts with existing firewall configuration. |
+| `NB_DISABLE_CONNTRACK` | All | Turn off the stateful connection tracker in the userspace packet filter. With conntrack enabled (default), inbound rules for return traffic sent by management are ignored because conntrack handles them automatically. Disabling conntrack means those inbound rules will be applied explicitly instead. |
+| `NB_DISABLE_USERSPACE_ROUTING` | All | Prevent the userspace packet filter from forwarding packets between interfaces. Routing rules from the management server will be ignored when this is set. |
+| `NB_DISABLE_MSS_CLAMPING` | All | Stop the userspace filter from rewriting TCP SYN/SYN-ACK MSS options to fit the WireGuard MTU. May cause path-MTU black holes if disabled. |
+| `NB_FORCE_USERSPACE_ROUTER` | All | Force packet forwarding through the userspace router even when a native firewall backend (nftables/iptables) is available. Normally, the presence of a native backend causes the client to delegate route forwarding to the kernel. This flag overrides that: the native backend still handles ACL rules, but routed packets are forwarded by the userspace filter instead. On macOS, Windows, and netstack mode the userspace router is always used regardless of this setting. |
+| `NB_ENABLE_LOCAL_FORWARDING` | All | Allow the userspace filter to forward packets destined for local addresses (not just routed subnets). Off by default to prevent unexpected local service exposure. |
+| `NB_ENABLE_NETSTACK_LOCAL_FORWARDING` | All | Same as `NB_ENABLE_LOCAL_FORWARDING` but applies only when running in netstack mode. Takes precedence over the general setting when both are set. |
+| `NB_USPFILTER_LOG_BUFFER` | All | Number of log messages the userspace packet filter can queue before dropping (default: `1000`). Increase this on high-throughput nodes to avoid losing firewall log entries. |
+
+## ICE and connectivity
+
+| Variable | Platform | Description |
+|---|---|---|
+| `NB_FORCE_RELAY` | All | Skip direct connectivity entirely: the client will not start the ICE listener or attempt peer-to-peer connections. All traffic goes through relay servers. Useful for strict egress-only environments. |
+| `NB_ICE_KEEP_ALIVE_INTERVAL_SEC` | All | How often (in seconds) ICE sends keepalive packets to maintain NAT bindings and detect connection liveness (default: `4`). |
+| `NB_ICE_DISCONNECTED_TIMEOUT_SEC` | All | Seconds of silence before ICE marks a connection as disconnected and starts recovery (default: `6`). |
+| `NB_ICE_FAILED_TIMEOUT_SEC` | All | Seconds of silence before ICE gives up on the connection entirely and falls back to relay (default: `6`). |
+| `NB_ICE_RELAY_ACCEPTANCE_MIN_WAIT_SEC` | All | Minimum seconds ICE waits for a direct (P2P) candidate before accepting a relay candidate. Higher values give direct connections more time to succeed at the cost of slower initial connection (default: `2`). |
+| `NB_ICE_MONITOR_PERIOD` | All | Interval between ICE connection health checks that verify handshake freshness and trigger reconnection if needed (Go duration, default: `5m`). |
+| `NB_ENABLE_EXPERIMENTAL_LAZY_CONN` | All | Open WireGuard tunnels to peers only when traffic is detected, instead of connecting to all peers at startup. Same effect as the `--enable-lazy-connection` CLI flag. |
+| `NB_LAZY_CONN_INACTIVITY_THRESHOLD` | All | How long a lazy connection can be idle before it is torn down (Go duration, default: `15m`). Only applies when lazy connections are enabled. |
+
+## DNS
+
+| Variable | Platform | Description |
+|---|---|---|
+| `NB_DNS_FORWARDER_PORT` | All | Override the port the internal DNS forwarder binds to for handling DNS routes received from clients (default: `22054`). The forwarder is separate from the local resolver. |
+| `NB_SKIP_DNS_PROBE` | All | Skip the startup check that sends a test query to the local resolver to verify it is reachable. Set this if the probe causes delays (e.g. in air-gapped networks). |
+| `NB_UNCLEAN_SHUTDOWN_RESOLV_FILE` | Linux, FreeBSD | Custom file path to store a backup of `/etc/resolv.conf` before the client modifies it. Used to restore the original on next startup if the client crashed without cleaning up (default: `<state-dir>/resolv.conf`, i.e. `/var/lib/netbird/resolv.conf` on Linux, `/var/db/netbird/resolv.conf` on FreeBSD). |
+
+## Connection retry
+
+These control the exponential backoff when the client loses its connection to the management or signal server.
+
+| Variable | Platform | Description |
+|---|---|---|
+| `NB_CONN_RETRY_INTERVAL_TIME` | All | Initial wait time before the first reconnection attempt (Go duration, e.g. `5s`). |
+| `NB_CONN_MAX_RETRY_INTERVAL_TIME` | All | Upper bound on the backoff interval; retries will never wait longer than this (Go duration). |
+| `NB_CONN_MAX_RETRY_TIME_TIME` | All | Total time the client will keep retrying before giving up and reporting a persistent failure (Go duration). Note: the double `_TIME` suffix is intentional and matches the variable name in the source code. |
+| `NB_CONN_RETRY_MULTIPLIER` | All | Factor by which the retry interval grows after each attempt (float, e.g. `1.7`). |
+
+## SSH
+
+| Variable | Platform | Description |
+|---|---|---|
+| `NB_DISABLE_SSH_CONFIG` | All | Prevent the client from writing NetBird peer entries into the system SSH config directory (`/etc/ssh/ssh_config.d/99-netbird.conf` on Unix, `%PROGRAMDATA%\ssh\ssh_config.d\99-netbird.conf` on Windows). By default, the client adds `Host` blocks so you can `ssh peer-name` without specifying the IP. |
+| `NB_FORCE_SSH_CONFIG` | All | Write the SSH config entries even when the peer count exceeds the default limit of 200. Without this, the client skips SSH config generation for large networks to avoid slow file writes. |
+
+## Relay
+
+| Variable | Platform | Description |
+|---|---|---|
+| `NB_RELAY_HC_ATTEMPT_THRESHOLD` | All | Number of consecutive failed WebSocket pings before the client considers a relay server unreachable and switches to a different one (default: `1`). |
+
+## Management
+
+| Variable | Platform | Description |
+|---|---|---|
+| `NB_MANAGEMENT_GRPC_MAX_MSG_SIZE` | All | Maximum size (in bytes) of a single gRPC message from the management server. Increase this when the network map (peers, firewall rules, routes, DNS config) exceeds the default 4 MB gRPC limit. |
+
+## Other
+
+| Variable | Platform | Description |
+|---|---|---|
+| `NB_STATE_DIR` | All | Override the directory where the client stores persistent state files (config, state.json, WireGuard keys). Defaults to `/var/lib/netbird` on Linux/macOS, `/var/db/netbird` on FreeBSD, `%PROGRAMDATA%\Netbird` on Windows. |
+| `NB_DNS_STATE_FILE` | All | Override the path to the client state file (`state.json`). Despite the name, this is not DNS-specific: it stores all shutdown/recovery state including DNS settings, SSH config, routes, and auto-update progress. The default path is per-profile (e.g. `/var/lib/netbird/state.json` for the default profile). Setting this bypasses per-profile state isolation. Primarily used by the embedded client API (`embed.Options.StatePath`). |
+| `NB_ROSENPASS_LOG_LEVEL` | All | Log level for the Rosenpass post-quantum key exchange subprocess. Accepted values: `debug`, `info`, `warn`, `error` (default: `info`). Separate from the main client log level. |
+| `NB_AUTO_UPDATE_DRY_RUN` | All | Set to `true` to run the auto-update check and download steps without actually replacing the binary. Useful for testing update infrastructure. |
+| `NB_PPROF_ADDR` | All | Start a Go pprof HTTP endpoint at this address (e.g. `localhost:6060`). For profiling CPU, memory, and goroutine usage in production. |
+| `NB_METRICS_PUSH_ENABLED` | All | Set to `true` to enable periodic push of client telemetry (connection quality, peer counts) to a metrics server. Disabled by default. |
+| `NB_METRICS_INTERVAL` | All | How often to push metrics when enabled (Go duration, e.g. `60s`). |
+| `NB_METRICS_SERVER_URL` | All | URL of the metrics collection server. Only needed when overriding the built-in default. |
+| `NB_METRICS_CONFIG_URL` | All | URL to fetch remote metrics configuration (which metrics to collect, sampling rates). Only needed when overriding the built-in default. |

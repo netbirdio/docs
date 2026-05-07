@@ -66,6 +66,75 @@ This page will help with various issues when self-hosting NetBird.
 - Check that the SSO flow completes successfully (user should land on Dashboard)
 - Review Management logs for any token validation errors
 
+## Installation Script Issues
+
+### Script hangs on "Waiting for NetBird server to become ready"
+
+**Problem**: The `getting-started.sh` script stays on the wait line for several minutes, even though netbird-server itself looks healthy in `docker ps`.
+
+The wait check probes the OIDC endpoint through your reverse proxy, so a healthy server alone isn't enough. Something on the path from the public internet to netbird-server is broken. Check these in order:
+
+**1. DNS**
+
+Confirm your domain points at the host:
+
+```bash
+dig +short netbird.example.com
+```
+
+The result should be the public IP of the VM running NetBird. If it's empty or wrong, the cert challenge can't complete and the probe will never succeed.
+
+**2. Cert issuance**
+
+For options 0 (built-in Traefik) and 1 (existing Traefik), check that a real cert was issued:
+
+```bash
+curl -vI https://netbird.example.com 2>&1 | grep -E "subject|issuer"
+```
+
+If you see a self-signed or default cert, ACME hasn't completed. Check Traefik logs for ACME errors. Common causes: port 80 not reachable from the internet, DNS not propagated yet, or Let's Encrypt rate limit hit.
+
+**3. Traefik can talk to the Docker socket (option 1 only)**
+
+Traefik discovers NetBird containers via Docker labels. If the Docker socket is mounted but Traefik can't read it (old SDK, wrong path, permission denied), routes never get created. Check Traefik logs for errors like `client version is too old` or `permission denied while trying to connect to the Docker daemon socket`.
+
+**4. Network membership matches (option 1 only)**
+
+Confirm the Traefik container and NetBird containers are actually on the same Docker network:
+
+```bash
+docker network inspect <your-network-name> | grep -A 2 Containers
+```
+
+You should see both Traefik and the NetBird containers listed.
+
+**5. Routing works end to end**
+
+If the four above look fine, test the full path manually:
+
+```bash
+curl -k https://netbird.example.com/oauth2/.well-known/openid-configuration
+```
+
+A valid response is JSON containing `"issuer"`. Anything else (empty body, 404, 502, connection refused) tells you where to dig further: 502 means Traefik can't reach netbird-server, 404 means the labels aren't matched, connection refused means you're not hitting Traefik at all.
+
+You can let the script keep waiting while you debug. As soon as the probe succeeds, the script will continue. If you'd rather start over, kill it with Ctrl+C, run `docker compose down -v`, fix the issue, and re-run.
+
+### Script fails on existing installation check
+
+**Problem**: The script exits immediately with a message about generated files already existing.
+
+**Solution**: This is intentional and protects you from overwriting a working setup. To start fresh:
+
+```bash
+docker compose down --volumes
+rm -f docker-compose.yml dashboard.env config.yaml proxy.env \
+      traefik-dynamic.yaml nginx-netbird.conf caddyfile-netbird.txt \
+      npm-advanced-config.txt
+```
+
+Then re-run the script. Be aware this removes all NetBird data including users and peers.
+
 ## Debugging TURN connections
 
 In the case that the peer-to-peer connection is not an option then the peer will use the TURN server for the secure connection establishment. If the connection is not possible even with TURN (Relay),

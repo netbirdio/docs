@@ -23,7 +23,7 @@ const nextConfig = {
         return [
             {
                 source: '/slack-url',
-                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-3rxbnuiyt-vXZxZ6UCjJ8aQLNLXMBJxQ',
+                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-3wwkb0b9y-opbG_pFSoOgP41KUV00MtA',
                 permanent: false,
             },
             {
@@ -506,6 +506,16 @@ const nextConfig = {
             },
             // documentation redirects for client
             {
+                source: '/client/allow-ssh',
+                destination: '/manage/peers/ssh#enabling-ssh',
+                permanent: true,
+            },
+            {
+                source: '/client/enable-lazy-connections',
+                destination: '/manage/peers/lazy-connection',
+                permanent: true,
+            },
+            {
                 source: '/how-to/profiles',
                 destination: '/client/profiles',
                 permanent: true,
@@ -650,6 +660,12 @@ const nextConfig = {
             {
                 source: '/selfhosted/reverse-proxy',
                 destination: '/selfhosted/external-reverse-proxy',
+                permanent: true,
+            },
+            // selfhosted scaling redirect
+            {
+                source: '/scaling-your-self-hosted-deployment',
+                destination: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
                 permanent: true,
             },
         ]
