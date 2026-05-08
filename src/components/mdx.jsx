@@ -83,7 +83,7 @@ export function Note({ children }) {
   return (
     <div className="my-6 flex gap-2.5 rounded-l border border-orange-500/20 bg-orange-50/50 p-4 leading-6 text-orange-900 dark:border-orange-500/30 dark:bg-orange-500/5 dark:text-orange-200 dark:[--tw-prose-links-hover:theme(colors.orange.300)] dark:[--tw-prose-links:theme(colors.white)]">
       <InfoIcon className="mt-1 h-4 w-4 flex-none fill-orange-500 stroke-white dark:fill-orange-200/20 dark:stroke-orange-200" />
-      <div className="[&>:first-child]:mt-0 [&>:last-child]:mb-0">
+      <div className="min-w-0 flex-1 [&>:first-child]:mt-0 [&>:last-child]:mb-0">
         {children}
       </div>
     </div>
@@ -94,7 +94,7 @@ export function Warning({ children }) {
   return (
     <div className="my-6 flex gap-2.5 rounded-l border border-red-500/20 bg-red-50/50 p-4 leading-6 text-red-900 dark:border-red-500/30 dark:bg-red-500/5 dark:text-red-200 dark:[--tw-prose-links-hover:theme(colors.red.300)] dark:[--tw-prose-links:theme(colors.white)]">
       <WarningIcon className="mt-1 h-4 w-4 flex-none fill-red-500 stroke-white dark:fill-red-200/20 dark:stroke-red-200" />
-      <div className="[&>:first-child]:mt-0 [&>:last-child]:mb-0">
+      <div className="min-w-0 flex-1 [&>:first-child]:mt-0 [&>:last-child]:mb-0">
         {children}
       </div>
     </div>
@@ -105,7 +105,7 @@ export function Success({ children }) {
   return (
     <div className="my-6 flex gap-2.5 rounded-l border border-green-500/20 bg-green-50/50 p-4 leading-6 text-green-900 dark:border-green-500/30 dark:bg-green-500/5 dark:text-green-200 dark:[--tw-prose-links-hover:theme(colors.green.300)] dark:[--tw-prose-links:theme(colors.white)]">
       <SuccessIcon className="mt-1 h-4 w-4 flex-none fill-green-500 stroke-white dark:fill-green-200/20 dark:stroke-green-200" />
-      <div className="[&>:first-child]:mt-0 [&>:last-child]:mb-0">
+      <div className="min-w-0 flex-1 [&>:first-child]:mt-0 [&>:last-child]:mb-0">
         {children}
       </div>
     </div>
