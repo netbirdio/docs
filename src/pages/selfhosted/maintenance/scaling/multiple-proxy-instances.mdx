@@ -52,6 +52,17 @@ If you have not already done so as part of [Enable Reverse Proxy](/selfhosted/mi
    traefik.http.routers.netbird-grpc.rule=Host(`netbird.example.com`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))
    ```
 
+   <Warning>
+   Replace the entire rule — don't just append the new `ProxyService` clause to the end of your existing line. The original rule closes its path group with `))`, so pasting `|| PathPrefix(...)` after it pushes the new path *outside* the OR group:
+
+   ```
+   ...ManagementService/`)) || PathPrefix(`/management.ProxyService/`))
+                          ^ this `)` ends the OR group too early
+   ```
+
+   The symptom is the same `transport: received unexpected content-type "text/html"` error, which makes it easy to think the fix didn't work. The `ProxyService` path must sit inside the same parentheses as the other two paths.
+   </Warning>
+
    Without `/management.ProxyService/` in this rule, Traefik falls back to the dashboard router and returns the dashboard HTML. The proxy logs this as `code = Unimplemented ... 404 (Not Found); transport: received unexpected content-type "text/html"`.
 
 2. **Disable the Traefik idle timeout** on the `websecure` entrypoint so long-lived gRPC streams between the proxy and management server are not cut off:
