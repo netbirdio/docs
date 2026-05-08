@@ -1,0 +1,279 @@
+import {Note, Warning} from "@/components/mdx"
+
+export const description =
+    'Run a NetBird reverse proxy on your own infrastructure, scoped exclusively to your NetBird Cloud account, with full control over traffic, geographic location, and TLS.'
+
+# Bring Your Own Proxy
+
+Bring Your Own Proxy (BYOP) lets a NetBird Cloud account run its **own** reverse proxy on its **own** infrastructure. The proxy connects to NetBird's management service like any other proxy, but is bound to a single account: only that account's services route through it, and no other account on NetBird Cloud can register against the same domain.
+
+It is the option to choose when you want:
+
+- **Full control over traffic** — proxied traffic terminates on infrastructure you operate, not on NetBird's shared cloud proxy clusters.
+- **Specific geographic placement** — pick the region and provider you need (regulatory, latency, residency).
+- **Your own TLS / domain** — the proxy issues certificates directly via Let's Encrypt for a wildcard under a domain you own.
+
+In the dashboard, BYOP proxies live under **Reverse Proxy** > **Self-Hosted Proxies**.
+
+<Note>
+    **Availability:** BYOP is available on **NetBird Cloud**. It is currently in **beta** and follows the [Reverse Proxy](/manage/reverse-proxy) feature lifecycle.
+</Note>
+
+<Note>
+    **Not the same as on-prem self-hosted setup.** If you run your own NetBird **management** server, follow [Self-hosted proxy setup](/manage/reverse-proxy#self-hosted-proxy-setup) instead. That setup serves every account on the management instance and is configured very differently. BYOP is exclusively for NetBird Cloud customers — the proxy is account-scoped from the gRPC layer up.
+</Note>
+
+## How it works
+
+A BYOP proxy is an instance of the same `netbirdio/reverse-proxy` Docker image used elsewhere, but registered with NetBird Cloud through an **account-scoped proxy access token**. The token carries your account ID; the management server enforces it on every gRPC call from the proxy:
+
+- Only services from your account are streamed to the proxy.
+- The cluster address (your `NB_PROXY_DOMAIN`) is unique within your account, and reserved across the platform: another account cannot register a proxy on the same domain.
+- Revoking the token disconnects all proxies registered with it within roughly one heartbeat interval (~60 seconds).
+- Deleting a self-hosted proxy from the dashboard removes its database record and hides the cluster from the API and dashboard. A proxy process that is still running keeps its existing gRPC stream open until it is stopped or its token is revoked, but it will no longer appear in the cluster list.
+
+Once registered, your BYOP proxy:
+
+1. Receives a stream of service mappings (only services that target your cluster domain).
+2. Provisions Let's Encrypt certificates for each domain it serves (or uses static / wildcard certificates you mount in).
+3. Joins your NetBird mesh as embedded WireGuard peers (one per account — in BYOP, that's just yours) and forwards traffic to backend peers or network resources over the tunnel.
+
+You can run **multiple BYOP proxy instances with the same token and the same `NB_PROXY_DOMAIN`** to form an HA cluster — DNS round-robin or your own load balancer in front, and management routes services to all connected proxies in the cluster.
+
+## Prerequisites
+
+Before you start, make sure you have:
+
+- A **NetBird Cloud** account with **Network Admin** (or higher) access — the **Services** permission is required to create proxy tokens and manage self-hosted proxies.
+- A **server with a public IP** that can accept inbound TCP traffic on **port 443** (clients connect here, and Let's Encrypt's default `tls-alpn-01` challenge validates here). Port **80** is only needed if you switch the ACME challenge to `http-01`. For HA, repeat for every replica behind the same domain.
+- **Docker** installed and running on that server.
+- A **domain you control** that you can point at the server. You will configure two `A` records: `proxy-domain` and `*.proxy-domain`.
+
+<Warning>
+    **Port 443 must be reachable from the public internet.** Let's Encrypt's `tls-alpn-01` challenge validates over port 443 with a special ALPN protocol. If your environment can't expose port 443 to Let's Encrypt's validation servers, switch to `http-01` (see [TLS configuration](#tls-configuration) below — that mode requires port 80 instead) or supply your own certificates.
+</Warning>
+
+## Setup walkthrough
+
+NetBird's dashboard provides a three-step wizard that generates the proxy token, shows the DNS records to add, and emits a ready-to-run `docker run` command. You can also drive the same flow through the API — see [Set up a BYOP proxy from the API](#set-up-a-byop-proxy-from-the-api).
+
+### Step 1: Open Self-Hosted Proxies and start the wizard
+
+Navigate to **Reverse Proxy** > **Self-Hosted Proxies** in the NetBird dashboard. If your account has no self-hosted proxies yet, you'll see the get-started card; otherwise the table lists existing clusters.
+
+Click **Setup Proxy** to open the wizard.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-self-hosted-proxies-empty.png" alt="Self-Hosted Proxies page in the dashboard with the Setup Proxy button" className="imagewrapper-big"/>
+</p>
+
+### Step 2: Choose your domain
+
+In the **Domain** tab, enter the domain that this proxy cluster will be reachable on, e.g., `proxy.company.com`. This becomes the proxy's `NB_PROXY_DOMAIN` and the suffix of every public service URL hosted on it (`{subdomain}.proxy.company.com`).
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-setup-modal-domain.png" alt="Setup Proxy modal showing the Domain tab with the requirements callout" className="imagewrapper-big"/>
+</p>
+
+The wizard reminds you of the host requirements — public IP, Docker, ports 80 and 443 free. Click **Continue** to move to the DNS step.
+
+### Step 3: Configure DNS records
+
+In the **DNS Records** tab, add the two `A` records shown in the table at your domain registrar:
+
+| Type | Name | Content |
+|------|------|---------|
+| A | `proxy.company.com` | Your machine's public IP |
+| A | `*.proxy.company.com` | Your machine's public IP |
+
+The wildcard record is required so that every service domain (`{subdomain}.proxy.company.com`) resolves to your proxy. If you run an HA cluster, point both records at all replicas (round-robin) or at the IP of a load balancer / floating IP that fronts them.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-setup-modal-dns.png" alt="Setup Proxy modal showing the DNS Records tab with copyable A record entries" className="imagewrapper-big"/>
+</p>
+
+<Note>
+    DNS changes take effect once they propagate. For Let's Encrypt to issue certificates, both records must resolve to the proxy's reachable IP.
+</Note>
+
+Click **Continue** to move to the install step.
+
+### Step 4: Run the proxy
+
+Switching to the **Run the Proxy** tab automatically generates a one-time, account-scoped proxy token and embeds it into a ready-to-run `docker run` command:
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-setup-modal-install.png" alt="Setup Proxy modal showing the Run the Proxy tab with the generated docker run command" className="imagewrapper-big"/>
+</p>
+
+```shell
+docker run -d \
+ -v /var/lib/certs:/certs \
+ -e NB_PROXY_CERTIFICATE_DIRECTORY=/certs \
+ -e NB_PROXY_ALLOW_INSECURE=true \
+ -e NB_PROXY_MANAGEMENT_ADDRESS=https://api.netbird.io \
+ -e NB_PROXY_ACME_CERTIFICATES=true \
+ -e NB_PROXY_DOMAIN=proxy.company.com \
+ -e NB_PROXY_LOG_LEVEL=info \
+ -e NB_PROXY_TOKEN=nbx_... \
+ -p 80:80 -p 443:443 \
+ netbirdio/reverse-proxy:latest
+```
+
+<Warning>
+    The plain proxy token is shown **only once** — at the moment it's generated. Copy the entire `docker run` block and store it somewhere safe before closing the modal. If you lose it, revoke the token and generate a new one (see [Manage tokens](#manage-tokens)).
+</Warning>
+
+<Note>
+    `NB_PROXY_ALLOW_INSECURE=true` allows the proxy's gRPC client to dial a management server without TLS. With NetBird Cloud's `https://api.netbird.io` it is a no-op — the gRPC dial is TLS regardless. Leave it as-is when running against Cloud. If you ever point `NB_PROXY_MANAGEMENT_ADDRESS` at an `http://` endpoint (e.g., for local testing), this is the flag that lets the proxy connect; do not use such a setup in production.
+</Note>
+
+<Note>
+    The `-p 80:80` mapping is only needed if you switch to the `http-01` ACME challenge (see [TLS configuration](#tls-configuration)). With the default `tls-alpn-01` challenge you can drop it and publish only `-p 443:443`.
+</Note>
+
+Run the command on your server. The container will:
+
+1. Connect to NetBird's management server (`api.netbird.io` for cloud, or the `NETBIRD_MANAGEMENT_URL` you've configured) over gRPC and authenticate with the token.
+2. Register itself as a proxy in your account's `proxy.company.com` cluster.
+3. Begin requesting Let's Encrypt certificates for each service hostname under that cluster.
+
+Click **Finish Setup** to close the wizard.
+
+### Step 5: Verify the proxy is connected
+
+Back on the **Self-Hosted Proxies** page, the new cluster appears once the proxy registers, with a count of connected proxies. A non-zero connected count means at least one replica is alive and exchanging mappings with management.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-self-hosted-proxies-connected.png" alt="Self-Hosted Proxies page showing a connected cluster with one proxy" className="imagewrapper-big"/>
+</p>
+
+You can also check the proxy's own health probe — by default it binds to `localhost:8080` on the proxy host, so run this on the box itself:
+
+```shell
+curl -s http://localhost:8080/healthz
+```
+
+Healthy output reports `management_connected: true` and `initial_sync_complete: true`. To probe from another host, override the bind address with `NB_PROXY_HEALTH_ADDRESS=:8080` and publish the port from the container.
+
+## Use the proxy for services
+
+Once the cluster is connected, your BYOP domain shows up in the service creation flow as a regular **Cluster** option in the domain picker.
+
+1. Go to **Reverse Proxy** > **Services** > **Add Service**.
+2. Choose a subdomain and pick your BYOP domain (`proxy.company.com`) as the base domain.
+3. Configure targets, authentication, and access restrictions as you would for any other reverse proxy service. See [Reverse Proxy overview](/manage/reverse-proxy) for service mode, target, and authentication details.
+
+Traffic to `subdomain.proxy.company.com` is now received by your BYOP proxy, terminated locally with a Let's Encrypt certificate, and forwarded over WireGuard to the target peer or network resource.
+
+## High availability
+
+Run multiple proxy replicas with the **same** `NB_PROXY_TOKEN` and **same** `NB_PROXY_DOMAIN` to form an HA cluster within your account. Each replica:
+
+- Registers itself with management as part of the same cluster.
+- Receives the full set of service mappings for the cluster.
+- Maintains its own WireGuard tunnels to backend peers.
+
+For DNS, point both `A` records at all replica IPs (round-robin) or at a load balancer / floating IP that fronts them. For TLS, see [Sharing certificates across replicas](#sharing-certificates-across-replicas).
+
+For broader operational guidance — token rotation, cert lock methods, monitoring — see [Running Multiple Proxy Instances](/selfhosted/maintenance/scaling/multiple-proxy-instances). The same operational patterns apply, with the caveat that BYOP cluster scope is your account, not the whole management instance.
+
+## TLS configuration
+
+The Docker command produced by the wizard uses **ACME (Let's Encrypt) with the `tls-alpn-01` challenge** by default. That mode needs only port 443 open and works without an additional HTTP listener.
+
+Other modes are supported by the same image. To switch challenge type, supply your own certificates, or use a wildcard certificate, set the corresponding environment variables. The same variables documented in [TLS certificate configuration](/manage/reverse-proxy#tls-certificate-configuration) (in the on-prem self-hosted proxy section) apply identically to BYOP — only the management endpoint and token differ.
+
+The most common adjustments:
+
+| Goal | Variable / value |
+|------|------------------|
+| Use Let's Encrypt with port 80 instead of port 443 | `NB_PROXY_ACME_CHALLENGE_TYPE=http-01` |
+| Provide your own certificate and key | unset `NB_PROXY_ACME_CERTIFICATES`, mount cert + key into `NB_PROXY_CERTIFICATE_DIRECTORY` (defaults: `tls.crt`, `tls.key`) |
+| Use a wildcard certificate for `*.proxy.company.com` | `NB_PROXY_WILDCARD_CERT_DIR=/certs/wildcard` |
+
+### Sharing certificates across replicas
+
+When multiple replicas use ACME, share `NB_PROXY_CERTIFICATE_DIRECTORY` between them (e.g., a network volume) so they don't re-issue the same certificate from each replica and hit Let's Encrypt rate limits. The proxy uses a cross-replica lock to coordinate issuance — `NB_PROXY_CERT_LOCK_METHOD` defaults to `auto`, which detects the right backend; set it explicitly to `flock` for shared filesystems or `k8s-lease` for Kubernetes deployments if auto-detection picks the wrong one.
+
+## Set up a BYOP proxy from the API
+
+If you prefer the API over the wizard, the flow is two calls plus the docker run:
+
+**1. Create an account-scoped proxy token.** Save the `plain_token` from the response — it's shown only this once.
+
+```shell
+curl -X POST https://api.netbird.io/api/reverse-proxies/proxy-tokens \
+  -H "Authorization: Token <PAT>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "byop-eu-west",
+    "expires_in": 0
+  }'
+```
+
+`expires_in` is in seconds; `0` means never expires. Pick a meaningful name — it appears in the token list and is helpful when revoking.
+
+**2. Configure the two `A` records** for your domain (see [Step 3](#step-3-configure-dns-records) above).
+
+**3. Run the proxy** with the token from step 1:
+
+```shell
+docker run -d \
+ -v /var/lib/certs:/certs \
+ -e NB_PROXY_CERTIFICATE_DIRECTORY=/certs \
+ -e NB_PROXY_MANAGEMENT_ADDRESS=https://api.netbird.io \
+ -e NB_PROXY_ACME_CERTIFICATES=true \
+ -e NB_PROXY_DOMAIN=proxy.company.com \
+ -e NB_PROXY_TOKEN=<plain_token_from_step_1> \
+ -p 80:80 -p 443:443 \
+ netbirdio/reverse-proxy:latest
+```
+
+**4. Verify** with `GET /api/reverse-proxies/clusters` (BYOP clusters carry `self_hosted: true`) or check the **Self-Hosted Proxies** page in the dashboard.
+
+## Manage proxies and tokens
+
+### Manage proxies
+
+The **Self-Hosted Proxies** page lists each cluster and the number of currently connected proxies. The same data is available via `GET /api/reverse-proxies/clusters` — BYOP clusters carry the `self_hosted: true` flag. From the page you can:
+
+- **Refresh** to pull fresh status.
+- **Delete** a cluster — this removes the cluster's database record and hides it from the API and dashboard. The same is exposed as `DELETE /api/reverse-proxies/clusters/{clusterAddress}`. Note that any proxy process still running with the cluster's token keeps its gRPC stream open until you stop it or revoke the token. To fully tear down a self-hosted proxy, delete the cluster *and* either stop the proxy container or revoke its token.
+
+### Manage tokens
+
+Proxy tokens are independent of proxy registrations: one token can register many proxies (HA), and revoking the token disconnects all of them. You can list, create, and revoke tokens via the API:
+
+```shell
+# List tokens
+curl https://api.netbird.io/api/reverse-proxies/proxy-tokens \
+  -H "Authorization: Token <PAT>"
+
+# Revoke a token
+curl -X DELETE https://api.netbird.io/api/reverse-proxies/proxy-tokens/<tokenId> \
+  -H "Authorization: Token <PAT>"
+```
+
+Within roughly one heartbeat interval (60 seconds) of a revoke, every proxy registered with that token loses its gRPC stream and its services stop being served. Restart the proxy with a new token to bring it back.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| Proxy logs show `Unauthenticated` immediately after start | Wrong or missing `NB_PROXY_TOKEN`, or token revoked | Generate a new token in the dashboard or API and restart with the new value |
+| Proxy logs show `cluster address ... is already in use` | Another account on the same management already owns this cluster domain | Pick a domain that's unique to your account — cluster domains are reserved across the platform |
+| Service stuck in `certificate_pending` | ACME challenge cannot complete: ports blocked, DNS not propagated, or geo-blocking on validation traffic | Verify both `A` records resolve correctly; ensure ports 80/443 are reachable from anywhere; switch to `http-01` if `tls-alpn-01` fails. See [TLS-ALPN-01 requirements](/manage/reverse-proxy#tls-alpn-01-requirements) |
+| Service stays in `tunnel_not_created` | Proxy can reach management but cannot reach the target peer over WireGuard | Confirm the target peer is online (`netbird status`) and policies allow connectivity from the proxy's embedded peer. The proxy creates one embedded peer per account on first service mapping |
+| Proxy disconnects every ~60 seconds | Token was revoked or expired | Generate a new token, restart the proxy |
+| `Setup Proxy` button greyed out | Account user lacks the `services:create` permission | Ask a Network Admin (or higher) to set up the proxy or grant the role |
+
+For deeper debugging, raise the log level to `debug` or `trace` (`NB_PROXY_LOG_LEVEL=debug`) and consult the proxy's `/healthz` endpoint.
+
+## Related pages
+
+- [Reverse Proxy overview](/manage/reverse-proxy) — service modes, targets, authentication, and access restrictions.
+- [Custom Domains](/manage/reverse-proxy/custom-domains) — use your own apex/subdomain for individual services on top of any cluster, including BYOP.
+- [Authentication](/manage/reverse-proxy/authentication) — SSO, password, PIN, header, and access restrictions.
+- [Access Logs](/manage/reverse-proxy/access-logs) — auditing for traffic going through your proxies.
+- [Running Multiple Proxy Instances](/selfhosted/maintenance/scaling/multiple-proxy-instances) — operational patterns for HA proxy clusters.
