@@ -296,6 +296,10 @@ export const docsNavigation = [
         links: [
           { title: 'Overview', href: '/manage/reverse-proxy' },
           {
+            title: 'Bring Your Own Proxy',
+            href: '/manage/reverse-proxy/bring-your-own-proxy',
+          },
+          {
             title: 'Custom Domains',
             href: '/manage/reverse-proxy/custom-domains',
           },
