@@ -1,0 +1,346 @@
+import { Note, Warning } from '@/components/mdx'
+
+# Site-to-VPN: Clientless Devices Reaching NetBird Peers
+
+This guide shows how to let a device that does **not** have NetBird installed
+initiate a connection to a NetBird peer over the overlay — the reverse of the
+more common VPN-to-Site direction.
+
+## What You'll Achieve
+
+After following this guide, a clientless device on your local network can
+reach a NetBird peer by its overlay IP or NetBird DNS name. Typical examples:
+
+- An on-premise monitoring system pushing metrics to a NetBird-connected
+  collector
+- A legacy server initiating outbound backups to a NetBird peer in the cloud
+- An office printer reporting status to a NetBird-connected management
+  application
+
+```
+Clientless Device ──► Routing Peer ──► NetBird Tunnel ──► NetBird Peer
+   (no NetBird)         (peer)                              (peer)
+```
+
+<Note>
+Site-to-VPN is implemented with [Network Routes](/manage/network-routes). The newer [Networks](/manage/networks) feature does not yet expose
+the routed CIDR as a policy source, which is required for this scenario.
+</Note>
+
+<Warning>
+With Network Routes, the overlay peer will always observe the **routing
+peer's NetBird IP** as the source of the request, not the clientless
+device's local IP. See [Source IP Behavior](#source-ip-behavior) below for
+the details and why this is the case.
+</Warning>
+
+## Prerequisites
+
+- A [NetBird cloud account](https://app.netbird.io/) or [self-hosted instance](/selfhosted/selfhosted-quickstart)
+- A Linux device on the local network to serve as the routing peer (a small
+  VM, NUC, or Raspberry Pi works)
+- A separate device that will run the NetBird peer the clientless device
+  needs to reach
+- The ability to either add a static route on the clientless device (or its
+  upstream router), or to install a port-forwarding rule on the routing peer
+  — both options are covered below
+
+## Example Setup
+
+- **Local site:** `192.168.50.0/24`
+- **Routing peer (`site-router`):** site IP `192.168.50.10`, NetBird IP
+  assigned at enrollment
+- **Clientless device:** `192.168.50.20`
+- **Target NetBird peer (`backup-collector`):** runs the NetBird client; we
+  reach it on TCP port `8080`
+
+## Step 1: Create Setup Keys with Groups
+
+Before installing NetBird on the routing peer, create a setup key with an
+auto-assigned group so the peer lands in the right place:
+
+1. Go to **Setup Keys** in the NetBird dashboard
+2. Click **Create Setup Key**
+3. Configure:
+   - Network Identifier: "Site Routing Peer"
+   - Auto-assigned groups: create and add `site-routing-peers`
+4. Click **Create** and note the key
+
+Repeat for the target peer if it isn't already enrolled — place it in a
+group like `backup-collectors`. The target peer is a regular NetBird peer;
+nothing special needs to be configured on it for this scenario.
+
+## Step 2: Deploy the Routing Peer
+
+Install NetBird on the routing peer and enroll it:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+sudo netbird up --setup-key YOUR_SITE_SETUP_KEY
+```
+
+Confirm the peer appears in the dashboard and shows the `site-routing-peers`
+group.
+
+## Step 3: Enable IP Forwarding on the Routing Peer
+
+The routing peer needs to forward packets between its local interface and
+the NetBird wireguard interface:
+
+```bash
+sudo sysctl -w net.ipv4.ip_forward=1
+echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-netbird-routing.conf
+```
+
+NetBird installs its own `FORWARD` chain on the routing peer that allows
+established/related return traffic. No additional iptables rules are needed
+on the routing peer itself when masquerade is enabled on the route (next
+step) — NetBird handles the source NAT.
+
+## Step 4: Create the Network Route
+
+In the NetBird dashboard:
+
+1. Go to **Network Routes** and click **Add Route**
+2. Configure:
+   - **Network Identifier:** `site-50`
+   - **Network range:** `192.168.50.0/24`
+   - **Routing Peer:** `site-router` (or use the `site-routing-peers` group)
+   - **Distribution Groups:** `backup-collectors` (the group containing the
+     peers the clientless device will reach)
+   - **Masquerade:** **Enabled** (required — see
+     [Source IP Behavior](#source-ip-behavior))
+   - **Access Control Groups:** leave empty for site-to-VPN (these only
+     apply to the VPN-to-Site direction)
+3. Click **Add Route**
+
+The route advertises the site's CIDR onto the overlay, which gives the
+target peer a return path for any traffic that originates from the site.
+
+## Step 5: Create the Access Policy
+
+The routing peer needs to be allowed to reach the target peer over the
+overlay:
+
+1. Go to **Access Control** → **Policies** and click **Add Policy**
+2. Configure:
+   - **Name:** `Site Router to Backup Collector`
+   - **Protocol:** `TCP`
+   - **Ports:** `8080` (or `All` to allow any port)
+   - **Source Groups:** `site-routing-peers`
+   - **Destination Groups:** `backup-collectors`
+3. Click **Add Policy**
+
+Because the route has masquerade enabled, traffic from the clientless
+device will appear on the overlay as originating from the routing peer's
+NetBird IP. The policy authorises that flow.
+
+## Step 6: Direct Site Traffic Through the Routing Peer
+
+You have two options for getting the clientless device's traffic to the
+routing peer. Pick whichever fits your environment.
+
+### Option A: Static Route (recommended)
+
+Tell the clientless device — or the site's upstream router — to send
+traffic destined for NetBird's CIDR (`100.64.0.0/10`) through the routing
+peer.
+
+**On a Linux clientless device:**
+
+```bash
+sudo ip route add 100.64.0.0/10 via 192.168.50.10
+# Persist via /etc/network/interfaces, netplan, or NetworkManager
+```
+
+**On Windows:**
+
+```powershell
+route -p add 100.64.0.0 mask 255.192.0.0 192.168.50.10
+```
+
+**On a site router that issues DHCP:** add a classless static route option
+(DHCP option 121) pointing `100.64.0.0/10` to the routing peer. Every
+device on the network will then learn the route automatically.
+
+The clientless device can now reach the target peer by its NetBird IP:
+
+```bash
+curl http://100.x.x.x:8080/
+```
+
+To use NetBird's DNS names instead of IPs, see
+[Resolving NetBird DNS Names](#resolving-netbird-dns-names) below.
+
+### Option B: Per-Service Port Forwarding
+
+If you cannot change routing on the site (or only want to expose specific
+services), DNAT the service on the routing peer instead:
+
+```bash
+sudo iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 18080 \
+  -j DNAT --to-destination <TARGET_PEER_NETBIRD_IP>:8080
+```
+
+Where `eth0` is the routing peer's site-facing interface. The clientless
+device now reaches the service through the routing peer's local IP:
+
+```bash
+curl http://192.168.50.10:18080/
+```
+
+Each forwarded service needs its own DNAT rule. This is a good fit for a
+small number of well-known services and avoids any client-side changes.
+
+## Test Connectivity
+
+From the clientless device:
+
+```bash
+# Option A (static route): reach by NetBird IP
+curl -v http://<TARGET_PEER_NETBIRD_IP>:8080/
+
+# Option B (DNAT): reach via the routing peer's site IP
+curl -v http://192.168.50.10:18080/
+```
+
+Verify on the target peer that the request arrived:
+
+```bash
+# Replace with whatever the target peer is listening with
+sudo ss -tnp | grep :8080
+```
+
+The connection's remote address on the target peer will be the **routing
+peer's NetBird IP**, not the clientless device's local IP.
+
+## Resolving NetBird DNS Names
+
+By default, the clientless device has no way to resolve `*.netbird.cloud`
+hostnames — that lookup happens locally on each NetBird peer. You can
+publish those names to the site by running a forwarding resolver on the
+routing peer.
+
+A minimal `dnsmasq` configuration on the routing peer:
+
+```ini
+# /etc/dnsmasq.d/netbird.conf
+bind-interfaces
+listen-address=192.168.50.10
+interface=eth0
+
+# Forward NetBird-managed names to this peer's local NetBird resolver.
+# The NetBird daemon listens on the peer's NetBird IP, port 53.
+server=/netbird.cloud/<ROUTING_PEER_NETBIRD_IP>
+
+# Everything else to upstream
+server=8.8.8.8
+server=1.1.1.1
+```
+
+Then point the clientless device's DNS at `192.168.50.10` (via DHCP,
+`/etc/resolv.conf`, or static configuration) and use the NetBird hostname
+directly:
+
+```bash
+curl http://backup-collector.netbird.cloud:8080/
+```
+
+<Note>
+The NetBird daemon binds its DNS resolver on the peer's own NetBird IP,
+not on `127.0.0.1`. Substitute the routing peer's actual NetBird IP into
+the `server=/netbird.cloud/...` line — you can find it with
+`netbird status` on the routing peer.
+</Note>
+
+## Source IP Behavior
+
+With Network Routes, the target peer always sees the **routing peer's
+NetBird IP** as the source — regardless of which clientless device on the
+site initiated the connection. Two routes lead to this:
+
+- With **masquerade enabled** on the route, NetBird installs a MASQUERADE
+  rule on the routing peer's outbound wireguard interface, rewriting the
+  source IP at the routing peer.
+- With **port forwarding (Option B)**, the routing peer SNATs the DNAT'd
+  flow so that return traffic comes back to the routing peer.
+
+You **cannot** preserve the clientless device's local IP all the way to
+the target peer through Network Routes. The target peer's per-peer access
+control list matches sources by NetBird IP, and there is no field on a
+legacy Network Route that registers the site CIDR as a policy source.
+Disabling masquerade does not help here: the target peer will receive
+packets with the site source IP, but they will be dropped by its access
+control because that IP is not in any allowed source group.
+
+If preserving the original source IP is a hard requirement, you have two
+choices:
+
+1. **Run the access policy with the destination group empty of per-peer
+   ACL** — practically, this means structuring policies so that no policy
+   has the target peer as a destination, which removes the per-peer ACL on
+   it entirely. This trades security for visibility and is rarely
+   appropriate.
+2. **Use the [Networks](/manage/networks) feature instead** for any
+   destinations where preserved source IP matters. Networks' Resources
+   model is designed around CIDR-bearing groups and can carry the original
+   source through to the destination's ACL. The Site-to-VPN direction is
+   still limited there at the time of writing — track the
+   [Networks documentation](/manage/networks) for updates.
+
+## Troubleshooting
+
+**Connection times out from the clientless device.**
+
+Check that the static route or DNAT rule is in place:
+
+```bash
+# On the clientless device, Option A:
+ip route get <TARGET_PEER_NETBIRD_IP>
+# Should show "via 192.168.50.10 dev <iface>"
+
+# On the routing peer, Option B:
+sudo iptables -t nat -L PREROUTING -n -v
+# Should show your DNAT rule with non-zero packet counters when traffic flows
+```
+
+**Routing peer receives packets but they don't reach the target peer.**
+
+Check that IP forwarding is enabled and confirm the target peer is reachable
+from the routing peer directly:
+
+```bash
+# On the routing peer
+cat /proc/sys/net/ipv4/ip_forward    # should be 1
+curl http://<TARGET_PEER_NETBIRD_IP>:8080/   # should succeed
+```
+
+If the second command fails, the access policy is wrong — verify the policy
+allows `site-routing-peers` → target peer's group on the required port.
+
+**Target peer receives packets but drops them.**
+
+If you disabled masquerade on the route, the target peer will see the raw
+site source IP and drop the packets at its per-peer access control. Enable
+masquerade on the route to fix this.
+
+```bash
+# On the target peer, watch for drops:
+sudo iptables -L INPUT -n -v | grep DROP
+# DROP counter on the wt0 interface increasing means the packet
+# was rejected by access control.
+```
+
+**DNS resolution returns NXDOMAIN.**
+
+Confirm the routing peer's NetBird IP is correct in `dnsmasq.conf` (it
+changes if the peer is re-enrolled), and that `dnsmasq` is not bound to
+`lo` — binding loopback causes it to refuse forwarding to its own
+`127.0.0.1`-co-located NetBird resolver.
+
+## Related
+
+- [Network Routes — Concept](/manage/network-routes)
+- [Site-to-Site: Office Networks](/manage/network-routes/use-cases/by-scenario/site-to-site-office)
+- [Configuring Routes with Access Control](/manage/network-routes/use-cases/by-configuration/access-control)
+- [Site-to-Site Overview](/use-cases/site-to-site)
