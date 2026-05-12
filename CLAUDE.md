@@ -20,6 +20,7 @@ npm run gen              # Regenerate API docs from NetBird OpenAPI spec
 npm run gen:llm          # Regenerate LLM-friendly markdown (auto-runs with dev/build)
 npm run gen:edit-routes  # Regenerate edit-on-GitHub routes (auto-runs with dev/build)
 npm run gen:last-updated # Regenerate per-page git last-modified dates (auto-runs with dev/build)
+npm run gen:sitemap      # Regenerate public/sitemap.xml (auto-runs with dev/build)
 ```
 
 ## Security boundaries
