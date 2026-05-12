@@ -436,6 +436,10 @@ export const docsNavigation = [
                 title: 'Generic HTTP',
                 href: '/manage/activity/event-streaming/generic-http',
               },
+              {
+                title: 'Wazuh',
+                href: '/manage/activity/event-streaming/wazuh',
+              },
             ],
           },
         ],
