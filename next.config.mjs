@@ -102,6 +102,11 @@ const nextConfig = {
                 destination: '/about-netbird/self-hosted-vs-cloud',
                 permanent: true,
             },
+            {
+                source: '/about-netbird/other',
+                destination: '/introduction',
+                permanent: true,
+            },
             // documentation redirects for access control
             {
                 source: '/how-to/manage-network-access',
