@@ -62,7 +62,7 @@ auto-assigned group so the peer lands in the right place:
 1. Go to **Setup Keys** in the NetBird dashboard
 2. Click **Create Setup Key**
 3. Configure:
-   - Network Identifier: "Site Routing Peer"
+   - Name: "Site Routing Peer"
    - Auto-assigned groups: create and add `site-routing-peers`
 4. Click **Create** and note the key
 
@@ -96,6 +96,15 @@ NetBird installs its own `FORWARD` chain on the routing peer that allows
 established/related return traffic. No additional iptables rules are needed
 on the routing peer itself when masquerade is enabled on the route (next
 step) — NetBird handles the source NAT.
+
+If you run a host firewall (UFW, firewalld, custom iptables policy) with the
+`FORWARD` chain default set to `DROP`, you will additionally need to allow
+forwarding between the site-facing interface and `wt0`. For example with
+`iptables`:
+
+```bash
+sudo iptables -I FORWARD 1 -i <site-iface> -o wt0 -j ACCEPT
+```
 
 ## Step 4: Create the Network Route
 
@@ -175,15 +184,23 @@ To use NetBird's DNS names instead of IPs, see
 ### Option B: Per-Service Port Forwarding
 
 If you cannot change routing on the site (or only want to expose specific
-services), DNAT the service on the routing peer instead:
+services), DNAT the service on the routing peer instead. First identify the
+routing peer's site-facing interface:
 
 ```bash
-sudo iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 18080 \
+ip -br addr
+# Pick the interface that holds the routing peer's site IP (e.g. eth0, ens18).
+```
+
+Then install the DNAT rule:
+
+```bash
+sudo iptables -t nat -A PREROUTING -i <site-iface> -p tcp --dport 18080 \
   -j DNAT --to-destination <TARGET_PEER_NETBIRD_IP>:8080
 ```
 
-Where `eth0` is the routing peer's site-facing interface. The clientless
-device now reaches the service through the routing peer's local IP:
+The clientless device now reaches the service through the routing peer's
+local IP:
 
 ```bash
 curl http://192.168.50.10:18080/
@@ -273,20 +290,14 @@ Disabling masquerade does not help here: the target peer will receive
 packets with the site source IP, but they will be dropped by its access
 control because that IP is not in any allowed source group.
 
-If preserving the original source IP is a hard requirement, you have two
-choices:
-
-1. **Run the access policy with the destination group empty of per-peer
-   ACL** — practically, this means structuring policies so that no policy
-   has the target peer as a destination, which removes the per-peer ACL on
-   it entirely. This trades security for visibility and is rarely
-   appropriate.
-2. **Use the [Networks](/manage/networks) feature instead** for any
-   destinations where preserved source IP matters. Networks' Resources
-   model is designed around CIDR-bearing groups and can carry the original
-   source through to the destination's ACL. The Site-to-VPN direction is
-   still limited there at the time of writing — track the
-   [Networks documentation](/manage/networks) for updates.
+Preserving the original source IP is **not possible** with legacy Network
+Routes. Removing all policies that target the destination peer does not
+"open" it — it simply tears down the wireguard pairing with the routing
+peer, and the connection fails to establish at all. The newer
+[Networks](/manage/networks) feature is built around CIDR-bearing Resource
+groups and is the future path for preserved-source scenarios; the Site-to-VPN
+direction is not yet supported there. Track the
+[Networks documentation](/manage/networks) for updates.
 
 ## Troubleshooting
 
