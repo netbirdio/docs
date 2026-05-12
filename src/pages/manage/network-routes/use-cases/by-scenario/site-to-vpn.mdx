@@ -18,7 +18,7 @@ reach a NetBird peer by its overlay IP or NetBird DNS name. Typical examples:
   application
 
 ```
-Clientless Device ──► Routing Peer ──► NetBird Tunnel ──► NetBird Peer
+Clientless Device ──► Routing Peer ──► NetBird Overlay ──► NetBird Peer
    (no NetBird)         (peer)                              (peer)
 ```
 
@@ -36,11 +36,6 @@ the details and why this is the case.
 
 ## Prerequisites
 
-- A [NetBird cloud account](https://app.netbird.io/) or [self-hosted instance](/selfhosted/selfhosted-quickstart)
-- A Linux device on the local network to serve as the routing peer (a small
-  VM, NUC, or Raspberry Pi works)
-- A separate device that will run the NetBird peer the clientless device
-  needs to reach
 - The ability to either add a static route on the clientless device (or its
   upstream router), or to install a port-forwarding rule on the routing peer
   — both options are covered below
@@ -82,29 +77,19 @@ sudo netbird up --setup-key YOUR_SITE_SETUP_KEY
 Confirm the peer appears in the dashboard and shows the `site-routing-peers`
 group.
 
-## Step 3: Enable IP Forwarding on the Routing Peer
+## Step 3: Allow Forwarding Through a Host Firewall (if applicable)
 
-The routing peer needs to forward packets between its local interface and
-the NetBird wireguard interface:
-
-```bash
-sudo sysctl -w net.ipv4.ip_forward=1
-echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-netbird-routing.conf
-```
-
-NetBird installs its own `FORWARD` chain on the routing peer that allows
-established/related return traffic. No additional iptables rules are needed
-on the routing peer itself when masquerade is enabled on the route (next
-step) — NetBird handles the source NAT.
-
-If you run a host firewall (UFW, firewalld, custom iptables policy) with the
-`FORWARD` chain default set to `DROP`, you will additionally need to allow
+If you run a host firewall (UFW, firewalld, custom iptables policy) on the
+routing peer with the `FORWARD` chain default set to `DROP`, allow
 forwarding between the site-facing interface and `wt0`. For example with
 `iptables`:
 
 ```bash
 sudo iptables -I FORWARD 1 -i <site-iface> -o wt0 -j ACCEPT
 ```
+
+If no host firewall is in the way, no extra rules are needed — NetBird
+handles IP forwarding and source NAT on the routing peer.
 
 ## Step 4: Create the Network Route
 
@@ -331,9 +316,9 @@ allows `site-routing-peers` → target peer's group on the required port.
 
 **Target peer receives packets but drops them.**
 
-If you disabled masquerade on the route, the target peer will see the raw
-site source IP and drop the packets at its per-peer access control. Enable
-masquerade on the route to fix this.
+If you disabled masquerade on the routing peer, the target peer will see
+the raw site source IP and drop the packets at its per-peer access
+control. Enable masquerade on the routing peer to fix this.
 
 ```bash
 # On the target peer, watch for drops:
