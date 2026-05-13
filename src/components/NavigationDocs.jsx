@@ -195,42 +195,17 @@ export const docsNavigation = [
             title: 'Use Cases',
             isOpen: false,
             links: [
-              { title: 'Overview', href: '/manage/networks/use-cases' },
               {
-                title: 'By Scenario',
-                isOpen: false,
-                links: [
-                  {
-                    title: 'Access Home Devices',
-                    href: '/manage/networks/use-cases/by-scenario/access-home-devices',
-                  },
-                  {
-                    title: 'Remote Worker Access',
-                    href: '/manage/networks/use-cases/by-scenario/remote-worker-access',
-                  },
-                  {
-                    title: 'Cloud to On-Premise',
-                    href: '/manage/networks/use-cases/by-scenario/cloud-to-on-premise',
-                  },
-                ],
+                title: 'Access Home Devices',
+                href: '/manage/networks/use-cases/access-home-devices',
               },
               {
-                title: 'By Resource Type',
-                isOpen: false,
-                links: [
-                  {
-                    title: 'Multiple IP Resources',
-                    href: '/manage/networks/use-cases/by-resource-type/routing-traffic-to-multiple-resources',
-                  },
-                  {
-                    title: 'Domain Resources',
-                    href: '/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources',
-                  },
-                  {
-                    title: 'Wildcard Domains',
-                    href: '/manage/networks/use-cases/by-resource-type/accessing-entire-domains-within-networks',
-                  },
-                ],
+                title: 'Cloud to On-Premise',
+                href: '/manage/networks/use-cases/cloud-to-on-premise',
+              },
+              {
+                title: 'Site-to-VPN',
+                href: '/manage/networks/use-cases/site-to-vpn',
               },
             ],
           },
@@ -245,48 +220,27 @@ export const docsNavigation = [
             title: 'Use Cases',
             isOpen: false,
             links: [
-              { title: 'Overview', href: '/manage/network-routes/use-cases' },
               {
-                title: 'By Scenario',
-                isOpen: false,
-                links: [
-                  {
-                    title: 'Site-to-Site: Home',
-                    href: '/manage/network-routes/use-cases/by-scenario/site-to-site-home',
-                  },
-                  {
-                    title: 'Site-to-Site: Office',
-                    href: '/manage/network-routes/use-cases/by-scenario/site-to-site-office',
-                  },
-                  {
-                    title: 'Site-to-Site: Cloud',
-                    href: '/manage/network-routes/use-cases/by-scenario/site-to-site-cloud',
-                  },
-                  {
-                    title: 'Exit Nodes',
-                    href: '/manage/network-routes/use-cases/by-scenario/exit-nodes',
-                  },
-                ],
+                title: 'Site-to-Site',
+                href: '/manage/network-routes/use-cases/site-to-site',
               },
               {
-                title: 'By Configuration',
-                isOpen: false,
-                links: [
-                  {
-                    title: 'Access Control',
-                    href: '/manage/network-routes/use-cases/by-configuration/access-control',
-                  },
-                  {
-                    title: 'Overlapping Routes',
-                    href: '/manage/network-routes/use-cases/by-configuration/overlapping-routes',
-                  },
-                  {
-                    title: 'Advanced Configuration',
-                    href: '/manage/network-routes/use-cases/by-configuration/advanced-configuration',
-                  },
-                ],
+                title: 'Exit Nodes',
+                href: '/manage/network-routes/use-cases/exit-nodes',
               },
             ],
+          },
+          {
+            title: 'Access Control',
+            href: '/manage/network-routes/access-control',
+          },
+          {
+            title: 'Overlapping Routes',
+            href: '/manage/network-routes/overlapping-routes',
+          },
+          {
+            title: 'Advanced Configuration',
+            href: '/manage/network-routes/advanced-configuration',
           },
         ],
       },
@@ -435,6 +389,10 @@ export const docsNavigation = [
               {
                 title: 'Generic HTTP',
                 href: '/manage/activity/event-streaming/generic-http',
+              },
+              {
+                title: 'Wazuh',
+                href: '/manage/activity/event-streaming/wazuh',
               },
             ],
           },
@@ -752,10 +710,6 @@ export const docsNavigation = [
         isOpen: false,
         links: [
           {
-            title: 'Allow SSH',
-            href: '/client/allow-ssh',
-          },
-          {
             title: 'Block Inbound Connections',
             href: '/client/block-inbound-connections',
           },
@@ -764,12 +718,16 @@ export const docsNavigation = [
             href: '/client/connect-on-startup',
           },
           {
-            title: 'Enable Lazy Connections',
-            href: '/client/enable-lazy-connections',
-          },
-          {
             title: 'Enable Quantum-Resistance',
             href: '/client/post-quantum-cryptography',
+          },
+          {
+            title: 'Allow SSH',
+            href: '/client/allow-ssh',
+          },
+          {
+            title: 'Enable Lazy Connections',
+            href: '/client/enable-lazy-connections',
           },
         ],
       },
