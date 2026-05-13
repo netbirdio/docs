@@ -32,6 +32,11 @@ const nextConfig = {
                 permanent: true,
             },
             {
+                source: '/manage/network-routes/use-cases/by-scenario/site-to-vpn',
+                destination: '/manage/networks/use-cases/site-to-vpn',
+                permanent: true,
+            },
+            {
                 source: '/docs/getting-started/installation',
                 destination: '/get-started/install',
                 permanent: true,
