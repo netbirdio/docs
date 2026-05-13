@@ -232,6 +232,10 @@ export const docsNavigation = [
                   },
                 ],
               },
+              {
+                title: 'Site-to-VPN',
+                href: '/manage/networks/use-cases/site-to-vpn',
+              },
             ],
           },
         ],
