@@ -232,6 +232,10 @@ export const docsNavigation = [
                   },
                 ],
               },
+              {
+                title: 'Site-to-VPN',
+                href: '/manage/networks/use-cases/site-to-vpn',
+              },
             ],
           },
         ],
@@ -261,10 +265,6 @@ export const docsNavigation = [
                   {
                     title: 'Site-to-Site: Cloud',
                     href: '/manage/network-routes/use-cases/by-scenario/site-to-site-cloud',
-                  },
-                  {
-                    title: 'Site-to-VPN',
-                    href: '/manage/network-routes/use-cases/by-scenario/site-to-vpn',
                   },
                   {
                     title: 'Exit Nodes',
