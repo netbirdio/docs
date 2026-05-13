@@ -506,15 +506,15 @@ export const docsNavigation = [
             links: [
               {
                 title: 'Getting Started',
-                href: '/manage/integrations/kubernetes'
+                href: '/manage/integrations/kubernetes',
               },
               {
                 title: 'Routing Peer',
-                href: '/manage/integrations/kubernetes/routing-peer'
+                href: '/manage/integrations/kubernetes/routing-peer',
               },
               {
                 title: 'Client Sidecar',
-                href: '/manage/integrations/kubernetes/client-sidecar'
+                href: '/manage/integrations/kubernetes/client-sidecar',
               },
               {
                 title: 'Gateway API',
