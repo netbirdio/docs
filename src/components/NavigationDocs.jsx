@@ -192,6 +192,10 @@ export const docsNavigation = [
             href: '/manage/networks/how-routing-peers-work',
           },
           {
+            title: 'Masquerade',
+            href: '/manage/networks/masquerade',
+          },
+          {
             title: 'Use Cases',
             isOpen: false,
             links: [

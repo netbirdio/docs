@@ -1,0 +1,158 @@
+import { Note, Warning } from '@/components/mdx'
+import { Tiles } from '@/components/Tiles'
+
+# Masquerade
+
+Masquerade is on by default. The routing peer SNATs forwarded traffic to its own LAN-side IP, so the destination network does not need any awareness of NetBird. Turn it off when you need:
+
+- Source IP visibility for auditing, compliance, or application logic.
+- The destination network's existing firewalls to filter NetBird peers by their overlay IP.
+
+## What changes when masquerade is off
+
+- The original NetBird overlay IP is preserved end-to-end.
+- The destination network must have a return route for the NetBird CIDR (default `100.64.0.0/10`) pointing at the routing peer's LAN IP.
+- High availability stops working — return traffic must flow back through one specific routing peer, so the destination network has no way to follow a failover. See [How Routing Peers Work — Masquerade](/manage/networks/how-routing-peers-work#masquerade).
+
+<Note>
+Masquerade can only be turned off on Linux routing peers.
+</Note>
+
+## Inputs to substitute
+
+The examples below use placeholders. Swap in:
+
+- `100.64.0.0/10` — default NetBird CIDR. Substitute your account's range if it's narrower.
+- `<PEER_LAN_IP>` — the routing peer's IP on the destination subnet.
+- `<IFACE>` — the LAN interface on the destination host. Use `ip -br addr` to identify it.
+
+## Test the route before making it persistent
+
+Add the route temporarily on the destination host:
+
+```bash
+sudo ip route add 100.64.0.0/10 via <PEER_LAN_IP>
+```
+
+Verify reachability from a NetBird peer, then remove the test route before committing the persistent version:
+
+```bash
+sudo ip route del 100.64.0.0/10
+```
+
+## Persistent configuration
+
+Pick the section matching how the destination host manages its network.
+
+### Netplan (Ubuntu 18.04+)
+
+Edit the existing yaml in `/etc/netplan/` (e.g. `01-netcfg.yaml` or `50-cloud-init.yaml`):
+
+```yaml
+network:
+  version: 2
+  ethernets:
+    <IFACE>:
+      routes:
+        - to: 100.64.0.0/10
+          via: <PEER_LAN_IP>
+```
+
+Apply:
+
+```bash
+sudo netplan apply
+```
+
+<Note>
+Recent netplan versions require `0600` permissions on yaml files under `/etc/netplan/`. Set with `sudo chmod 0600 /etc/netplan/*.yaml` if `netplan apply` warns.
+</Note>
+
+### systemd-networkd
+
+Either append to the relevant `.network` file in `/etc/systemd/network/`, or drop a snippet into `/etc/systemd/network/<IFACE>.network.d/100-netbird.conf`:
+
+```ini
+[Route]
+Destination=100.64.0.0/10
+Gateway=<PEER_LAN_IP>
+```
+
+Apply:
+
+```bash
+sudo networkctl reload
+```
+
+### NetworkManager (RHEL, Rocky, Alma, Fedora, Ubuntu desktop)
+
+Find the connection name:
+
+```bash
+nmcli connection show
+```
+
+Add the route to that connection profile:
+
+```bash
+sudo nmcli connection modify "<CONN_NAME>" +ipv4.routes "100.64.0.0/10 <PEER_LAN_IP>"
+sudo nmcli connection up "<CONN_NAME>"
+```
+
+The route is stored in `/etc/NetworkManager/system-connections/<CONN_NAME>.nmconnection` and survives reboots.
+
+### ifupdown (legacy Debian, older Ubuntu)
+
+In `/etc/network/interfaces`, under the interface stanza:
+
+```
+post-up ip route add 100.64.0.0/10 via <PEER_LAN_IP>
+pre-down ip route del 100.64.0.0/10 via <PEER_LAN_IP>
+```
+
+### RHEL legacy network-scripts
+
+For RHEL 7 hosts still on the `network` service (rare on modern systems), create or edit `/etc/sysconfig/network-scripts/route-<IFACE>`:
+
+```
+100.64.0.0/10 via <PEER_LAN_IP>
+```
+
+## Verify after reboot
+
+```bash
+ip route show 100.64.0.0/10
+```
+
+Expect output like:
+
+```
+100.64.0.0/10 via 192.168.1.50 dev eth0
+```
+
+## Security considerations
+
+<Warning>
+The return route exposes the destination subnet to the full `100.64.0.0/10` overlay range. The OS-level route does no filtering on its own — source IP transparency is the whole reason masquerade is off, so tighten access at the NetBird policy layer with source groups, ports, and posture checks. If only a subset of the destination subnet should reach NetBird peers, add host-level firewall rules (iptables, nftables, firewalld) alongside the route.
+</Warning>
+
+<Tiles
+    title="Related"
+    items={[
+        {
+            href: '/manage/networks/how-routing-peers-work#masquerade',
+            name: 'How Routing Peers Work — Masquerade',
+            description: 'Conceptual reference for masquerade behavior and HA implications',
+        },
+        {
+            href: '/manage/network-routes/use-cases/by-configuration/access-control',
+            name: 'Access Control on Network Routes',
+            description: 'Restrict who reaches a routed network with ACL Groups',
+        },
+        {
+            href: '/manage/network-routes/use-cases/by-configuration/advanced-configuration',
+            name: 'Advanced Configuration',
+            description: 'Site-to-site routing, access control, and troubleshooting',
+        },
+    ]}
+/>
