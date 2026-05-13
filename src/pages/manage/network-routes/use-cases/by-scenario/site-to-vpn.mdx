@@ -23,19 +23,36 @@ Clientless Device ──► Routing Peer ──► NetBird Overlay ──► Net
 ```
 
 <Note>
-Site-to-VPN is implemented with [Network Routes](/manage/network-routes). The newer [Networks](/manage/networks) feature does not yet expose
-the routed CIDR as a policy source, which is required for this scenario.
+This scenario works with both [Networks](/manage/networks) (recommended) and
+[Network Routes](/manage/network-routes) — the configuration is the same in
+substance, only the dashboard surface differs. Use Networks unless you
+already have an established Network Routes setup. This guide uses Networks.
 </Note>
 
 <Warning>
-With Network Routes, the overlay peer will always observe the **routing
-peer's NetBird IP** as the source of the request, not the clientless
-device's local IP. See [Source IP Behavior](#source-ip-behavior) below for
-the details and why this is the case.
+The routing peer must perform **outbound source NAT** for site traffic
+entering the NetBird overlay. NetBird performs this automatically only when
+the routing peer is **Linux running in kernel mode**. On any other platform
+(pfSense, OPNsense, MikroTik, Windows, macOS, or Linux in userspace mode),
+you must configure the outbound NAT yourself on the routing peer or on its
+upstream firewall. Without this, the overlay peer drops the traffic at its
+access control. See [Outbound SNAT requirement](#outbound-snat-requirement).
+</Warning>
+
+<Warning>
+The overlay peer will always observe the **routing peer's NetBird IP** as
+the source of the request, not the clientless device's local IP. See
+[Source IP Behavior](#source-ip-behavior) below for the details.
 </Warning>
 
 ## Prerequisites
 
+- A [NetBird cloud account](https://app.netbird.io/) or [self-hosted instance](/selfhosted/selfhosted-quickstart)
+- A device on the local network to serve as the routing peer. **Linux is
+  strongly recommended** for the routing peer because it can install the
+  required outbound SNAT automatically (see the warning above).
+- A separate device running the NetBird client that the clientless device
+  needs to reach
 - The ability to either add a static route on the clientless device (or its
   upstream router), or to install a port-forwarding rule on the routing peer
   — both options are covered below
@@ -77,44 +94,89 @@ sudo netbird up --setup-key YOUR_SITE_SETUP_KEY
 Confirm the peer appears in the dashboard and shows the `site-routing-peers`
 group.
 
-## Step 3: Allow Forwarding Through a Host Firewall (if applicable)
+## Step 3: Configure the Outbound SNAT
 
-If you run a host firewall (UFW, firewalld, custom iptables policy) on the
-routing peer with the `FORWARD` chain default set to `DROP`, allow
-forwarding between the site-facing interface and `wt0`. For example with
-`iptables`:
+This is the most commonly missed step. The routing peer must SNAT site
+traffic onto its NetBird interface so the overlay peer's access control sees
+a NetBird IP it recognises. NetBird does not install this for you reliably
+outside of Linux kernel mode — see
+[Outbound SNAT requirement](#outbound-snat-requirement) for the reasoning.
+
+**On a Linux routing peer (any mode):**
+
+```bash
+sudo sysctl -w net.ipv4.ip_forward=1
+echo 'net.ipv4.ip_forward=1' | sudo tee /etc/sysctl.d/99-netbird-routing.conf
+
+sudo iptables -t nat -A POSTROUTING -s 192.168.50.0/24 -o wt0 -j MASQUERADE
+# Persist with iptables-persistent / netfilter-persistent or your distro's mechanism
+```
+
+If you run a host firewall (UFW, firewalld) with the `FORWARD` chain default
+set to `DROP`, also allow forwarding between the site-facing interface and
+`wt0`:
 
 ```bash
 sudo iptables -I FORWARD 1 -i <site-iface> -o wt0 -j ACCEPT
 ```
 
-If no host firewall is in the way, no extra rules are needed — NetBird
-handles IP forwarding and source NAT on the routing peer.
+**On pfSense / OPNsense:** add an outbound NAT rule on the `wt0` (or
+equivalent) interface that translates traffic sourced from `192.168.50.0/24`
+to the interface address. Switch outbound NAT mode to **Manual** (or
+**Hybrid**) so this rule is honoured.
 
-## Step 4: Create the Network Route
+**On MikroTik (RouterOS):**
+
+```
+/ip firewall nat add chain=srcnat src-address=192.168.50.0/24 \
+  out-interface=wt0 action=masquerade
+```
+
+**On other platforms:** any outbound source NAT mechanism that rewrites the
+site-CIDR source to the routing peer's NetBird IP (or to the `wt0`
+interface address) on the NetBird egress path is sufficient.
+
+## Step 4: Create the Network
 
 In the NetBird dashboard:
 
-1. Go to **Network Routes** and click **Add Route**
-2. Configure:
-   - **Network Identifier:** `site-50`
-   - **Network range:** `192.168.50.0/24`
-   - **Routing Peer:** `site-router` (or use the `site-routing-peers` group)
-   - **Distribution Groups:** `backup-collectors` (the group containing the
-     peers the clientless device will reach)
-   - **Masquerade:** **Enabled** (required — see
-     [Source IP Behavior](#source-ip-behavior))
-   - **Access Control Groups:** leave empty for site-to-VPN (these only
-     apply to the VPN-to-Site direction)
-3. Click **Add Route**
+1. Go to **Networks** and click **Add Network**
+2. Name: `site-50-network`
+3. Click **Create Network**
 
-The route advertises the site's CIDR onto the overlay, which gives the
-target peer a return path for any traffic that originates from the site.
+Now add the site CIDR as a resource:
+
+1. In the new network, click **Add Resource**
+2. Configure:
+   - **Name:** `site-50`
+   - **Address:** `192.168.50.0/24`
+   - **Type:** Subnet
+   - **Groups:** create and add `site-50-cidr` (this group represents the
+     site CIDR for use in policies)
+3. Click **Add Resource**
+
+Attach the routing peer:
+
+1. In the network, click **Add Routing Peer**
+2. Select `site-router` (or the `site-routing-peers` group)
+3. **Masquerade:** Enabled is fine, but does not replace
+   [Step 3](#step-3-configure-the-outbound-snat) — this dashboard flag does
+   not install a working SNAT on non-Linux routing peers and is unreliable in
+   userspace mode
+4. Click **Save**
+
+<Note>
+If you prefer Network Routes, the equivalent is **Network Routes → Add
+Route** with: network range `192.168.50.0/24`, routing peer `site-router`,
+distribution group `backup-collectors`, masquerade enabled. The rest of this
+guide applies unchanged.
+</Note>
 
 ## Step 5: Create the Access Policy
 
 The routing peer needs to be allowed to reach the target peer over the
-overlay:
+overlay. Because Step 3's SNAT rewrites the source to the routing peer's
+NetBird IP, the policy uses peer groups:
 
 1. Go to **Access Control** → **Policies** and click **Add Policy**
 2. Configure:
@@ -124,10 +186,6 @@ overlay:
    - **Source Groups:** `site-routing-peers`
    - **Destination Groups:** `backup-collectors`
 3. Click **Add Policy**
-
-Because the route has masquerade enabled, traffic from the clientless
-device will appear on the overlay as originating from the routing peer's
-NetBird IP. The policy authorises that flow.
 
 ## Step 6: Direct Site Traffic Through the Routing Peer
 
@@ -209,7 +267,6 @@ curl -v http://192.168.50.10:18080/
 Verify on the target peer that the request arrived:
 
 ```bash
-# Replace with whatever the target peer is listening with
 sudo ss -tnp | grep :8080
 ```
 
@@ -255,34 +312,45 @@ the `server=/netbird.cloud/...` line — you can find it with
 `netbird status` on the routing peer.
 </Note>
 
+## Outbound SNAT requirement
+
+Why is [Step 3](#step-3-configure-the-outbound-snat) necessary, and why
+isn't the dashboard's masquerade toggle enough?
+
+NetBird's per-peer access control on the destination peer matches inbound
+traffic against an ipset of allowed source IPs. The ipset is populated from
+the **NetBird IPs of peers in the policy's source group** — it cannot
+contain a routed CIDR like `192.168.50.0/24`. So when a packet from
+`192.168.50.20` arrives at the overlay peer, the access control has no
+matching entry and the packet is dropped.
+
+The fix is to rewrite the source IP at the routing peer before the packet
+enters the overlay, replacing the site IP with the routing peer's NetBird
+IP. That NetBird IP **is** in the policy's source group, so the access
+control matches and the packet is accepted.
+
+On a Linux routing peer in kernel mode, NetBird's daemon can install this
+SNAT itself via the kernel netfilter hooks when masquerade is enabled on
+the route/router. **In every other case** — userspace mode, non-Linux
+peers, or environments where NetBird's marks aren't being set on outbound
+packets — the SNAT must be configured manually on the routing peer (or on
+its upstream firewall), as shown in Step 3. This is a real, observable
+limitation rather than a quirk: without the SNAT, the dashboard masquerade
+flag has no effect on the wire.
+
 ## Source IP Behavior
 
-With Network Routes, the target peer always sees the **routing peer's
-NetBird IP** as the source — regardless of which clientless device on the
-site initiated the connection. Two routes lead to this:
+Because of the outbound SNAT above, the target peer always observes the
+**routing peer's NetBird IP** as the source — regardless of which clientless
+device on the site initiated the connection.
 
-- With **masquerade enabled** on the route, NetBird installs a MASQUERADE
-  rule on the routing peer's outbound wireguard interface, rewriting the
-  source IP at the routing peer.
-- With **port forwarding (Option B)**, the routing peer SNATs the DNAT'd
-  flow so that return traffic comes back to the routing peer.
-
-You **cannot** preserve the clientless device's local IP all the way to
-the target peer through Network Routes. The target peer's per-peer access
-control list matches sources by NetBird IP, and there is no field on a
-legacy Network Route that registers the site CIDR as a policy source.
-Disabling masquerade does not help here: the target peer will receive
-packets with the site source IP, but they will be dropped by its access
-control because that IP is not in any allowed source group.
-
-Preserving the original source IP is **not possible** with legacy Network
-Routes. Removing all policies that target the destination peer does not
-"open" it — it simply tears down the wireguard pairing with the routing
-peer, and the connection fails to establish at all. The newer
-[Networks](/manage/networks) feature is built around CIDR-bearing Resource
-groups and is the future path for preserved-source scenarios; the Site-to-VPN
-direction is not yet supported there. Track the
-[Networks documentation](/manage/networks) for updates.
+Preserving the original site source IP all the way to the target peer is
+**not currently possible**. Removing the access policy that targets the
+destination peer does not "open" it; it simply tears down the wireguard
+pairing between the routing peer and the destination, and the connection
+fails to establish at all. Future versions of [Networks](/manage/networks)
+may expose Resource groups as policy sources for the Site-to-VPN direction
+— track the Networks documentation for updates.
 
 ## Troubleshooting
 
@@ -316,16 +384,21 @@ allows `site-routing-peers` → target peer's group on the required port.
 
 **Target peer receives packets but drops them.**
 
-If you disabled masquerade on the routing peer, the target peer will see
-the raw site source IP and drop the packets at its per-peer access
-control. Enable masquerade on the routing peer to fix this.
+The outbound SNAT in [Step 3](#step-3-configure-the-outbound-snat) is
+missing or not effective. On the routing peer, packets going out `wt0` must
+have their source IP rewritten to the routing peer's NetBird IP:
 
 ```bash
-# On the target peer, watch for drops:
-sudo iptables -L INPUT -n -v | grep DROP
-# DROP counter on the wt0 interface increasing means the packet
-# was rejected by access control.
+# On the routing peer, verify packet counters on the MASQUERADE rule:
+sudo iptables -t nat -L POSTROUTING -n -v
+# Or watch overlay traffic on the way out:
+sudo tcpdump -ni wt0 'src net 192.168.50.0/24'
+# Seeing site IPs here means SNAT is NOT firing; the target peer will drop.
 ```
+
+If you have the dashboard masquerade flag enabled but counters stay at
+zero, NetBird's mark-driven SNAT isn't installing — fall back to the
+explicit `iptables -t nat -A POSTROUTING` rule from Step 3.
 
 **DNS resolution returns NXDOMAIN.**
 
@@ -336,7 +409,7 @@ changes if the peer is re-enrolled), and that `dnsmasq` is not bound to
 
 ## Related
 
+- [Networks — Concept](/manage/networks)
 - [Network Routes — Concept](/manage/network-routes)
 - [Site-to-Site: Office Networks](/manage/network-routes/use-cases/by-scenario/site-to-site-office)
-- [Configuring Routes with Access Control](/manage/network-routes/use-cases/by-configuration/access-control)
 - [Site-to-Site Overview](/use-cases/site-to-site)
