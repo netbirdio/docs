@@ -33,6 +33,10 @@ export const docsNavigation = [
         href: '/about-netbird/understanding-nat-and-connectivity',
       },
       {
+        title: 'Ports & Firewalls',
+        href: '/about-netbird/ports-and-firewalls',
+      },
+      {
         title: 'Why WireGuard with NetBird',
         href: '/about-netbird/why-wireguard-with-netbird',
       },
