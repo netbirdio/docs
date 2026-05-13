@@ -189,11 +189,6 @@ NetBird IP, the policy uses peer groups:
 
 ## Step 6: Direct Site Traffic Through the Routing Peer
 
-You have two options for getting the clientless device's traffic to the
-routing peer. Pick whichever fits your environment.
-
-### Option A: Static Route (recommended)
-
 Tell the clientless device — or the site's upstream router — to send
 traffic destined for NetBird's CIDR (`100.64.0.0/10`) through the routing
 peer.
@@ -224,44 +219,17 @@ curl http://100.x.x.x:8080/
 To use NetBird's DNS names instead of IPs, see
 [Resolving NetBird DNS Names](#resolving-netbird-dns-names) below.
 
-### Option B: Per-Service Port Forwarding
-
-If you cannot change routing on the site (or only want to expose specific
-services), DNAT the service on the routing peer instead. First identify the
-routing peer's site-facing interface:
-
-```bash
-ip -br addr
-# Pick the interface that holds the routing peer's site IP (e.g. eth0, ens18).
-```
-
-Then install the DNAT rule:
-
-```bash
-sudo iptables -t nat -A PREROUTING -i <site-iface> -p tcp --dport 18080 \
-  -j DNAT --to-destination <TARGET_PEER_NETBIRD_IP>:8080
-```
-
-The clientless device now reaches the service through the routing peer's
-local IP:
-
-```bash
-curl http://192.168.50.10:18080/
-```
-
-Each forwarded service needs its own DNAT rule. This is a good fit for a
-small number of well-known services and avoids any client-side changes.
+If you cannot add a static route on the clientless device or the site
+router — or you only need to expose a small number of specific services —
+see [Appendix: Per-Service Port Forwarding](#appendix-per-service-port-forwarding)
+for a DNAT-based alternative.
 
 ## Test Connectivity
 
 From the clientless device:
 
 ```bash
-# Option A (static route): reach by NetBird IP
 curl -v http://<TARGET_PEER_NETBIRD_IP>:8080/
-
-# Option B (DNAT): reach via the routing peer's site IP
-curl -v http://192.168.50.10:18080/
 ```
 
 Verify on the target peer that the request arrived:
@@ -356,14 +324,17 @@ may expose Resource groups as policy sources for the Site-to-VPN direction
 
 **Connection times out from the clientless device.**
 
-Check that the static route or DNAT rule is in place:
+Check that the static route is in place:
 
 ```bash
-# On the clientless device, Option A:
 ip route get <TARGET_PEER_NETBIRD_IP>
 # Should show "via 192.168.50.10 dev <iface>"
+```
 
-# On the routing peer, Option B:
+If you are using the appendix DNAT alternative instead, verify the
+forwarding rule on the routing peer:
+
+```bash
 sudo iptables -t nat -L PREROUTING -n -v
 # Should show your DNAT rule with non-zero packet counters when traffic flows
 ```
@@ -413,3 +384,41 @@ changes if the peer is re-enrolled), and that `dnsmasq` is not bound to
 - [Network Routes — Concept](/manage/network-routes)
 - [Site-to-Site: Office Networks](/manage/network-routes/use-cases/by-scenario/site-to-site-office)
 - [Site-to-Site Overview](/use-cases/site-to-site)
+
+## Appendix: Per-Service Port Forwarding
+
+If you cannot change routing on the site — for example, the clientless
+device's IP stack is fixed and the upstream router is out of your control —
+you can still expose individual NetBird services through the routing peer
+using DNAT. This avoids the [Step 6](#step-6-direct-site-traffic-through-the-routing-peer)
+static route entirely, but each service has to be configured explicitly.
+
+First identify the routing peer's site-facing interface:
+
+```bash
+ip -br addr
+# Pick the interface that holds the routing peer's site IP (e.g. eth0, ens18).
+```
+
+Then install the DNAT rule on the routing peer:
+
+```bash
+sudo iptables -t nat -A PREROUTING -i <site-iface> -p tcp --dport 18080 \
+  -j DNAT --to-destination <TARGET_PEER_NETBIRD_IP>:8080
+# Persist via iptables-persistent / netfilter-persistent
+```
+
+The clientless device now reaches the service through the routing peer's
+local IP and the forwarded port:
+
+```bash
+curl http://192.168.50.10:18080/
+```
+
+The outbound SNAT configured in [Step 3](#step-3-configure-the-outbound-snat)
+applies to this traffic as well — the target peer still observes the
+routing peer's NetBird IP as the source.
+
+Each forwarded service needs its own DNAT rule. This pattern is a good fit
+for a small number of well-known services; for general overlay access, use
+the static-route approach in Step 6 instead.
