@@ -756,10 +756,6 @@ export const docsNavigation = [
         isOpen: false,
         links: [
           {
-            title: 'Allow SSH',
-            href: '/client/allow-ssh',
-          },
-          {
             title: 'Block Inbound Connections',
             href: '/client/block-inbound-connections',
           },
@@ -768,12 +764,16 @@ export const docsNavigation = [
             href: '/client/connect-on-startup',
           },
           {
-            title: 'Enable Lazy Connections',
-            href: '/client/enable-lazy-connections',
-          },
-          {
             title: 'Enable Quantum-Resistance',
             href: '/client/post-quantum-cryptography',
+          },
+          {
+            title: 'Allow SSH',
+            href: '/client/allow-ssh',
+          },
+          {
+            title: 'Enable Lazy Connections',
+            href: '/client/enable-lazy-connections',
           },
         ],
       },
