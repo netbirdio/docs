@@ -34,7 +34,6 @@ access control. See [Outbound SNAT requirement](#outbound-snat-requirement).
 
 ## Prerequisites
 
-- A [NetBird cloud account](https://app.netbird.io/) or [self-hosted instance](/selfhosted/selfhosted-quickstart)
 - A device on the local network to serve as the routing peer. **Linux is
   strongly recommended** for the routing peer because it can install the
   required outbound SNAT automatically (see the warning above).
@@ -81,7 +80,7 @@ sudo netbird up --setup-key YOUR_SITE_SETUP_KEY
 Confirm the peer appears in the dashboard and shows the `site-routing-peers`
 group.
 
-## Step 3: Configure the Outbound SNAT
+## Step 3: Configure the Outbound SNAT (If applicable)
 
 The routing peer must SNAT site traffic onto its NetBird interface so the
 overlay peer's access control sees a NetBird IP it recognises. See
@@ -166,30 +165,51 @@ NetBird IP, the policy uses peer groups:
 ## Step 6: Direct Site Traffic Through the Routing Peer
 
 Tell the clientless device — or the site's upstream router — to send
-traffic destined for NetBird's CIDR (`100.64.0.0/10`) through the routing
+traffic destined for your account's NetBird IP range through the routing
 peer.
+
+### Find your account's NetBird range
+
+NetBird assigns each account a single `/16` block from inside the
+`100.64.0.0/10` CGNAT range (one of 64 possible blocks such as
+`100.64.0.0/16`, `100.121.0.0/16`, `100.127.0.0/16`, …). The block is
+chosen randomly per account and can be customised. Use that `/16` for the
+site's static route — not the whole `/10` — so you don't route unrelated
+CGNAT addresses through the routing peer.
+
+Read it off any enrolled peer:
+
+```bash
+$ netbird status | grep "NetBird IP"
+NetBird IP: 100.121.195.4/16
+# → this account's block is 100.121.0.0/16
+```
+
+In the examples below, replace `100.121.0.0/16` with your own block.
+
+### Install the route
 
 **On a Linux clientless device:**
 
 ```bash
-sudo ip route add 100.64.0.0/10 via 192.168.50.10
+sudo ip route add 100.121.0.0/16 via 192.168.50.10
 # Persist via /etc/network/interfaces, netplan, or NetworkManager
 ```
 
 **On Windows:**
 
 ```powershell
-route -p add 100.64.0.0 mask 255.192.0.0 192.168.50.10
+route -p add 100.121.0.0 mask 255.255.0.0 192.168.50.10
 ```
 
 **On a site router that issues DHCP:** add a classless static route option
-(DHCP option 121) pointing `100.64.0.0/10` to the routing peer. Every
+(DHCP option 121) pointing your account's `/16` to the routing peer. Every
 device on the network will then learn the route automatically.
 
 The clientless device can now reach the target peer by its NetBird IP:
 
 ```bash
-curl http://100.x.x.x:8080/
+curl http://<TARGET_PEER_NETBIRD_IP>:8080/
 ```
 
 To use NetBird's DNS names instead of IPs, see
