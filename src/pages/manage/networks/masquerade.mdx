@@ -34,7 +34,7 @@ Add the route temporarily on the destination host:
 sudo ip route add 100.64.0.0/10 via <PEER_LAN_IP>
 ```
 
-Verify reachability from a NetBird peer, then remove the test route before committing the persistent version:
+From a NetBird peer, confirm reachability — for example `ping <destination-ip>` or `curl http://<destination-ip>:<port>`. Then remove the test route before committing the persistent version:
 
 ```bash
 sudo ip route del 100.64.0.0/10
@@ -46,15 +46,18 @@ Pick the section matching how the destination host manages its network.
 
 ### Netplan (Ubuntu 18.04+)
 
-Edit the existing yaml in `/etc/netplan/` (e.g. `01-netcfg.yaml` or `50-cloud-init.yaml`):
+Edit the existing yaml in `/etc/netplan/` (e.g. `01-netcfg.yaml` or `50-cloud-init.yaml`) and add a `routes:` entry to the interface stanza. Keep the existing `addresses:` / `dhcp4:` lines — this is a fragment, not a standalone file:
 
 ```yaml
 network:
   version: 2
   ethernets:
     <IFACE>:
+      addresses: [192.168.1.50/24]   # existing
       routes:
-        - to: 100.64.0.0/10
+        - to: default                # existing
+          via: 192.168.1.1
+        - to: 100.64.0.0/10          # add this
           via: <PEER_LAN_IP>
 ```
 
@@ -84,39 +87,9 @@ Apply:
 sudo networkctl reload
 ```
 
-### NetworkManager (RHEL, Rocky, Alma, Fedora, Ubuntu desktop)
-
-Find the connection name:
-
-```bash
-nmcli connection show
-```
-
-Add the route to that connection profile:
-
-```bash
-sudo nmcli connection modify "<CONN_NAME>" +ipv4.routes "100.64.0.0/10 <PEER_LAN_IP>"
-sudo nmcli connection up "<CONN_NAME>"
-```
-
-The route is stored in `/etc/NetworkManager/system-connections/<CONN_NAME>.nmconnection` and survives reboots.
-
-### ifupdown (legacy Debian, older Ubuntu)
-
-In `/etc/network/interfaces`, under the interface stanza:
-
-```
-post-up ip route add 100.64.0.0/10 via <PEER_LAN_IP>
-pre-down ip route del 100.64.0.0/10 via <PEER_LAN_IP>
-```
-
-### RHEL legacy network-scripts
-
-For RHEL 7 hosts still on the `network` service (rare on modern systems), create or edit `/etc/sysconfig/network-scripts/route-<IFACE>`:
-
-```
-100.64.0.0/10 via <PEER_LAN_IP>
-```
+<Note>
+The drop-in path only takes effect when a `.network` file already matches the interface. Run `networkctl status <IFACE>` and check the **Network File** line to confirm which one — on netplan-managed hosts it's generated under `/run/systemd/network/`.
+</Note>
 
 ## Verify after reboot
 
@@ -129,6 +102,8 @@ Expect output like:
 ```
 100.64.0.0/10 via 192.168.1.50 dev eth0
 ```
+
+Trailing fields such as `proto static`, `onlink`, or `metric 100` may appear depending on the network manager — those are normal.
 
 ## Security considerations
 
