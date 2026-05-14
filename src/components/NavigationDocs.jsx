@@ -582,6 +582,10 @@ export const docsNavigation = [
                 title: 'Disable Local Auth',
                 href: '/selfhosted/identity-providers/disable-local-authentication',
               },
+              {
+                title: 'Enable MFA for local users',
+                href: '/selfhosted/identity-providers/enable-local-mfa',
+              },
             ],
           },
           {
