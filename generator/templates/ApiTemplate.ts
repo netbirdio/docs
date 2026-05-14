@@ -65,7 +65,7 @@ function renderProperties(properties, required = [], depth = 0) {
         %>>%>
         <% if ((type === 'object' && value.properties) || (type === 'object[]' && value.items.properties)) { %>
             <details className="custom-details" open>
-                <summary><%- value.description || 'More Information' %></summary>
+                <summary><%- (value.description || 'More Information').replace(/\\s+/g, ' ').trim() %></summary>
                 <Properties>
                 <% if (type === 'object[]') { %>
                     <% renderProperties(value.items.properties, value.items.required || [], depth + 1); %>
@@ -178,7 +178,7 @@ func main() {
   if err != nil {
     fmt.Println(err)
     return
-  <% if(true){%>{<% }; -%>
+  }
   
   <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
   req.Header.Add("Content-Type", "application/json")<% }; -%>

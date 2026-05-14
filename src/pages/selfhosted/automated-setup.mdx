@@ -1,0 +1,123 @@
+export const description = 'Create the first self-hosted NetBird owner user and return a Personal Access Token from the setup API for automation.'
+
+# Automated setup with a Personal Access Token
+
+Self-hosted NetBird normally creates the first owner user through the Dashboard setup page. For automation and infrastructure-as-code workflows, you can enable setup-time Personal Access Token (PAT) creation and call the setup API directly.
+
+When `NB_SETUP_PAT_ENABLED=true`, `POST /api/setup` can create the first owner user and return a one-time plain text PAT in the response. Use this token to bootstrap the instance through the [NetBird API](/api/introduction), then rotate it or replace it with a service user token.
+
+<Warning>
+Setup-time PAT creation is disabled by default. The setup endpoint is unauthenticated while setup is required, so enable this only for controlled bootstrap workflows. Store the returned token securely; NetBird only shows the plain text token once.
+</Warning>
+
+## Requirements
+
+- A self-hosted NetBird deployment using the embedded IdP/local user setup flow.
+- No existing NetBird account or owner user. The setup endpoint only works while setup is required.
+- Access to the Management HTTP API through your NetBird URL, for example `https://netbird.example.com/api/setup`.
+
+## Enable setup-time PAT creation
+
+Set `NB_SETUP_PAT_ENABLED=true` on the Management server container.
+
+For the current quickstart/combined server deployment, add it to the `netbird-server` service environment:
+
+```yaml {{ title: 'docker-compose.yml' }}
+services:
+  netbird-server:
+    environment:
+      - NB_SETUP_PAT_ENABLED=true
+```
+
+For older multi-container deployments, add the same variable to the `management` service environment.
+
+Restart the affected service after changing the environment:
+
+```bash
+docker compose up -d
+```
+
+<Note>
+You can disable `NB_SETUP_PAT_ENABLED` again after the first setup completes. Once an account exists, `/api/setup` returns a setup-completed error and cannot create additional users or tokens.
+</Note>
+
+## Call the setup API
+
+Send `create_pat: true` in the setup request. Optionally set `pat_expire_in` to the token lifetime in days.
+
+```bash {{ title: 'Create first owner and PAT' }}
+NETBIRD_URL="https://netbird.example.com"
+
+curl -fsS -X POST "${NETBIRD_URL}/api/setup" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@example.com",
+    "name": "Admin User",
+    "password": "use-a-long-random-password",
+    "create_pat": true,
+    "pat_expire_in": 7
+  }'
+```
+
+Example response:
+
+```json
+{
+  "user_id": "abc123def456",
+  "email": "admin@example.com",
+  "personal_access_token": "nbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+The response includes `Cache-Control: no-store` because it may contain a plain text token. Avoid logging the response body in CI/CD systems.
+
+## Request fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `email` | Yes | Email address for the first owner user. |
+| `name` | Yes | Display name for the first owner user. |
+| `password` | Yes | Password for the first owner user. |
+| `create_pat` | No | Set to `true` to request a setup PAT. Ignored unless `NB_SETUP_PAT_ENABLED=true`. |
+| `pat_expire_in` | No | PAT lifetime in days. Applies only when `create_pat` is true. Defaults to `1`; allowed range is `1` to `365`. |
+
+If `create_pat` is omitted or false, setup creates only the owner user. If `NB_SETUP_PAT_ENABLED` is not set to `true`, NetBird ignores the PAT request and returns a setup response without `personal_access_token`.
+
+## Use the token
+
+Use the returned PAT with the `Authorization: Token` header:
+
+```bash {{ title: 'Use setup PAT with NetBird API' }}
+NETBIRD_PAT="nbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+curl -fsS "${NETBIRD_URL}/api/users" \
+  -H "Authorization: Token ${NETBIRD_PAT}"
+```
+
+Common bootstrap tasks include creating users, service users, setup keys, groups, policies, and routes through the NetBird API.
+
+<Note>
+For long-running automation, create a dedicated service user and PAT after bootstrap. Then delete or let the setup PAT expire.
+</Note>
+
+## Troubleshooting
+
+### The response does not include `personal_access_token`
+
+Check that:
+
+- `NB_SETUP_PAT_ENABLED=true` is set on the Management server container.
+- The service was restarted after changing the environment.
+- The request includes `"create_pat": true`.
+
+### The endpoint returns setup already completed
+
+`/api/setup` is only available before the first account exists. If setup has already completed, create PATs from the Dashboard or API using an existing admin user.
+
+### The request fails with an invalid expiration error
+
+`pat_expire_in` must be between `1` and `365` days. Omit the field to use the default of `1` day.
+
+### Setup fails after creating the owner user
+
+If account or PAT provisioning fails, NetBird rolls back setup-created resources so that setup can be retried. Fix the reported error and call `/api/setup` again.

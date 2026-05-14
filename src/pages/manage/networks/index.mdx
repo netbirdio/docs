@@ -8,11 +8,26 @@ However, installing the agent on every machine is not always feasible. Networks 
     <img src="/docs-static/img/manage/networks/netbird-network-routes.png" alt="high-level-dia" className="imagewrapper-big"/>
 </p>
 
+## VPN-to-Site Use Case
+
+Networks enables VPN-to-Site access — a device running NetBird (like your laptop) reaches devices on a remote network without installing NetBird on every target.
+
+```
+Your Laptop ──────► NetBird Tunnel ──────► Routing Peer ──────► Target Device
+  (peer)                                    (peer)              (no NetBird)
+```
+
+**Example scenarios:**
+- Access your home NAS from a coffee shop
+- Reach office servers while traveling
+- Connect to IoT devices on a remote network
+
 ## Networks vs. Network Routes
 
-Networks is the newer, simpler replacement for Network Routes. We encourage you to use Networks where possible; however, Networks do not yet support all remote access scenarios. Network Routes will continue to be actively maintained, so use whichever fits your use case.
+Networks is the newer, simpler replacement for Network Routes — for VPN-to-Site, prefer Networks. Use [Network Routes](/manage/network-routes) when you need:
 
-For a detailed comparison, see our [site-to-site documentation](/use-cases/site-to-site).
+- Two networks communicating with each other ([Site-to-Site](/manage/network-routes/use-cases/site-to-site))
+- Routing internet-bound traffic through a designated peer ([Exit Nodes](/manage/network-routes/use-cases/exit-nodes))
 
 ## Concepts
 
@@ -35,7 +50,15 @@ You can add multiple routing peers using individual peers or groups to ensure hi
 </p>
 
 <Note>
+To get alerted when a routing peer goes offline, enable the **Routing Peer Disconnected** event in [Notifications](/manage/settings/notifications). You can receive alerts via email, webhook, or Slack.
+</Note>
+
+<Note>
 A network resource policy grants access to the network **behind** the routing peer, not to the routing peer machine itself. If you need to access services running on the routing peer (for example, Pi-hole, Home Assistant, or a monitoring dashboard), add the routing peer to a group and create a peer-to-peer [access control policy](/manage/access-control) with that group as the destination.
+</Note>
+
+<Note>
+For the mental model — how traffic flows, host requirements, high availability, masquerade, and the forward-vs-input-chain rule — see [How Routing Peers Work](/manage/networks/how-routing-peers-work).
 </Note>
 
 ### Resources
@@ -45,7 +68,7 @@ Resources are the machines, services, or subnets you want to access within your 
 - Single IP addresses
 - IP ranges
 - Domain names (e.g., `example.com`)
-- Wildcard domains (e.g., `*.company.internal`) when [DNS wildcard routing](#enable-dns-wildcard-routing) is enabled
+- Wildcard domains (e.g., `*.company.internal`) when [routing peer DNS resolution](#enable-routing-peer-dns-resolution) is enabled
 
 <p>
     <img src="/docs-static/img/manage/networks/index/resources-1.png" alt="resources" className="imagewrapper-big"/>
@@ -124,6 +147,10 @@ Example policy allowing the `Berlin Office` group to access the internal CRM sys
     <img src="/docs-static/img/manage/networks/index/resource-acl-1.png" alt="resource-acl" className="imagewrapper-big"/>
 </p>
 
+### Share one policy across multiple resources
+
+To apply the same policy to several resources, assign them to the same resource group and create one policy with that group as the destination. For example, two internal DNS servers at `172.16.30.2` and `172.17.100.2` can share a single UDP/53 policy by placing both in an `office-dns-servers` group. Skip the **Access Control** tab when adding each resource, then create the shared policy once from any of them.
+
 <Note>
     Policies for domain or wildcard domain resources may unintentionally affect peers with IP range resources, since IP ranges can match any address. We recommend using dedicated networks and routing peers for domain-based resources to prevent unwanted access. A fix for this behavior is planned for an upcoming release.
 </Note>
@@ -143,35 +170,33 @@ This additional policy ensures that the routing peer's input chain allows inboun
     This is a common pitfall when the routing peer also runs local services. Remember: network resource policies control forwarded traffic (forward chain), while peer-to-peer access control policies control traffic to the peer itself (input chain). You need both if you want to access the routing peer **and** the resources behind it.
 </Note>
 
-## Enable DNS Wildcard Routing
+<div id="enable-dns-wildcard-routing" />
 
-To use wildcard domains as resources, you must enable DNS wildcard routing. This setting changes how domains are resolved: instead of the client resolving domains locally, the routing peer performs DNS resolution.
+## Enable Routing Peer DNS Resolution
 
-This is also useful for regular domain resources when you want to:
+Routing peer DNS resolution moves DNS resolution for routed domains from the client to the routing peer. Wildcard domain resources require it; for regular domain resources, enable it when you want to:
 
 - Resolve domain names using the routing peer's DNS infrastructure
 - Route traffic through a geographically nearby routing peer
 - Enable more restrictive access control rules (support coming in future releases)
 
-To enable DNS wildcard routing, go to **Settings** > **Networks** > **Enable DNS wildcard routing**:
+To enable it, go to **Settings** > **Networks** > **Enable Routing peer DNS resolution**:
 
 <p>
     <img src="/docs-static/img/manage/networks/index/settings-1.png" alt="settings-acl" className="imagewrapper-big"/>
 </p>
 
 <Note>
-    DNS wildcard routing requires routing peers and clients running version 0.35.0 or later. After enabling this feature, restart your routing peers and clients to apply the changes.
+    Routing peer DNS resolution requires routing peers and clients running version 0.35.0 or later. After enabling this feature, restart your routing peers and clients to apply the changes.
 </Note>
 
 <Note>
     Starting with NetBird v0.59.0, the local DNS forwarder port changed from `5353` to `22054` to avoid port collisions. For backward compatibility, the new port is only used when **all peers in the account** run v0.59.0 or newer. If any peer is on an older version, port `5353` is used for all peers.
 </Note>
 
-## Use Cases
-
-- [Routing traffic to multiple IP resources](/manage/networks/use-cases/by-resource-type/routing-traffic-to-multiple-resources)
-- [Accessing restricted website domain resources](/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources)
-- [Accessing entire domains within networks](/manage/networks/use-cases/by-resource-type/accessing-entire-domains-within-networks)
+<Note>
+    A wildcard resource like `*.dev.example.com` matches subdomains only, not the base domain. To allow access to `dev.example.com` as well, add it as a separate resource — assigning it to the same resource group reuses the existing routing peers and policies.
+</Note>
 
 ## Get Started
 

@@ -33,6 +33,10 @@ export const docsNavigation = [
         href: '/about-netbird/understanding-nat-and-connectivity',
       },
       {
+        title: 'Ports & Firewalls',
+        href: '/about-netbird/ports-and-firewalls',
+      },
+      {
         title: 'Why WireGuard with NetBird',
         href: '/about-netbird/why-wireguard-with-netbird',
       },
@@ -95,6 +99,10 @@ export const docsNavigation = [
           {
             title: 'Setup Keys',
             href: '/manage/peers/register-machines-using-setup-keys',
+          },
+          {
+            title: 'Bootstrap via Config File',
+            href: '/manage/peers/bootstrap-via-config-file',
           },
           { title: 'Browser Client', href: '/manage/peers/browser-client' },
           { title: 'SSH', href: '/manage/peers/ssh' },
@@ -170,6 +178,10 @@ export const docsNavigation = [
                 title: 'SentinelOne Singularity',
                 href: '/manage/access-control/endpoint-detection-and-response/sentinelone-edr',
               },
+              {
+                title: 'Bypass Compliance',
+                href: '/manage/access-control/endpoint-detection-and-response/bypass-compliance',
+              },
             ],
           },
         ],
@@ -180,45 +192,24 @@ export const docsNavigation = [
         links: [
           { title: 'Concept', href: '/manage/networks' },
           {
+            title: 'How Routing Peers Work',
+            href: '/manage/networks/how-routing-peers-work',
+          },
+          {
             title: 'Use Cases',
             isOpen: false,
             links: [
-              { title: 'Overview', href: '/manage/networks/use-cases' },
               {
-                title: 'By Scenario',
-                isOpen: false,
-                links: [
-                  {
-                    title: 'Access Home Devices',
-                    href: '/manage/networks/use-cases/by-scenario/access-home-devices',
-                  },
-                  {
-                    title: 'Remote Worker Access',
-                    href: '/manage/networks/use-cases/by-scenario/remote-worker-access',
-                  },
-                  {
-                    title: 'Cloud to On-Premise',
-                    href: '/manage/networks/use-cases/by-scenario/cloud-to-on-premise',
-                  },
-                ],
+                title: 'Access Home Devices',
+                href: '/manage/networks/use-cases/access-home-devices',
               },
               {
-                title: 'By Resource Type',
-                isOpen: false,
-                links: [
-                  {
-                    title: 'Multiple IP Resources',
-                    href: '/manage/networks/use-cases/by-resource-type/routing-traffic-to-multiple-resources',
-                  },
-                  {
-                    title: 'Domain Resources',
-                    href: '/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources',
-                  },
-                  {
-                    title: 'Wildcard Domains',
-                    href: '/manage/networks/use-cases/by-resource-type/accessing-entire-domains-within-networks',
-                  },
-                ],
+                title: 'Cloud to On-Premise',
+                href: '/manage/networks/use-cases/cloud-to-on-premise',
+              },
+              {
+                title: 'Site-to-VPN',
+                href: '/manage/networks/use-cases/site-to-vpn',
               },
             ],
           },
@@ -233,48 +224,27 @@ export const docsNavigation = [
             title: 'Use Cases',
             isOpen: false,
             links: [
-              { title: 'Overview', href: '/manage/network-routes/use-cases' },
               {
-                title: 'By Scenario',
-                isOpen: false,
-                links: [
-                  {
-                    title: 'Site-to-Site: Home',
-                    href: '/manage/network-routes/use-cases/by-scenario/site-to-site-home',
-                  },
-                  {
-                    title: 'Site-to-Site: Office',
-                    href: '/manage/network-routes/use-cases/by-scenario/site-to-site-office',
-                  },
-                  {
-                    title: 'Site-to-Site: Cloud',
-                    href: '/manage/network-routes/use-cases/by-scenario/site-to-site-cloud',
-                  },
-                  {
-                    title: 'Exit Nodes',
-                    href: '/manage/network-routes/use-cases/by-scenario/exit-nodes',
-                  },
-                ],
+                title: 'Site-to-Site',
+                href: '/manage/network-routes/use-cases/site-to-site',
               },
               {
-                title: 'By Configuration',
-                isOpen: false,
-                links: [
-                  {
-                    title: 'Access Control',
-                    href: '/manage/network-routes/use-cases/by-configuration/access-control',
-                  },
-                  {
-                    title: 'Overlapping Routes',
-                    href: '/manage/network-routes/use-cases/by-configuration/overlapping-routes',
-                  },
-                  {
-                    title: 'Advanced Configuration',
-                    href: '/manage/network-routes/use-cases/by-configuration/advanced-configuration',
-                  },
-                ],
+                title: 'Exit Nodes',
+                href: '/manage/network-routes/use-cases/exit-nodes',
               },
             ],
+          },
+          {
+            title: 'Access Control',
+            href: '/manage/network-routes/access-control',
+          },
+          {
+            title: 'Overlapping Routes',
+            href: '/manage/network-routes/overlapping-routes',
+          },
+          {
+            title: 'Advanced Configuration',
+            href: '/manage/network-routes/advanced-configuration',
           },
         ],
       },
@@ -283,6 +253,10 @@ export const docsNavigation = [
         isOpen: false,
         links: [
           { title: 'Overview', href: '/manage/reverse-proxy' },
+          {
+            title: 'Bring Your Own Proxy',
+            href: '/manage/reverse-proxy/bring-your-own-proxy',
+          },
           {
             title: 'Custom Domains',
             href: '/manage/reverse-proxy/custom-domains',
@@ -420,6 +394,10 @@ export const docsNavigation = [
                 title: 'Generic HTTP',
                 href: '/manage/activity/event-streaming/generic-http',
               },
+              {
+                title: 'Wazuh',
+                href: '/manage/activity/event-streaming/wazuh',
+              },
             ],
           },
         ],
@@ -436,6 +414,7 @@ export const docsNavigation = [
             title: 'Multi-Factor Authentication',
             href: '/manage/settings/multi-factor-authentication',
           },
+          { title: 'IPv6 Overlay Addressing', href: '/manage/settings/ipv6' },
           { title: 'Auto Update', href: '/manage/peers/auto-update' },
           { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
           {
@@ -458,6 +437,10 @@ export const docsNavigation = [
             isOpen: true,
             links: [
               {
+                title: 'macOS CLI-Only .pkg',
+                href: '/manage/integrations/mdm-deployment/macos-cli-pkg-deployment',
+              },
+              {
                 title: 'Deploy with Jamf Pro',
                 href: '/manage/integrations/mdm-deployment/jamf-pro-netbird-integration',
               },
@@ -475,8 +458,22 @@ export const docsNavigation = [
             title: 'Kubernetes',
             isOpen: true,
             links: [
-              { title: 'Operator', href: '/manage/integrations/kubernetes' },
-              { title: 'Gateway API beta', href: '/manage/integrations/kubernetes/gateway-api-beta' },
+              {
+                title: 'Getting Started',
+                href: '/manage/integrations/kubernetes'
+              },
+              {
+                title: 'Routing Peer',
+                href: '/manage/integrations/kubernetes/routing-peer'
+              },
+              {
+                title: 'Client Sidecar',
+                href: '/manage/integrations/kubernetes/client-sidecar'
+              },
+              {
+                title: 'Gateway API',
+                href: '/manage/integrations/kubernetes/gateway-api',
+              },
             ],
           },
         ],
@@ -507,6 +504,7 @@ export const docsNavigation = [
     title: 'SELF-HOST NETBIRD',
     links: [
       { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
+      { title: 'Automated Setup', href: '/selfhosted/automated-setup' },
       {
         title: 'Maintenance',
         isOpen: false,
@@ -558,6 +556,10 @@ export const docsNavigation = [
             title: 'Management Geolocation Database',
             href: '/selfhosted/geo-support',
           },
+          {
+            title: 'CrowdSec IP Reputation',
+            href: '/selfhosted/maintenance/crowdsec',
+          },
         ],
       },
       {
@@ -569,70 +571,112 @@ export const docsNavigation = [
             href: '/selfhosted/identity-providers',
           },
           {
-            title: 'Local User Management',
-            href: '/selfhosted/identity-providers/local',
-          },
-          {
-            title: 'Disable Local Auth',
-            href: '/selfhosted/identity-providers/disable-local-authentication',
-          },
-          {
-            title: 'Enable MFA for local users',
-            href: '/selfhosted/identity-providers/enable-local-mfa'
-          },
-          {
-            title: 'Self-hosted IdPs',
-            isOpen: true,
+            title: 'Local Users',
+            isOpen: false,
             links: [
               {
-                title: 'Generic OIDC',
-                href: '/selfhosted/identity-providers/generic-oidc',
+                title: 'Local User Management',
+                href: '/selfhosted/identity-providers/local',
               },
               {
-                title: 'Zitadel',
-                href: '/selfhosted/identity-providers/zitadel',
+                title: 'Disable Local Auth',
+                href: '/selfhosted/identity-providers/disable-local-authentication',
               },
               {
-                title: 'Authentik',
-                href: '/selfhosted/identity-providers/authentik',
-              },
-              {
-                title: 'Keycloak',
-                href: '/selfhosted/identity-providers/keycloak',
-              },
-              {
-                title: 'PocketID',
-                href: '/selfhosted/identity-providers/pocketid',
+                title: 'Enable MFA for local users',
+                href: '/selfhosted/identity-providers/enable-local-mfa',
               },
             ],
           },
           {
-            title: 'Managed IdPs',
-            isOpen: true,
+            title: 'Identity Provider Connectors',
+            isOpen: false,
             links: [
               {
-                title: 'Google Workspace',
-                href: '/selfhosted/identity-providers/managed/google-workspace',
+                title: 'Self-hosted IdPs',
+                isOpen: true,
+                links: [
+                  {
+                    title: 'Generic OIDC',
+                    href: '/selfhosted/identity-providers/generic-oidc',
+                  },
+                  {
+                    title: 'Zitadel',
+                    href: '/selfhosted/identity-providers/zitadel',
+                  },
+                  {
+                    title: 'Authentik',
+                    href: '/selfhosted/identity-providers/authentik',
+                  },
+                  {
+                    title: 'Keycloak',
+                    href: '/selfhosted/identity-providers/keycloak',
+                  },
+                  {
+                    title: 'PocketID',
+                    href: '/selfhosted/identity-providers/pocketid',
+                  },
+                  {
+                    title: 'AD FS',
+                    href: '/selfhosted/identity-providers/adfs',
+                  },
+                ],
               },
               {
-                title: 'Microsoft Entra ID',
-                href: '/selfhosted/identity-providers/managed/microsoft-entra-id',
+                title: 'Managed IdPs',
+                isOpen: true,
+                links: [
+                  {
+                    title: 'Google Workspace',
+                    href: '/selfhosted/identity-providers/managed/google-workspace',
+                  },
+                  {
+                    title: 'Microsoft Entra ID',
+                    href: '/selfhosted/identity-providers/managed/microsoft-entra-id',
+                  },
+                  {
+                    title: 'JumpCloud',
+                    href: '/selfhosted/identity-providers/managed/jumpcloud',
+                  },
+                  {
+                    title: 'Auth0',
+                    href: '/selfhosted/identity-providers/managed/auth0',
+                  },
+                  {
+                    title: 'Duo',
+                    href: '/selfhosted/identity-providers/managed/duo',
+                  },
+                  {
+                    title: 'Okta',
+                    href: '/selfhosted/identity-providers/managed/okta',
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            title: 'Provision Users & Groups',
+            isOpen: false,
+            links: [
+              {
+                title: 'Microsoft Entra ID (API)',
+                href: '/manage/team/idp-sync/embedded/microsoft-entra-id-sync',
+              },
+              {
+                title: 'Microsoft Entra ID (SCIM)',
+                href: '/manage/team/idp-sync/embedded/microsoft-entra-id-scim-sync',
+              },
+              {
+                title: 'Google Workspace',
+                href: '/manage/team/idp-sync/embedded/google-workspace-sync',
               },
               {
                 title: 'JumpCloud',
-                href: '/selfhosted/identity-providers/managed/jumpcloud',
+                href: '/manage/team/idp-sync/embedded/jumpcloud-sync',
               },
               {
-                title: 'Auth0',
-                href: '/selfhosted/identity-providers/managed/auth0',
-              },
-              {
-                title: 'Duo',
-                href: '/selfhosted/identity-providers/managed/duo',
-              },
-              {
-                title: 'Okta',
-                href: '/selfhosted/identity-providers/managed/okta',
+                title: 'Keycloak',
+                href: '/manage/team/idp-sync/embedded/keycloak-sync',
               },
             ],
           },
@@ -674,10 +718,6 @@ export const docsNavigation = [
         isOpen: false,
         links: [
           {
-            title: 'Allow SSH',
-            href: '/client/allow-ssh',
-          },
-          {
             title: 'Block Inbound Connections',
             href: '/client/block-inbound-connections',
           },
@@ -686,12 +726,16 @@ export const docsNavigation = [
             href: '/client/connect-on-startup',
           },
           {
-            title: 'Enable Lazy Connections',
-            href: '/client/enable-lazy-connections',
-          },
-          {
             title: 'Enable Quantum-Resistance',
             href: '/client/post-quantum-cryptography',
+          },
+          {
+            title: 'Allow SSH',
+            href: '/client/allow-ssh',
+          },
+          {
+            title: 'Enable Lazy Connections',
+            href: '/client/enable-lazy-connections',
           },
         ],
       },
@@ -838,7 +882,8 @@ function NavigationGroup({ group, className, hasChildren }) {
         onClick={() => {
           setIsOpen(!isOpen)
           if (!isOpen) {
-            if (!isActiveGroup && group.links[0]?.href) router.push(group.links[0].href)
+            if (!isActiveGroup && group.links[0]?.href)
+              router.push(group.links[0].href)
             setActiveHighlight()
           } else {
             setActiveHighlight(group.title)
