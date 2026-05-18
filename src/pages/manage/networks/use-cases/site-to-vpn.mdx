@@ -24,19 +24,20 @@ Clientless Device ──► Routing Peer ──► NetBird Overlay ──► Net
 
 <Warning>
 The routing peer must perform **outbound source NAT** for site traffic
-entering the NetBird overlay. NetBird performs this automatically only when
-the routing peer is **Linux running in kernel mode**. On any other platform
-(pfSense, OPNsense, MikroTik, Windows, macOS, or Linux in userspace mode),
-you must configure the outbound NAT yourself on the routing peer or on its
-upstream firewall. Without this, the overlay peer drops the traffic at its
-access control. See [Outbound SNAT requirement](#outbound-snat-requirement).
+entering the NetBird overlay. The dashboard **Masquerade** flag does not
+cover this direction on any route — you must install the SNAT rule
+manually on the routing peer (or on its upstream firewall) on every
+platform. Without this, the overlay peer drops the traffic at its access
+control. See [Outbound SNAT requirement](#outbound-snat-requirement).
 </Warning>
 
 ## Prerequisites
 
-- A device on the local network to serve as the routing peer. **Linux is
-  strongly recommended** for the routing peer because it can install the
-  required outbound SNAT automatically (see the warning above).
+- A device on the local network to serve as the routing peer. Linux is
+  the most common choice (the SNAT examples below assume it), but pfSense,
+  OPNsense, MikroTik, Windows, and macOS all work — see
+  [Step 3](#step-3-configure-the-outbound-snat) for the per-platform SNAT
+  syntax you'll need.
 - A separate device running the NetBird client that the clientless device
   needs to reach
 - The ability to either add a static route on the clientless device (or its
@@ -83,34 +84,54 @@ sudo netbird up --setup-key YOUR_SITE_SETUP_KEY
 Confirm the peer appears in the dashboard and shows the `site-routing-peers`
 group.
 
-## Step 3: Configure the Outbound SNAT (If applicable)
+## Step 3: Configure the Outbound SNAT
 
 The routing peer must SNAT site traffic onto its NetBird interface so the
 overlay peer's access control sees a NetBird IP it recognises. See
 [Outbound SNAT requirement](#outbound-snat-requirement) for the reasoning.
 
-**On Linux:** no manual SNAT configuration is needed. NetBird enables IP
-forwarding and installs the SNAT itself when masquerade is enabled on the
-routing peer (Step 4).
+This step is **required on every routing peer**, regardless of OS or
+WireGuard mode. The dashboard **Masquerade** flag (Step 4) does not cover
+the Site-to-VPN direction — see
+[Outbound SNAT requirement](#outbound-snat-requirement) for why.
 
-The only Linux-side caveat is if you run a host firewall (UFW, firewalld)
-with the `FORWARD` chain default set to `DROP` — in that case, allow
-forwarding between the site-facing interface and `wt0`:
+### Linux
+
+With iptables (or iptables-nft):
+
+```bash
+sudo iptables -t nat -A POSTROUTING -s 192.168.50.0/24 -o wt0 -j MASQUERADE
+# Persist via iptables-persistent / netfilter-persistent
+```
+
+Or natively with nftables:
+
+```bash
+sudo nft add table ip custom-nat
+sudo nft add chain ip custom-nat postrouting \
+  '{ type nat hook postrouting priority 100 ; }'
+sudo nft add rule ip custom-nat postrouting \
+  oifname "wt0" ip saddr 192.168.50.0/24 masquerade
+# Persist by adding the same rules to /etc/nftables.conf
+# and enabling: sudo systemctl enable --now nftables
+```
+
+If you run a host firewall (UFW, firewalld) with the `FORWARD` chain
+default set to `DROP`, also allow forwarding between the site-facing
+interface and `wt0`:
 
 ```bash
 sudo iptables -I FORWARD 1 -i <site-iface> -o wt0 -j ACCEPT
 ```
 
-**On any other platform** — pfSense, OPNsense, MikroTik, Windows, macOS, or
-Linux running in userspace mode — NetBird does not install the SNAT for
-you. Configure it manually on the routing peer or its upstream firewall.
+### pfSense / OPNsense
 
-For pfSense / OPNsense, add an outbound NAT rule on the `wt0` (or
-equivalent) interface that translates traffic sourced from `192.168.50.0/24`
-to the interface address. Switch outbound NAT mode to **Manual** (or
-**Hybrid**) so this rule is honoured.
+Add an outbound NAT rule on the `wt0` (or equivalent) interface that
+translates traffic sourced from `192.168.50.0/24` to the interface
+address. Switch outbound NAT mode to **Manual** (or **Hybrid**) so this
+rule is honoured.
 
-For MikroTik (RouterOS):
+### MikroTik (RouterOS)
 
 ```
 /ip firewall nat add chain=srcnat src-address=192.168.50.0/24 \
@@ -144,10 +165,12 @@ Attach the routing peer:
 
 1. In the network, click **Add Routing Peer**
 2. Select `site-router` (or the `site-routing-peers` group)
-3. **Masquerade:** Enabled is fine, but does not replace
-   [Step 3](#step-3-configure-the-outbound-snat) — this dashboard flag does
-   not install a working SNAT on non-Linux routing peers and is unreliable in
-   userspace mode
+3. **Masquerade:** Leave at the default. This flag controls SNAT for
+   traffic flowing **outbound from NetBird peers through the routing
+   peer** (the VPN-to-Site direction). It has no effect on Site-to-VPN
+   traffic, which is what this guide configures — the manual SNAT from
+   [Step 3](#step-3-configure-the-outbound-snat) is what makes Site-to-VPN
+   work.
 4. Click **Save**
 
 ## Step 5: Create the Access Policy
@@ -293,12 +316,15 @@ enters the overlay, replacing the site IP with the routing peer's NetBird
 IP. That NetBird IP **is** in the policy's source group, so the access
 control matches and the packet is accepted.
 
-On a Linux routing peer running in kernel mode, NetBird installs the SNAT
-itself via the kernel netfilter hooks when masquerade is enabled on the
-routing peer. On any other platform — pfSense, OPNsense, MikroTik,
-Windows, macOS, or Linux in userspace mode — that hook isn't available, so
-the SNAT must be configured manually on the routing peer or on its
-upstream firewall, as shown in [Step 3](#step-3-configure-the-outbound-snat).
+The dashboard **Masquerade** flag does not do this on its own. NetBird's
+automatic masquerade only applies to traffic flowing **outbound from
+NetBird peers through the routing peer** — for example, a NetBird client
+reaching a LAN host in a VPN-to-Site setup, or a client egressing to the
+internet via an exit node. Site-to-VPN traffic flows in the opposite
+direction (site → overlay) and is not covered by the masquerade flag on
+any route in current NetBird releases. That is why
+[Step 3](#step-3-configure-the-outbound-snat) installs the SNAT
+explicitly on the routing peer.
 
 ## Troubleshooting
 
@@ -335,20 +361,21 @@ allows `site-routing-peers` → target peer's group on the required port.
 
 **Target peer receives packets but drops them.**
 
-The outbound SNAT in [Step 3](#step-3-configure-the-outbound-snat) is
-missing or not effective. On the routing peer, packets going out `wt0` must
-have their source IP rewritten to the routing peer's NetBird IP:
+The outbound SNAT from
+[Step 3](#step-3-configure-the-outbound-snat) is missing or not effective.
+On the routing peer, packets going out `wt0` must have their source IP
+rewritten to the routing peer's NetBird IP:
 
 ```bash
-# On the routing peer, verify packet counters on the MASQUERADE rule:
+# Verify packet counters on the MASQUERADE rule installed in Step 3:
 sudo iptables -t nat -L POSTROUTING -n -v
 # Or watch overlay traffic on the way out:
 sudo tcpdump -ni wt0 'src net 192.168.50.0/24'
 # Seeing site IPs here means SNAT is NOT firing; the target peer will drop.
 ```
 
-If the routing peer is Linux in kernel mode and masquerade is enabled but
-the SNAT counters stay at zero, drop in an explicit rule as a fallback:
+If the Step 3 rule is missing or its counters stay at zero, re-install it
+(and add it to your persistence layer so it survives a reboot):
 
 ```bash
 sudo iptables -t nat -A POSTROUTING -s 192.168.50.0/24 -o wt0 -j MASQUERADE
@@ -391,8 +418,9 @@ local IP and the forwarded port:
 curl http://192.168.50.10:18080/
 ```
 
-The outbound SNAT configured in [Step 3](#step-3-configure-the-outbound-snat)
-applies to this traffic as well — the target peer still observes the
+The outbound SNAT configured in
+[Step 3](#step-3-configure-the-outbound-snat) applies to this
+traffic as well — the target peer still observes the
 routing peer's NetBird IP as the source.
 
 Each forwarded service needs its own DNAT rule. This pattern is a good fit
