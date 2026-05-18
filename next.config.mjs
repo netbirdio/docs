@@ -753,6 +753,37 @@ const nextConfig = {
                 destination: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
                 permanent: true,
             },
+            // selfhosted maintenance reorganization
+            {
+                source: '/selfhosted/configuration-files',
+                destination: '/selfhosted/maintenance/configuration-files',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/sqlite-store',
+                destination: '/selfhosted/maintenance/sqlite-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/postgres-store',
+                destination: '/selfhosted/maintenance/postgres-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/activity-postgres-store',
+                destination: '/selfhosted/maintenance/activity-postgres-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/activity-mysql-store',
+                destination: '/selfhosted/maintenance/activity-mysql-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/geo-support',
+                destination: '/selfhosted/maintenance/geo-support',
+                permanent: true,
+            },
         ]
     },
     rewrites: async () => {

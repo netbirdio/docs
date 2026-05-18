@@ -29,7 +29,7 @@ export const docsNavigation = [
         href: '/about-netbird/self-hosted-vs-cloud',
       },
       {
-        title: 'Understanding NAT and Connectivity',
+        title: 'NAT and Connectivity',
         href: '/about-netbird/understanding-nat-and-connectivity',
       },
       {
@@ -510,12 +510,20 @@ export const docsNavigation = [
       { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
       { title: 'Automated Setup', href: '/selfhosted/automated-setup' },
       {
+        title: 'Cloud Marketplaces',
+        isOpen: false,
+        links: [
+          { title: 'Overview', href: '/selfhosted/marketplaces' },
+          { title: 'Vultr', href: '/selfhosted/marketplaces/vultr' },
+        ],
+      },
+      {
         title: 'Maintenance',
         isOpen: false,
         links: [
           {
             title: 'Configuration Files',
-            href: '/selfhosted/configuration-files',
+            href: '/selfhosted/maintenance/configuration-files',
           },
           {
             title: 'Scaling Your Deployment',
@@ -546,19 +554,19 @@ export const docsNavigation = [
           { title: 'Reverse Proxy', href: '/selfhosted/reverse-proxy' },
           {
             title: 'Management SQLite Store',
-            href: '/selfhosted/sqlite-store',
+            href: '/selfhosted/maintenance/sqlite-store',
           },
           {
             title: 'Management Postgres Store',
-            href: '/selfhosted/postgres-store',
+            href: '/selfhosted/maintenance/postgres-store',
           },
           {
             title: 'Activity Events Postgres Store',
-            href: '/selfhosted/activity-postgres-store',
+            href: '/selfhosted/maintenance/activity-postgres-store',
           },
           {
-            title: 'Management Geolocation Database',
-            href: '/selfhosted/geo-support',
+            title: 'Geolocation Database',
+            href: '/selfhosted/maintenance/geo-support',
           },
           {
             title: 'CrowdSec IP Reputation',
@@ -804,14 +812,6 @@ export const docsNavigation = [
   {
     title: 'GET MORE HELP',
     links: [
-      {
-        title: 'VPS Marketplaces',
-        isOpen: false,
-        links: [
-          { title: 'Overview', href: '/selfhosted/marketplaces' },
-          { title: 'Vultr', href: '/selfhosted/marketplaces/vultr' },
-        ],
-      },
       {
         title: 'Troubleshooting client issues',
         href: '/help/troubleshooting-client',
