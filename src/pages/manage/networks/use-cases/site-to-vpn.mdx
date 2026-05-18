@@ -28,7 +28,7 @@ entering the NetBird overlay. The dashboard **Masquerade** flag does not
 cover this direction on any route — you must install the SNAT rule
 manually on the routing peer (or on its upstream firewall) on every
 platform. Without this, the overlay peer drops the traffic at its access
-control. See [Outbound SNAT requirement](#outbound-snat-requirement).
+control.
 </Warning>
 
 ## Prerequisites
@@ -87,13 +87,13 @@ group.
 ## Step 3: Configure the Outbound SNAT
 
 The routing peer must SNAT site traffic onto its NetBird interface so the
-overlay peer's access control sees a NetBird IP it recognises. See
-[Outbound SNAT requirement](#outbound-snat-requirement) for the reasoning.
+overlay peer's access control sees a NetBird IP it recognises — the
+overlay peer's per-policy ipset only contains the NetBird IPs of source
+peers, so unrewritten packets sourced from a routed CIDR are dropped.
 
 This step is **required on every routing peer**, regardless of OS or
-WireGuard mode. The dashboard **Masquerade** flag (Step 4) does not cover
-the Site-to-VPN direction — see
-[Outbound SNAT requirement](#outbound-snat-requirement) for why.
+WireGuard mode. The dashboard **Masquerade** flag (Step 4) does not
+install a SNAT for the Site-to-VPN direction.
 
 ### Linux
 
@@ -284,30 +284,6 @@ not on `127.0.0.1`. Substitute the routing peer's actual NetBird IP into
 the `server=/netbird.cloud/...` line — you can find it with
 `netbird status` on the routing peer.
 </Note>
-
-## Outbound SNAT requirement
-
-NetBird's per-peer access control on the destination peer matches inbound
-traffic against an ipset of allowed source IPs. The ipset is populated from
-the **NetBird IPs of peers in the policy's source group** — it cannot
-contain a routed CIDR like `192.168.50.0/24`. So when a packet from
-`192.168.50.20` arrives at the overlay peer, the access control has no
-matching entry and the packet is dropped.
-
-The fix is to rewrite the source IP at the routing peer before the packet
-enters the overlay, replacing the site IP with the routing peer's NetBird
-IP. That NetBird IP **is** in the policy's source group, so the access
-control matches and the packet is accepted.
-
-The dashboard **Masquerade** flag does not do this on its own. NetBird's
-automatic masquerade only applies to traffic flowing **outbound from
-NetBird peers through the routing peer** — for example, a NetBird client
-reaching a LAN host in a VPN-to-Site setup, or a client egressing to the
-internet via an exit node. Site-to-VPN traffic flows in the opposite
-direction (site → overlay) and is not covered by the masquerade flag on
-any route in current NetBird releases. That is why
-[Step 3](#step-3-configure-the-outbound-snat) installs the SNAT
-explicitly on the routing peer.
 
 ## Troubleshooting
 
