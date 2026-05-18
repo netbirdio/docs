@@ -805,6 +805,14 @@ export const docsNavigation = [
     title: 'GET MORE HELP',
     links: [
       {
+        title: 'VPS Marketplaces',
+        isOpen: false,
+        links: [
+          { title: 'Overview', href: '/selfhosted/marketplaces' },
+          { title: 'Vultr', href: '/selfhosted/marketplaces/vultr' },
+        ],
+      },
+      {
         title: 'Troubleshooting client issues',
         href: '/help/troubleshooting-client',
       },
