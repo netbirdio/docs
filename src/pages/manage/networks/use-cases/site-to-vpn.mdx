@@ -97,28 +97,63 @@ the Site-to-VPN direction — see
 
 ### Linux
 
-With iptables (or iptables-nft):
+Two equivalent persistent options. Use **iptables-persistent** unless you
+specifically want to manage rules with `nft`.
+
+**Option 1: iptables-persistent (recommended)**
 
 ```bash
+sudo apt-get install -y iptables-persistent
 sudo iptables -t nat -A POSTROUTING -s 192.168.50.0/24 -o wt0 -j MASQUERADE
-# Persist via iptables-persistent / netfilter-persistent
+sudo netfilter-persistent save
 ```
 
-Or natively with nftables:
+The rule survives reboot because `iptables-persistent` reloads
+`/etc/iptables/rules.v4` at boot. Works on systems using either
+`iptables-legacy` or `iptables-nft` underneath.
+
+**Option 2: native nftables**
+
+Do **not** append the rule to `/etc/nftables.conf` — the default file
+starts with `flush ruleset`, which wipes NetBird's own firewall rules.
+Use a dedicated drop-in file plus a systemd unit ordered after the
+NetBird daemon:
 
 ```bash
-sudo nft add table ip custom-nat
-sudo nft add chain ip custom-nat postrouting \
-  '{ type nat hook postrouting priority 100 ; }'
-sudo nft add rule ip custom-nat postrouting \
-  oifname "wt0" ip saddr 192.168.50.0/24 masquerade
-# Persist by adding the same rules to /etc/nftables.conf
-# and enabling: sudo systemctl enable --now nftables
+sudo mkdir -p /etc/nftables.d
+sudo tee /etc/nftables.d/netbird-snat.nft > /dev/null <<'EOF'
+table ip netbird-snat {
+    chain postrouting {
+        type nat hook postrouting priority 100;
+        oifname "wt0" ip saddr 192.168.50.0/24 masquerade
+    }
+}
+EOF
+
+sudo tee /etc/systemd/system/netbird-snat.service > /dev/null <<'EOF'
+[Unit]
+Description=NetBird Site-to-VPN outbound SNAT
+After=netbird.service
+Requires=netbird.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nft -f /etc/nftables.d/netbird-snat.nft
+ExecStop=/usr/sbin/nft delete table ip netbird-snat
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now netbird-snat.service
 ```
 
 If you run a host firewall (UFW, firewalld) with the `FORWARD` chain
 default set to `DROP`, also allow forwarding between the site-facing
-interface and `wt0`:
+interface and `wt0` and persist it via your firewall's config tool. The
+runtime equivalent is:
 
 ```bash
 sudo iptables -I FORWARD 1 -i <site-iface> -o wt0 -j ACCEPT
