@@ -82,11 +82,6 @@ const nextConfig = {
                 permanent: true,
             },
             {
-                source: '/docs/overview/setup-keys',
-                destination: '/manage/peers/register-machines-using-setup-keys',
-                permanent: true,
-            },
-            {
                 source: '/docs',
                 destination: '/',
                 permanent: true,
@@ -262,7 +257,7 @@ const nextConfig = {
             },
             {
                 source: '/how-to/db-workload-migration',
-                destination: '/manage/peers/site-to-site/db-workload-migration',
+                destination: '/manage/network-routes/use-cases/site-to-site',
                 permanent: true,
             },
             // documentation redirects for use-cases
@@ -299,22 +294,22 @@ const nextConfig = {
             },
             {
                 source: '/how-to/routing-traffic-to-multiple-resources',
-                destination: '/manage/networks/routing-traffic-to-multiple-resources',
+                destination: '/manage/networks',
                 permanent: true,
             },
             {
                 source: '/how-to/accessing-restricted-domain-resources',
-                destination: '/manage/networks/accessing-restricted-domain-resources',
+                destination: '/manage/networks',
                 permanent: true,
             },
             {
                 source: '/how-to/accessing-entire-domains-within-networks',
-                destination: '/manage/networks/accessing-entire-domains-within-networks',
+                destination: '/manage/networks',
                 permanent: true,
             },
             {
                 source: '/how-to/access-home-network',
-                destination: '/manage/networks/homelab/access-home-network',
+                destination: '/manage/networks/use-cases/access-home-devices',
                 permanent: true,
             },
             // documentation redirects for network-routes
@@ -325,17 +320,17 @@ const nextConfig = {
             },
             {
                 source: '/how-to/configuring-default-routes-for-internet-traffic',
-                destination: '/manage/network-routes/configuring-default-routes-for-internet-traffic',
+                destination: '/manage/network-routes/use-cases/exit-nodes',
                 permanent: true,
             },
             {
                 source: '/how-to/configuring-routes-with-access-control',
-                destination: '/manage/network-routes/configuring-routes-with-access-control',
+                destination: '/manage/network-routes/access-control',
                 permanent: true,
             },
             {
                 source: '/how-to/resolve-overlapping-routes',
-                destination: '/manage/network-routes/resolve-overlapping-routes',
+                destination: '/manage/network-routes/overlapping-routes',
                 permanent: true,
             },
             {
@@ -751,6 +746,37 @@ const nextConfig = {
             {
                 source: '/scaling-your-self-hosted-deployment',
                 destination: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
+                permanent: true,
+            },
+            // selfhosted maintenance reorganization
+            {
+                source: '/selfhosted/configuration-files',
+                destination: '/selfhosted/maintenance/configuration-files',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/sqlite-store',
+                destination: '/selfhosted/maintenance/sqlite-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/postgres-store',
+                destination: '/selfhosted/maintenance/postgres-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/activity-postgres-store',
+                destination: '/selfhosted/maintenance/activity-postgres-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/activity-mysql-store',
+                destination: '/selfhosted/maintenance/activity-mysql-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/geo-support',
+                destination: '/selfhosted/maintenance/geo-support',
                 permanent: true,
             },
         ]
