@@ -514,6 +514,13 @@ export const docsNavigation = [
       { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
       { title: 'Automated Setup', href: '/selfhosted/automated-setup' },
       {
+        title: 'Infrastructure as Code',
+        isOpen: false,
+        links: [
+          { title: 'Ansible', href: '/selfhosted/iac/ansible' },
+        ],
+      },
+      {
         title: 'Maintenance',
         isOpen: false,
         links: [
