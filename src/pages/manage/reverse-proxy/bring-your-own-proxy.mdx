@@ -13,7 +13,7 @@ It is the option to choose when you want:
 - **Specific geographic placement** — pick the region and provider you need (regulatory, latency, residency).
 - **Your own TLS / domain** — the proxy issues certificates directly via Let's Encrypt for a wildcard under a domain you own.
 
-In the dashboard, BYOP proxies live under **Reverse Proxy** > **Self-Hosted Proxies**.
+In the dashboard, BYOP proxies live under **Reverse Proxy** > **Clusters** and appear as **account clusters**. See [Shared and account clusters](#shared-and-account-clusters) for the full distinction.
 
 <Note>
     **Availability:** BYOP is currently in **beta** and follows the [Reverse Proxy](/manage/reverse-proxy) feature lifecycle. It works on any NetBird deployment whose management instance has account-scoped proxy tokens enabled — both NetBird Cloud and self-hosted NetBird with the feature deployed.
@@ -21,6 +21,32 @@ In the dashboard, BYOP proxies live under **Reverse Proxy** > **Self-Hosted Prox
 
 <Note>
     **Not the same as the management-wide self-hosted proxy.** If you run your own NetBird **management** server and want a single proxy that serves every account on it, follow [Self-hosted proxy setup](/manage/reverse-proxy#self-hosted-proxy-setup) instead — that proxy is configured with a management-wide token and has no per-account isolation. BYOP is the opposite model: every BYOP proxy is account-scoped from the gRPC layer up, and is registered with an account-scoped token. Both models can coexist on the same management instance.
+</Note>
+
+## Shared and account clusters
+
+A **cluster** is a group of one or more proxy instances that serve the same apex domain (`NB_PROXY_DOMAIN`). Every service registers against exactly one cluster, and traffic to `subdomain.cluster-apex` is routed to any healthy proxy in that cluster.
+
+NetBird recognises two cluster types, distinguished by the `type` field on the `/api/reverse-proxies/clusters` response and by the icon next to the cluster name in the dashboard:
+
+| | **Shared cluster** (`type: "shared"`) | **Account cluster** (`type: "account"`) |
+|---|---|---|
+| **Who runs it** | NetBird (Cloud) or the operator of a self-hosted management instance | The account itself (BYOP) |
+| **Who can use it** | Every account on the management instance | Only the account that registered it |
+| **Apex domain** | Provided by the platform (e.g. `eu.proxy.netbird.io`); subdomains are minted per service | Provided by the account (e.g. `proxy.company.com`); the account owns the DNS |
+| **TLS** | Managed by the platform | Issued by the proxy you run (ACME by default, or your own certs) |
+| **Registration token** | Management-wide proxy token | Account-scoped proxy token (one per account) |
+| **Geographic placement** | Wherever the platform runs proxies | Wherever you choose to run the container |
+| **Reserved across the instance** | Yes — no account cluster can register against the same apex | Yes — once registered, the apex is unavailable to other accounts and to shared proxies |
+| **Visible to other accounts** | Yes, as an available cluster in their service-creation flow | No — only the owning account sees it |
+| **Delete from dashboard** | Not allowed | Allowed (account owner only) |
+
+Both cluster types appear together on the **Clusters** page. The **Type** badge next to the cluster name marks each row as **shared** or **account**, the **Status** column shows whether at least one proxy in the cluster has heartbeated within the last two minutes, and the **Features** column lists the capabilities reported by the connected proxies (custom-port L4 support, subdomain requirement, CrowdSec IP-reputation enforcement).
+
+When creating a service you pick a base domain from any cluster you can reach: shared clusters are always available; account clusters appear only for the account that owns them. There is no functional difference at the data-plane — services on either cluster type behave identically once a request lands. The choice is operational: shared clusters are zero-effort, account clusters give you control over location, TLS, and the data path.
+
+<Note>
+    The rest of this page describes how to set up an **account cluster**. If you want to use a shared cluster, no setup is required — pick the platform-provided domain in [Reverse Proxy > Services > Add Service](/manage/reverse-proxy).
 </Note>
 
 ## How it works
@@ -44,7 +70,7 @@ You can run **multiple BYOP proxy instances with the same token and the same `NB
 
 Before you start, make sure you have:
 
-- A NetBird account with **Network Admin** (or higher) access on a management instance that supports BYOP — the **Services** permission is required to create proxy tokens and manage self-hosted proxies.
+- A NetBird account with **Network Admin** (or higher) access on a management instance that supports BYOP — the **Services** permission is required to create proxy tokens and manage account clusters.
 - A **server with a public IP** that can accept inbound TCP traffic on **port 443** (clients connect here, and Let's Encrypt's default `tls-alpn-01` challenge validates here). Port **80** is only needed if you switch the ACME challenge to `http-01`. For HA, repeat for every replica behind the same domain.
 - **Docker** installed and running on that server.
 - A **domain you control** that you can point at the server. You will configure two `A` records: `proxy-domain` and `*.proxy-domain`.
@@ -57,14 +83,14 @@ Before you start, make sure you have:
 
 NetBird's dashboard provides a three-step wizard that generates the proxy token, shows the DNS records to add, and emits a ready-to-run `docker run` command. You can also drive the same flow through the API — see [Set up a BYOP proxy from the API](#set-up-a-byop-proxy-from-the-api).
 
-### Step 1: Open Self-Hosted Proxies and start the wizard
+### Step 1: Open Clusters and start the wizard
 
-Navigate to **Reverse Proxy** > **Self-Hosted Proxies** in the NetBird dashboard. If your account has no self-hosted proxies yet, you'll see the get-started card; otherwise the table lists existing clusters.
+Navigate to **Reverse Proxy** > **Clusters** in the NetBird dashboard. The table lists every cluster your account can reach — both the shared platform clusters and any account clusters you've already set up.
 
-Click **Setup Proxy** to open the wizard.
+Click **Setup Self-Hosted Cluster** to open the wizard.
 
 <p>
-    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-self-hosted-proxies-empty.png" alt="Self-Hosted Proxies page in the dashboard with the Setup Proxy button" className="imagewrapper-big"/>
+    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-self-hosted-proxies-empty.png" alt="Clusters page in the dashboard with the Setup Self-Hosted Cluster button" className="imagewrapper-big"/>
 </p>
 
 ### Step 2: Choose your domain
@@ -72,7 +98,7 @@ Click **Setup Proxy** to open the wizard.
 In the **Domain** tab, enter the domain that this proxy cluster will be reachable on, e.g., `proxy.company.com`. This becomes the proxy's `NB_PROXY_DOMAIN` and the suffix of every public service URL hosted on it (`{subdomain}.proxy.company.com`).
 
 <p>
-    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-setup-modal-domain.png" alt="Setup Proxy modal showing the Domain tab with the requirements callout" className="imagewrapper-big"/>
+    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-setup-modal-domain.png" alt="Setup Cluster modal showing the Domain tab with the requirements callout" className="imagewrapper-big"/>
 </p>
 
 The wizard reminds you of the host requirements — public IP, Docker, ports 80 and 443 free. Click **Continue** to move to the DNS step.
@@ -89,7 +115,7 @@ In the **DNS Records** tab, add the two `A` records shown in the table at your d
 The wildcard record is required so that every service domain (`{subdomain}.proxy.company.com`) resolves to your proxy. If you run an HA cluster, point both records at all replicas (round-robin) or at the IP of a load balancer / floating IP that fronts them.
 
 <p>
-    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-setup-modal-dns.png" alt="Setup Proxy modal showing the DNS Records tab with copyable A record entries" className="imagewrapper-big"/>
+    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-setup-modal-dns.png" alt="Setup Cluster modal showing the DNS Records tab with copyable A record entries" className="imagewrapper-big"/>
 </p>
 
 <Note>
@@ -103,7 +129,7 @@ Click **Continue** to move to the install step.
 Switching to the **Run the Proxy** tab automatically generates a one-time, account-scoped proxy token and embeds it into a ready-to-run `docker run` command:
 
 <p>
-    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-setup-modal-install.png" alt="Setup Proxy modal showing the Run the Proxy tab with the generated docker run command" className="imagewrapper-big"/>
+    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-setup-modal-install.png" alt="Setup Cluster modal showing the Run the Proxy tab with the generated docker run command" className="imagewrapper-big"/>
 </p>
 
 ```shell
@@ -144,10 +170,10 @@ Click **Finish Setup** to close the wizard.
 
 ### Step 5: Verify the proxy is connected
 
-Back on the **Self-Hosted Proxies** page, the new cluster appears once the proxy registers, with a count of connected proxies. A non-zero connected count means at least one replica is alive and exchanging mappings with management.
+Back on the **Clusters** page, the new account cluster appears once the proxy registers, with a count of connected proxies and an **Online** badge. A non-zero connected count means at least one replica is alive and exchanging mappings with management.
 
 <p>
-    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-self-hosted-proxies-connected.png" alt="Self-Hosted Proxies page showing a connected cluster with one proxy" className="imagewrapper-big"/>
+    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-self-hosted-proxies-connected.png" alt="Clusters page showing a connected account cluster with one proxy" className="imagewrapper-big"/>
 </p>
 
 You can also check the proxy's own health probe — by default it binds to `localhost:8080` on the proxy host, so run this on the box itself:
@@ -232,16 +258,16 @@ docker run -d \
  netbirdio/reverse-proxy:latest
 ```
 
-**4. Verify** with `GET /api/reverse-proxies/clusters` (BYOP clusters carry `self_hosted: true`) or check the **Self-Hosted Proxies** page in the dashboard.
+**4. Verify** with `GET /api/reverse-proxies/clusters` (BYOP clusters return `"type": "account"`; platform-managed clusters return `"type": "shared"`) or check the **Clusters** page in the dashboard.
 
 ## Manage proxies and tokens
 
-### Manage proxies
+### Manage clusters
 
-The **Self-Hosted Proxies** page lists each cluster and the number of currently connected proxies. The same data is available via `GET /api/reverse-proxies/clusters` — BYOP clusters carry the `self_hosted: true` flag. From the page you can:
+The **Clusters** page lists each cluster reachable from your account, its **Online** status, the count of currently connected proxies, and the feature flags (custom ports, subdomain requirement, CrowdSec) reported by its proxies. The same data is available via `GET /api/reverse-proxies/clusters` — each entry carries a `type` field (`"account"` for BYOP clusters you own, `"shared"` for platform-managed clusters). The **Delete** action is only available on account clusters. From the page you can:
 
 - **Refresh** to pull fresh status.
-- **Delete** a cluster — this removes the cluster's database record and hides it from the API and dashboard. The same is exposed as `DELETE /api/reverse-proxies/clusters/{clusterAddress}`. Note that any proxy process still running with the cluster's token keeps its gRPC stream open until you stop it or revoke the token. To fully tear down a self-hosted proxy, delete the cluster *and* either stop the proxy container or revoke its token.
+- **Delete** an account cluster — this removes the cluster's database record and hides it from the API and dashboard. The same is exposed as `DELETE /api/reverse-proxies/clusters/{clusterAddress}`. Note that any proxy process still running with the cluster's token keeps its gRPC stream open until you stop it or revoke the token. To fully tear down an account cluster, delete it *and* either stop the proxy container or revoke its token.
 
 ### Manage tokens
 
@@ -268,7 +294,7 @@ Within roughly one heartbeat interval (60 seconds) of a revoke, every proxy regi
 | Service stuck in `certificate_pending` | ACME challenge cannot complete: ports blocked, DNS not propagated, or geo-blocking on validation traffic | Verify both `A` records resolve correctly; ensure ports 80/443 are reachable from anywhere; switch to `http-01` if `tls-alpn-01` fails. See [TLS-ALPN-01 requirements](/manage/reverse-proxy#tls-alpn-01-requirements) |
 | Service stays in `tunnel_not_created` | Proxy can reach management but cannot reach the target peer over WireGuard | Confirm the target peer is online (`netbird status`) and policies allow connectivity from the proxy's embedded peer. The proxy creates one embedded peer per account on first service mapping |
 | Proxy disconnects roughly one minute after start | Token was revoked or expired (the heartbeat checks token validity every minute and tears down the gRPC stream when it fails) | Generate a new token, restart the proxy |
-| `Setup Proxy` button greyed out | Account user lacks the `services:create` permission | Ask a Network Admin (or higher) to set up the proxy or grant the role |
+| `Setup Self-Hosted Cluster` button greyed out | Account user lacks the `services:create` permission | Ask a Network Admin (or higher) to set up the cluster or grant the role |
 
 For deeper debugging, raise the log level to `debug` or `trace` (`NB_PROXY_LOG_LEVEL=debug`) and consult the proxy's `/healthz` endpoint.
 
