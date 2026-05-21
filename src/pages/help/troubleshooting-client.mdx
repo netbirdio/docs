@@ -98,23 +98,19 @@ a [github issue](https://github.com/netbirdio/netbird/issues/new/choose) and att
 
 NetBird rotates `client.log` itself by default, old files are written next to the active log as gzipped archives (e.g. `client-2025-04-01T12-00-00.000.log.gz`). The maximum size of the active file is controlled by [`NB_LOG_MAX_SIZE_MB`](/client/environment-variables#logging) (default: 15 MB).
 
-Running NetBird's built-in rotation **and** the `logrotate` service for Linux on the same file causes problems: `logrotate` renames the file out from under the daemon, and the daemon keeps writing to the old file. This results in `client.log` being corrupted with zero bytes and some logging lost.
-
-To avoid this, NetBird scans `/etc/logrotate.conf` and `/etc/logrotate.d/*` on Linux startup. If any non-comment line mentions `netbird`, the client logs a warning and disables its own rotation, letting `logrotate` own the file. You will see a line like this in `client.log`:
+Running NetBird's built-in rotation **and** the `logrotate` service for Linux on the same file causes problems where the log file might become corrupted and logs lost. To avoid this, NetBird scans `/etc/logrotate.conf` and `/etc/logrotate.d/*` on Linux startup. If any non-comment line mentions `netbird`, the client logs a warning and disables its own rotation, letting `logrotate` own the file. You will see a line like this in `netbird.err` or the console:
 
 ```text
 log rotation conflict detected in: "/etc/logrotate.d/netbird", rotation is disabled
 ```
 
-When this happens, rotated files are produced by `logrotate` and will follow your `logrotate` config, typically `client.log.1`, `client.log.2.gz`, `client.log.3.gz`, etc. The `debug bundle` command looks for gzipped archives first and only falls back to uncompressed `.log.<N>` files when no `.gz` files are present, so a `logrotate` config that uses `delaycompress` will leave the most recent rotation as an uncompressed `client.log.1` that the bundle currently skips. 
-
 <Note>
-To use `logrotate`, we require `copytruncate` to be set for the config file, otherwise the daemon needs to be restarted for the new log file to be opened after rotation.
+To use `logrotate`, we require `copytruncate` and not `create` to be set in the config file, otherwise the daemon needs to be restarted for the new log file to be opened after rotation.
 
-If you want every rotated log in the bundle, configure `logrotate` to either compress every rotation (`compress` and no `delaycompress`) or leave them all uncompressed (`nocompress`).
+Netbird supports `compress`, `delaycompress` and `nocompress`.
 </Note>
 
-If you want to force this behavior on a non-Linux platform, or your `logrotate` config does not match the auto-detection (for example it lives outside `/etc/logrotate.d/` or does not contain the literal string `netbird`), set [`NB_LOG_DISABLE_ROTATION=true`](/client/environment-variables#logging) on the daemon. When the env flag is set, NetBird logs:
+If you want to force disable log rotation (for example if your `logrotate` config lives outside `/etc/logrotate.d/` or does not contain the literal string `netbird`), set [`NB_LOG_DISABLE_ROTATION=true`](/client/environment-variables#logging) on the daemon. When the env flag is set, `netbird.err` or the console will show:
 
 ```text
 log rotation is disabled by env flag
