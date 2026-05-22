@@ -821,6 +821,60 @@ export const docsNavigation = [
         href: '/help/troubleshooting-client',
       },
       { title: 'Report bugs and issues', href: '/help/report-bug-issues' },
+      {
+        title: 'Support Matrix',
+        isOpen: false,
+        links: [
+          { title: 'Overview', href: '/help/support-matrix' },
+          {
+            title: 'NetBird Client',
+            href: '/help/support-matrix/netbird-client',
+            isOpen: false,
+            links: [
+              {
+                title: 'Linux',
+                href: '/help/support-matrix/netbird-client/linux',
+              },
+              {
+                title: 'Windows',
+                href: '/help/support-matrix/netbird-client/windows',
+              },
+              {
+                title: 'macOS',
+                href: '/help/support-matrix/netbird-client/macos',
+              },
+              {
+                title: 'iOS',
+                href: '/help/support-matrix/netbird-client/ios',
+              },
+              {
+                title: 'Android',
+                href: '/help/support-matrix/netbird-client/android',
+              },
+              {
+                title: 'Android TV',
+                href: '/help/support-matrix/netbird-client/android-tv',
+              },
+              {
+                title: 'tvOS',
+                href: '/help/support-matrix/netbird-client/tvos',
+              },
+            ],
+          },
+          {
+            title: 'Kubernetes Operator',
+            href: '/help/support-matrix/kubernetes-operator',
+          },
+          {
+            title: 'Terraform Provider',
+            href: '/help/support-matrix/terraform-provider',
+          },
+          {
+            title: 'Self-Hosted',
+            href: '/help/support-matrix/self-hosted',
+          },
+        ],
+      },
     ],
   },
 ]
