@@ -41,7 +41,14 @@ NetBird recognises two cluster types, distinguished by the `type` field on the `
 | **Visible to other accounts** | Yes, as an available cluster in their service-creation flow | No — only the owning account sees it |
 | **Delete from dashboard** | Not allowed | Allowed (account owner only) |
 
-Both cluster types appear together on the **Clusters** page. The **Type** badge next to the cluster name marks each row as **shared** or **account**, the **Status** column shows whether at least one proxy in the cluster has heartbeated within the last two minutes, and the **Features** column lists the capabilities reported by the connected proxies (custom-port L4 support, subdomain requirement, CrowdSec IP-reputation enforcement).
+Both cluster types appear together on the **Clusters** page. The **Type** badge next to the cluster name marks each row as **shared** or **account**, the **Status** column shows whether at least one proxy in the cluster has heartbeated within the last two minutes, and the **Features** column lists the capabilities reported by the connected proxies:
+
+| Feature badge | Meaning |
+|---------------|---------|
+| **Custom Ports** | The cluster can bind arbitrary TCP/UDP listen ports for L4 services. |
+| **Subdomain Required** | Services on this cluster must use a subdomain — the bare cluster apex is not addressable. |
+| **CrowdSec** | The cluster has CrowdSec IP-reputation configured across all active proxies. |
+| **Private** | At least one connected proxy in the cluster runs embedded in a NetBird client (`netbird proxy`) and serves over the WireGuard tunnel. Required to enable [NetBird-Only Access](/manage/reverse-proxy/authentication#netbird-only-access-private-services) and the **Proxy Cluster** target type on services. |
 
 When creating a service you pick a base domain from any cluster you can reach: shared clusters are always available; account clusters appear only for the account that owns them. There is no functional difference at the data-plane — services on either cluster type behave identically once a request lands. The choice is operational: shared clusters are zero-effort, account clusters give you control over location, TLS, and the data path.
 
@@ -194,6 +201,27 @@ Once the cluster is connected, your BYOP domain shows up in the service creation
 
 Traffic to `subdomain.proxy.company.com` is now received by your BYOP proxy, terminated locally with a Let's Encrypt certificate, and forwarded over WireGuard to the target peer or network resource.
 
+## Private services (NetBird-Only Access)
+
+A BYOP cluster whose proxy runs embedded as a NetBird peer (`netbird proxy` mode — the default for the `netbirdio/reverse-proxy` image) reports the `Private` capability if started with the flag `--private` or environment variable `NB_PROXY_PRIVATE=true`. With that capability set, the cluster unlocks two new options anywhere it is selected:
+
+- **NetBird-Only Access** on the service's **Authentication** tab — turn the service into a *private service* that only peers in your NetBird network can reach. See [NetBird-Only Access](/manage/reverse-proxy/authentication#net-bird-only-access-private-services) for the full behaviour, identity-header semantics, and access-group rules.
+- **Proxy Cluster** in the target picker — point the service at a hostname or IP that the embedded proxy can resolve directly from its own host stack (without WireGuard), with **Direct Upstream** locked on. Useful when the upstream is co-located with the BYOP proxy and you do not need (or want) to route it through the mesh.
+
+NetBird Cloud's shared clusters do not currently advertise `Private`. Running your own BYOP cluster is the supported way to enable private services for an account on Cloud. For self-hosted, the same applies — the proxy must be running with the flag set.
+
+When the selected base domain does *not* advertise the `Private` capability:
+
+- The **NetBird-Only Access** row on the Authentication tab is greyed out, with a tooltip explaining the requirement.
+- The **Proxy Cluster** option is hidden from the target picker.
+- **Direct Upstream** is locked off in service settings.
+
+To verify the capability is set, check the cluster row on the **Clusters** page — a **Private** badge appears in the Features column when at least one connected proxy is running in embedded mode.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/byop/byop-clusters-private-feature.png" alt="Clusters page row showing the Private feature badge in the Features column" className="imagewrapper-big"/>
+</p>
+
 ## High availability
 
 Run multiple proxy replicas with the **same** `NB_PROXY_TOKEN` and **same** `NB_PROXY_DOMAIN` to form an HA cluster within your account. Each replica:
@@ -264,7 +292,7 @@ docker run -d \
 
 ### Manage clusters
 
-The **Clusters** page lists each cluster reachable from your account, its **Online** status, the count of currently connected proxies, and the feature flags (custom ports, subdomain requirement, CrowdSec) reported by its proxies. The same data is available via `GET /api/reverse-proxies/clusters` — each entry carries a `type` field (`"account"` for BYOP clusters you own, `"shared"` for platform-managed clusters). The **Delete** action is only available on account clusters. From the page you can:
+The **Clusters** page lists each cluster reachable from your account, its **Online** status, the count of currently connected proxies, and the feature flags (custom ports, subdomain requirement, CrowdSec, private) reported by its proxies. The same data is available via `GET /api/reverse-proxies/clusters` — each entry carries a `type` field (`"account"` for BYOP clusters you own, `"shared"` for platform-managed clusters). The **Delete** action is only available on account clusters. From the page you can:
 
 - **Refresh** to pull fresh status.
 - **Delete** an account cluster — this removes the cluster's database record and hides it from the API and dashboard. The same is exposed as `DELETE /api/reverse-proxies/clusters/{clusterAddress}`. Note that any proxy process still running with the cluster's token keeps its gRPC stream open until you stop it or revoke the token. To fully tear down an account cluster, delete it *and* either stop the proxy container or revoke its token.
