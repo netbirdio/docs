@@ -44,6 +44,24 @@ All endpoints return Prometheus text format with OpenMetrics support enabled:
 curl http://localhost:9090/metrics
 ```
 
+## Naming conventions
+
+NetBird services register metrics with OpenTelemetry instrument names (using dots as separators, e.g. `management.grpc.sync.request.counter`). The Prometheus exporter rewrites them on the way out:
+
+- Dots become underscores: `management.grpc.sync.request.counter` → `management_grpc_sync_request_counter`.
+- **Counters** get a `_total` suffix unless the instrument name already ends in `_total`. So `management.grpc.sync.request.counter` → `management_grpc_sync_request_counter_total`, while `registrations_total` stays `registrations_total`.
+- **UpDownCounters** and **ObservableGauges** are emitted as Prometheus `gauge` types. The name is unchanged (e.g. `proxy_domains_count`, `relay_peers_active`).
+- **Histograms** expand to three series — `<name>_bucket`, `<name>_sum`, `<name>_count`. When the instrument was registered with a unit (`milliseconds`, `microseconds`, `bytes`, …), that unit is appended to the base name unless the name already ends in it. So `proxy.peer.add.duration.ms` with unit `milliseconds` becomes `proxy_peer_add_duration_ms_milliseconds_bucket`, but `relay_peer_authentication_time_milliseconds` (no unit registered) stays `relay_peer_authentication_time_milliseconds_bucket`.
+
+Service prefixes are baked into the OTel instrument names themselves:
+
+- **Management** metrics start with `management_*`.
+- **Relay** metrics start with `relay_*`.
+- **Proxy** metrics start with `proxy_*`.
+- **Signal** metrics are **unprefixed** when Signal runs standalone (`active_peers`, `messages_forwarded_total`, …). In the combined container they are emitted with a `signal_` prefix (`signal_active_peers`, `signal_messages_forwarded_total`, …) so they don't collide with the other services on the shared `/metrics` endpoint.
+
+The metric tables on the per-service pages show the on-the-wire Prometheus names, so you can copy them straight into a PromQL query.
+
 You can scrape them with a standard Prometheus `scrape_config`:
 
 ```yaml
