@@ -579,6 +579,19 @@ export const docsNavigation = [
         ],
       },
       {
+        title: 'Observability',
+        isOpen: false,
+        links: [
+          { title: 'Overview', href: '/selfhosted/observability' },
+          { title: 'Management', href: '/selfhosted/observability/management' },
+          { title: 'Signal', href: '/selfhosted/observability/signal' },
+          { title: 'Relay', href: '/selfhosted/observability/relay' },
+          { title: 'Proxy', href: '/selfhosted/observability/proxy' },
+          { title: 'Combined', href: '/selfhosted/observability/combined' },
+          { title: 'Dashboards', href: '/selfhosted/observability/dashboards' },
+        ],
+      },
+      {
         title: 'Authentication',
         isOpen: false,
         links: [
