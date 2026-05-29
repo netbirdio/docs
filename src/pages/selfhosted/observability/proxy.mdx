@@ -1,0 +1,66 @@
+export const description = 'Metrics recorded by the NetBird Proxy service.'
+
+# Proxy metrics
+
+The NetBird Proxy serves the [Reverse Proxy](/manage/reverse-proxy) feature: HTTP / TLS / TCP / UDP traffic forwarded to peers without requiring those peers to be reachable directly. Its metrics describe the inbound HTTP layer, the L4 (TCP/UDP) listeners, ACME certificate issuance, and the sync loop with Management.
+
+## Endpoint
+
+Unlike the other services, the proxy does not run a dedicated metrics server. Instead it mounts `/metrics` on the same HTTP server as its health probes.
+
+| Setting | Default |
+| --- | --- |
+| Address | `localhost:8080` |
+| Path | `/metrics` |
+| Flag | `--health-addr` |
+| Env var | `NB_PROXY_HEALTH_ADDRESS` |
+
+```bash
+netbird-proxy --health-addr 0.0.0.0:8080
+```
+
+To scrape the proxy from another host, bind the health server to a routable interface (`0.0.0.0:8080` or a specific address) instead of `localhost`.
+
+<Warning>
+The same endpoint serves liveness, readiness, and startup probes. If you expose it publicly, restrict access to your Prometheus scraper and your orchestrator's health-check source.
+</Warning>
+
+## HTTP
+
+Inbound HTTP/HTTPS traffic terminated by the proxy and forwarded to peers.
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `proxy.http.request.counter` | Counter | Total HTTP requests handled. |
+| `proxy.http.active_requests` | UpDownCounter | In-flight HTTP requests. |
+| `proxy.http.request.duration.ms` | Histogram | End-to-end request duration, in milliseconds. |
+| `proxy.backend.duration.ms` | Histogram | Round-trip time to the upstream peer, in milliseconds. |
+| `proxy.domains.count` | UpDownCounter | Domains currently configured. |
+| `proxy.paths.count` | UpDownCounter | Path routes currently configured. |
+| `proxy.certificate.issue.duration.ms` | Histogram | ACME certificate issuance duration, in milliseconds. |
+
+## L4 (TCP/UDP)
+
+Layer-4 passthrough services configured on the proxy.
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `proxy.l4.services.count` | UpDownCounter | L4 services currently configured. |
+| `proxy.tcp.active_connections` | UpDownCounter | Active TCP/TLS connections. |
+| `proxy.tcp.connections.total` | Counter | Total TCP/TLS connections accepted. |
+| `proxy.tcp.connection.duration.ms` | Histogram | TCP/TLS connection duration, in milliseconds. |
+| `proxy.tcp.bytes.total` | Counter | Bytes transferred over TCP/TLS. |
+| `proxy.udp.active_sessions` | UpDownCounter | Active UDP relay sessions. |
+| `proxy.udp.sessions.total` | Counter | Total UDP sessions opened. |
+| `proxy.udp.packets.total` | Counter | UDP packets relayed. |
+| `proxy.udp.bytes.total` | Counter | Bytes transferred over UDP. |
+
+## Sync with Management
+
+The proxy receives configuration (domains, paths, L4 services) from Management over a gRPC stream.
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `proxy.sync.snapshot.duration.ms` | Histogram | Time to apply the initial snapshot from Management, in milliseconds. |
+| `proxy.sync.batch.duration.ms` | Histogram | Time to apply a mapping batch, in milliseconds. |
+| `proxy.peer.add.duration.ms` | Histogram | Time to add a peer to the embedded client (key generation + gRPC + embed), in milliseconds. |

@@ -1,0 +1,127 @@
+export const description = 'Metrics recorded by the NetBird Management service.'
+
+# Management metrics
+
+The Management service exposes Prometheus metrics describing the HTTP API, gRPC API, identity-provider integration, store/database, the peer update channel, the account manager, and ephemeral peer cleanup.
+
+## Endpoint
+
+| Setting | Default |
+| --- | --- |
+| Address | `0.0.0.0` |
+| Port | `9090` |
+| Path | `/metrics` |
+| Flag | `--metrics-port` |
+
+```bash
+netbird-mgmt --metrics-port 9090
+```
+
+In the combined container, the metrics port is set with `server.metricsPort` in `config.yaml` and is shared with Signal and Relay. See [Combined](/selfhosted/observability/combined).
+
+## HTTP API
+
+Records traffic and latency for the dashboard / public API HTTP server.
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `http.server.request.counter` | Counter | Requests received, labeled by method. |
+| `http.server.response.counter` | Counter | Responses returned, labeled by status. |
+| `http.server.request.counter.total` | Counter | Total requests received. |
+| `http.server.response.counter.total` | Counter | Total responses returned. |
+| `http.server.response.code.counter.total` | Counter | Responses by HTTP status code. |
+| `http.server.request.duration.ms` | Histogram | Request duration in milliseconds, per endpoint. |
+| `http.server.request.duration.ms.total` | Histogram | Aggregate request duration in milliseconds. |
+
+## gRPC API
+
+Tracks the management gRPC service used by peers (`Sync`, `Login`, `GetServerKey`).
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `management.grpc.sync.request.counter` | Counter | `Sync` requests received. |
+| `management.grpc.sync.request.blocked.counter` | Counter | `Sync` requests rejected by rate-limiting. |
+| `management.grpc.login.request.counter` | Counter | `Login` requests received. |
+| `management.grpc.login.request.blocked.counter` | Counter | `Login` requests rejected by rate-limiting. |
+| `management.grpc.login.request.high.latency.counter` | Counter | `Login` requests above the high-latency threshold. |
+| `management.grpc.key.request.counter` | Counter | `GetServerKey` requests received. |
+| `management.grpc.sync.request.duration.ms` | Histogram | `Sync` request duration in milliseconds. |
+| `management.grpc.login.request.duration.ms` | Histogram | `Login` request duration in milliseconds. |
+| `management.grpc.streams.active` | Gauge | Currently open `Sync` streams. |
+
+## Identity provider (IdP)
+
+Calls made to the configured IdP (Auth0, Okta, Entra ID, Keycloak, etc.).
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `management.idp.authenticate.request.counter` | Counter | Authentication requests against the IdP. |
+| `management.idp.get.account.counter` | Counter | `GetAccount` lookups. |
+| `management.idp.get.accounts.counter` | Counter | `GetAllAccounts` lookups. |
+| `management.idp.get.user.by.id.counter` | Counter | `GetUserByID` lookups. |
+| `management.idp.get.user.by.email.counter` | Counter | `GetUserByEmail` lookups. |
+| `management.idp.create.user.counter` | Counter | Users created in the IdP. |
+| `management.idp.delete.user.counter` | Counter | Users deleted in the IdP. |
+| `management.idp.update.user.meta.counter` | Counter | User metadata updates. |
+| `management.idp.request.error.counter` | Counter | Failed IdP HTTP calls. |
+| `management.idp.request.status.error.counter` | Counter | IdP calls that returned a non-2xx status. |
+
+## Store (database)
+
+Latency and contention on the management store (SQLite or PostgreSQL).
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `management.store.global.lock.acquisition.duration.micro` | Histogram | Global lock acquisition time, in microseconds. |
+| `management.store.global.lock.acquisition.duration.ms` | Histogram | Global lock acquisition time, in milliseconds. |
+| `management.store.persistence.duration.micro` | Histogram | Persistence operation duration, in microseconds. |
+| `management.store.persistence.duration.ms` | Histogram | Persistence operation duration, in milliseconds. |
+| `management.store.transaction.duration.ms` | Histogram | Store transaction duration, in milliseconds. |
+
+## Update channel
+
+The fan-out path that pushes network-map updates to connected peers.
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `management.updatechannel.create.duration.micro` | Histogram | Channel creation duration. |
+| `management.updatechannel.close.one.duration.micro` | Histogram | Close-single-channel duration. |
+| `management.updatechannel.close.multiple.duration.micro` | Histogram | Close-multiple-channels duration. |
+| `management.updatechannel.close.multiple.channels` | Histogram | Number of channels closed per close-multiple call. |
+| `management.updatechannel.send.duration.micro` | Histogram | Time to send an update on a channel. |
+| `management.updatechannel.get.all.duration.micro` | Histogram | Time to enumerate all peer channels. |
+| `management.updatechannel.get.all.peers` | Histogram | Number of peers returned by enumeration. |
+| `management.updatechannel.calc.posturecheck.duration.micro` | Histogram | Posture-check computation duration. |
+| `management.updatechannel.calc.peer.networkmap.duration.ms` | Histogram | Per-peer network-map computation duration. |
+| `management.updatechannel.merge.networkmap.duration.micro` | Histogram | Network-map merge duration. |
+| `management.updatechannel.to.sync.response.duration.micro` | Histogram | Time to convert a network map to a `SyncResponse`. |
+
+## Account manager
+
+Account-wide operations: peer status updates, metadata, network-map computation.
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `management.account.update.account.peers.duration.ms` | Histogram | Duration of an account-wide peer update fan-out. |
+| `management.account.update.account.peers.counter` | Counter | Account-wide peer updates triggered. |
+| `management.network.map.counter` | Counter | Network-map computations performed. |
+| `management.account.get.peer.network.map.duration.ms` | Histogram | Per-peer `GetPeerNetworkMap` duration. |
+| `management.account.network.map.object.count` | Histogram | Number of objects in computed network maps. |
+| `management.account.peer.meta.update.counter` | Counter | Peer metadata updates. |
+| `management.account.peer.status.update.counter` | Counter | Peer status updates. |
+| `management.account.peer.status.update.duration.ms` | Histogram | Peer status update duration. |
+
+## Ephemeral peers
+
+Background cleanup of ephemeral peers (peers registered via ephemeral setup keys).
+
+| Metric | Type | Description |
+| --- | --- | --- |
+| `management.ephemeral.peers.pending` | UpDownCounter | Ephemeral peers waiting for cleanup. |
+| `management.ephemeral.cleanup.runs.counter` | Counter | Number of cleanup runs executed. |
+| `management.ephemeral.peers.cleaned.counter` | Counter | Ephemeral peers removed by cleanup. |
+| `management.ephemeral.cleanup.errors.counter` | Counter | Errors encountered during cleanup. |
+
+## Grafana dashboard
+
+A ready-made Management dashboard is available under [Dashboards](/selfhosted/observability/dashboards).

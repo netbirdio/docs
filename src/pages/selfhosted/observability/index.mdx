@@ -1,0 +1,71 @@
+export const description = 'Overview of OpenTelemetry metrics exposed by NetBird Management, Signal, Relay, and Proxy.'
+
+# Observability
+
+NetBird services emit runtime metrics via [OpenTelemetry](https://opentelemetry.io/) and expose them in [Prometheus](https://prometheus.io/) exposition format (with OpenMetrics 1.0.0 support). You can scrape these endpoints to monitor traffic, latency, peer activity, and the internal health of each service, and to render the [Grafana dashboards](/selfhosted/observability/dashboards) NetBird ships.
+
+This section documents what each service records, the default listening endpoint, and how to change it.
+
+## Service endpoints
+
+Every server-side component exposes a `/metrics` HTTP endpoint. By default, each listens on port `9090`.
+
+| Service | Default endpoint | How to change |
+| --- | --- | --- |
+| [Management](/selfhosted/observability/management) | `http://0.0.0.0:9090/metrics` | `--metrics-port` flag |
+| [Signal](/selfhosted/observability/signal) | `http://0.0.0.0:9090/metrics` | `--metrics-port` flag |
+| [Relay](/selfhosted/observability/relay) | `http://0.0.0.0:9090/metrics` | `--metrics-port` flag |
+| [Proxy](/selfhosted/observability/proxy) | `http://localhost:8080/metrics` | `--health-addr` flag / `NB_PROXY_HEALTH_ADDRESS` |
+| [Combined](/selfhosted/observability/combined) | `http://0.0.0.0:9090/metrics` | `server.metricsPort` in `config.yaml` |
+
+<Note>
+The proxy exposes `/metrics` on the same HTTP server as its health probes; there is no separate metrics port.
+</Note>
+
+## Combined deployments
+
+In the combined container (the default for new installations via `getting-started.sh`), Management, Signal, and Relay all share **one** metrics server and **one** `/metrics` endpoint. The port is set with `server.metricsPort` in `config.yaml` (default `9090`) — see [Combined](/selfhosted/observability/combined).
+
+## Multi-container deployments
+
+In the older multi-container setup, each service runs its own metrics server. To avoid port collisions when colocating services on a single host, override `--metrics-port` per container, for example:
+
+```bash
+netbird-mgmt --metrics-port 9090
+netbird-signal --metrics-port 9091
+netbird-relay --metrics-port 9092
+```
+
+## Exposition format
+
+All endpoints return Prometheus text format with OpenMetrics support enabled:
+
+```bash
+curl http://localhost:9090/metrics
+```
+
+You can scrape them with a standard Prometheus `scrape_config`:
+
+```yaml
+scrape_configs:
+  - job_name: 'netbird-management'
+    static_configs:
+      - targets: ['management.example.com:9090']
+  - job_name: 'netbird-signal'
+    static_configs:
+      - targets: ['signal.example.com:9090']
+  - job_name: 'netbird-relay'
+    static_configs:
+      - targets: ['relay.example.com:9090']
+  - job_name: 'netbird-proxy'
+    static_configs:
+      - targets: ['proxy.example.com:8080']
+```
+
+## Network exposure
+
+The metrics endpoints listen on all interfaces and have no authentication. Restrict access at the firewall, reverse proxy, or service-mesh layer so that only your Prometheus scraper and operators can reach them.
+
+## Grafana dashboards
+
+NetBird ships ready-to-use Grafana dashboards for Management, Signal, and Relay. See [Dashboards](/selfhosted/observability/dashboards) for download links and required dashboard variables.
