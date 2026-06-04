@@ -94,6 +94,45 @@ By default, client logs are located in the `/var/log/netbird/client.log` file on
 You can analyze the logs to identify the root cause of the problem. If you need help, open
 a [github issue](https://github.com/netbirdio/netbird/issues/new/choose) and attach the logs.
 
+### Log rotation
+
+NetBird rotates `client.log` itself by default, old files are written next to the active log as gzipped archives (e.g. `client-2025-04-01T12-00-00.000.log.gz`). The maximum size of the active file is controlled by [`NB_LOG_MAX_SIZE_MB`](/client/environment-variables#logging) (default: 15 MB).
+
+Running NetBird's built-in rotation **and** the `logrotate` service for Linux on the same file causes problems where the log file might become corrupted and logs lost. To avoid this, NetBird scans `/etc/logrotate.conf` and `/etc/logrotate.d/*` on Linux startup. If any non-comment line mentions `netbird`, the client logs a warning and disables its own rotation, letting `logrotate` own the file. You will see a line like this in `netbird.err` or the console:
+
+```text
+log rotation conflict detected in: "/etc/logrotate.d/netbird", rotation is disabled
+```
+
+<Note>
+To use `logrotate`, we require `copytruncate` and not `create` to be set in the config file, otherwise the daemon needs to be restarted for the new log file to be opened after rotation.
+
+Netbird supports `compress`, `delaycompress` and `nocompress`.
+</Note>
+
+On macOS and BSD systems, the equivalent of `logrotate` is `newsyslog`, configured via `/etc/newsyslog.conf` or files in `/etc/newsyslog.d/`. NetBird does not auto-detect `newsyslog` configurations, so if you want `newsyslog` to manage `client.log` you must set [`NB_LOG_DISABLE_ROTATION=true`](/client/environment-variables#logging) on the daemon to disable the built-in rotation. An example `/etc/newsyslog.d/netbird.conf` entry:
+
+```text
+# logfilename                  [owner:group]  mode count size when flags
+/var/log/netbird/client.log    root:wheel     600  10    15360 *   Z
+```
+
+The `Z` flag tells `newsyslog` to gzip rotated files, which the debug bundle can read.
+
+<Note>
+`newsyslog` rotates by renaming the active file and creating a new one (analogous to `logrotate`'s default `create` mode, not `copytruncate`). After rotation, the netbird daemon still holds the file descriptor of the renamed file and will keep writing to it until restarted. Restart the daemon after `newsyslog` runs, or write logs to syslog instead and let `newsyslog` manage the syslog file.
+</Note>
+
+If you want to force disable log rotation (for example if your `logrotate` config lives outside `/etc/logrotate.d/` or does not contain the literal string `netbird`, or you are using `newsyslog` or another external rotator), set [`NB_LOG_DISABLE_ROTATION=true`](/client/environment-variables#logging) on the daemon. When the env flag is set, `netbird.err` or the console will show:
+
+```text
+log rotation is disabled by env flag
+```
+
+<Warning>
+  If you disable built-in rotation without configuring an external rotator, `client.log` will grow without bound. Make sure something is rotating the file before turning rotation off.
+</Warning>
+
 ### Debug bundle
 
 A debug archive containing the recent logs and the status at the time of execution can be generated with the following
