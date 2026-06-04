@@ -1,7 +1,7 @@
 import {Note, Warning} from "@/components/mdx"
 
 export const description =
-    'Configure SSO, password, PIN, and header authentication methods, plus IP and country access restrictions, for NetBird Reverse Proxy services.'
+    'Configure SSO, password, PIN, mTLS, and header authentication methods, plus IP and country access restrictions, for NetBird Reverse Proxy services.'
 
 # Reverse Proxy Authentication and Access Restrictions
 
@@ -13,10 +13,10 @@ NetBird Reverse Proxy supports multiple authentication methods and connection-le
 
 ## Authentication methods
 
-NetBird offers four authentication methods, each suited to different access patterns. You can enable any combination of them on a single service.
+NetBird offers five authentication methods, each suited to different access patterns. You can enable any combination of them on a single service.
 
 <Note>
-    SSO, password, PIN, and header authentication all require HTTP (Layer 7) and are only available for HTTP services. For L4 services (TCP, UDP, TLS), use [access restrictions](#access-restrictions) to control access.
+    SSO, password, PIN, mTLS, and header authentication all require HTTP (Layer 7) and are only available for HTTP services. For L4 services (TCP, UDP, TLS), use [access restrictions](#access-restrictions) to control access.
 </Note>
 
 ### SSO (Single Sign-On)
@@ -76,6 +76,24 @@ PIN code authentication works similarly to password authentication but is limite
 
 **Best for:** Quick access scenarios, kiosk-style interfaces, or situations where a simple numeric code is easier to share than a full password.
 
+### mTLS (client certificate authentication)
+
+mTLS authentication requires the client to present a certificate during the TLS handshake. NetBird validates that client certificate against a CA certificate bundle you configure on the service. Requests without a valid client certificate are rejected before they reach your backend.
+
+**Key details:**
+
+- Upload or paste a PEM-encoded CA certificate bundle when configuring the service.
+- The service accepts client certificates that chain back to that CA bundle.
+- If the client does not present a certificate, or presents one signed by a different CA, the proxy returns **401 Unauthorized**.
+- mTLS can be combined with other HTTP authentication methods such as SSO or header authentication for layered protection.
+- The configured CA certificate is treated as sensitive configuration and is hidden when editing an existing service unless you replace it.
+
+<Note>
+    The uploaded value must be PEM certificate data (`-----BEGIN CERTIFICATE----- ... -----END CERTIFICATE-----`). Paste the CA certificate or CA chain that issued your client certificates, not the client certificate's private key.
+</Note>
+
+**Best for:** Machine-to-machine integrations, admin endpoints, internal tools used with managed devices, and any environment where you want strong client identity based on certificates instead of shared secrets.
+
 ### Header Authentication
 
 Header authentication validates a static header value on each request. This is designed for programmatic or machine-to-machine access where clients can include a custom HTTP header with their requests. The proxy checks the header before forwarding the request to your backend and strips the header so that authentication credentials are not leaked to the backend.
@@ -125,6 +143,8 @@ Common combinations include:
 |-------------|----------|
 | **SSO + Password** | Team members use SSO; external collaborators use a shared password |
 | **SSO + Header Auth** | Team members authenticate in a browser; automated systems use an API key |
+| **mTLS + SSO** | Managed devices must present a client cert; users still identify themselves with SSO |
+| **mTLS + Header Auth** | Automated systems need both a trusted client cert and an API key/header |
 | **SSO + PIN Code** | Team members use SSO; quick access via PIN for specific scenarios |
 | **Password + PIN Code** | Different shared credentials for different groups of users |
 | **Any auth + Access Restrictions** | IP/country restrictions as a first layer, then authentication for identity |
@@ -205,7 +225,7 @@ This layered approach lets you, for example, restrict a service to your corporat
 
 Authentication and access control are configured in separate tabs of the service creation or edit modal. Navigate to **Reverse Proxy** > **Services**, then either click **Add Service** to create a new service or click an existing service to edit it.
 
-- **Authentication** tab (HTTP services only): SSO, password, PIN, and header authentication
+- **Authentication** tab (HTTP services only): SSO, password, PIN, mTLS, and header authentication
 - **Access Control** tab (all service modes): IP CIDR and country restrictions
 
 <p>
@@ -257,6 +277,20 @@ Authentication and access control are configured in separate tabs of the service
    - For **Custom Header**: enter the header name (e.g., `X-API-Key`) and the expected value.
 6. To add additional headers, click **Add Another Header**. Any matching header grants access.
 7. Click **Save** (or **Save Changes** when editing).
+
+### Setting up mTLS authentication
+
+1. Open the service modal (create or edit).
+2. Switch to the **Authentication** tab.
+3. Click **mTLS**.
+4. Paste the PEM-encoded CA certificate, or upload a `.pem`, `.crt`, or `.cer` file containing it.
+5. Click **Save** (or **Save Changes** when editing).
+
+When editing an existing service, you can leave the stored CA certificate unchanged, replace it with a new CA certificate, or remove mTLS entirely using the **Remove** action in the modal.
+
+<Note>
+    NetBird validates the CA certificate format in the dashboard before saving. The PEM must contain at least one certificate block and no unrelated text.
+</Note>
 
 ### Setting up access restrictions
 
@@ -317,6 +351,10 @@ Authenticated sessions for reverse proxy services are managed using JWT (JSON We
 - **Token signing:** Sessions use JWT tokens signed with **Ed25519** key pairs. Each service has its own unique key pair, ensuring that tokens for one service cannot be used to access another.
 - **Session duration:** Authenticated sessions expire after **24 hours**. After expiry, users must re-authenticate using whichever method they originally used.
 - **Scope:** Sessions are scoped to individual services. Authenticating with one service does not grant access to other services, even if they use the same authentication method.
+
+<Note>
+    mTLS itself is checked on every TLS connection and does not rely on the browser session cookie. If you combine mTLS with session-based methods such as SSO, password, PIN, or header authentication, the client certificate must still be valid for the connection to succeed.
+</Note>
 
 ## Related pages
 
