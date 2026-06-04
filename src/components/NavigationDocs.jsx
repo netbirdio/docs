@@ -215,6 +215,10 @@ export const docsNavigation = [
                 title: 'Site-to-VPN',
                 href: '/manage/networks/use-cases/site-to-vpn',
               },
+              {
+                title: 'Site-to-Site',
+                href: '/manage/networks/use-cases/site-to-site',
+              },
             ],
           },
         ],
@@ -464,15 +468,15 @@ export const docsNavigation = [
             links: [
               {
                 title: 'Getting Started',
-                href: '/manage/integrations/kubernetes'
+                href: '/manage/integrations/kubernetes',
               },
               {
                 title: 'Routing Peer',
-                href: '/manage/integrations/kubernetes/routing-peer'
+                href: '/manage/integrations/kubernetes/routing-peer',
               },
               {
                 title: 'Client Sidecar',
-                href: '/manage/integrations/kubernetes/client-sidecar'
+                href: '/manage/integrations/kubernetes/client-sidecar',
               },
               {
                 title: 'Gateway API',
@@ -576,6 +580,19 @@ export const docsNavigation = [
             title: 'CrowdSec IP Reputation',
             href: '/selfhosted/maintenance/crowdsec',
           },
+        ],
+      },
+      {
+        title: 'Observability',
+        isOpen: false,
+        links: [
+          { title: 'Overview', href: '/selfhosted/observability' },
+          { title: 'Management', href: '/selfhosted/observability/management' },
+          { title: 'Signal', href: '/selfhosted/observability/signal' },
+          { title: 'Relay', href: '/selfhosted/observability/relay' },
+          { title: 'Proxy', href: '/selfhosted/observability/proxy' },
+          { title: 'Combined', href: '/selfhosted/observability/combined' },
+          { title: 'Dashboards', href: '/selfhosted/observability/dashboards' },
         ],
       },
       {
@@ -821,6 +838,60 @@ export const docsNavigation = [
         href: '/help/troubleshooting-client',
       },
       { title: 'Report bugs and issues', href: '/help/report-bug-issues' },
+      {
+        title: 'Support Matrix',
+        isOpen: false,
+        links: [
+          { title: 'Overview', href: '/help/support-matrix' },
+          {
+            title: 'NetBird Client',
+            href: '/help/support-matrix/netbird-client',
+            isOpen: false,
+            links: [
+              {
+                title: 'Linux',
+                href: '/help/support-matrix/netbird-client/linux',
+              },
+              {
+                title: 'Windows',
+                href: '/help/support-matrix/netbird-client/windows',
+              },
+              {
+                title: 'macOS',
+                href: '/help/support-matrix/netbird-client/macos',
+              },
+              {
+                title: 'iOS',
+                href: '/help/support-matrix/netbird-client/ios',
+              },
+              {
+                title: 'Android',
+                href: '/help/support-matrix/netbird-client/android',
+              },
+              {
+                title: 'Android TV',
+                href: '/help/support-matrix/netbird-client/android-tv',
+              },
+              {
+                title: 'tvOS',
+                href: '/help/support-matrix/netbird-client/tvos',
+              },
+            ],
+          },
+          {
+            title: 'Kubernetes Operator',
+            href: '/help/support-matrix/kubernetes-operator',
+          },
+          {
+            title: 'Terraform Provider',
+            href: '/help/support-matrix/terraform-provider',
+          },
+          {
+            title: 'Self-Hosted',
+            href: '/help/support-matrix/self-hosted',
+          },
+        ],
+      },
     ],
   },
 ]
