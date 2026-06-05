@@ -1,0 +1,155 @@
+export const description = 'Install the NetBird client on OpenWrt routers using the official package feed and connect them to your NetBird network.'
+
+# OpenWrt Installation
+
+The NetBird client (agent) allows a peer to join a pre-existing NetBird deployment. If a NetBird deployment is not yet available,
+there are both managed and [self-hosted](https://docs.netbird.io/selfhosted/selfhosted-quickstart) options available.
+
+NetBird is available in the official OpenWrt package feed. The packaged version depends on your OpenWrt release:
+
+| OpenWrt release | NetBird version | Package manager |
+|---|---|---|
+| 23.05 | 0.24.x | opkg |
+| 24.10 | 0.59.x | opkg |
+| 25.12 and later | 0.66.x | apk |
+
+## Prerequisites
+
+- SSH access to your OpenWrt router
+- Enough free flash storage for the NetBird package (the binary is relatively large, low-storage routers may not have space)
+- A [setup key](/manage/peers/register-machines-using-setup-keys#types-of-setup-keys) to authenticate and register the router
+
+<Note>
+    The NetBird one-line installation script (`pkgs.netbird.io/install.sh`) does not support OpenWrt. Use the OpenWrt package feed as described below.
+</Note>
+
+## Installation
+
+1. **Log in to your router via SSH**
+
+    ```bash
+    ssh root@192.168.1.1
+    ```
+
+2. **Install the NetBird package**
+
+    On OpenWrt `24.10` and earlier:
+
+    ```bash
+    opkg update
+    opkg install netbird
+    ```
+
+    On OpenWrt `25.12` and later:
+
+    ```bash
+    apk update
+    apk add netbird
+    ```
+
+3. **Enable and start the NetBird service**
+
+    The package installs a procd init script at `/etc/init.d/netbird`:
+
+    ```bash
+    /etc/init.d/netbird enable
+    /etc/init.d/netbird start
+    ```
+
+## Connect the router to your NetBird network
+
+Authenticate with a setup key:
+
+```bash
+netbird up --setup-key <SETUP_KEY>
+```
+
+If you are self-hosting NetBird, point the client to your management server:
+
+```bash
+netbird up --setup-key <SETUP_KEY> --management-url https://netbird.example.com:443
+```
+
+Verify the connection:
+
+```bash
+netbird status -d
+```
+
+Once connected, the router appears on the **Peers** page in the NetBird dashboard. NetBird creates a WireGuard interface named `wt0` and manages it directly. Do not configure `wt0` through the OpenWrt WireGuard UI or LuCI, NetBird fully manages the interface and keys.
+
+## DNS configuration
+
+OpenWrt runs dnsmasq on port 53, which conflicts with NetBird's managed DNS. To use NetBird DNS features such as [DNS routes](/manage/dns/dns-routes) and peer name resolution, run NetBird's resolver on an alternative port and forward NetBird domains to it through dnsmasq.
+
+1. **Set a custom DNS resolver address**
+
+    ```bash
+    netbird up --dns-resolver-address 127.0.0.1:5053
+    ```
+
+2. **Forward NetBird domains in dnsmasq**
+
+    Add a server entry to `/etc/config/dhcp` under the `dnsmasq` section, replacing `netbird.cloud` with your NetBird DNS domain if you use a custom one:
+
+    ```bash
+    uci add_list dhcp.@dnsmasq[0].server='/netbird.cloud/127.0.0.1#5053'
+    uci commit dhcp
+    /etc/init.d/dnsmasq restart
+    ```
+
+## Routing LAN traffic through NetBird
+
+As a simple client peer, no additional network or firewall configuration is required. To use the router as a [routing peer](/manage/networks/how-routing-peers-work) so devices on your LAN can reach NetBird resources, or so peers can reach your LAN, you need to configure the OpenWrt firewall for the `wt0` interface.
+
+1. **Add the NetBird interface to the network configuration**
+
+    ```bash
+    uci set network.netbird=interface
+    uci set network.netbird.proto='none'
+    uci set network.netbird.device='wt0'
+    uci commit network
+    ```
+
+2. **Create a firewall zone and allow forwarding**
+
+    ```bash
+    uci add firewall zone
+    uci set firewall.@zone[-1].name='netbird'
+    uci set firewall.@zone[-1].input='ACCEPT'
+    uci set firewall.@zone[-1].output='ACCEPT'
+    uci set firewall.@zone[-1].forward='ACCEPT'
+    uci set firewall.@zone[-1].masq='1'
+    uci add_list firewall.@zone[-1].network='netbird'
+
+    uci add firewall forwarding
+    uci set firewall.@forwarding[-1].src='lan'
+    uci set firewall.@forwarding[-1].dest='netbird'
+
+    uci add firewall forwarding
+    uci set firewall.@forwarding[-1].src='netbird'
+    uci set firewall.@forwarding[-1].dest='lan'
+
+    uci commit firewall
+    /etc/init.d/firewall restart
+    ```
+
+    This permits all traffic on the NetBird interface so that NetBird's own [access control policies](/manage/access-control) govern access restrictions.
+
+3. **Advertise your LAN in NetBird**
+
+    Add the router's LAN subnet as a [network resource](/manage/networks) in the NetBird dashboard with the router as the routing peer.
+
+## Persistence across reboots and upgrades
+
+The OpenWrt package stores NetBird state in `/root/.config/netbird` and preserves it across sysupgrade, so the router stays registered after firmware upgrades. No extra steps are needed.
+
+## Get started
+<div>
+    <Button name="button" className="button-5" onClick={() => window.open("https://netbird.io/pricing")}>Use NetBird</Button>
+</div>
+
+- Make sure to [star us on GitHub](https://github.com/netbirdio/netbird)
+- Follow us [on X](https://x.com/netbird)
+- Join our [Slack Channel](/slack-url)
+- NetBird [latest release](https://github.com/netbirdio/netbird/releases) on GitHub
