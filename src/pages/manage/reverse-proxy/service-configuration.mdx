@@ -102,6 +102,43 @@ If you're running NextCloud AIO this should be configured automatically during s
 
 Nextcloud supports CIDR notation for IPv4 ranges. When a request arrives from a trusted proxy, Nextcloud reads the real client IP from the `X-Forwarded-For` header instead of using the proxy's IP.
 
+## NetBird identity headers
+
+Services configured with [NetBird-Only Access](/manage/reverse-proxy/authentication#netbird-only-access-private-services) are private — every inbound request is authenticated against the WireGuard tunnel before it reaches your backend. The proxy attaches two headers to each upstream request identifying the caller:
+
+| Header | Value |
+|--------|-------|
+| `X-NetBird-User` | The calling user's email (or peer name when the peer has no user owner). |
+| `X-NetBird-Groups` | Comma-separated list of the user's group display names. Falls back to group IDs at positions where the display name was unavailable at session-mint time. |
+
+Use these headers in your backend to drive per-user authorization, audit logging, or personalization without running your own login flow. Because the proxy has already verified the caller's WireGuard identity, the headers are trustworthy for any backend that sits behind a NetBird-Only service.
+
+<Warning>
+    **Anti-spoof discipline.** The proxy strips any client-supplied `X-NetBird-User` or `X-NetBird-Groups` headers from the inbound request before stamping its own values. Your backend should still verify it is reachable only through a NetBird-Only service — anything that bypasses the proxy (e.g., direct connections from inside your Docker network) will reach the backend without these headers, and your code should treat their absence as "unauthenticated."
+</Warning>
+
+### Example: read the user in a backend
+
+```python
+from fastapi import FastAPI, Header, HTTPException
+
+app = FastAPI()
+
+@app.get("/me")
+def me(
+    user: str | None = Header(default=None, alias="X-NetBird-User"),
+    groups: str | None = Header(default=None, alias="X-NetBird-Groups"),
+):
+    if user is None:
+        raise HTTPException(403, "must be accessed through a NetBird private service")
+    return {
+        "user": user,
+        "groups": groups.split(",") if groups else [],
+    }
+```
+
+The same pattern works in any backend framework — read the two headers, refuse the request if `X-NetBird-User` is absent, and use the groups for per-user authorization decisions.
+
 ## Verifying your configuration
 
 After updating your backend's trusted proxy settings:

@@ -190,7 +190,7 @@ export const docsNavigation = [
         title: 'Networks',
         isOpen: false,
         links: [
-          { title: 'Concept', href: '/manage/networks' },
+          { title: 'Overview', href: '/manage/networks' },
           {
             title: 'How Routing Peers Work',
             href: '/manage/networks/how-routing-peers-work',

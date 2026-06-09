@@ -73,6 +73,7 @@ A target defines where proxied traffic is sent within your NetBird network. Ever
 | **Host** | A network resource identified by an IP address | Select from your network resources |
 | **Domain** | A network resource identified by a domain name | Select from your network resources |
 | **Subnet** | A network resource within a CIDR range | Select from your network resources, then specify an IP within the range |
+| **Proxy Cluster** | An upstream reached directly via the host network of the cluster's embedded NetBird proxy. Only available on clusters that report the `Private` capability. | Select the cluster from the picker, then enter a hostname or IP that the embedded proxy can resolve from its own host stack. |
 
 Target properties vary by service mode:
 
@@ -125,11 +126,16 @@ You can protect a service with one or more authentication methods. When multiple
 
 | Method | HTTP services | L4 services | Description |
 |--------|:---:|:---:|-------------|
+| **NetBird-Only Access** | Yes | No | Restrict the service to peers in your own NetBird network. The proxy validates the request against your WireGuard tunnel and only allows in connections from peers that belong to the configured access groups. Available on clusters that advertise the `Private` capability. |
 | **SSO (Single Sign-On)** | Yes | No | Authenticate via your identity provider using OIDC. Optionally restrict access to specific user groups. |
 | **Password** | Yes | No | Protect with a shared password. |
 | **PIN Code** | Yes | No | Protect with a numeric PIN code. |
 | **Header Authentication** | Yes | No | Validate a static header value (API key, Bearer token, Basic auth). Useful for programmatic access. |
 | **Access Restrictions** | Yes | Yes | Restrict access by IP CIDR range, country, or CrowdSec IP reputation. Works at the connection level, so it applies to all service modes. |
+
+<Note>
+    **NetBird-Only Access** turns the service into a *private service*: it replaces the operator-managed auth methods (SSO, password, PIN, header) on the same service. Use it when you want a service exposed only inside your NetBird mesh; combine the operator auth methods with each other when you want a service exposed publicly.
+</Note>
 
 <Note>
     If you save a service with no authentication or access restrictions configured, the dashboard will display a warning. Public services are accessible to anyone on the internet who knows the URL.
@@ -242,11 +248,11 @@ In the **Details** tab:
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-service-details.png" alt="Add Service modal showing the Details tab" className="imagewrapper"/>
 </p>
 
-6. In the target configuration, select the **type** (Peer, Host, Domain, or Subnet), then choose the specific peer or resource.
-7. For HTTP services, set the **protocol** (HTTP or HTTPS) and **port** for the target. Optionally, enter a **path** for path-based routing. For L4 services, set the target **host/IP** and **port**.
+6. In the target configuration, select the **type** (Peer, Host, Domain, Subnet, or Proxy Cluster), then choose the specific peer, resource, or cluster.
+7. For HTTP services, set the **protocol** (HTTP or HTTPS) and **port** for the target. Optionally, enter a **path** for path-based routing. For L4 services, set the target **host/IP** and **port**. For **Proxy Cluster** targets, the host field accepts any hostname or IP the cluster's embedded proxy can resolve from its own host stack — see [Private services](/manage/reverse-proxy/bring-your-own-proxy#private-services-net-bird-only-access) for details.
 
 <p>
-    <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-target.png" alt="Add Target configuration modal" className="imagewrapper"/>
+    <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-target.png" alt="Add Target configuration modal showing the unified Peer / Resource / Proxy Cluster picker" className="imagewrapper"/>
 </p>
 
 You can add multiple targets. HTTP services support path-based routing across targets.
@@ -259,6 +265,7 @@ Switch to the **Authentication** tab to configure how users are authenticated be
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-service-auth.png" alt="Add Service modal showing the Authentication tab" className="imagewrapper"/>
 </p>
 
+- Enable **NetBird-Only Access** to make the service reachable only from peers in the selected NetBird groups (private service). Only appears when the selected base domain is on a cluster that advertises the `Private` capability. Picking this method hides the operator auth options below — the two modes are mutually exclusive.
 - Enable **SSO** to require users to authenticate through your identity provider. Optionally restrict access to specific groups.
 - Enable **Password** and set a shared password.
 - Enable **PIN Code** and set a numeric code.
@@ -266,7 +273,7 @@ Switch to the **Authentication** tab to configure how users are authenticated be
 - Leave all methods disabled for public (unauthenticated) access.
 
 <Note>
-    You can enable multiple authentication methods simultaneously. Users will be able to choose their preferred method when accessing the service.
+    You can enable multiple operator auth methods (SSO, password, PIN, header) simultaneously — users pick one to authenticate with. NetBird-Only Access is a different mode and replaces the operator auth set on that service.
 </Note>
 
 ### Step 3b: Configure access control
@@ -279,6 +286,10 @@ Switch to the **Access Control** tab to restrict access by IP address, country, 
 
 Access restrictions are evaluated before authentication: if a connection is blocked by an access restriction rule, it is rejected before any authentication check.
 
+<Note>
+**NetBird-Only services:** when [NetBird-Only Access](/manage/reverse-proxy/authentication#netbird-only-access-private-services) is enabled on a service, an allow rule for the NetBird network range is applied automatically. Any rules you add on this tab are layered on top of that baseline — country and CrowdSec checks are skipped on the overlay path because the source address is always a NetBird CGNAT address.
+</Note>
+
 ### Step 4: Configure advanced settings
 
 Switch to the **Settings** tab to adjust advanced proxy behavior. The available settings depend on the service mode.
@@ -287,9 +298,16 @@ Switch to the **Settings** tab to adjust advanced proxy behavior. The available 
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-service-settings.png" alt="Add Service modal showing the Settings tab" className="imagewrapper"/>
 </p>
 
+The per-service options differ between HTTP and L4 (TCP/UDP/TLS) services and apply at different points along the request path:
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-service-options-diagram.png" alt="Diagram showing per-service options: HTTP services (Pass Host Header, Rewrite Redirects) and L4 services (PROXY Protocol v2, Session Idle Timeout) and where each applies between the user, proxy service, and backend" className="imagewrapper-big"/>
+</p>
+
 **HTTP services:**
 - **Pass Host Header** - when enabled, the original `Host` header from the client request is forwarded to the backend service instead of the target's hostname. This is useful when the backend application needs to know the public domain it is being accessed through.
 - **Rewrite Redirects** - when enabled, `Location` headers in backend responses (used for HTTP redirects) are rewritten to use the public domain. This prevents users from being redirected to internal URLs that they cannot reach.
+- **Direct Upstream** *(NetBird-Only services only)* - dial the upstream from the proxy host's network stack instead of through the WireGuard tunnel. Off by default for **Peer** and **Resource** targets; locked **on** for **Proxy Cluster** targets because the cluster has no WireGuard endpoint to fall back to. Turn it on for peer/resource targets when the upstream is reachable from the proxy host without WireGuard (e.g., a sidecar on the same machine).
 
 **L4 services (TCP, UDP, TLS):**
 - **PROXY Protocol** (TCP/TLS only) - when enabled, the proxy sends a PROXY Protocol v2 header to the backend, allowing it to see the real client IP address. The backend must support PROXY Protocol to use this option.
