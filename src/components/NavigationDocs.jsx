@@ -746,6 +746,7 @@ export const docsNavigation = [
     links: [
       { title: 'Profiles', href: '/client/profiles' },
       { title: 'Environment Variables', href: '/client/environment-variables' },
+      { title: 'MDM Integration', href: '/client/mdm-integration' },
       {
         title: 'Settings',
         isOpen: false,
