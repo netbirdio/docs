@@ -1,202 +1,242 @@
+import {Note, Warning, Success} from "@/components/mdx";
+import {Tiles} from "@/components/Tiles";
+import {Button} from "@/components/Button";
+
+export const description = "Learn how NetBird Networks work: the four building blocks (Network, Routing Peer, Resource, Policy), how a packet reaches a resource, and a complete worked example for reaching internal apps with Zero Trust access by default."
+
 # Networks
 
-NetBird creates a secure peer-to-peer mesh network where devices running the NetBird agent connect directly with end-to-end encryption. This enables precise network segmentation and secure remote access without exposing resources to the internet.
+Every device that runs the NetBird client joins a single private **overlay network**, encrypted end to end with [WireGuard](/about-netbird/why-wireguard-with-netbird). Nothing is exposed to the public internet, and you never open an inbound port. Peers connect outbound and negotiate connectivity using ICE/STUN for NAT traversal. See [Ports & Firewalls](/about-netbird/ports-and-firewalls) for details.
 
-However, installing the agent on every machine is not always feasible. Networks solve this by letting you route traffic to entire LANs, office networks, or cloud VPCs without requiring the NetBird agent on each device.
+But you can't run the client everywhere. Some devices can't run it at all, like printers, IoT sensors, and appliances you can't install software on. And installing it on every database and server is more overhead than most teams want. A **Network** fills that gap: a few clients become routing peers that open whole subnets, single hosts, and internal domains to your overlay network, with nothing reachable until a policy allows it.
+
+The common case is **VPN-to-Site**: your laptop reaches into a remote network and talks to machines that run no client at all.
+
+<Note>
+Throughout this page, a capitalized **Network** means the configuration object you create here, not the overlay network your clients already form.
+</Note>
+
+## The mental model
+
+If you remember one thing, remember this: **a NetBird Network is a map of part of your infrastructure, drawn onto your overlay network.** The **resources** are the destinations, the **access policies** are the gatekeepers that decide who may pass, and the **routing peers** are the roads that carry traffic to each destination.
 
 <p>
-    <img src="/docs-static/img/manage/networks/netbird-network-routes.png" alt="high-level-dia" className="imagewrapper-big"/>
+    <img src="/docs-static/img/manage/networks/netbird-network-routes.png" alt="A NetBird client reaching resources on a private network through a routing peer" className="imagewrapper-big"/>
 </p>
 
-## VPN-to-Site Use Case
+*Left to right: a peer in a source group clears an access policy, reaches the routing peer, and connects to a resource behind it.*
 
-Networks enables VPN-to-Site access — a device running NetBird (like your laptop) reaches devices on a remote network without installing NetBird on every target.
+## The four building blocks
+
+There are four concepts to learn. One is the Network itself; the other three are the things it holds: resources, access policies, and routing peers. Learn these and you understand Networks. At the end, we'll put all four together in a real example: a remote engineer reaching an office wiki and dashboard.
+
+### Network
+
+A Network is a configuration container that maps one environment (an office LAN, a cloud VPC, a data center) into a logical set of routing peers and resources. Create as many Networks as you have environments.
+
+<div id="resources" />
+
+### Resource
+
+A resource is something you want to reach inside the private network. It can be one of four types:
+
+- A single IP address, e.g. `10.10.0.5/32`
+- An IP range / CIDR, e.g. `10.10.0.0/16`
+- A domain, e.g. `grafana.berlin.internal`
+- A wildcard domain, e.g. `*.berlin.internal`
+
+For Zero Trust least privilege, **prefer single-host `/32` resources over broad ranges**. A policy then grants access to exactly one host instead of an entire subnet.
+
+Resources can be collected into a **resource group**. When an access policy's destination is a group, it applies to every resource in that group. That is how one policy can cover several apps at once.
+
+<p>
+    <img src="/docs-static/img/manage/networks/resource-list.png" alt="A Network's resource list showing addresses, resource groups, and policies" className="imagewrapper-big"/>
+</p>
+
+#### Domain resources
+
+Instead of an IP, a resource can be a domain or a wildcard domain. The NetBird client resolves the name through the routing peer and routes traffic to whatever address it returns. This is useful when a service's IP changes or you'd rather reference it by name. For the resolution mechanics and DNS troubleshooting, see [How Routing Peers Work](/manage/networks/how-routing-peers-work#dns-and-domain-routing) and [Internal DNS Servers](/manage/dns/internal-dns-servers#domain-resources-and-routing-peer-dns).
+
+<Note>
+A wildcard resource like `*.berlin.internal` matches subdomains only, not the base domain. To allow `berlin.internal` too, add it as a separate resource. Assigning it to the same resource group reuses the existing routing peers and policies.
+</Note>
+
+### Access policy
+
+An access policy is the rule that makes a resource reachable. It grants access from a **source** to a **destination**, for the chosen protocols and ports. The destination can be one or more groups or resources, a single resource, or a NetBird peer itself for direct peer-to-peer access. A peer can reach a resource only when a policy allows one of its groups to reach that resource or its group.
+
+This is Zero Trust by default: nothing is reachable until a policy says so. The ideal source is a group of users [synced from your identity provider](/manage/team/idp-sync), so access follows your existing org structure and updates automatically as people join, move, or leave. See [Groups & Policies](/manage/access-control) for how groups and policies work.
+
+<Warning>
+Unlike NetBird peers, resources are **not** automatically members of the built-in `All` group. A resource with no policy is reachable by no one. You must explicitly grant access.
+</Warning>
+
+<div id="routing-peers" />
+
+### Routing peer
+
+A routing peer is a NetBird client installed inside the private network that forwards traffic from the overlay network to devices that don't run the client. Any NetBird client can be one (Linux, Windows, macOS, and others), so the role is about where the machine sits, not which OS it runs. For the full picture, see [How Routing Peers Work](/manage/networks/how-routing-peers-work).
+
+A simple routing peer needs little: 2 vCPUs and 4 GB of RAM is a good baseline, and a small VM or even a Raspberry Pi will do for light use. Scale up as network throughput, link saturation, and the number of users grow.
+
+Because routing peers are usually headless servers, register them with [setup keys](/manage/peers/register-machines-using-setup-keys) instead of interactive login. Setup-key peers aren't subject to [login session expiration](/manage/settings/enforce-periodic-user-authentication), so a routing peer stays connected without periodic re-authentication. That's exactly what an always-on gateway needs. You can assign several routing peers to one Network for high availability; see the [production checklist](#production-checklist).
+
+<Note>
+A network resource policy grants access to the network **behind** the routing peer, not to the routing peer machine itself. To reach a service running directly on the routing peer (Pi-hole, a dashboard, SSH), see [How a packet reaches a resource](#how-a-packet-reaches-a-resource).
+</Note>
+
+## How a packet reaches a resource
+
+Here is the whole path, end to end:
+
+1. Your client encrypts the packet and sends it through the tunnel to the routing peer.
+2. The routing peer forwards it onto the local network toward the resource.
+3. By default the routing peer **masquerades** the traffic, rewriting the source to its own LAN IP, so the destination network needs no awareness of NetBird.
+4. Replies follow the reverse path. The connection is stateful, so return traffic needs no extra policy.
+
+### Through the peer, or to the peer?
+
+One subtlety causes most policy mistakes. A network resource policy permits traffic *through* the routing peer to the resources behind it: the routing peer's **forward chain**. Reaching a service running *on* the routing peer itself (SSH, a dashboard) is the **input chain**, and that needs a separate peer-to-peer [access policy](/manage/access-control) with the routing peer's group as the destination. If users need both, create one policy of each kind.
 
 ```
-Your Laptop ──────► NetBird Tunnel ──────► Routing Peer ──────► Target Device
-  (peer)                                    (peer)              (no NetBird)
+THROUGH the routing peer  →  forward chain  →  network resource policy
+   your client ──tunnel──► routing peer ──────► resource behind it
+
+TO the routing peer        →  input chain    →  peer-to-peer policy
+   your client ──tunnel──► routing peer  (its own SSH, dashboard, …)
 ```
 
-**Example scenarios:**
-- Access your home NAS from a coffee shop
-- Reach office servers while traveling
-- Connect to IoT devices on a remote network
+<Note>
+For the full kernel-level traffic walkthrough, host requirements (IP forwarding, container capabilities), masquerade internals, and the forward-vs-input-chain rule in depth, see [How Routing Peers Work](/manage/networks/how-routing-peers-work).
+</Note>
 
-## Networks vs. Network Routes
+## Walkthrough: access two internal apps
 
-Networks is the newer, simpler replacement for Network Routes — for VPN-to-Site, prefer Networks. Use [Network Routes](/manage/network-routes) when you need:
+A remote engineer in the `Development` group needs to reach two apps in the Berlin office: an internal **wiki** running on the host `10.10.0.5`, and an internal **dashboard** at `grafana.berlin.internal`. The two apps live on distinct hosts, so they're independent resources. One machine inside the office runs the NetBird client and serves as the routing peer.
 
-- Two networks communicating with each other ([Site-to-Site](/manage/network-routes/use-cases/site-to-site))
-- Routing internet-bound traffic through a designated peer ([Exit Nodes](/manage/network-routes/use-cases/exit-nodes))
-
-## Concepts
-
-### Networks
-
-A Network is a configuration container that maps your on-premise or cloud infrastructure into a logical set of resources and routing peers. You can create multiple networks to represent different environments such as office networks, cloud VPCs, or data center LANs.
+1. **Install the routing peer.** On a host inside the office network, install the NetBird client and register it with a [setup key](/manage/peers/register-machines-using-setup-keys).
+2. **Create the Network.** Go to **Networks**, add a Network named `Berlin Office`.
 
 <p>
-    <img src="/docs-static/img/manage/networks/index/new-network-2.png" alt="high-level-dia" className="imagewrapper"/>
+    <img src="/docs-static/img/manage/networks/add-network.png" alt="Creating the Berlin Office Network in the dashboard" className="imagewrapper-medium"/>
 </p>
 
-### Routing Peers
-
-Routing peers are machines that bridge your NetBird peers to your internal networks. They forward traffic from NetBird clients to resources that do not have the NetBird agent installed.
-
-You can add multiple routing peers using individual peers or groups to ensure high availability and load balancing. Each routing peer can be configured with masquerading and priority settings.
+3. **Add the wiki as a `/32` resource.** Add a resource named `Internal Wiki` with the address `10.10.0.5/32`, and assign it to an `Internal Apps` resource group. The Add Resource modal has two tabs: **Resource** (name, address, groups) and **Access Control** (policies).
 
 <p>
-    <img src="/docs-static/img/manage/networks/index/add-routing-peer-1.png" alt="high-level-dia" className="imagewrapper"/>
+    <img src="/docs-static/img/manage/networks/add-resource.png" alt="Adding the Internal Wiki resource (10.10.0.5/32) to the Internal Apps group" className="imagewrapper"/>
 </p>
 
-<Note>
-To get alerted when a routing peer goes offline, enable the **Routing Peer Disconnected** event in [Notifications](/manage/settings/notifications). You can receive alerts via email, webhook, or Slack.
-</Note>
-
-<Note>
-A network resource policy grants access to the network **behind** the routing peer, not to the routing peer machine itself. If you need to access services running on the routing peer (for example, Pi-hole, Home Assistant, or a monitoring dashboard), add the routing peer to a group and create a peer-to-peer [access control policy](/manage/access-control) with that group as the destination.
-</Note>
-
-<Note>
-For the mental model — how traffic flows, host requirements, high availability, masquerade, and the forward-vs-input-chain rule — see [How Routing Peers Work](/manage/networks/how-routing-peers-work).
-</Note>
-
-### Resources
-
-Resources are the machines, services, or subnets you want to access within your internal network. You can define resources as:
-
-- Single IP addresses
-- IP ranges
-- Domain names (e.g., `example.com`)
-- Wildcard domains (e.g., `*.company.internal`) when [routing peer DNS resolution](#enable-routing-peer-dns-resolution) is enabled
+4. **Write the policy.** Create one access policy with source `Development` and destination `Internal Apps`, allowing TCP on port 443.
 
 <p>
-    <img src="/docs-static/img/manage/networks/index/resources-1.png" alt="resources" className="imagewrapper-big"/>
+    <img src="/docs-static/img/manage/networks/add-policy.png" alt="An access policy allowing the Development group to reach the Internal Apps group on TCP 443" className="imagewrapper"/>
 </p>
 
-### Domain Resources
+5. **Add the dashboard as a domain resource.** Add `grafana.berlin.internal` and assign it to the same `Internal Apps` group, so it's covered by the policy you just created. Because it's an internal-only name, the routing peer must be able to resolve it. See [Internal DNS](/manage/dns/internal-dns-servers#domain-resources-and-routing-peer-dns).
 
-In addition to IP-based resources, NetBird supports routing domain names. In the Dashboard, you can enter a domain name (e.g., `example.com`) or wildcard domain (e.g., `*.example.com`) instead of an IP range. NetBird clients will then resolve and route traffic to that domain.
-
-For troubleshooting, see [Debugging access to Domain Resources](/help/troubleshooting-client#debugging-access-to-domain-resources).
-
-<Note>
-  Clients running versions `0.59.0` and `0.59.1` may fail to resolve domain resources served by routing peers running versions `0.59.0` to `0.59.9` when all peers in the organization are on version `0.59.0` or newer.
-
-  To fix this, either use client versions `<= 0.58.2` or `>= 0.59.2`, or upgrade the routing peer to version `0.59.10` or later.
-</Note>
-
-#### How Domain Resolution Works
-
-1. When NetBird connects, it configures the operating system to use NetBird for resolving the specified domains. No routing rules are set up yet.
-2. When an application requests a domain (e.g., `example.com`):
-   - The OS sends the DNS query to NetBird's Local DNS Forwarder, which runs on:
-     - **macOS and Windows**: The highest available IP in your NetBird range (typically `100.xxx.255.254:53`)
-     - **Other systems**: Your local NetBird client IP (e.g., `100.xxx.123.45:53`)
-   - The Local DNS Forwarder sends the query to the Remote DNS Resolver on the routing peer using:
-     - Port `22054` for NetBird client versions `0.59.0` and newer
-     - Port `5353` for NetBird client versions `0.58.x` and older
-   - The routing peer resolves the domain using its local DNS configuration and returns the result.
-   - The Local DNS Forwarder creates routing rules for the returned IP addresses before sending them to the applicatioxn. See [Trigger the Domain Resource](/help/troubleshooting-client#trigger-the-domain-resource) to observe this behavior.
-3. The application receives the response normally, with a slight delay on the first request.
-4. Subsequent requests are served instantly from the Local DNS Forwarder's cache.
-
-<Note>
-  NetBird attempts to automatically open DNS forwarder ports on routing peer firewalls, but this may fail on some systems. If you experience issues, manually open the required ports.
-
-  To verify firewall access, run this command from the client device:
-  `nslookup -port=22054 <routed-domain> <routing-peer-ip>` (e.g., `nslookup -port=22054 example.com 100.123.45.67`).
-
-  Firewall blocking DNS requests is the most common cause of domain resource issues.
-</Note>
-
-<Note>
-  When a routing peer cannot resolve a domain resource (e.g., an internal domain like `fileserver.corp.local`), you may need to configure a [Nameserver](/manage/dns/internal-dns-servers#configuring-nameservers-for-internal-domains) for your internal DNS and add the routing peer's group as a distribution group. See [Internal DNS Servers](/manage/dns/internal-dns-servers#domain-resources-and-routing-peer-dns) for details.
-</Note>
-
-## Manage Access to Resources
-
-To control access to resources, you can assign them to resource groups and create [access control policies](/manage/access-control/manage-network-access#creating-policies) directly from the Add Resource modal. A peer can only see a resource when a policy grants access from one of the peer's groups (source) to one of the resource's groups (destination).
-
-When adding or editing a resource, the modal has two tabs:
-
-- **Resource**: Configure the resource name and address. Expand **Additional Options** to set a description and assign the resource to **Resource Groups** (e.g., `Databases`, `Web Servers`) for use in access policies.
-- **Access Control**: View, create, or manage access control policies for this resource before saving.
+6. **Add the routing peer.** Assign the office host to the `Berlin Office` Network as its routing peer.
 
 <p>
-    <img src="/docs-static/img/manage/networks/index/resources-2.png" alt="resource-modal" className="imagewrapper"/>
+    <img src="/docs-static/img/manage/networks/add-routing-peer.png" alt="Adding the office host as a routing peer for the Berlin Office Network" className="imagewrapper"/>
 </p>
 
-Access control policies define which peers can access which resources based on source groups, destination groups, and allowed traffic types (TCP, UDP, ICMP). When creating a policy:
+7. **Verify.** On the engineer's laptop, confirm the Network is active and reach the apps:
 
-- Place the resource's group in the **destination** field
-- Place the peer's group in the **source** field
-- Peers in the source groups will receive the resource routes and corresponding firewall rules
+```bash
+netbird networks ls
+```
 
-<Note>
-  Unlike peers, resources are not automatically members of the built-in `All` group. To use `All` group rules with resources, you must explicitly add them to this group.
-</Note>
-
-<Note>
-  If you skip adding policies in the Access Control tab, a confirmation dialog will warn you that the resource will not be accessible by any peers without an access control policy.
-</Note>
-
-Example policy allowing the `Berlin Office` group to access the internal CRM system:
-
-<p>
-    <img src="/docs-static/img/manage/networks/index/resource-acl-1.png" alt="resource-acl" className="imagewrapper-big"/>
-</p>
-
-### Share one policy across multiple resources
-
-To apply the same policy to several resources, assign them to the same resource group and create one policy with that group as the destination. For example, two internal DNS servers at `172.16.30.2` and `172.17.100.2` can share a single UDP/53 policy by placing both in an `office-dns-servers` group. Skip the **Access Control** tab when adding each resource, then create the shared policy once from any of them.
+<Success>
+The engineer now reaches exactly the wiki and the dashboard, and nothing else. Any other group is still denied by default. That is Zero Trust access in practice.
+</Success>
 
 <Note>
-    Policies for domain or wildcard domain resources may unintentionally affect peers with IP range resources, since IP ranges can match any address. We recommend using dedicated networks and routing peers for domain-based resources to prevent unwanted access. A fix for this behavior is planned for an upcoming release.
+This single policy grants the `Development` group access to **every** resource in `Internal Apps`, the wiki and the dashboard alike. That's what you want when a group should reach a set of apps together. If a source group needs only some of them, put those resources in their own group with their own policy, so access stays scoped to exactly what's needed.
 </Note>
 
-## Manage Access to Routing Peer
+## Production checklist
 
-A network resource policy grants access to the network **behind** the routing peer — traffic that is forwarded through the peer to reach backend resources. However, firewall rules for routed traffic are processed in the **forward chain**, not the **input chain**. This follows the same pattern as Linux Netfilter (iptables/nftables), where packets destined for the host itself traverse the input chain, while packets being routed to another destination traverse the forward chain. This means that a network resource policy alone does **not** grant access to services running directly on the routing peer itself.
+Before you depend on a Network in production, work through these:
 
-If you need to reach services hosted on the routing peer machine (for example, Pi-hole, Home Assistant, a monitoring dashboard, or any locally bound service), you must create a separate [access control policy](/manage/access-control) with:
+- **High availability.** Add more than one routing peer to the same Network for redundancy. Added individually, each peer gets its own metric: a lower metric is the primary and a higher one the failover, while equal metrics balance traffic by latency. Added as a group, the peers share one metric, so they balance by latency only and can't act as primary and failover. Keep highly available peers in different failure domains. See [High availability](/manage/networks/how-routing-peers-work#high-availability).
+- **Monitoring.** Enable the **Routing Peer Disconnected** event in [Notifications](/manage/settings/notifications) to get alerted by email, webhook, or Slack when a routing peer goes offline.
+- **Masquerade.** On by default and the simplest option. Turn it off only when you need source-IP visibility, and only on Linux routing peers, as that's the only platform where it can be disabled. Note that disabling it breaks high availability and requires a return route. See [Masquerade](/manage/networks/masquerade).
+- **Internal DNS.** Domain resources resolve on the routing peer, so it must be able to resolve the name. If it already can, nothing more is needed; if it can't, distribute a nameserver to the routing peer's group. See [Internal DNS Servers](/manage/dns/internal-dns-servers).
+- **Access to the routing peer itself.** If users also need services on the routing peer host (SSH, a dashboard), add a separate peer-to-peer [access policy](/manage/access-control) for the input chain, as explained above.
 
-- **Source**: the group containing the peers and users that need access
-- **Destination**: a group that includes the routing peer
+## Networks or Network Routes?
 
-This additional policy ensures that the routing peer's input chain allows inbound connections from your NetBird peers. Without it, traffic destined for the routing peer's own IP will be dropped even if there is a valid network resource policy for the subnet behind it.
+Networks is the default for **every** remote-access scenario: VPN-to-Site, [Site-to-Site](/manage/networks/use-cases/site-to-site) (two clientless networks reaching each other through a routing peer at each end), and [Site-to-VPN](/manage/networks/use-cases/site-to-vpn) (a clientless device initiating connections to your overlay network).
 
-<Note>
-    This is a common pitfall when the routing peer also runs local services. Remember: network resource policies control forwarded traffic (forward chain), while peer-to-peer access control policies control traffic to the peer itself (input chain). You need both if you want to access the routing peer **and** the resources behind it.
-</Note>
+The only case that still requires [Network Routes](/manage/network-routes) is **[exit nodes](/manage/network-routes/use-cases/exit-nodes)**, which send a group's internet-bound traffic out through a chosen peer. For everything else, use Networks: it enforces access by default, while a Network Route without ACL Groups grants unrestricted access.
 
-<div id="enable-dns-wildcard-routing" />
+## Recap
 
-## Enable Routing Peer DNS Resolution
+In one breath, for the office example above:
 
-Routing peer DNS resolution moves DNS resolution for routed domains from the client to the routing peer. Wildcard domain resources require it; for regular domain resources, enable it when you want to:
+- **Network** — the *Berlin Office* container.
+- **Resource** — the wiki (`10.10.0.5/32`) and dashboard (`grafana.berlin.internal`) you reach.
+- **Access policy** — the rule letting `Development` reach them, and nothing else.
+- **Routing peer** — the office host that forwards the traffic.
 
-- Resolve domain names using the routing peer's DNS infrastructure
-- Route traffic through a geographically nearby routing peer
-- Enable more restrictive access control rules (support coming in future releases)
+Access is denied until a policy allows it. That default is what makes a NetBird Network Zero Trust. For a full rollout across your organization, see [Implementing Zero Trust](/use-cases/security/implement-zero-trust).
 
-To enable it, go to **Settings** > **Networks** > **Enable Routing peer DNS resolution**:
+Networks keep resources private to your overlay network. If you instead need to make a service available on the public internet, NetBird's built-in [Reverse Proxy](/manage/reverse-proxy) handles that, with automatic TLS and authentication and no open ports on your machines.
 
-<p>
-    <img src="/docs-static/img/manage/networks/index/settings-1.png" alt="settings-acl" className="imagewrapper-big"/>
-</p>
+<Tiles
+    title="More scenarios"
+    description="Apply what you've learned to a real setup"
+    items={[
+        {
+            href: '/manage/networks/use-cases/access-home-devices',
+            name: 'Access Home Devices',
+            description: 'Reach a home NAS, media server, or IoT devices from anywhere.',
+        },
+        {
+            href: '/manage/networks/use-cases/cloud-to-on-premise',
+            name: 'Cloud to On-Premise',
+            description: 'Connect cloud workloads to databases and services on-prem.',
+        },
+        {
+            href: '/manage/networks/use-cases/site-to-site',
+            name: 'Site-to-Site',
+            description: 'Connect two networks so clientless devices on each can talk.',
+        },
+        {
+            href: '/manage/networks/use-cases/site-to-vpn',
+            name: 'Site-to-VPN',
+            description: 'Let clientless devices initiate connections to your overlay network.',
+        },
+    ]}
+/>
 
-<Note>
-    Routing peer DNS resolution requires routing peers and clients running version 0.35.0 or later. After enabling this feature, restart your routing peers and clients to apply the changes.
-</Note>
-
-<Note>
-    Starting with NetBird v0.59.0, the local DNS forwarder port changed from `5353` to `22054` to avoid port collisions. For backward compatibility, the new port is only used when **all peers in the account** run v0.59.0 or newer. If any peer is on an older version, port `5353` is used for all peers.
-</Note>
-
-<Note>
-    A wildcard resource like `*.dev.example.com` matches subdomains only, not the base domain. To allow access to `dev.example.com` as well, add it as a separate resource — assigning it to the same resource group reuses the existing routing peers and policies.
-</Note>
+<Tiles
+    title="Go deeper"
+    description="The mechanics underneath Networks"
+    items={[
+        {
+            href: '/manage/networks/how-routing-peers-work',
+            name: 'How Routing Peers Work',
+            description: 'Traffic flow, host requirements, high availability, and access control in depth.',
+        },
+        {
+            href: '/manage/networks/masquerade',
+            name: 'Masquerade',
+            description: 'When to keep or disable source-IP rewriting on a routing peer.',
+        },
+        {
+            href: '/manage/dns/internal-dns-servers',
+            name: 'Internal DNS',
+            description: 'Resolve internal domains through your routing peers.',
+        },
+        {
+            href: '/manage/peers/register-machines-using-setup-keys',
+            name: 'Setup Keys',
+            description: 'Register headless routing peers without interactive login.',
+        },
+    ]}
+/>
 
 ## Get Started
 
