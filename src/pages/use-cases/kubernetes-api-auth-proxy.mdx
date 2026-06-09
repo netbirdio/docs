@@ -1,0 +1,244 @@
+import {Note, Warning} from "@/components/mdx";
+
+# Kubernetes API Auth Proxy
+
+This guide explains how to use the NetBird Kubernetes Auth Proxy to provide identity-aware access to the Kubernetes API. With this feature, users can access the Kubernetes API directly using `kubectl` through the NetBird network, with their NetBird identity automatically mapped to Kubernetes RBAC.
+
+## Overview
+
+The Kubernetes Auth Proxy is a component that:
+- Joins your NetBird network as a peer
+- Listens for incoming `kubectl` requests from other NetBird peers
+- Identifies the requesting peer using their NetBird identity (WireGuard IP)
+- Impersonates that identity when forwarding requests to the Kubernetes API
+- Enables Kubernetes RBAC based on NetBird groups
+
+This allows you to use NetBird groups for Kubernetes access control without requiring certificates, tokens, or complex authentication setups.
+
+## Architecture
+
+```
+┌─────────────────┐     NetBird Network     ┌──────────────────┐     ┌──────────────┐
+│  Developer      │◄───────────────────────►│  Auth Proxy      │────►│  K8s API     │
+│  (NetBird Peer) │     WireGuard Tunnel    │  (NetBird Peer)  │     │  Server      │
+│                 │                         │                  │     │              │
+│  kubectl ───────┼────────────────────────►│  WhoIs(IP)       │     │              │
+│                 │                         │  ↓               │     │              │
+│                 │                         │  Impersonate-User│────►│  RBAC Check  │
+│                 │                         │  Impersonate-Group│    │              │
+└─────────────────┘                         └──────────────────┘     └──────────────┘
+```
+
+## Prerequisites
+
+- A Kubernetes cluster
+- NetBird Kubernetes Operator installed
+- Access to the NetBird management dashboard
+- `kubectl` installed on your local machine
+- NetBird client running on your local machine
+
+## Installation
+
+### Step 1: Create a Setup Key
+
+Navigate to **Setup Keys** in the NetBird management dashboard and create a new key:
+
+- **Name**: `kubernetes-auth-proxy`
+- **Reusable**: Yes (for HA deployments)
+- **Ephemeral peers**: Yes
+- **Auto-assigned groups**: Add a group like `kubernetes-auth-proxy`
+
+Note down the setup key for the next step.
+
+### Step 2: Configure the Helm Values
+
+Update your `values.yaml` for the NetBird Kubernetes Operator:
+
+```yaml
+authProxy:
+  enabled: true
+  
+  # Your NetBird setup key
+  setupKey: "your-setup-key-here"
+  
+  # Or use an existing secret
+  # existingSecret: "my-netbird-secret"
+  
+  # Hostname for the auth proxy in NetBird network
+  hostname: "k8s-api"
+  
+  # Your NetBird DNS domain (for TLS certificate)
+  dnsDomain: "netbird.cloud"  # or your self-hosted domain
+  
+  # NetBird management URL (optional, defaults to cloud)
+  managementURL: "https://api.netbird.io"
+  
+  # Number of replicas for HA
+  replicaCount: 1
+  
+  # Log level
+  logLevel: "info"
+```
+
+### Step 3: Install or Upgrade the Operator
+
+```bash
+helm upgrade --install netbird-operator netbirdio/kubernetes-operator \
+  --namespace netbird \
+  --create-namespace \
+  -f values.yaml
+```
+
+### Step 4: Verify the Auth Proxy is Running
+
+```bash
+kubectl get pods -n netbird -l app.kubernetes.io/component=auth-proxy
+```
+
+You should see the auth proxy pod running:
+```
+NAME                                              READY   STATUS    RESTARTS   AGE
+netbird-operator-kubernetes-operator-auth-proxy   1/1     Running   0          1m
+```
+
+Check the NetBird dashboard to verify the auth proxy has joined as a peer.
+
+## Client Configuration
+
+### Generate a Kubeconfig
+
+On your local machine (with NetBird running), generate a kubeconfig:
+
+```bash
+netbird kubeconfig --server https://k8s-api.netbird.cloud:443 --cluster my-cluster -o ~/.kube/netbird-config
+```
+
+<Note>
+Replace `k8s-api.netbird.cloud` with your auth proxy hostname and NetBird DNS domain.
+</Note>
+
+### Use the Kubeconfig
+
+```bash
+export KUBECONFIG=~/.kube/netbird-config
+
+# Verify your identity
+kubectl auth whoami
+
+# List pods
+kubectl get pods
+```
+
+## Setting Up RBAC
+
+The auth proxy maps NetBird identities to Kubernetes:
+
+| NetBird | Kubernetes |
+|---------|------------|
+| User ID (email) | `Impersonate-User` header |
+| Peer FQDN (for setup-key peers) | `Impersonate-User` header (fallback) |
+| NetBird Groups | `Impersonate-Group` headers |
+
+### Example: Grant Admin Access to a NetBird Group
+
+Create a ClusterRoleBinding for users in the `k8s-admins` NetBird group:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: netbird-k8s-admins
+subjects:
+  - kind: Group
+    name: k8s-admins  # NetBird group name
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+```
+
+### Example: Grant Read-Only Access
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: netbird-readonly
+subjects:
+  - kind: Group
+    name: kubernetes  # NetBird group name
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io
+```
+
+## Security Considerations
+
+### How Authentication Works
+
+1. **WireGuard Tunnel**: All traffic between your machine and the auth proxy is encrypted via WireGuard
+2. **Peer Identity**: The auth proxy identifies you by your WireGuard IP address (cryptographically bound to your identity)
+3. **Impersonation**: The proxy uses Kubernetes impersonation to forward requests as your identity
+4. **RBAC**: Kubernetes RBAC controls what you can access
+
+### IP Spoofing Protection
+
+WireGuard's cryptokey routing prevents IP spoofing:
+- Each peer's public key is bound to their allowed IP
+- Packets with spoofed source IPs are dropped at the WireGuard layer
+- An attacker would need your private key to impersonate you
+
+<Warning>
+The auth proxy uses a self-signed TLS certificate. Clients must use `insecure-skip-tls-verify: true` in their kubeconfig. Traffic is still encrypted by WireGuard.
+</Warning>
+
+## High Availability
+
+For production deployments, run multiple auth proxy replicas:
+
+```yaml
+authProxy:
+  enabled: true
+  replicaCount: 3
+```
+
+NetBird will distribute traffic across the replicas. If one replica fails, traffic automatically routes to healthy replicas.
+
+## Troubleshooting
+
+### Check Auth Proxy Logs
+
+```bash
+kubectl logs -n netbird -l app.kubernetes.io/component=auth-proxy
+```
+
+### Verify NetBird Connection
+
+```bash
+# On the auth proxy pod
+kubectl exec -it -n netbird deploy/netbird-operator-kubernetes-operator-auth-proxy -- netbird status
+```
+
+### Test Identity Lookup
+
+After connecting via kubectl, check the auth proxy logs for:
+```
+Authenticated peer: user.netbird.cloud (User: user@example.com, Groups: [k8s-admins kubernetes])
+```
+
+### Common Issues
+
+| Issue | Solution |
+|-------|----------|
+| `Unauthorized: Unknown NetBird Peer` | Ensure your NetBird client is connected |
+| `Forbidden` | Check RBAC bindings for your NetBird groups |
+| Groups not updating | Group changes are applied on next network map sync (usually within seconds) |
+| TLS certificate errors | Use `insecure-skip-tls-verify: true` in kubeconfig |
+
+## Conclusion
+
+The NetBird Kubernetes Auth Proxy provides a simple, secure way to access your Kubernetes clusters through the NetBird network. By leveraging WireGuard's cryptographic identity and Kubernetes impersonation, you get identity-aware access control without managing certificates or tokens.
+
