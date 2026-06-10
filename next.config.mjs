@@ -103,6 +103,11 @@ const nextConfig = {
                 permanent: true,
             },
             {
+                source: '/about-netbird/why-wireguard-with-netbird',
+                destination: '/about-netbird/netbird-vs-traditional-vpn',
+                permanent: true,
+            },
+            {
                 source: '/about-netbird/other',
                 destination: '/introduction',
                 permanent: true,

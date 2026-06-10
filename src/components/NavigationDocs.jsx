@@ -37,10 +37,6 @@ export const docsNavigation = [
         href: '/about-netbird/ports-and-firewalls',
       },
       {
-        title: 'Why WireGuard with NetBird',
-        href: '/about-netbird/why-wireguard-with-netbird',
-      },
-      {
         title: 'Browser Client Architecture',
         href: '/about-netbird/browser-client-architecture',
       },
