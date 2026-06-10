@@ -14,6 +14,7 @@ import {
   useNavigationState,
 } from '@/components/NavigationState'
 import ChevronDownIcon from '@/components/icons/ChevronDownIcon'
+import { useIsInsideMobileNavigation } from '@/components/MobileNavigation'
 
 export const docsNavigation = [
   {
@@ -55,7 +56,7 @@ export const docsNavigation = [
       { title: 'Quickstart Guide', href: '/get-started' },
       {
         title: 'Install NetBird',
-        isOpen: true,
+        isOpen: false,
         href: '/get-started/install',
         links: [
           { title: 'Linux', href: '/get-started/install/linux' },
@@ -950,11 +951,14 @@ const findActiveGroupIndex = (group, pathname) => {
 
 function NavigationGroup({ group, className, hasChildren }) {
   let router = useRouter()
-  let isActiveGroup = findActiveGroupIndex(group, router.pathname) !== -1
+  let isActiveGroup =
+    group.href === router.pathname ||
+    findActiveGroupIndex(group, router.pathname) !== -1
   const [isOpen, setIsOpen] = useState(
-    group.isOpen ? group.isOpen : !hasChildren
+    (group.isOpen ?? !hasChildren) || isActiveGroup
   )
   const [, setActiveHighlight] = useNavigationState()
+  const isInsideMobileNavigation = useIsInsideMobileNavigation()
 
   return (
     <li className={clsx('relative', className, hasChildren ? '' : 'mt-6')}>
@@ -964,12 +968,19 @@ function NavigationGroup({ group, className, hasChildren }) {
           'group flex items-center justify-between gap-2',
           hasChildren
             ? 'cursor-pointer select-none py-1 pr-3 text-sm font-medium text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white'
-            : 'text-xs font-semibold text-zinc-900 dark:text-white'
+            : 'text-xs font-semibold text-zinc-900 dark:text-white',
+          group.href === router.pathname && 'text-zinc-900 dark:text-white'
         )}
         onClick={() => {
+          if (group.href) {
+            if (!isOpen) setIsOpen(true)
+            router.push(group.href)
+            setActiveHighlight()
+            return
+          }
           setIsOpen(!isOpen)
           if (!isOpen) {
-            if (!isActiveGroup && group.links[0]?.href)
+            if (!isActiveGroup && !isInsideMobileNavigation && group.links[0]?.href)
               router.push(group.links[0].href)
             setActiveHighlight()
           } else {
@@ -981,14 +992,28 @@ function NavigationGroup({ group, className, hasChildren }) {
       >
         {group.title}
         {hasChildren && (
-          <ChevronDownIcon
-            className={clsx(
-              'fill-zinc-700 group-hover:fill-zinc-900 dark:fill-zinc-300 dark:group-hover:fill-white',
-              'transition',
-              isOpen ? 'rotate-180 transform' : ''
-            )}
-            size={10}
-          />
+          <span
+            className="-m-1 flex items-center justify-center p-1"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setIsOpen(!isOpen)
+              if (isOpen) {
+                setActiveHighlight(group.title)
+              } else {
+                setActiveHighlight()
+              }
+            }}
+          >
+            <ChevronDownIcon
+              className={clsx(
+                'fill-zinc-700 group-hover:fill-zinc-900 dark:fill-zinc-300 dark:group-hover:fill-white',
+                'transition',
+                isOpen ? 'rotate-180 transform' : ''
+              )}
+              size={10}
+            />
+          </span>
         )}
       </motion.h2>
       <div className={clsx('relative', hasChildren ? '' : 'mt-3 pl-2')}>
@@ -1030,23 +1055,22 @@ function NavigationGroup({ group, className, hasChildren }) {
               className="border-l border-transparent"
             >
               {group.links.map((link) => {
-                return link.href ? (
-                  <motion.li key={link.href} className="relative">
-                    <NavLink
-                      href={link.href}
-                      active={link.href === router.pathname}
-                      links={link.links}
-                    >
-                      {link.title}
-                    </NavLink>
-                  </motion.li>
-                ) : (
+                return link.links ? (
                   <NavigationGroup
                     className={'ml-4'}
                     key={link.title + isOpen}
                     group={link}
                     hasChildren={true}
                   />
+                ) : (
+                  <motion.li key={link.href} className="relative">
+                    <NavLink
+                      href={link.href}
+                      active={link.href === router.pathname}
+                    >
+                      {link.title}
+                    </NavLink>
+                  </motion.li>
                 )
               })}
             </motion.ul>
