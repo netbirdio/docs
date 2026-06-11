@@ -838,6 +838,10 @@ export const docsNavigation = [
         title: 'Troubleshooting client issues',
         href: '/help/troubleshooting-client',
       },
+      {
+        title: 'Troubleshooting relayed connections',
+        href: '/help/troubleshooting-relayed-connections',
+      },
       { title: 'Report bugs and issues', href: '/help/report-bug-issues' },
       {
         title: 'Support Matrix',

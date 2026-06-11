@@ -1,0 +1,255 @@
+import {Note, Warning, Success} from "@/components/mdx";
+import {Tiles} from "@/components/Tiles";
+
+export const description = "Learn why a NetBird connection is Relayed instead of P2P, how to find and remove the blocker, and when relay is the correct outcome."
+
+# Troubleshooting relayed connections
+
+NetBird always prefers a direct peer-to-peer (P2P) connection and falls back to a relay server when a direct path can't be established. A relayed connection works — it just adds latency and shares the relay's bandwidth, because traffic travels through an intermediary instead of flowing directly between the peers. This page teaches you to find out *why* a connection is relayed, fix it when it's fixable, and recognize the cases where relay is the correct outcome rather than a fault.
+
+The endpoints on this page are for **NetBird Cloud**. The flow is identical for self-hosted deployments — substitute your own Signal, STUN, and Relay endpoints from the [self-hosted port requirements](/selfhosted/selfhosted-guide#port-requirements).
+
+<Note>
+A relayed connection is just as secure as a direct one. Traffic is encrypted end to end with WireGuard before it leaves the device, and the relay only forwards packets it cannot read. The trade-off is latency and throughput, never confidentiality.
+</Note>
+
+## First, confirm it's relayed
+
+On either peer, check the connection in detail:
+
+```bash
+netbird status -d
+```
+
+Find the peer in question and look at the **Connection type** field:
+
+```
+ server-fra-1.netbird.cloud:
+  NetBird IP: 100.75.226.48
+  Public key: Mi6jtrK5To...
+  Status: Connected
+  -- detail --
+  Connection type: Relayed
+  ICE candidate (Local/Remote): relay/relay
+  ICE candidate endpoints (Local/Remote): -/-
+  Relay server address: rels://us-nyc-2.relay.netbird.io:443
+  Last WireGuard handshake: 25 seconds ago
+  Networks: -
+  Latency: 89.5ms
+```
+
+| Field | What it tells you |
+|---|---|
+| `Connection type: Relayed` | Traffic flows through a relay server instead of directly between the peers |
+| `ICE candidate (Local/Remote)` | How each side is connecting — the key diagnostic, explained below |
+| `Relay server address` | Which relay server carries the connection |
+| `Last WireGuard handshake` | A recent handshake means the tunnel itself is healthy, relayed or not |
+
+If the connection type is `P2P` but the link is slow, stop here — that's a different problem (path quality, MTU, or load), not a relay issue. Start from the [general client troubleshooting page](/help/troubleshooting-client#net-bird-agent-status) instead.
+
+## The mental model
+
+If you remember one thing, remember this: **a relayed connection is not a failure — it's the safety net after a failed hole punch.** Your job is to find out which of two worlds you're in:
+
+```
+                 Why is this connection relayed?
+                          │
+        ┌─────────────────┴─────────────────┐
+        │                                   │
+  A fixable blocker                  An unfixable NAT
+  (Signal, STUN, or UDP is           (both sides scramble ports
+  blocked somewhere — find           per destination — relay is
+  it and remove it)                  doing its designed job)
+```
+
+You can't ask NetBird to measure NAT behavior directly, so you work by **elimination**: first triage for environments that are known to defeat hole punching, then clear the fixable blockers one by one. If every check passes on both peers and the connection is still relayed, you have proven the NAT is the cause — and the relay is the designed answer, not a problem left to fix.
+
+## The four players
+
+Four things decide whether a connection goes direct. Each one maps to exactly one check in the flow below.
+
+**NAT — the obstacle.** Routers rewrite addresses, so a peer behind NAT can't receive unsolicited traffic. Most NATs hand out a *predictable* public address that hole punching can use; symmetric NATs and carrier-grade NAT (CGNAT) hand out a *different* one per destination, which defeats hole punching entirely. The theory lives in [Understanding NAT and Connectivity](/about-netbird/understanding-nat-and-connectivity).
+
+**Signal — the messenger.** Peers exchange their candidate addresses through the Signal service (`signal.netbird.io`, TCP/443). If Signal is unreachable, the peers can't even compare notes, and the connection silently lands on the relay.
+
+**STUN — the mirror.** A peer discovers its own public address by asking a STUN server (`stun.netbird.io`, UDP 80, 443, 3478, 5555). If outbound UDP to STUN is blocked, the peer never learns a public candidate and hole punching never starts.
+
+**Relay — the safety net.** When no direct path works, both peers connect outbound to a relay (`*.relay.netbird.io`, TCP/443) and traffic flows through it, still end-to-end encrypted.
+
+The authoritative endpoint and port list is in [Ports & Firewalls](/about-netbird/ports-and-firewalls).
+
+## Reading the ICE candidates
+
+The `ICE candidate (Local/Remote)` field shows how each side of the selected connection is reachable. It's the fastest way to tell which peer to investigate:
+
+| Candidate | Meaning | Implication |
+|---|---|---|
+| `host` | A local interface address | Direct connectivity, P2P possible |
+| `srflx` | Public address discovered via STUN | NAT traversal worked on this side |
+| `prflx` | Address discovered during connectivity checks | P2P possible |
+| `relay` | A relay allocation | Hole punching failed on this side |
+| `-` | No candidate established | STUN unreachable or UDP blocked on this side |
+
+The most useful pattern: **when one side shows `srflx` or `host` and the other shows `relay` or `-`, focus your troubleshooting on the weaker side.** That peer's network is the one blocking the direct path.
+
+## The decision flow
+
+Work through these steps in order. Each one tells you when to continue and when to stop.
+
+```
+Confirm it's Relayed
+   │
+1. Environment triage — are BOTH peers on known-symmetric networks?
+   │     yes → relay is expected, stop here
+   │ no / unsure
+2. Control plane reachable? (Signal + Management, TCP/443)
+3. STUN reachable? (Relays section of netbird status -d)
+4. Host firewall in the way?
+5. Repeat 2–4 on the other peer
+   │
+   all clean on both ends, still Relayed
+   └──▶ symmetric NAT proven by elimination:
+        relay is the designed path
+```
+
+### Step 1 — Environment triage
+
+Some networks are known to defeat hole punching, no matter how clean the firewall config is. Before checking anything else, ask where each peer sits:
+
+- **Mobile and cellular connections** — carriers use CGNAT, which usually behaves symmetrically.
+- **Cloud NAT gateways** (AWS NAT Gateway, GCP Cloud NAT) — symmetric by design for instances without a public IP.
+- **Enterprise firewalls in strict mode** — Cisco ASA, Palo Alto, Fortinet and similar devices often default to symmetric NAT, sometimes labeled "strict NAT" in their settings.
+
+If **both** peers sit on networks like these, hole punching can't succeed and no amount of firewall tuning will change that — the relay is the expected outcome, and you can stop here (see [when relay is the right answer](#when-relay-is-the-right-answer)). If only one side does, or you're not sure, keep going: one predictable side is usually enough for P2P.
+
+<Note>
+A CGNAT tell: the public address your network presents is in `100.64.0.0/10`, a range reserved for carrier-grade NAT. Don't confuse it with your own NetBird IP — NetBird intentionally uses the same range for its overlay network, so only the address your *ISP-facing* connection shows counts.
+</Note>
+
+### Step 2 — Is the control plane reachable?
+
+If a peer can't reach the Signal service, candidates are never exchanged and the connection goes straight to relay — a common silent cause. From the peer, confirm outbound TCP/443 to both control-plane endpoints:
+
+```bash
+curl -sf https://api.netbird.io/api > /dev/null && echo "management: OK"
+nc -zv signal.netbird.io 443
+```
+
+Both must succeed. If they don't, fix outbound TCP/443 to these endpoints first — nothing else matters until the peers can talk to the control plane.
+
+### Step 3 — Is STUN reachable?
+
+Hole punching starts with STUN, and STUN runs over UDP. The best evidence is already in `netbird status -d` — the `Relays:` section near the bottom reports reachability of every STUN, TURN, and relay endpoint:
+
+```
+Relays:
+  [stun:stun.netbird.io:3478] is Available
+  [turn:turn.netbird.io:443?transport=udp] is Unavailable, reason: allocate: all retransmissions failed
+  [rels://us-nyc-2.relay.netbird.io:443] is Available
+```
+
+Any `Unavailable` entry for a `stun:` or `turn:` endpoint means outbound UDP is being dropped on the path — typically by the site's egress firewall. Ask whoever runs it to allow outbound UDP on ports 80, 443, 3478, and 5555 to `stun.netbird.io` and `turn.netbird.io`; the exact list and example rules are in [Ports & Firewalls](/about-netbird/ports-and-firewalls#outgoing-ports).
+
+<Warning>
+Every fix on this page is an **outbound** firewall rule or an allowance on the host's `wt0` interface. NetBird never needs an inbound port opened on your perimeter firewall.
+</Warning>
+
+### Step 4 — Is a host firewall in the way?
+
+The host's own firewall or security software can block UDP before it ever leaves the machine. Telltale symptoms: peers show `Connected` but can't be pinged, or two peers on the *same office LAN* connect relayed because a host firewall drops their unsolicited direct packets. Both cases, with platform-specific checks and fixes for UFW, firewalld, and Windows Firewall, are covered in [Ports & Firewalls — Host-based firewalls](/about-netbird/ports-and-firewalls#host-based-firewalls).
+
+Endpoint protection software (CrowdStrike, ESET, Sophos and similar) often ships its own firewall that overrides OS rules — if connectivity works with it temporarily disabled, add an exception for the NetBird process.
+
+### Step 5 — Repeat on the other peer
+
+A connection has two ends, and **both** must pass steps 2–4 for hole punching to work. A perfectly clean laptop still gets a relayed connection if the server's egress firewall silently drops UDP. Run the same checks on the second peer before drawing any conclusion.
+
+<Note>
+Can't shell into the far peer? Administrators can trigger a debug bundle remotely from the dashboard (**Peers → select peer → Run Remote Job**). See [remote debug bundle generation](/help/troubleshooting-client#remote-debug-bundle-generation).
+</Note>
+
+### Step 6 — Conclude, or escalate
+
+If every check passes on both peers and the connection is still relayed, you've proven by elimination that a symmetric NAT is in the path. Accept the relay — it's the [designed behavior for exactly this case](#when-relay-is-the-right-answer), and it costs latency, not security.
+
+If instead something looks wrong but you can't place it, collect evidence and escalate:
+
+- A [debug bundle](/help/troubleshooting-client#debug-bundle) from **both** peers: `netbird debug bundle --system-info`
+- The `netbird status -d` output from both peers
+- The network topology: NAT device or cloud gateway, firewall vendor, ISP type
+
+## Walkthrough: converting a relayed connection
+
+A remote engineer's laptop reaches `build-server` in the office, but `netbird status -d` on the laptop shows the connection is relayed and latency is poor. Working the flow:
+
+1. **Confirm.** The laptop shows `Connection type: Relayed` and `ICE candidate (Local/Remote): srflx/relay`. The laptop's own side reached STUN fine (`srflx`) — the weak side is the server.
+2. **Triage.** The laptop is on home fiber, the server on the office LAN. Neither is mobile, CGNAT, or behind a cloud NAT gateway — so this should be fixable. Continue.
+3. **Control plane, on the server.** `curl` to the Management API and `nc -zv signal.netbird.io 443` both succeed.
+4. **STUN, on the server.** The `Relays:` section shows `[stun:stun.netbird.io:3478] is Unavailable, reason: stun request: context deadline exceeded`. The office egress firewall is dropping outbound UDP.
+5. **Fix and verify.** IT allows outbound UDP on ports 80, 443, 3478, 5555 to `stun.netbird.io` and `turn.netbird.io`. On the server, restart the connection with `netbird down && netbird up`, then re-check from the laptop.
+
+```
+  Connection type: P2P
+  ICE candidate (Local/Remote): srflx/srflx
+  Latency: 14.8ms
+```
+
+<Success>
+Both sides now discover their public addresses, hole punching succeeds, and traffic flows directly — latency drops from ~90 ms to ~15 ms with no relay in the path.
+</Success>
+
+## When relay is the right answer
+
+Stop troubleshooting and accept the relay when:
+
+- **Both peers are on mobile/CGNAT connections.** The carrier's NAT is symmetric and outside anyone's control.
+- **Corporate policy blocks outbound UDP and won't change.** Relay over TCP/443 is the designed path through such networks.
+- **A cloud NAT gateway can't be re-architected.** If the instance *can* get a public IP (an Elastic IP on AWS), that restores P2P without opening anything inbound — security groups still only need outbound rules, and the gateway's symmetric NAT drops out of the path. If it can't, relay it is.
+- **The NAT device belongs to someone else** — a hotel, a café, a customer site.
+
+Some teams even prefer relayed connections in locked-down networks, because the only flows leaving the perimeter are outbound TCP/443. That's a legitimate posture: the cost is latency, never confidentiality. In all of these cases, relay is NetBird working as designed, not a fault.
+
+<Note>
+Guides elsewhere sometimes suggest forwarding a UDP port to a peer to force P2P past a symmetric NAT. It can work — but it gives up NetBird's core promise that you never open an inbound port on your network. Accept the relayed connection instead; carrying traffic past unfixable NATs without exposing anything is exactly what it's for.
+</Note>
+
+## Rollout checklist
+
+To keep a whole fleet on direct connections rather than fixing peers one at a time:
+
+- **Allow outbound UDP to STUN/TURN** (`stun.netbird.io`, `turn.netbird.io`, ports 80, 443, 3478, 5555) at every site's egress firewall.
+- **Wildcard `*.relay.netbird.io` on TCP/443** so the relay fallback survives rotation of the geo-distributed relay pool.
+- **Watch the `Relays:` section** of `netbird status -d` during rollout — fix `Unavailable` entries before users report slowness.
+- **Bake the `wt0` allowance into host-firewall baselines** (UFW/firewalld/Windows images), so host firewalls never silently block decrypted traffic.
+- **Decide per site whether relay is acceptable**, and document it — a deliberate relay is fine; a surprising one costs a support ticket.
+
+## Recap
+
+In one breath: **NAT** is the obstacle, **Signal** is the messenger, **STUN** is the mirror, and **Relay** is the safety net. A relayed connection means hole punching failed — either because something fixable blocks Signal, STUN, or UDP (find it: control plane → STUN → host firewall → both ends), or because both peers sit behind symmetric NAT, which you prove by elimination. Every fix is an outbound rule; nothing is ever opened inbound. And when the NAT itself is the cause, the relay is doing exactly the job it was built for — keeping peers connected without exposing anything, with end-to-end encryption intact.
+
+<Tiles
+    title="Go deeper"
+    description="The mechanics underneath this page"
+    items={[
+        {
+            href: '/about-netbird/understanding-nat-and-connectivity',
+            name: 'Understanding NAT and Connectivity',
+            description: 'NAT types, hole punching, and how NetBird relay works under the hood.',
+        },
+        {
+            href: '/about-netbird/ports-and-firewalls',
+            name: 'Ports & Firewalls',
+            description: 'The authoritative endpoint list, plus host-based firewall fixes.',
+        },
+        {
+            href: '/help/troubleshooting-client',
+            name: 'Troubleshooting client issues',
+            description: 'Debug bundles, log levels, and ICE-level debugging.',
+        },
+        {
+            href: '/get-started/cli',
+            name: 'CLI Reference',
+            description: 'The status and debug commands used throughout this page.',
+        },
+    ]}
+/>
