@@ -314,6 +314,7 @@ export const docsNavigation = [
             title: 'Add Users to Your Network',
             href: '/manage/team/add-users-to-your-network',
           },
+          { title: 'User Roles', href: '/manage/team/user-roles' },
           { title: 'Approve Users', href: '/manage/team/approve-users' },
           {
             title: 'Enable NetBird for Entra ID',
