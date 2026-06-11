@@ -479,6 +479,10 @@ export const docsNavigation = [
                 href: '/manage/integrations/kubernetes/client-sidecar',
               },
               {
+                title: 'API Server Proxy',
+                href: '/manage/integrations/kubernetes/api-server-proxy',
+              },
+              {
                 title: 'Gateway API',
                 href: '/manage/integrations/kubernetes/gateway-api',
               },
