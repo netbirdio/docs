@@ -8,7 +8,7 @@ import {
 } from '@/components/NavigationAPI'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from '@/components/mdx'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   NavigationStateProvider,
   useNavigationState,
@@ -957,6 +957,9 @@ function NavigationGroup({ group, className, hasChildren }) {
   const [isOpen, setIsOpen] = useState(
     (group.isOpen ?? !hasChildren) || isActiveGroup
   )
+  useEffect(() => {
+    if (isActiveGroup) setIsOpen(true)
+  }, [router.pathname, isActiveGroup])
   const [, setActiveHighlight] = useNavigationState()
   const isInsideMobileNavigation = useIsInsideMobileNavigation()
 
@@ -974,7 +977,7 @@ function NavigationGroup({ group, className, hasChildren }) {
         onClick={() => {
           if (group.href) {
             if (!isOpen) setIsOpen(true)
-            router.push(group.href)
+            if (group.href !== router.pathname) router.push(group.href)
             setActiveHighlight()
             return
           }
@@ -1058,7 +1061,7 @@ function NavigationGroup({ group, className, hasChildren }) {
                 return link.links ? (
                   <NavigationGroup
                     className={'ml-4'}
-                    key={link.title + isOpen}
+                    key={link.title}
                     group={link}
                     hasChildren={true}
                   />
