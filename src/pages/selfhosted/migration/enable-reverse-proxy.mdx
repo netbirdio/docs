@@ -72,7 +72,10 @@ The proxy authenticates with the management server using an access token. Genera
 ```bash
 docker exec -it netbird-server /go/bin/netbird-server token create \
   --name "my-proxy" --config <netbird-data-dir>/config.yaml
+
+# NOTE: <netbird-data-dir> is usually located at `/etc/netbird`.
 ```
+
 
 **Multi-container** (separate `netbirdio/management` image):
 
@@ -80,7 +83,7 @@ docker exec -it netbird-server /go/bin/netbird-server token create \
 docker exec -it netbird-management /go/bin/netbird-mgmt token create --name "my-proxy"
 ```
 
-This outputs a token in the format `nbx_...` (40 characters). **Save the token immediately** - it is only displayed once. The management server stores only a SHA-256 hash.
+This outputs a token in the format `nbx_...` (40 characters). **Save the token immediately** - it is only displayed once. The management server stores only a SHA-256 hash. Make sure not to accidentally copy the 20 character Token ID instead.
 
 You can manage tokens later with:
 
@@ -263,7 +266,7 @@ A CrowdSec LAPI (Local API) container runs alongside your deployment, syncs deci
 | **enforce** | Blocked IPs are denied immediately. If the bouncer is not yet synced, connections are denied (fail-closed). |
 | **observe** | Blocked IPs are logged but not denied. Use this to evaluate CrowdSec before enforcing. |
 
-#### 7a. Add the CrowdSec container
+#### 7a. Add the CrowdSec container and configure Traefik/proxy.
 
 Add the following service to your `docker-compose.yml`:
 
@@ -303,6 +306,35 @@ Add `crowdsec_db:` to the `volumes:` section, and update the proxy's `depends_on
         condition: service_healthy
 ```
 
+Inside the configuration for the `traefik` service, inside the `command:` section, add:
+```yaml
+- "--providers.file.filename=/etc/traefik/dynamic.yaml"
+```
+
+Inside the `traefik` service `volumes:` section, add:
+```yaml
+- ./traefik-dynamic.yaml:/etc/traefik/dynamic.yaml:ro
+```
+
+Inside the `proxy` service `labels:` section, add:
+- traefik.tcp.services.proxy-tls.loadbalancer.serverstransport=pp-v2@file~
+
+Finally, create a new file called `traefik-dynamic.yaml` containing the following:
+```yaml
+tcp:
+  serversTransports:
+    pp-v2:
+      proxyProtocol:
+        version: 2
+```
+
+
+Then restart Traefik, we will restart the proxy later.
+
+```bash
+docker compose up -d traefik
+```
+
 #### 7b. Start CrowdSec and register a bouncer
 
 ```bash
@@ -331,6 +363,9 @@ Add these lines to `proxy.env`:
 ```bash
 NB_PROXY_CROWDSEC_API_URL=http://crowdsec:8080
 NB_PROXY_CROWDSEC_API_KEY=<bouncer-key-from-above>
+NB_PROXY_FORWARDED_PROTO=https
+NB_PROXY_PROXY_PROTOCOL=true
+NB_PROXY_TRUSTED_PROXIES=172.30.0.10
 ```
 
 Then restart the proxy:
