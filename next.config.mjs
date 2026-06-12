@@ -32,6 +32,11 @@ const nextConfig = {
                 permanent: true,
             },
             {
+                source: '/about-netbird/browser-client-architecture',
+                destination: '/manage/peers/browser-client/architecture',
+                permanent: true,
+            },
+            {
                 source: '/manage/network-routes/use-cases/by-scenario/site-to-vpn',
                 destination: '/manage/networks/use-cases/site-to-vpn',
                 permanent: true,
