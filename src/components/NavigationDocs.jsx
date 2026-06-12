@@ -36,10 +36,6 @@ export const docsNavigation = [
         title: 'Ports & Firewalls',
         href: '/about-netbird/ports-and-firewalls',
       },
-      {
-        title: 'Browser Client Architecture',
-        href: '/about-netbird/browser-client-architecture',
-      },
       { title: 'FAQ', href: '/about-netbird/faq' },
       /*{ title: 'Whats new in version xx', href: '/welcome/how-netbird-works' },
             { title: 'Release notes', href: '/about-netbird/netbird-vs-traditional-vpn' },*/
@@ -100,7 +96,17 @@ export const docsNavigation = [
             title: 'Bootstrap via Config File',
             href: '/manage/peers/bootstrap-via-config-file',
           },
-          { title: 'Browser Client', href: '/manage/peers/browser-client' },
+          {
+            title: 'Browser Client',
+            isOpen: false,
+            links: [
+              { title: 'Overview', href: '/manage/peers/browser-client' },
+              {
+                title: 'Architecture',
+                href: '/manage/peers/browser-client/architecture',
+              },
+            ],
+          },
           { title: 'SSH', href: '/manage/peers/ssh' },
           { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
           { title: 'Remote Jobs', href: '/manage/peers/remote-jobs' },
@@ -220,10 +226,10 @@ export const docsNavigation = [
         ],
       },
       {
-        title: 'Network Routes',
+        title: 'Routes',
         isOpen: false,
         links: [
-          { title: 'Concept', href: '/manage/network-routes' },
+          { title: 'Overview', href: '/manage/network-routes' },
           {
             title: 'Use Cases',
             isOpen: false,
