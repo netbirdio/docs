@@ -73,6 +73,7 @@ export const docsNavigation = [
           { title: 'TrueNAS', href: '/get-started/install/truenas' },
           { title: 'pfSense', href: '/get-started/install/pfsense' },
           { title: 'OPNsense', href: '/get-started/install/opnsense' },
+          { title: 'OpenWrt', href: '/get-started/install/openwrt' },
           { title: 'Raspberry Pi', href: '/get-started/install/raspberrypi' },
         ],
       },
