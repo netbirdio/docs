@@ -229,7 +229,7 @@ export const docsNavigation = [
         title: 'Routes',
         isOpen: false,
         links: [
-          { title: 'Concept', href: '/manage/network-routes' },
+          { title: 'Overview', href: '/manage/network-routes' },
           {
             title: 'Use Cases',
             isOpen: false,
