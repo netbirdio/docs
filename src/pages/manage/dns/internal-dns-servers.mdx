@@ -9,7 +9,7 @@ When your network has on-premise DNS infrastructure — Active Directory, BIND, 
 
 If you just need access to a few internal resources by domain name, you don't need to configure a nameserver. Create a [Network resource](/manage/networks) with the internal domain name (e.g., `fileserver.corp.local`) and an [access control policy](/manage/access-control/manage-network-access) allowing your peers to reach it. The routing peer will resolve the DNS and route traffic to that resource. This works as long as the routing peer itself can resolve the domain.
 
-You can also use wildcard domains as resources (e.g., `*.corp.local`), but this will route all traffic to those domains through the routing peer. For more granular access to resources, we recommend using single domain names.
+A domain resource matches the **exact name** you enter: `fileserver.corp.local` covers that one host, **not** other names under `corp.local`. To reach many hostnames under a domain — several servers, or names you can't list in advance — use a **wildcard** resource such as `*.corp.local`, which matches every subdomain. A wildcard routes all of those names through the routing peer, so when you only need a handful of hosts, prefer listing them as specific resources.
 
 ## Domain Resources and Routing Peer DNS
 
@@ -17,9 +17,16 @@ You can also use wildcard domains as resources (e.g., `*.corp.local`), but this 
 For the mental model — see [How Routing Peers Work — Routing Peer DNS Resolution](/manage/networks/how-routing-peers-work#routing-peer-dns-resolution).
 </Note>
 
-When you define a [Network resource](/manage/networks) using a domain name (e.g., `crm.corp.local`), the **routing peer** resolves that domain using its own local DNS configuration. The client sends DNS queries to the routing peer, which looks up the domain and returns the result.
+When you define a [Network resource](/manage/networks) using a domain name (e.g., `crm.corp.local`), the **routing peer** resolves that domain using its own local DNS configuration. With **[Routing Peer DNS Resolution](/manage/networks/how-routing-peers-work#routing-peer-dns-resolution)** enabled (the default), the client sends its DNS queries for that domain to the routing peer, which looks up the domain and returns the result — so the client needs no nameserver of its own to resolve that name.
 
 This means the routing peer must be able to resolve the domain. If it can't — for example, a Linux routing peer that isn't configured to use your Active Directory DNS — domain resource lookups will fail.
+
+<Note>
+This covers ordinary name-to-IP lookups (**A/AAAA** records) for the resource's own domain. Two cases still need a nameserver configured on the client:
+
+- **Routing Peer DNS Resolution is disabled.** It's on by default, but can be turned off per account. With it off, the client resolves the name itself instead of asking the routing peer — so point the client at your internal DNS with a nameserver (or its network adapter's DNS).
+- **Active Directory.** Kerberos and DFS need more than plain name-to-IP lookups — they rely on **SRV records** (the "where is a domain controller?" entries Windows uses to find the DC), which the routing peer does not answer. A domain-joined client needs a nameserver (`corp.example.com` → the DC) no matter how this setting is configured. See [Reaching a Domain Controller through a routing peer](#reaching-a-domain-controller-through-a-routing-peer).
+</Note>
 
 To fix this, add the **routing peer's group** as a distribution group on the internal Nameserver:
 
@@ -157,6 +164,10 @@ Before deleting a primary nameserver, create a new primary first, or peers will 
 
 Active Directory (AD) environments have specific DNS requirements because Domain Controllers (DCs) run their own DNS services and rely on DNS for core AD functionality like domain joins, authentication, and service discovery.
 
+<Note>
+Setting up remote access to AD file shares, DFS, and domain login end to end? See the [Active Directory & Windows File Shares](/manage/networks/use-cases/active-directory) guide — it ties together the routing, DNS, and Kerberos pieces into one recipe. The sections below are the DNS reference behind it.
+</Note>
+
 ### Domain Controllers as Routing Peers
 
 We do not recommend using Domain Controllers as routing peers. If you must, you need to **disable DNS management** for the DC's group. If NetBird manages DNS on a Domain Controller, it can interfere with the AD DNS services that the DC depends on.
@@ -171,6 +182,12 @@ To configure this:
 This prevents NetBird from modifying the DC's DNS configuration while still allowing the DC to act as a routing peer. The DC continues using its own DNS for Active Directory services.
 
 For more details on DNS management modes, see [DNS Settings](/manage/dns/dns-settings).
+
+### Reaching a Domain Controller through a routing peer
+
+When the DC runs no agent and remote domain-joined clients reach it **through** another routing peer (for example, a file server that runs the agent), those clients still need a **nameserver group** (`corp.example.com` → the DC). A domain resource alone is not enough: with [Routing Peer DNS Resolution](/manage/networks/how-routing-peers-work#routing-peer-dns-resolution) on, the routing peer answers ordinary name-to-IP (`A`/`AAAA`) lookups, but Active Directory also needs the `SRV` / DC-locator records for login and DFS — which the routing peer does **not** serve. The nameserver group only works once the DC itself is reachable (routed through the peer). This is the same on Windows and Linux clients.
+
+For the complete setup — routing the DC, the policies, DFS, and verification — see [Active Directory & Windows File Shares](/manage/networks/use-cases/active-directory).
 
 ### WireGuard Port Conflict on Domain Controllers
 

@@ -1,0 +1,45 @@
+# Reach Services on the Routing Peer
+
+Most routing-peer guides cover reaching resources **behind** the peer. This one covers the opposite case: reaching a service that runs **on the routing peer itself**, at the peer's **own LAN IP** — the shape you get when the only machine running the agent *is* the service host. The classic example is a **file server** that runs NetBird and serves SMB/DFS shares to remote users.
+
+## The scenario
+
+The agent is installed only on the file server, so the file server *is* the routing peer. Remote users resolve the file server's name (and any DFS paths) to its **LAN IP** — but that address belongs to the routing peer itself, so traffic to it must be **delivered locally on the peer, not forwarded** to a network behind it. The symptom: DNS resolves, yet SMB connections and pings to the file server fail.
+
+```
+Remote user ──tunnel──► File server = routing peer  (its own SMB/DFS share at its LAN IP)
+ (NetBird)                         └──► Domain Controller (clientless, on the same LAN)
+```
+
+## The recipe
+
+A routing peer normally forwards your traffic *onward*, to other machines on its network. Here the machine you want to reach **is** the routing peer, addressed by its own LAN IP — so you have to do three things, and all three are required together:
+
+1. **Give clients a route to that address.** Create a resource that covers the file server's LAN IP. A `/32` of the IP works, but a **domain resource set to the file server's DNS name** is cleaner: the peer looks up its own name, finds its LAN IP, and installs the route for you — nothing hardcoded to maintain if the IP ever changes.
+2. **Allow traffic *to* the peer, not just *through* it.** Add a peer-to-peer policy from your users' group to the routing peer's group, on the service port (for SMB that's **TCP 445**). NetBird treats "reach a machine behind the peer" and "reach the peer itself" as two separate permissions — this grants the second one. See [Reaching the routing peer itself](/manage/networks/how-routing-peers-work#reaching-the-routing-peer-itself).
+3. **Let the agent deliver to its own local services.** By default the agent only forwards traffic onward; it won't hand traffic to a service running on its *own* address. Turn that on with **`NB_ENABLE_LOCAL_FORWARDING`** on the file server:
+
+   ```powershell
+   netbird service reconfigure --service-env NB_ENABLE_LOCAL_FORWARDING=true
+   ```
+
+   You need this on any peer that routes traffic in software ("userspace") — that's **always Windows and macOS**, and **Linux only when running in netstack mode**. A normal Linux install routes in the kernel and doesn't need it. The flag is off by default everywhere; see [Client Environment Variables](/client/environment-variables).
+
+With all three in place, a mapped drive to the file server's share works unchanged — reached at its LAN IP, over the tunnel.
+
+## Domain-joined clients (Active Directory)
+
+If your remote users are **domain-joined** and these are AD or DFS shares, reaching the file server is only part of the job. Those users also need their **domain controller** reachable over NetBird — for Kerberos, DFS referrals, and DNS — plus corp DNS configured on the client. That's a complete journey of its own:
+
+→ **[Active Directory & Windows File Shares](/manage/networks/use-cases/active-directory)** covers the full recipe: routing the domain controller, the nameserver group, how DFS resolves, verification, and the Windows-specific gotchas.
+
+## Verify
+
+- Test reachability with `Test-NetConnection <host> -Port <port>` (or `nc -z`), **not** `ping`. ICMP needs its own peer-to-peer policy; a service working while `ping` fails is the signature of a missing ICMP policy, not a broken route.
+- The service should now answer at the routing peer's **LAN IP over the tunnel** — for a file server, a mapped drive opens unchanged.
+
+## Fallback: resolve the name to the NetBird IP
+
+If you can't set `NB_ENABLE_LOCAL_FORWARDING` on the file server, there's an alternative that needs no resource, route, or forwarding flag: make each client resolve the file server's name to its **NetBird overlay IP** (its `100.x` address) instead of its LAN IP — with a `hosts` file entry or a Windows NRPT rule (a per-name DNS override). The client then connects to it directly over the NetBird overlay. Logins still work, because Kerberos is tied to the server's *name*, not its IP address.
+
+Treat this as a **last resort, not the main path**: it has to be set up on every client, whereas the recipe above is configured once in NetBird and is invisible to clients.
