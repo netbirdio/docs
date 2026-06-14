@@ -39,7 +39,7 @@ Either way, leave masquerade on (the default). The agentless DC and file servers
 - **If the file server is the routing peer**, clients address it at its own LAN IP (the *self-access* case), which needs a route, a peer-to-peer policy, and local forwarding. Follow [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer), using **TCP 445** for SMB.
 - **If a separate box is the routing peer**, each file server is an ordinary host behind it: add it as a resource (a `/32`, or a domain resource set to its FQDN) and a policy from your remote-users group to it on **TCP 445**.
 
-If your DFS folders are spread across several file servers, route each one. Find the targets from any domain-joined machine:
+If your DFS folders are spread across several file servers, route each one. Find the targets from a machine with the DFS Management tools (RSAT) installed:
 
 ```powershell
 Get-DfsnFolderTarget '\\corp.example.com\dfs\share'
@@ -86,12 +86,33 @@ A domain resource does not remove this need: the routing peer answers name-to-IP
 
 ## Verify
 
-- Test reachability with `Test-NetConnection <fileserver> -Port 445` (or `nc -z`), **not** `ping`. ICMP needs its own peer-to-peer policy, so ping can fail while SMB is perfectly healthy.
-- As the **logged-in domain user**, open a drive with `net use G: \\corp.example.com\dfs\share`. It should map unchanged, authenticated with Kerberos.
-- **Map by name, not by IP.** Addressing a share as `\\<ip>\share` forces NTLM and can fail with *"the specified domain is not available"*; the by-name path uses Kerberos, which is what the DC enables. Always use the FQDN.
+Run these checks while signed in as the everyday domain user who will actually use the share. That user already holds a Kerberos login ticket from signing in, which is what makes the share connect cleanly.
+
+**1. Check the file server answers on the file-sharing port.** File sharing (SMB) uses TCP port 445, so test that exact port:
+
+```powershell
+Test-NetConnection <fileserver> -Port 445
+```
+
+On Linux or macOS, use `nc -z <fileserver> 445` instead.
+
+Do not use `ping` for this check. `ping` uses a different protocol (ICMP) that needs its own separate NetBird policy, so `ping` can fail even when file sharing works perfectly. A successful port 445 test is the reliable signal.
+
+**2. Map a drive by name.** Run:
+
+```
+net use G: \\corp.example.com\dfs\share
+```
+
+It should connect exactly as it does in the office. Always use the server's **name** (the full `corp.example.com` address), never its IP. Windows logs you in by name using Kerberos — the ticket-based sign-in your domain controller provides. If you connect by IP (`\\<ip>\share`), Windows falls back to the older NTLM method, which usually fails here with *"the specified domain is not available."*
 
 <Note>
-Two Windows behaviors look like NetBird faults but aren't: testing a DFS path with explicit credentials (`net use ... /user:CORP\you`) can throw **System error 1312**, and mapping by IP can throw **1311**. Both are AD credential/Kerberos quirks, not routing problems, so test as the already-logged-in user, by name.
+Two errors here look like a NetBird routing problem but are actually Windows quirks:
+
+- Mapping a share **by IP address** can fail with **System error 1311**.
+- Connecting **with a typed-in username** (`net use ... /user:CORP\you`) can fail with **System error 1312**.
+
+Both come from how Windows handles Kerberos logins, not from routing. Avoid them by testing the normal way: signed in as the domain user, connecting by name.
 </Note>
 
 ## Related
