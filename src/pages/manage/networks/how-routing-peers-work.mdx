@@ -68,15 +68,15 @@ echo "net.ipv4.ip_forward=1" | sudo tee /etc/sysctl.d/99-netbird.conf
 echo "net.ipv6.conf.all.forwarding=1" | sudo tee -a /etc/sysctl.d/99-netbird.conf
 ```
 
-No extra setup is needed to forward traffic to the networks *behind* the peer. Reaching a service bound to the **routing peer's own address** — its LAN IP or loopback, not the network behind it — is different: on any peer that forwards in **userspace** (Windows and macOS always; Linux in netstack mode) it requires `NB_ENABLE_LOCAL_FORWARDING`. Linux kernel-mode peers deliver to their own address without it. The flag is off by default on every platform (see [Client Environment Variables](/client/environment-variables)):
+With forwarding in place, no further setup is needed to reach the networks *behind* the peer. Reaching a service bound to the routing peer's own address — its LAN IP or loopback, not the network behind it — is different. On any peer that forwards in userspace (Windows and macOS always; Linux in netstack mode), it requires `NB_ENABLE_LOCAL_FORWARDING`; Linux kernel-mode peers deliver to their own address without it. The flag is off by default on every platform (see [Client Environment Variables](/client/environment-variables)):
 
 ```powershell
 netbird service reconfigure --service-env NB_ENABLE_LOCAL_FORWARDING=true
 ```
 
-The toggle alone is not enough. To reach the peer at its **own LAN IP**, clients also need a **route** to that address (a resource that covers the peer's own IP) **and** a **peer-to-peer policy** (input chain). All three are required together — see [Reaching the routing peer itself](#reaching-the-routing-peer-itself). This is the common shape when the **service host *is* the routing peer**: a file server that runs the agent, whose clients resolve its name to its LAN IP.
+The toggle alone is not enough. To reach the peer at its own LAN IP, clients also need a **route** to that address (a resource covering the peer's own IP) and a **peer-to-peer policy** (input chain). All three are required together — see [Reaching the routing peer itself](#reaching-the-routing-peer-itself). This is the common shape when the service host *is* the routing peer: a file server that runs the agent, whose clients resolve its name to its LAN IP.
 
-Leave it off otherwise — with it on, any permitted peer can reach services bound to the routing peer's own addresses, including `127.0.0.1`, at the peer's NetBird IP, exposing localhost-only services unintentionally.
+Leave it off otherwise. With it on, any permitted peer can reach services bound to the routing peer's own addresses — including `127.0.0.1` — at the peer's NetBird IP, unintentionally exposing localhost-only services.
 
 ### Container capabilities
 
@@ -182,7 +182,7 @@ Clients running `0.59.0` and `0.59.1` may fail to resolve domain resources serve
 
 ### Routing Peer DNS Resolution
 
-Wildcard domain resources rely on Routing Peer DNS Resolution, which is enabled by default. With it on, DNS resolution happens on the routing peer rather than on the client — the client forwards its name-to-IP lookups (`A`/`AAAA`) for a domain resource to the routing peer's resolver and needs no nameserver of its own for that name. With it off, each client resolves the domain itself using its own DNS, so the client must already be able to resolve the name (via a [nameserver](/manage/dns/internal-dns-servers) or its network adapter's DNS). Either way, this covers name-to-IP lookups only; Active Directory clients still need a nameserver for the `SRV` records Windows uses to find a domain controller (Kerberos and DFS depend on them).
+Wildcard domain resources rely on Routing Peer DNS Resolution, which is enabled by default. With it on, DNS resolution happens on the routing peer rather than on the client: the client forwards its name-to-IP lookups (`A`/`AAAA`) for a domain resource to the routing peer's resolver, and needs no nameserver of its own for that name. With it off, each client resolves the domain itself using its own DNS, so it must already be able to resolve the name — via a [nameserver](/manage/dns/internal-dns-servers) or its network adapter's DNS. Either way, this covers name-to-IP lookups only; Active Directory clients also need a nameserver for the `SRV` records Windows uses to find a domain controller — see [Reaching a Domain Controller through a routing peer](/manage/dns/internal-dns-servers#reaching-a-domain-controller-through-a-routing-peer).
 
 ### Pitfall: domains and IP ranges in the same network
 
