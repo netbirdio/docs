@@ -29,15 +29,12 @@ The domain controller is in almost every step: DNS (steps 1 and 3), the referral
 
 You rarely install an agent on every server. Pick one of two shapes:
 
-- **The file server is the routing peer.** The agent runs on the file server itself; the DC stays agentless behind it. Natural when one file server holds the shares.
 - **A dedicated routing peer at the site.** A separate machine runs the agent and routes to the DC and file servers across the LAN. Natural when shares are spread across several servers.
-
-Either way, leave masquerade on (the default). The agentless DC and file servers can only reply to a remote user's overlay address because the routing peer rewrites the source. See [Masquerade](/manage/networks/how-routing-peers-work#masquerade).
-
+- **The file server is the routing peer.** The agent runs on the file server itself; the DC stays agentless behind it. Natural when one file server holds the shares.
 ## Step 2: Make the file server(s) reachable
 
-- **If the file server is the routing peer**, clients address it at its own LAN IP (the *self-access* case), which needs a route, a peer-to-peer policy, and local forwarding. Follow [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer), using **TCP 445** for SMB.
 - **If a separate box is the routing peer**, each file server is an ordinary host behind it: add it as a resource (a `/32`, or a domain resource set to its FQDN) and a policy from your remote-users group to it on **TCP 445**.
+- **If the file server is the routing peer**, clients address it at its own LAN IP (the *self-access* case), which needs a route, a peer-to-peer policy, and local forwarding. Follow [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer), using **TCP 445** for SMB.
 
 If your DFS folders are spread across several file servers, route each one. Find the targets from a machine with the DFS Management tools (RSAT) installed:
 
@@ -45,17 +42,25 @@ If your DFS folders are spread across several file servers, route each one. Find
 Get-DfsnFolderTarget '\\corp.example.com\dfs\share'
 ```
 
+Each result's `TargetPath` (for example `\\fileserver1.corp.example.com\share`) names a file server — add the server portion, `fileserver1.corp.example.com`, as a domain resource.
+
 ## Step 3: Route the domain controller
 
-The DC is almost always agentless and reached *through* the routing peer. Add it as a resource (a `/32`, or the AD domain) and a TCP policy and a UDP policy from your remote-users group to it:
+The DC is almost always agentless and reached *through* the routing peer. Add it as a resource (a `/32`, or the AD domain), then create a TCP policy and a UDP policy from your remote-users group to it covering these baseline ports:
 
-- TCP `53, 88, 135, 389, 445`
-- UDP `53, 88, 389`
+| Port | Protocol | Needed for |
+|---|---|---|
+| 53 | TCP/UDP | DNS — locating the DC and resolving AD `SRV` records |
+| 88 | TCP/UDP | Kerberos — domain logon |
+| 123 | UDP | Time sync (`w32time`) — clock skew beyond ~5 minutes breaks Kerberos, so this matters more than it looks |
+| 135 | TCP | RPC endpoint mapper — netlogon secure-channel setup |
+| 389 | TCP/UDP | LDAP / CLDAP — directory queries and DC location |
+| 445 | TCP | SMB — SYSVOL (Group Policy), file shares, and DFS |
+| 464 | TCP/UDP | Password changes and resets (kpasswd) — without it, a remote user whose password expires can't set a new one and is locked out |
 
-Routing the DC through a single routing peer works: domain logon, Kerberos, and DFS all function over it. Two cautions:
+Put every TCP-marked port in the TCP policy and every UDP-marked port in the UDP policy — NetBird renders one rule per policy, so the two protocols can't share one (`53`, `88`, `389`, and `464` go in both).
 
-- **While the routing peer is routing the DC, manage it over RDP or its console, not over a freshly opened SSH session.** Forwarded traffic and existing connections keep working. Only a *new* inbound SSH login to the peer can hang, because that login authenticates against the very DC the peer is routing.
-- **Don't make one peer the *only* path to the DC** if you can avoid it. It works, but for resilience add a second routing peer for high availability.
+Routing the DC through a single routing peer works: domain logon, Kerberos, and DFS all function over it. One caution: don't make a single peer the *only* path to the DC if you can avoid it. It works, but for resilience add a second routing peer for high availability.
 
 <Note>
 Running the agent *on* a DC is a different pattern with its own caveats. See [Domain Controllers as Routing Peers](/manage/dns/internal-dns-servers#domain-controllers-as-routing-peers) and the [WireGuard port conflict](/manage/dns/internal-dns-servers#wire-guard-port-conflict-on-domain-controllers) note.
@@ -63,25 +68,23 @@ Running the agent *on* a DC is a different pattern with its own caveats. See [Do
 
 ### Beyond the basics: extra DC ports
 
-The ports above cover the everyday AD experience: logon, Kerberos, DNS, SMB/DFS, and Group Policy. Some environments need more. Add these to the DC policies as your deployment requires (keeping one protocol per policy, so each new TCP port joins the TCP policy and each new UDP port the UDP policy):
+The ports above cover the everyday AD experience: logon, Kerberos, DNS, time sync, password changes, SMB/DFS, and Group Policy. Some environments need more. Add these to the DC policies as your deployment requires (keeping one protocol per policy, so each new TCP port joins the TCP policy and each new UDP port the UDP policy):
 
 | Port | Protocol | Needed for |
 |---|---|---|
-| 123 | UDP | **Time sync** (`w32time`). Clock skew beyond ~5 minutes breaks Kerberos, so this matters more than it looks. |
-| 464 | TCP/UDP | **Password changes and resets** (kpasswd). |
 | 3268 / 3269 | TCP | **Global Catalog** (LDAP / LDAPS). Used by UPN-style logons (`user@domain`) and many directory-aware apps. |
 | 636 | TCP | **LDAPS**, for apps that bind to AD over TLS. |
 | 9389 | TCP | **AD Web Services**, the transport for the RSAT Active Directory PowerShell module (`Get-ADUser`, and similar). |
 | dynamic RPC | TCP | **Replication, some MMC consoles, and deep secure-channel checks.** Port 135 (the RPC endpoint mapper) is already in the baseline, but the high port range it hands out is not. Open it only if you manage AD this way. |
 
-Without a given port, only that one feature is affected; the baseline file-share and logon experience still works. Group Policy works on the baseline ports, but `gpupdate` can be slow over the tunnel, so don't be alarmed by a long first run.
+Each of these is independent — add only what you need; leaving one out affects only that feature.
 
 ## Step 4: Give clients corp DNS
 
-A domain-joined client has to resolve many `corp.example.com` names: the file server, the DFS root, and the `SRV` records Windows uses to locate a DC. Add a **nameserver group** that points `corp.example.com` at the DC, and distribute it to your remote-users group. See [Internal DNS Servers](/manage/dns/internal-dns-servers).
+A domain-joined client has to resolve many `corp.example.com` names: the file server, the DFS root, and the `SRV` records Windows uses to locate a DC. Add a **nameserver** with `corp.example.com` as its **match domain**, pointing at the DC's IP address, and distribute it to your remote-users group. See [Internal DNS Servers](/manage/dns/internal-dns-servers).
 
 <Note>
-A domain resource does not remove this need: the routing peer answers name-to-IP lookups but not the `SRV` / DC-locator records login and DFS require, so an AD client always needs the nameserver group (and it only works once the DC is reachable, Step 3). See [Reaching a Domain Controller through a routing peer](/manage/dns/internal-dns-servers#reaching-a-domain-controller-through-a-routing-peer).
+A domain resource does not remove this need: the routing peer answers name-to-IP lookups but not the `SRV` / DC-locator records login and DFS require, so an AD client always needs this nameserver (and it only works once the DC is reachable, Step 3). See [Reaching a Domain Controller through a routing peer](/manage/dns/internal-dns-servers#reaching-a-domain-controller-through-a-routing-peer).
 </Note>
 
 ## Verify
@@ -96,7 +99,7 @@ Test-NetConnection <fileserver> -Port 445
 
 On Linux or macOS, use `nc -z <fileserver> 445` instead.
 
-Do not use `ping` for this check. `ping` uses a different protocol (ICMP) that needs its own separate NetBird policy, so `ping` can fail even when file sharing works perfectly. A successful port 445 test is the reliable signal.
+Do not use `ping` for this check. Because the policies above allow specific ports rather than all traffic, ICMP isn't included — so `ping` can fail even when file sharing works perfectly. A successful port 445 test is the reliable signal.
 
 **2. Map a drive by name.** Run:
 
@@ -119,4 +122,4 @@ Both come from how Windows handles Kerberos logins, not from routing. Avoid them
 
 - [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer) — the self-access setup, for when the file server *is* the routing peer.
 - [How Routing Peers Work](/manage/networks/how-routing-peers-work) — forwarding, the two policy chains, and masquerade.
-- [Internal DNS Servers](/manage/dns/internal-dns-servers) — nameserver groups, Routing Peer DNS Resolution, and domain controllers.
+- [Internal DNS Servers](/manage/dns/internal-dns-servers) — nameservers, Routing Peer DNS Resolution, and domain controllers.
