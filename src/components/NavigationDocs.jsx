@@ -216,6 +216,14 @@ export const docsNavigation = [
                 title: 'Site-to-Site',
                 href: '/manage/networks/use-cases/site-to-site',
               },
+              {
+                title: 'Reach Services on the Routing Peer',
+                href: '/manage/networks/use-cases/reach-services-on-the-routing-peer',
+              },
+              {
+                title: 'Active Directory & Windows File Shares',
+                href: '/manage/networks/use-cases/active-directory',
+              },
             ],
           },
         ],
