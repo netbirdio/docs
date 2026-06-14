@@ -32,7 +32,8 @@ if needed.
 
 ## Manage Profiles in the GUI
 
-* **Add** a new profile with a friendly name input.
+* **Add** a new profile with a friendly name input. Names need not be unique — each
+  profile is tracked by its own generated ID.
 * **Delete** any inactive profile (trash icon).
 * **Active and default** profiles cannot be removed.
 
@@ -50,7 +51,21 @@ Think of it as a separate "NetBird account" on your machine:
 - **Custom profiles**  
   Any number of additional profiles you add yourself (e.g. `work`, `home`, `test`).
 
-Profiles live in your system or user config folders:
+### Names and IDs
+
+Each profile has two parts:
+
+- A **name**: the free-form, human-readable label you choose (e.g. `work`). Names are
+  for display only and **do not have to be unique**: you can have two profiles both named
+  `work`.
+- An **ID**: a unique identifier generated automatically when the profile is created. The
+  ID is also the profile's on-disk filename (`<id>.json`). The CLI shows a short, 8-character
+  form of the ID, which is enough to identify and select a profile.
+
+The `default` profile is special: its ID is always `default`. You can rename its display label,
+but it keeps that reserved ID and cannot be removed.
+
+Profiles live in your system or user config folders, stored as `<id>.json`:
 
 | OS     | Config path                  | 
 | ------ | --------------------------------- |
@@ -116,8 +131,14 @@ When profiles are disabled:
 With the CLI, you can manage profiles easily. The main command is:
 
 ```bash
-netbird profile <add|list|select|remove> [name]
+netbird profile <add|list|select|rename|remove> [name|handle]
 ````
+
+<Note>
+    `select`, `rename`, and `remove` accept a profile **handle**: an exact ID, a unique ID
+    prefix, or a unique name. `add` takes a free-form name. See [Names and IDs](#names-and-ids)
+    for the distinction between a profile's name and its ID.
+</Note>
 
 ### Add a New Profile
 
@@ -133,11 +154,56 @@ For example, the command below creates a new profile named `work`:
 netbird profile add work
 ```
 
+On success it prints the new profile's short ID alongside the name:
+
+```text
+Profile added: a1b2c3d4  work
+```
+
 This command does the following in the background:
 
-* Creates a `work.json` file in your config folder.
+* Generates a unique ID and creates an `<id>.json` file in your config folder.
 * Keeps the client disconnected until you run `netbird up` or `netbird login`.
-* Will throw an error if the profile with the same name already exists.
+
+Profile names do not have to be unique. If another profile already uses the same name, the
+new profile is still created (with its own ID) and a warning is printed:
+
+```text
+Warning: 1 other profile(s) already use the name "work".
+Use `netbird profile list --show-id` to disambiguate later.
+Profile added: e5f6a7b8  work
+```
+
+### Rename a Profile
+
+You can change a profile's display name at any time without affecting its ID, config, or login
+state. The profile's `<id>.json` file stays the same, only the name stored inside it changes.
+
+```bash
+netbird profile rename <HANDLE> <NEW_PROFILE_NAME>
+```
+
+The handle can be the profile's current name, its full ID, or a unique ID prefix. For example,
+to rename the `work` profile to `office`:
+
+```bash
+netbird profile rename work office
+```
+
+On success:
+
+```text
+Profile renamed from work to office
+```
+
+A few things to note:
+
+* The new name is free-form and **does not have to be unique**. If another profile already uses
+  it, the rename still succeeds and a warning is printed (same as `add`).
+* The **default profile can be renamed**. Its label changes everywhere it's shown, but it keeps
+  its reserved `default` ID and still cannot be removed.
+* If the handle is ambiguous or matches no profile, you'll get the same errors as `select` and
+  `remove` (see below), pointing you at `--show-id`.
 
 ### List Profiles
 
@@ -150,40 +216,65 @@ netbird profile list
 For example, running this command might output:
 
 ```text
-Found 3 profiles:
-✓ work
-✗ default
-✗ home
+NAME     ACTIVE
+work     ✓
+default
+home
 ```
 
-* **✓** = active
-* **✗** = inactive
+A **✓** in the `ACTIVE` column marks the active profile; inactive profiles are left blank.
+
+To also show each profile's short ID, add the `--show-id` flag:
+
+```bash
+netbird profile list --show-id
+```
+
+```text
+ID        NAME     ACTIVE
+a1b2c3d4  work     ✓
+default   default
+e5f6a7b8  home
+```
+
+This is useful when several profiles share the same name — the ID column lets you tell them
+apart and select or remove the right one by its ID prefix.
 
 ### Select (Switch) a Profile
 
 To switch to a specific profile, use:
 
 ```bash
-netbird profile select <PROFILE_NAME>
+netbird profile select <handle>
 ```
 
-For example, to switch to the `home` profile:
+The handle can be the profile's name, its full ID, or a unique ID prefix:
 
 ```bash
-netbird profile select home
+netbird profile select home       # by name
+netbird profile select e5f6a7b8   # by ID prefix
 ```
 
-The successful command will output:
+The successful command will output the short ID of the now-active profile:
 
 ```text
-Profile switched successfully to: home
+Profile switched to: e5f6a7b8
 ```
 
-If `home` hasn't been used before, you will need to run `netbird up` or `netbird login` to authenticate.
-If the profile does not exist, you'll see an error message:
+If the profile hasn't been used before, you will need to run `netbird up` or `netbird login` to authenticate.
+If the handle matches no profile, you'll see:
 
 ```text
-Error: profile home does not exist
+Error: profile "home" not found
+```
+
+If the handle is ambiguous (for example, a name shared by multiple profiles), the command
+lists the candidates and tells you how to disambiguate:
+
+```text
+Error: name "work" is ambiguous (2 profiles share this name)
+Run `netbird profile list --show-id` to see IDs, then select by ID prefix:
+  netbird profile select|remove <id-prefix>
 ```
 
 ### Remove a Profile
@@ -191,36 +282,46 @@ Error: profile home does not exist
 To remove a profile, use:
 
 ```bash
-netbird profile remove <PROFILE_NAME>
+netbird profile remove <handle>
 ```
 
-For example, to remove the `home` profile:
+Like `select`, the handle can be a name, a full ID, or a unique ID prefix:
 
 ```bash
 netbird profile remove home
 ```
 
-If successful, you'll see:
+If successful, the full ID of the removed profile is printed so you can confirm exactly which
+profile a name or prefix resolved to:
 
 ```text
-Profile removed successfully: home
+Profile removed: e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0
 ```
 
-You can't remove an active profile. If the profile your are trying to remove is active, you'll see an error:
+You can't remove an active profile. If the profile you are trying to remove is active, you'll see an error:
 
 ```text
-Cannot remove active profile: home
+Cannot remove active profile: e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0
 ```
 
-If the profile does not exist, you'll see an error message:
+The **default profile cannot be removed** either (though it can be renamed):
 
 ```text
-Error: profile home does not exist
+cannot remove default profile with name: default
 ```
+
+If the handle matches no profile, you'll see:
+
+```text
+Error: profile "home" not found
+```
+
+Ambiguous handles are handled the same way as for `select`, the command lists the candidates
+and points you at `--show-id`.
 
 The command does the following in the background:
 
-* Removes `home.json` and `home.state.json` files from your config folder.
+* Removes the profile's `<id>.json` and `<id>.state.json` files from your config folder.
 
 ---
 
@@ -234,5 +335,6 @@ netbird up --profile work
 netbird login --profile home
 ```
 
-NetBird switches to the named profile then runs the command under the hood. If the profile is new and hasn't been used yet,
-you'll be prompted to authenticate.
+The value is resolved as a handle (name, full ID, or unique ID prefix), the same way as
+`profile select`. NetBird switches to the resolved profile then runs the command under the
+hood. If the profile is new and hasn't been used yet, you'll be prompted to authenticate.
