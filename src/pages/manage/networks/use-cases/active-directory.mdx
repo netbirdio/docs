@@ -2,12 +2,12 @@ import { Note } from '@/components/mdx'
 
 # Active Directory & Windows File Shares
 
-Remote, domain-joined users expect their mapped drives, DFS (Distributed File System) paths, and domain login to *just work* — even when the domain controllers and file servers sit on a private LAN with nothing exposed publicly. This guide is the end-to-end journey for that over NetBird. It builds on two underlying pieces, [How Routing Peers Work](/manage/networks/how-routing-peers-work) and [Internal DNS Servers](/manage/dns/internal-dns-servers), and ties them into one recipe.
+Remote, domain-joined users expect their mapped drives, DFS (Distributed File System) paths, and domain login to *just work*, even when the domain controllers and file servers sit on a private LAN with nothing exposed publicly. This guide is the end-to-end journey for that over NetBird. It builds on two underlying pieces, [How Routing Peers Work](/manage/networks/how-routing-peers-work) and [Internal DNS Servers](/manage/dns/internal-dns-servers), and ties them into one recipe.
 
 The core idea: a domain-joined client's everyday actions quietly depend on **two kinds of server**, and both must be reachable over NetBird:
 
-- the **domain controller (DC)** — for DNS, Kerberos authentication, and DFS namespace referrals;
-- the **file server(s)** — the machines that actually hold the shares.
+- the **domain controller (DC)**, for DNS, Kerberos authentication, and DFS namespace referrals;
+- the **file server(s)**, the machines that actually hold the shares.
 
 ```
 Remote user ──tunnel──► routing peer ──LAN──► Domain Controller   (DNS, Kerberos, DFS referral)
@@ -19,24 +19,24 @@ Remote user ──tunnel──► routing peer ──LAN──► Domain Control
 When a user opens a DFS path such as `\\corp.example.com\dfs\share`, Windows:
 
 1. resolves `corp.example.com` and finds a **domain controller** (ordinary DNS, plus special `SRV` records);
-2. asks the DC which file server actually holds that folder — the DFS **referral**;
+2. asks the DC which file server actually holds that folder (the DFS **referral**);
 3. resolves that **file server's** name;
 4. connects to the file server over SMB, authenticated by **Kerberos** (tickets from the DC).
 
-The domain controller is in almost every step — DNS (steps 1 and 3), the referral (step 2), and Kerberos (step 4) — while the file server itself only enters at step 4. Miss either machine, or the DNS that ties them together, and the drive fails, often with an error that points nowhere near the real cause. The steps below make all of it reachable.
+The domain controller is in almost every step: DNS (steps 1 and 3), the referral (step 2), and Kerberos (step 4). The file server itself only enters at step 4. Miss either machine, or the DNS that ties them together, and the drive fails, often with an error that points nowhere near the real cause. The steps below make all of it reachable.
 
-## Step 1 — Decide where the agent runs
+## Step 1: Decide where the agent runs
 
 You rarely install an agent on every server. Pick one of two shapes:
 
 - **The file server is the routing peer.** The agent runs on the file server itself; the DC stays agentless behind it. Natural when one file server holds the shares.
 - **A dedicated routing peer at the site.** A separate machine runs the agent and routes to the DC and file servers across the LAN. Natural when shares are spread across several servers.
 
-Either way, **leave masquerade on** (the default) — the agentless DC and file servers can only reply to a remote user's overlay address because the routing peer rewrites the source. See [Masquerade](/manage/networks/how-routing-peers-work#masquerade).
+Either way, leave masquerade on (the default). The agentless DC and file servers can only reply to a remote user's overlay address because the routing peer rewrites the source. See [Masquerade](/manage/networks/how-routing-peers-work#masquerade).
 
-## Step 2 — Make the file server(s) reachable
+## Step 2: Make the file server(s) reachable
 
-- **If the file server is the routing peer**, clients address it at its **own LAN IP** — the *self-access* case, which needs a route **and** a peer-to-peer policy **and** local forwarding. Follow [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer), using **TCP 445** for SMB.
+- **If the file server is the routing peer**, clients address it at its own LAN IP (the *self-access* case), which needs a route, a peer-to-peer policy, and local forwarding. Follow [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer), using **TCP 445** for SMB.
 - **If a separate box is the routing peer**, each file server is an ordinary host behind it: add it as a resource (a `/32`, or a domain resource set to its FQDN) and a policy from your remote-users group to it on **TCP 445**.
 
 If your DFS folders are spread across several file servers, route each one. Find the targets from any domain-joined machine:
@@ -45,53 +45,53 @@ If your DFS folders are spread across several file servers, route each one. Find
 Get-DfsnFolderTarget '\\corp.example.com\dfs\share'
 ```
 
-## Step 3 — Route the domain controller
+## Step 3: Route the domain controller
 
-The DC is almost always agentless and reached *through* the routing peer. Add it as a resource (a `/32`, or the AD domain) and a policy from your remote-users group to it. **Split the ports into two policies, one TCP and one UDP**, because NetBird currently applies only the first rule in a resource's policy, so combining both protocols silently drops one:
+The DC is almost always agentless and reached *through* the routing peer. Add it as a resource (a `/32`, or the AD domain) and a TCP policy and a UDP policy from your remote-users group to it:
 
 - TCP `53, 88, 135, 389, 445`
 - UDP `53, 88, 389`
 
 Routing the DC through a single routing peer works: domain logon, Kerberos, and DFS all function over it. Two cautions:
 
-- **Manage that routing peer over RDP or the console (not a fresh inbound SSH session) while the DC is routed through it.** The data path keeps working; only new inbound SSH to that domain-joined box can stall.
-- **Don't make one peer the *only* path to the DC** if you can avoid it. It works, but for resilience give the DC its own connectivity or a second (HA) routing peer.
+- **While the routing peer is routing the DC, manage it over RDP or its console, not over a freshly opened SSH session.** Forwarded traffic and existing connections keep working. Only a *new* inbound SSH login to the peer can hang, because that login authenticates against the very DC the peer is routing.
+- **Don't make one peer the *only* path to the DC** if you can avoid it. It works, but for resilience add a second routing peer for high availability.
 
 <Note>
-Running the agent *on* a DC is a different pattern with its own caveats — see [Domain Controllers as Routing Peers](/manage/dns/internal-dns-servers#domain-controllers-as-routing-peers) and the [WireGuard port conflict](/manage/dns/internal-dns-servers#wire-guard-port-conflict-on-domain-controllers) note.
+Running the agent *on* a DC is a different pattern with its own caveats. See [Domain Controllers as Routing Peers](/manage/dns/internal-dns-servers#domain-controllers-as-routing-peers) and the [WireGuard port conflict](/manage/dns/internal-dns-servers#wire-guard-port-conflict-on-domain-controllers) note.
 </Note>
 
 ### Beyond the basics: extra DC ports
 
-The ports above cover the everyday AD experience — logon, Kerberos, DNS, SMB/DFS, and Group Policy. Some environments need more. Add these to the DC policies as your deployment requires (keeping one protocol per policy — each new TCP port joins the TCP policy, each new UDP port the UDP policy):
+The ports above cover the everyday AD experience: logon, Kerberos, DNS, SMB/DFS, and Group Policy. Some environments need more. Add these to the DC policies as your deployment requires (keeping one protocol per policy, so each new TCP port joins the TCP policy and each new UDP port the UDP policy):
 
 | Port | Protocol | Needed for |
 |---|---|---|
 | 123 | UDP | **Time sync** (`w32time`). Clock skew beyond ~5 minutes breaks Kerberos, so this matters more than it looks. |
 | 464 | TCP/UDP | **Password changes and resets** (kpasswd). |
-| 3268 / 3269 | TCP | **Global Catalog** (LDAP / LDAPS) — used by UPN-style logons (`user@domain`) and many directory-aware apps. |
-| 636 | TCP | **LDAPS** — apps that bind to AD over TLS. |
-| 9389 | TCP | **AD Web Services** — the transport for the RSAT Active Directory PowerShell module (`Get-ADUser`, and similar). |
-| dynamic RPC | TCP | **Replication, some MMC consoles, and deep secure-channel checks.** Port 135 (the RPC endpoint mapper) is already in the baseline, but the high port range it hands out is not — open it only if you manage AD this way. |
+| 3268 / 3269 | TCP | **Global Catalog** (LDAP / LDAPS). Used by UPN-style logons (`user@domain`) and many directory-aware apps. |
+| 636 | TCP | **LDAPS**, for apps that bind to AD over TLS. |
+| 9389 | TCP | **AD Web Services**, the transport for the RSAT Active Directory PowerShell module (`Get-ADUser`, and similar). |
+| dynamic RPC | TCP | **Replication, some MMC consoles, and deep secure-channel checks.** Port 135 (the RPC endpoint mapper) is already in the baseline, but the high port range it hands out is not. Open it only if you manage AD this way. |
 
-Without a given port, only that one feature is affected; the baseline file-share and logon experience still works. Group Policy works on the baseline ports, but `gpupdate` can be slow over the tunnel — don't be alarmed by a long first run.
+Without a given port, only that one feature is affected; the baseline file-share and logon experience still works. Group Policy works on the baseline ports, but `gpupdate` can be slow over the tunnel, so don't be alarmed by a long first run.
 
-## Step 4 — Give clients corp DNS
+## Step 4: Give clients corp DNS
 
-A domain-joined client has to resolve many `corp.example.com` names — the file server, the DFS root, and the `SRV` records Windows uses to locate a DC. Add a **nameserver group** that points `corp.example.com` at the DC, and distribute it to your remote-users group. See [Internal DNS Servers](/manage/dns/internal-dns-servers).
+A domain-joined client has to resolve many `corp.example.com` names: the file server, the DFS root, and the `SRV` records Windows uses to locate a DC. Add a **nameserver group** that points `corp.example.com` at the DC, and distribute it to your remote-users group. See [Internal DNS Servers](/manage/dns/internal-dns-servers).
 
 <Note>
-You might expect a **domain resource** to remove the need for a nameserver — and for a single plain host it can. With [Routing Peer DNS Resolution](/manage/networks/how-routing-peers-work#routing-peer-dns-resolution) on (the default), the routing peer answers the client's name-to-IP (`A`/`AAAA`) lookups. But Active Directory needs more than that: the `SRV` / DC-locator records for login and DFS, which the routing peer does **not** answer. So an AD client always needs the nameserver group — and it only works once the DC itself is reachable (Step 3).
+A domain resource does not remove this need: the routing peer answers name-to-IP lookups but not the `SRV` / DC-locator records login and DFS require, so an AD client always needs the nameserver group (and it only works once the DC is reachable, Step 3). See [Reaching a Domain Controller through a routing peer](/manage/dns/internal-dns-servers#reaching-a-domain-controller-through-a-routing-peer).
 </Note>
 
 ## Verify
 
 - Test reachability with `Test-NetConnection <fileserver> -Port 445` (or `nc -z`), **not** `ping`. ICMP needs its own peer-to-peer policy, so ping can fail while SMB is perfectly healthy.
-- As the **logged-in domain user**, open a drive — `net use G: \\corp.example.com\dfs\share`. It should map unchanged, authenticated with Kerberos.
+- As the **logged-in domain user**, open a drive with `net use G: \\corp.example.com\dfs\share`. It should map unchanged, authenticated with Kerberos.
 - **Map by name, not by IP.** Addressing a share as `\\<ip>\share` forces NTLM and can fail with *"the specified domain is not available"*; the by-name path uses Kerberos, which is what the DC enables. Always use the FQDN.
 
 <Note>
-Two Windows behaviors look like NetBird faults but aren't: testing a DFS path with explicit credentials (`net use ... /user:CORP\you`) can throw **System error 1312**, and mapping by IP can throw **1311**. Both are AD credential/Kerberos quirks, not routing problems — test as the already-logged-in user, by name.
+Two Windows behaviors look like NetBird faults but aren't: testing a DFS path with explicit credentials (`net use ... /user:CORP\you`) can throw **System error 1312**, and mapping by IP can throw **1311**. Both are AD credential/Kerberos quirks, not routing problems, so test as the already-logged-in user, by name.
 </Note>
 
 ## Related
