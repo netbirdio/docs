@@ -45,7 +45,7 @@ The walkthrough below describes the **Linux kernel-mode** path, where forwarding
 1. The originating peer encrypts the packet to the routing peer's WireGuard public key. The packet enters the tunnel at the source and exits on the routing peer's NetBird interface.
 2. The routing peer's kernel forwards the packet according to the host routing table. If the destination is on a directly attached network or reachable via the host's gateway, the packet is forwarded.
 3. Forwarded packets traverse the host firewall's **forward chain**. NetBird applies the policies attached to the route or network resource here. Policies that target the routing peer itself live in the **input chain** and are evaluated separately.
-4. If masquerade is enabled (the default), the routing peer SNATs the source IP to its own LAN-side address before the packet leaves. With masquerade disabled, the original NetBird overlay IP is preserved and the destination network must route return traffic back through the routing peer.
+4. If masquerade is enabled (the default), the routing peer SNATs the source IP to its own LAN-side address before the packet leaves. With masquerade disabled, the original NetBird IP is preserved and the destination network must route return traffic back through the routing peer.
 5. Replies follow the reverse path. The stateful firewall on the routing peer tracks established connections so return traffic does not need an explicit policy.
 
 ## Requirements
@@ -68,15 +68,25 @@ echo "net.ipv4.ip_forward=1" | sudo tee /etc/sysctl.d/99-netbird.conf
 echo "net.ipv6.conf.all.forwarding=1" | sudo tee -a /etc/sysctl.d/99-netbird.conf
 ```
 
-With forwarding in place, no further setup is needed to reach the networks *behind* the peer. Reaching a service bound to the routing peer's own address — its LAN IP, not the network behind it — is different. On any peer that forwards in userspace (Windows and macOS always; Linux in netstack mode), it requires `NB_ENABLE_LOCAL_FORWARDING`; Linux kernel-mode peers deliver to their own address without it. The flag is off by default on every platform (see [Client Environment Variables](/client/environment-variables)):
+Forwarding to machines *behind* the routing peer (routed subnets) never needs this flag. It matters only for reaching a service on the routing peer's **own address** — the self-access case — and only when the peer forwards in software (the userspace router):
+
+| Routing peer | Data path | Reaching a service on the peer's own address |
+|---|---|---|
+| Windows, macOS | userspace router (always) | needs `NB_ENABLE_LOCAL_FORWARDING` |
+| Linux, netstack mode (`NB_USE_NETSTACK_MODE`) | userspace router | needs `NB_ENABLE_LOCAL_FORWARDING` † |
+| Linux, native backend (nftables/iptables) | kernel forwarding | not needed |
+
+*† In netstack mode, `NB_ENABLE_NETSTACK_LOCAL_FORWARDING` is a netstack-specific override; it takes precedence if both are set.*
+
+The flag is off by default on every platform (see [Client Environment Variables](/client/environment-variables)):
 
 ```powershell
 netbird service reconfigure --service-env NB_ENABLE_LOCAL_FORWARDING=true
 ```
 
-The toggle alone is not enough. To reach the peer at its own LAN IP, clients also need a **route** to that address (a resource covering the peer's own IP) and a **peer-to-peer policy** (input chain). All three are required together — see [Reaching the routing peer itself](#reaching-the-routing-peer-itself). This is the common shape when the service host *is* the routing peer: a file server that runs the agent, whose clients resolve its name to its LAN IP.
+The toggle alone is not enough. To reach the peer at its own LAN IP, clients also need a **route** to that address (a resource covering the peer's LAN IP) and a **peer-to-peer policy** (input chain). All three are required together — see [Reaching the routing peer itself](#reaching-the-routing-peer-itself). This is the common shape when the service host *is* the routing peer: a file server that runs the NetBird client, whose clients resolve its name to its LAN IP.
 
-Leave it off otherwise. With it on, any permitted peer can reach services bound to the routing peer's own addresses, not just the networks behind it — so don't enable it on a peer running local-only services you don't want exposed.
+Leave it off otherwise. With it on, any permitted peer can reach services bound to the routing peer's LAN addresses, not just the networks behind it — so don't enable it on a peer running local-only services you don't want exposed.
 
 ### Container capabilities
 
@@ -113,7 +123,7 @@ Masquerade is on by default. The routing peer SNATs forwarded traffic to its own
 Turn masquerade off when:
 
 - You need source IP visibility for auditing, compliance, or application logic.
-- You want the destination network's existing firewalls to filter NetBird peers by their overlay IP.
+- You want the destination network's existing firewalls to filter peers by their NetBird IP.
 
 With masquerade off, you must add a return route on the destination network pointing the NetBird CIDR (default `100.64.0.0/10`) at the routing peer.
 
@@ -139,16 +149,12 @@ If users need to reach both the resources behind a routing peer **and** services
 
 ### Reaching the routing peer itself
 
-There are two ways to address the routing peer, and they need different things:
+Every peer has two addresses — its **NetBird IP** (its `100.x` overlay address, the one in `netbird status`) and its **LAN IP** (its address on the local network). Reaching the routing peer at each needs different things:
 
-- **At its NetBird (overlay) IP** — a single peer-to-peer policy (input chain) is enough. Every client already has an overlay route to every peer.
-- **At its own LAN IP** — when DNS (or a DFS path) resolves the service to that address, the client has **no route** to that IP until you add a **resource** that covers it. So you need *both* a resource (the route) *and* a peer-to-peer policy (the input-chain accept) — **and, on userspace peers, [`NB_ENABLE_LOCAL_FORWARDING`](#ip-forwarding)**.
+- **At its NetBird IP** — a single peer-to-peer policy (input chain) is enough. Every client already has an overlay route to every peer.
+- **At its LAN IP** — when DNS (or a DFS path) resolves the service to that address, the client has **no route** to that IP until you add a **resource** that covers it. So you need *both* a resource (the route) *and* a peer-to-peer policy (the input-chain accept) — **and, on userspace peers, [`NB_ENABLE_LOCAL_FORWARDING`](#ip-forwarding)**.
 
-A resource that covers the peer's own IP can be a `/32` of that IP, a subnet that contains it, or a **domain resource equal to the peer's own FQDN** (the peer resolves its own name to its LAN IP and the route is installed for you — the cleanest option, no hardcoded address).
-
-<Note>
-Test this path with `Test-NetConnection <host> -Port <port>` (or `nc`), not `ping`. ICMP needs its **own** peer-to-peer policy; a service working while `ping` fails is the signature of a missing ICMP policy, not a broken route.
-</Note>
+For the full setup — the file-server scenario, the commands, the Active Directory tie-in, and a fallback for when you can't set the flag — see [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer).
 
 ### Directionality is forced for routed traffic
 

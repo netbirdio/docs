@@ -4,6 +4,8 @@ Most routing-peer guides cover reaching resources behind the peer. This one cove
 
 ## The scenario
 
+Every peer has two addresses: its **NetBird IP** (its `100.x` overlay address, the one in `netbird status`) and its **LAN IP** (its address on the local network). This case is about reaching a service at the peer's **LAN IP** — the address its name resolves to on the corporate network.
+
 The NetBird client is installed only on the file server, so the file server *is* the routing peer. Remote users resolve the file server's name (and any DFS paths) to its LAN IP — but that address belongs to the routing peer itself, so traffic to it must be *delivered locally on the peer, not forwarded* to a network behind it. The symptom: DNS resolves, yet SMB connections and pings to the file server fail.
 
 ```
@@ -17,7 +19,7 @@ The target *is* the routing peer, addressed by its own LAN IP. All three of thes
 
 1. **A route to the address** — a resource covering the file server's LAN IP: a `/32`, or a domain resource set to its DNS name (the peer resolves its own name and keeps the route current if the IP changes).
 2. **A peer-to-peer policy** from your users' group to the routing peer (or routing peer group), on the service port (SMB = **TCP 445**). Reaching the peer *itself* is a separate permission from reaching machines *behind* it — this grants it.
-3. **`NB_ENABLE_LOCAL_FORWARDING` on the peer** — lets the NetBird client deliver to a service on its own address, not just forward onward:
+3. **`NB_ENABLE_LOCAL_FORWARDING` on the peer** — lets the NetBird client deliver to a service on its own LAN IP, not just forward onward:
 
    ```powershell
    netbird service reconfigure --service-env NB_ENABLE_LOCAL_FORWARDING=true
@@ -36,6 +38,6 @@ With all three in place, a mapped drive to the share works unchanged — reached
 
 ## Fallback: resolve the name to the NetBird IP
 
-If you can't set `NB_ENABLE_LOCAL_FORWARDING` on the file server, there's an alternative that needs no resource, route, or forwarding flag: make each client resolve the file server's name to its NetBird overlay IP (its `100.x` address) instead of its LAN IP — with a `hosts` file entry or a Windows NRPT rule (a per-name DNS override). The client then connects to it directly over the NetBird overlay. Logins still work, because Kerberos is tied to the server's *name*, not its IP address.
+If you can't set `NB_ENABLE_LOCAL_FORWARDING` on the file server, there's an alternative that needs no resource, route, or forwarding flag: make each client resolve the file server's name to its NetBird IP (its `100.x` address) instead of its LAN IP — with a `hosts` file entry or a Windows NRPT rule (a per-name DNS override). The client then connects to it directly over the NetBird overlay. Logins still work, because Kerberos is tied to the server's *name*, not its IP address.
 
 Treat this as a *last resort, not the main path*: it has to be set up on every client, whereas the setup above is configured once in NetBird and is invisible to clients.
