@@ -2,7 +2,11 @@ import { Note } from '@/components/mdx'
 
 # Active Directory & Windows File Shares
 
-Remote, domain-joined users expect their mapped drives, DFS (Distributed File System) paths, and domain login to *just work*, even when the domain controllers and file servers sit on a private LAN with nothing exposed publicly. This guide is the end-to-end journey for that over NetBird. It builds on two underlying pieces, [How Routing Peers Work](/manage/networks/how-routing-peers-work) and [Internal DNS Servers](/manage/dns/internal-dns-servers), and ties them into one recipe.
+Remote, domain-joined users expect their mapped drives, DFS (Distributed File System) paths, and domain login to *just work*, even when the domain controllers and file servers sit on a private LAN with nothing exposed publicly. This guide is the end-to-end journey for that over NetBird. It builds on two underlying pieces, [How Routing Peers Work](/manage/networks/how-routing-peers-work) and [Internal DNS Servers](/manage/dns/internal-dns-servers), and ties them together into a single setup.
+
+<Note>
+**TL;DR** — AD over NetBird comes down to [four settings](#the-four-settings): a routing peer, the file server(s) reachable, the domain controller reachable, and a DNS nameserver pointing at the DC.
+</Note>
 
 The core idea: a domain-joined client's everyday actions quietly depend on **two kinds of server**, and both must be reachable over NetBird:
 
@@ -33,8 +37,10 @@ You rarely install an agent on every server. Pick one of two shapes:
 - **The file server is the routing peer.** The agent runs on the file server itself; the DC stays agentless behind it. Natural when one file server holds the shares.
 ## Step 2: Make the file server(s) reachable
 
-- **If a separate box is the routing peer**, each file server is an ordinary host behind it: add it as a resource (a `/32`, or a domain resource set to its FQDN) and a policy from your remote-users group to it on **TCP 445**.
-- **If the file server is the routing peer**, clients address it at its own LAN IP (the *self-access* case), which needs a route, a peer-to-peer policy, and local forwarding. Follow [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer), using **TCP 445** for SMB.
+- **If a separate machine is the routing peer**, each file server is an ordinary host behind it. You will need:
+  - a Network resource — a `/32`, or a domain resource set to its FQDN (e.g. `fileserver1.corp.example.com`)
+  - an access control policy from your remote-users group to it on **TCP 445** (or whatever the service requires)
+- **If the file server is the routing peer**, clients address it at its own LAN IP (the *self-access* case) — follow [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer).
 
 If your DFS folders are spread across several file servers, route each one. Find the targets from a machine with the DFS Management tools (RSAT) installed:
 
@@ -42,11 +48,26 @@ If your DFS folders are spread across several file servers, route each one. Find
 Get-DfsnFolderTarget '\\corp.example.com\dfs\share'
 ```
 
-Each result's `TargetPath` (for example `\\fileserver1.corp.example.com\share`) names a file server — add the server portion, `fileserver1.corp.example.com`, as a domain resource.
+Each result's `TargetPath` (for example `\\fileserver1.corp.example.com\share`) names a file server — add the server portion, `fileserver1.corp.example.com`, as a domain resource in your NetBird network.
 
 ## Step 3: Route the domain controller
 
-The DC is almost always agentless and reached *through* the routing peer. Add it as a resource (a `/32`, or the AD domain), then create a TCP policy and a UDP policy from your remote-users group to it covering these baseline ports:
+The DC is almost always agentless and reached *through* the routing peer. Add it as a resource in the NetBird Network:
+
+- a `/32` of the DC's IP, or
+- a domain resource for `corp.example.com`, whose A record points at the DCs (this routes them by name, and the routing peer must be able to resolve the domain).
+
+Keep it granular — least privilege is the NetBird default, so route only what you need. A single `*.corp.example.com` wildcard is the shortcut: it covers the DC, file servers, and DFS targets in one resource. But a wildcard is one resource with **one policy scope** — the ports you open apply to *every* host under the domain, so you can't give the DC the full AD port set while limiting file servers to `445`. Use separate resources when you want that per-host scoping.
+
+Routing the DC through a single routing peer works: domain logon, Kerberos, and DFS all function over it. One caution: don't make a single peer the *only* path to the DC if you can avoid it. It works, but for resilience add a second routing peer for high availability.
+
+<Note>
+Running the agent *on* a DC is a different pattern with its own caveats. See [Domain Controllers as Routing Peers](/manage/dns/internal-dns-servers#domain-controllers-as-routing-peers) and the [WireGuard port conflict](/manage/dns/internal-dns-servers#wire-guard-port-conflict-on-domain-controllers) note.
+</Note>
+
+## Step 4: Allow the AD ports
+
+Create a TCP policy and a UDP policy from your remote-users group to the DC, covering these baseline ports:
 
 | Port | Protocol | Needed for |
 |---|---|---|
@@ -59,12 +80,6 @@ The DC is almost always agentless and reached *through* the routing peer. Add it
 | 464 | TCP/UDP | Password changes and resets (kpasswd) — without it, a remote user whose password expires can't set a new one and is locked out |
 
 Put every TCP-marked port in the TCP policy and every UDP-marked port in the UDP policy — NetBird renders one rule per policy, so the two protocols can't share one (`53`, `88`, `389`, and `464` go in both).
-
-Routing the DC through a single routing peer works: domain logon, Kerberos, and DFS all function over it. One caution: don't make a single peer the *only* path to the DC if you can avoid it. It works, but for resilience add a second routing peer for high availability.
-
-<Note>
-Running the agent *on* a DC is a different pattern with its own caveats. See [Domain Controllers as Routing Peers](/manage/dns/internal-dns-servers#domain-controllers-as-routing-peers) and the [WireGuard port conflict](/manage/dns/internal-dns-servers#wire-guard-port-conflict-on-domain-controllers) note.
-</Note>
 
 ### Beyond the basics: extra DC ports
 
@@ -79,9 +94,9 @@ The ports above cover the everyday AD experience: logon, Kerberos, DNS, time syn
 
 Each of these is independent — add only what you need; leaving one out affects only that feature.
 
-## Step 4: Give clients corp DNS
+## Step 5: Give clients corp DNS
 
-A domain-joined client has to resolve many `corp.example.com` names: the file server, the DFS root, and the `SRV` records Windows uses to locate a DC. Add a **nameserver** with `corp.example.com` as its **match domain**, pointing at the DC's IP address, and distribute it to your remote-users group. See [Internal DNS Servers](/manage/dns/internal-dns-servers).
+A domain-joined client has to resolve many `corp.example.com` names: the file server, the DFS root, and the `SRV` records Windows uses to locate a DC. Add a **DNS nameserver** with `corp.example.com` as its **match domain**, pointing at the DC's IP address, and distribute it to your remote-users group. See [Internal DNS Servers](/manage/dns/internal-dns-servers).
 
 <Note>
 A domain resource does not remove this need: the routing peer answers name-to-IP lookups but not the `SRV` / DC-locator records login and DFS require, so an AD client always needs this nameserver (and it only works once the DC is reachable, Step 3).
@@ -117,6 +132,15 @@ Two errors here look like a NetBird routing problem but are actually Windows qui
 
 Both come from how Windows handles Kerberos logins, not from routing. Avoid them by testing the normal way: signed in as the domain user, connecting by name.
 </Note>
+
+## The four settings
+
+AD over NetBird comes down to four things — set each one and domain login, shares, and DFS all work:
+
+- **Routing peer** — a peer at the site that routes to the DC and file servers: a dedicated machine, or the file server itself. *(Step 1)*
+- **File server(s) reachable** — a resource (`/32` or FQDN) and a policy on **TCP 445** for each share host. *(Step 2)*
+- **Domain controller reachable** — a resource (`/32` or `corp.example.com`) plus TCP and UDP policies on the AD ports (`53, 88, 135, 389, 445, 464`). *(Steps 3–4)*
+- **DNS nameserver** — match domain `corp.example.com` pointing at the DC's IP, distributed to your remote-users group. *(Step 5)*
 
 ## Related
 
