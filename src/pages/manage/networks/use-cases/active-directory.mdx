@@ -27,7 +27,7 @@ When a user opens a DFS path such as `\\corp.example.com\dfs\share`, Windows:
 3. resolves that **file server's** name;
 4. connects to the file server over SMB, authenticated by **Kerberos** (tickets from the DC).
 
-The domain controller is in almost every step: DNS (steps 1 and 3), the referral (step 2), and Kerberos (step 4). The file server itself only enters at step 4. Miss either machine, or the DNS that ties them together, and the drive fails, often with an error that points nowhere near the real cause. The steps below make all of it reachable.
+The domain controller is in almost every step: DNS (steps 1 and 3), the referral (step 2), and Kerberos (step 4). The file server itself only enters at step 4. If any one of these is unreachable — the DC, the file server, or the DNS linking them — the drive fails, often with an error that points nowhere near the real cause. The steps below make all of it reachable.
 
 ## Step 1: Decide where the NetBird client runs
 
@@ -35,6 +35,8 @@ You rarely install the NetBird client on every server. Pick one of two shapes:
 
 - **A dedicated routing peer at the site.** A separate machine runs the NetBird client and routes to the DC and file servers across the LAN. Natural when shares are spread across several servers.
 - **The file server is the routing peer.** The NetBird client runs on the file server itself; the DC stays clientless behind it. Natural when one file server holds the shares.
+
+Most setups use a dedicated routing peer, and the rest of this guide assumes that. If the file server itself runs the client, only Step 2 changes — reach it via [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer) instead — while Steps 3–5 (routing the DC, its ports, and DNS) apply either way.
 
 ## Step 2: Make the file server(s) reachable
 
@@ -84,7 +86,12 @@ Create a TCP policy and a UDP policy from your remote-users group to the DC, cov
 | 445 | TCP | SMB — SYSVOL (Group Policy), file shares, and DFS |
 | 464 | TCP/UDP | Password changes and resets (kpasswd) — without it, a remote user whose password expires can't set a new one and is locked out |
 
-Put every TCP-marked port in the TCP policy and every UDP-marked port in the UDP policy — NetBird renders one rule per policy, so the two protocols can't share one (`53`, `88`, `389`, and `464` go in both).
+NetBird renders one rule per access control policy, so a single policy can't mix protocols. Build **two** policies and sort each port into one or both:
+
+- **TCP policy** — `53`, `88`, `135`, `389`, `445`, `464`
+- **UDP policy** — `53`, `88`, `123`, `389`, `464`
+
+The ports that are both TCP and UDP (`53`, `88`, `389`, `464`) go in **both** policies.
 
 ### Beyond the basics: extra DC ports
 
@@ -92,7 +99,7 @@ The ports above cover the everyday AD experience: logon, Kerberos, DNS, time syn
 
 | Port | Protocol | Needed for |
 |---|---|---|
-| 3268 / 3269 | TCP | **Global Catalog** (LDAP / LDAPS). Used by UPN-style logons (`user@domain`) and many directory-aware apps. |
+| 3268 / 3269 | TCP | **Global Catalog** (LDAP / LDAPS). In multi-domain forests, used by UPN-style logons (`user@domain`) and many directory-aware apps. |
 | 636 | TCP | **LDAPS**, for apps that bind to AD over TLS. |
 | 9389 | TCP | **AD Web Services**, the transport for the RSAT Active Directory PowerShell module (`Get-ADUser`, and similar). |
 | dynamic RPC | TCP | **Replication, some MMC consoles, and deep secure-channel checks.** Port 135 (the RPC endpoint mapper) is already in the baseline, but the high port range it hands out is not. Open it only if you manage AD this way. |
@@ -144,7 +151,7 @@ AD over NetBird comes down to four things — set each one and domain login, sha
 
 - **Routing peer** — a peer at the site that routes to the DC and file servers: a dedicated machine, or the file server itself. *(Step 1)*
 - **File server(s) reachable** — a resource (`/32` or FQDN) and a policy on **TCP 445** for each share host. *(Step 2)*
-- **Domain controller reachable** — a resource (`/32` or `corp.example.com`) plus TCP and UDP policies on the AD ports (`53, 88, 135, 389, 445, 464`). *(Steps 3–4)*
+- **Domain controller reachable** — a resource (`/32` or `corp.example.com`) plus TCP and UDP policies on the AD ports (`53, 88, 123, 135, 389, 445, 464`). *(Steps 3–4)*
 - **DNS nameserver** — match domain `corp.example.com` pointing at the DC's IP, distributed to your remote-users group. *(Step 5)*
 
 ## Related
