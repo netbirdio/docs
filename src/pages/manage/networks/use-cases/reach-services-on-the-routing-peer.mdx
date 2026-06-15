@@ -15,19 +15,21 @@ Remote user ──tunnel──► File server = routing peer  (its own SMB/DFS s
 
 ## The setup
 
-The target *is* the routing peer, addressed by its own LAN IP. All three of these are required, together:
+The target *is* the routing peer, addressed by its own LAN IP. Set up the following together:
 
 1. **A route to the address** — a resource covering the file server's LAN IP: a `/32`, or a domain resource set to its DNS name (the peer resolves its own name and keeps the route current if the IP changes).
 2. **A peer-to-peer policy** from your users' group to the routing peer (or routing peer group), on the service port (SMB = **TCP 445**). Reaching the peer *itself* is a separate permission from reaching machines *behind* it — this grants it.
-3. **`NB_ENABLE_LOCAL_FORWARDING` on the peer** — lets the NetBird client deliver to a service on its own LAN IP, not just forward onward:
+3. **On a Windows or macOS routing peer, set the `NB_ENABLE_LOCAL_FORWARDING` [environment variable](/client/environment-variables)** — it lets the NetBird client deliver to a service on its own LAN IP, not just forward onward:
 
    ```powershell
    netbird service reconfigure --service-env NB_ENABLE_LOCAL_FORWARDING=true
    ```
 
-   Needed on Windows and macOS peers; Linux routes in the kernel by default and doesn't need it (only in netstack mode).
+   A Linux peer doesn't need this with its default kernel forwarding — only in netstack mode.
 
-With all three in place, a mapped drive to the share works unchanged — reached at its LAN IP over the tunnel.
+Steps 1 and 3 exist only because clients reach the file server at its **LAN IP**. Reaching a peer at its **NetBird IP** needs only the policy in step 2 — every client already has a route to it, with no resource to add and no forwarding flag.
+
+With these in place, a mapped drive to the share works unchanged — reached at its LAN IP over the tunnel.
 
 **Domain-joined clients (AD/DFS)** need one more thing — a NetBird **DNS nameserver** for your AD domain. Add one with the match domain `corp.example.com` pointing at the DC's IP address (e.g. `10.0.0.10`), so clients resolve corp DNS and can log in. The DC must also be reachable over NetBird. See **[Active Directory & Windows File Shares](/manage/networks/use-cases/active-directory)** for the full setup.
 
