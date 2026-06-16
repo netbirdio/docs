@@ -542,6 +542,10 @@ export const docsNavigation = [
             href: '/selfhosted/maintenance/configuration-files',
           },
           {
+            title: 'Environment Variables',
+            href: '/selfhosted/environment-variables',
+          },
+          {
             title: 'Scaling Your Deployment',
             href: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
             isOpen: false,
@@ -994,7 +998,11 @@ function NavigationGroup({ group, className, hasChildren }) {
           }
           setIsOpen(!isOpen)
           if (!isOpen) {
-            if (!isActiveGroup && !isInsideMobileNavigation && group.links[0]?.href)
+            if (
+              !isActiveGroup &&
+              !isInsideMobileNavigation &&
+              group.links[0]?.href
+            )
               router.push(group.links[0].href)
             setActiveHighlight()
           } else {
