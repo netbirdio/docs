@@ -191,3 +191,45 @@ If `setupRequired: false`, the owner account already exists.
 ### `docker login ghcr.io` fails
 
 Verify the GHCR token has `read:packages` scope and that the username matches the one issued alongside the license keys.
+
+## Appendix: Using a custom TLS certificate
+
+By default the generated `Caddyfile` uses Caddy's automatic TLS via Let's Encrypt. Operators using an internal PKI, a corporate CA, or a pre-issued wildcard certificate can swap to their own cert with three manual edits after the script runs. Caddy stays in front of the stack either way — all reverse-proxy routes (signal, management, OAuth2, relay, dashboard) flow through it.
+
+1. **Place the cert and key on the host.** PEM-encoded, full chain in the cert file:
+   ```bash
+   sudo mkdir -p /etc/netbird/certs
+   sudo cp /path/to/fullchain.pem /etc/netbird/certs/cert.pem
+   sudo cp /path/to/privkey.pem   /etc/netbird/certs/key.pem
+   sudo chmod 600 /etc/netbird/certs/key.pem
+   ```
+
+2. **Edit `Caddyfile`** and add a `tls` directive inside the `:443` block:
+   ```
+   {$CADDY_SECURE_DOMAIN}:443 {
+       tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
+       import security_headers
+       # … existing reverse_proxy lines unchanged …
+   }
+   ```
+
+3. **Edit `docker-compose.yml`** and add a read-only volume mount on the `caddy` service:
+   ```yaml
+   caddy:
+     volumes:
+       - netbird_caddy_data:/data
+       - ./Caddyfile:/etc/caddy/Caddyfile
+       - /etc/netbird/certs:/etc/caddy/certs:ro
+   ```
+
+4. **Apply the change:**
+   ```bash
+   docker compose up -d caddy
+   ```
+
+Notes:
+
+- The certificate must cover `NETBIRD_DOMAIN` from `.env`. A wildcard like `*.example.com` works for `netbird.example.com`.
+- If the cert is signed by a private CA, every peer and CLI client must trust the issuing CA — install the CA bundle in their trust stores.
+- Renewals are the operator's responsibility. Replace the files at the same paths and run `docker compose restart caddy`. Caddy will pick up the new cert without a full restart of the rest of the stack.
+- Port 80 in the generated `Caddyfile` only does an HTTP→HTTPS redirect; it is not used for ACME challenges in this mode. You can drop the `:80` mapping from the `caddy` service if HTTP isn't needed.
