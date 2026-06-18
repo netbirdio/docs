@@ -1,0 +1,193 @@
+export const description = 'Deploy a self-hosted NetBird stack with the built-in embedded identity provider using the getting-started.sh script — no external OIDC provider required.'
+
+# Getting Started with NetBird Enterprise Commercial License
+
+`getting-started.sh` deploys a self-hosted NetBird stack with the built-in **embedded identity provider**. No external OIDC provider is required — the owner account is created directly from the dashboard on first login. You may connect an external identity provider after the stack is up and running.
+
+The script asks two upfront questions:
+
+- **Topology** — `Combined server` (default; single binary that bundles management + signal + relay) or `Separate containers` (one container each for management, signal, relay).
+- **Traffic flow** — `no` by default. When `yes`, the stack adds NATS, a flow receiver, and a flow enricher; when `no`, those containers and NATS are omitted entirely.
+
+License keys are collected based on those choices — the script never asks for keys you don't need.
+
+## Prerequisites
+
+- License keys and GHCR credentials are issued by NetBird with your [Commercial License](https://netbird.io/pricing#on-prem) — contact your account team if you don't have them yet.
+- Docker and Docker Compose installed
+- `bash`, `curl`, `jq`, and `openssl` available
+- A real DNS-resolvable FQDN with an A record pointing at the host (bare IP addresses are rejected)
+- **TCP/80, TCP/443, and UDP/3478** reachable from peers
+- GHCR username + token (provided alongside license keys)
+- License keys for the chosen topology + feature set:
+    - **Combined server**: one `combined-server` license. + `enricher` + `receiver` if traffic flow is enabled.
+    - **Separate containers**: `management` + `signal`. + `enricher` + `receiver` if traffic flow is enabled.
+
+## Run
+
+The script writes all generated files into the current working directory. Create a dedicated directory and run the script from inside it:
+
+```bash
+mkdir -p netbird && cd netbird
+bash getting-started.sh
+```
+
+The script will prompt for topology, traffic flow, domain, the relevant license keys, and GHCR credentials. Postgres password, datastore encryption key, and relay auth secret are generated automatically.
+
+## Files generated
+
+Common to both topologies:
+
+| File | Purpose | Mode |
+| --- | --- | --- |
+| `.env` | Single source of truth for configuration and secrets, loaded by Compose at runtime | `600` |
+| `docker-compose.yml` | Service definitions; references `${VAR}` from `.env` | `644` |
+| `Caddyfile` | Reverse proxy with auto-HTTPS for `NETBIRD_DOMAIN` | `644` |
+
+Plus exactly one of:
+
+| File | Topology | Purpose | Mode |
+| --- | --- | --- | --- |
+| `config.yaml` | Combined server | Combined-server cloud config (YAML) | `600` |
+| `management.json` | Separate containers | Management + embedded IdP configuration (JSON) | `600` |
+
+<Note>
+Combined server does not need a hand-rendered `management.json`. The combined-server binary writes a synthetic one to its data dir at startup, just enough to satisfy the integrations module that still reads relay config from disk.
+</Note>
+
+## Stack components
+
+Always present: `caddy`, `dashboard`, `postgres`.
+
+| Service | Image | Notes |
+| --- | --- | --- |
+| `caddy` | `caddy:2` | TLS termination, reverse proxy, HTTP/3 on UDP/443 |
+| `dashboard` | `ghcr.io/netbirdio/dashboard-cloud:latest` | UI |
+| `postgres` | `postgres:17` | Datastore for management, embedded IdP, traffic events |
+
+Combined server topology adds:
+
+| Service | Image | Notes |
+| --- | --- | --- |
+| `netbird-server` | `ghcr.io/netbirdio/netbird-server-cloud:latest` | Management + signal + relay + embedded STUN on UDP/3478 |
+
+Separate containers topology adds:
+
+| Service | Image | Notes |
+| --- | --- | --- |
+| `management` | `ghcr.io/netbirdio/management-cloud:latest` | API + embedded IdP |
+| `signal` | `ghcr.io/netbirdio/signal-cloud:latest` | Peer signaling. Runs with `SINGLE_NODE_MODE=true` so it doesn't require NATS |
+| `relay` | `netbirdio/relay:latest` | Relay + embedded STUN on UDP/3478 |
+| `redis` | `redis:8` | IdP cache |
+
+Traffic flow on (either topology) adds:
+
+| Service | Image | Notes |
+| --- | --- | --- |
+| `nats` | `nats:2` | JetStream for traffic events |
+| `enricher` | `ghcr.io/netbirdio/flow-enricher-cloud:latest` | Traffic flow enrichment |
+| `receiver` | `ghcr.io/netbirdio/flow-receiver-cloud:latest` | Traffic flow ingest |
+
+## First login
+
+Open `https://<your-domain>` in a browser. The dashboard detects that setup is required and walks through the first-login flow to create the owner account. No static credentials are printed or stored anywhere.
+
+## Re-running the script
+
+The script aborts on the second run if any of the rendered files already exist, to avoid silently overwriting secrets. To start over:
+
+```bash
+docker compose down --volumes   # removes containers and the postgres/embedded-IdP data
+rm -f .env docker-compose.yml Caddyfile management.json config.yaml
+```
+
+Then re-run the script. Note this rotates the postgres password, datastore encryption key, and relay secret — the previous postgres volume cannot be reused because the new password and encryption key will not match the data on disk.
+
+## Pinning image versions
+
+Image tags default to `latest` in the generated `.env`. To pin to a specific release after the initial bootstrap, edit `.env`. Only the tag vars for services you actually run are present in the file:
+
+```bash
+NETBIRD_DASHBOARD_TAG=0.x.y
+NETBIRD_SERVER_TAG=0.x.y           # combined topology
+# or:
+NETBIRD_MANAGEMENT_TAG=0.x.y       # separate topology
+NETBIRD_SIGNAL_TAG=0.x.y           # separate topology
+NETBIRD_RELAY_TAG=0.x.y            # separate topology
+# and when traffic flow is on:
+NETBIRD_ENRICHER_TAG=0.x.y
+NETBIRD_RECEIVER_TAG=0.x.y
+```
+
+Then `docker compose pull && docker compose up -d`.
+
+## Connect Identity Providers
+
+We recommend using SCIM provisioning where possible. In the following setup guides, you may **skip JWT group settings** and use our group syncing integration instead.
+
+### Entra ID
+
+1. [Enable Entra SSO](/selfhosted/identity-providers/managed/microsoft-entra-id)
+2. [Sync Users and Groups via SCIM](/manage/team/idp-sync/embedded/microsoft-entra-id-scim-sync) (Recommended)
+3. [Sync Users and Groups via API](/manage/team/idp-sync/embedded/microsoft-entra-id-sync)
+
+### Google Workspace
+
+1. [Enable Google SSO](/selfhosted/identity-providers/managed/google-workspace)
+2. [Sync Users and Groups](/manage/team/idp-sync/embedded/google-workspace-sync)
+
+### JumpCloud
+
+1. [Enable JumpCloud SSO](/selfhosted/identity-providers/managed/jumpcloud)
+2. [Sync Users and Groups](/manage/team/idp-sync/embedded/jumpcloud-sync)
+
+### Keycloak
+
+1. [Enable Keycloak SSO](/selfhosted/identity-providers/keycloak)
+2. [Sync Users and Groups](/manage/team/idp-sync/embedded/keycloak-sync)
+
+### Duo
+
+- [Enable Duo SSO](/selfhosted/identity-providers/managed/duo)
+
+### Okta
+
+- [Enable Okta SSO](/selfhosted/identity-providers/managed/okta)
+
+### Auth0
+
+- [Enable Auth0 SSO](/selfhosted/identity-providers/managed/auth0)
+
+## Troubleshooting
+
+### `decode encryption key: illegal base64 data` panic
+
+The encryption key in `.env` (`NETBIRD_ENCRYPTION_KEY`) must be padded base64. The script generates a padded key by default. If the key was edited or set externally, ensure it ends with `=` and decodes to 32 bytes:
+
+```bash
+echo -n "$NETBIRD_ENCRYPTION_KEY" | base64 -d | wc -c   # expect 32
+```
+
+### Caddy cannot issue a TLS certificate
+
+Caddy needs the FQDN to resolve to the host and TCP/80 + TCP/443 to be reachable from Let's Encrypt's validation servers. Confirm with:
+
+```bash
+docker compose logs caddy
+```
+
+A common cause is a DNS A record that has not yet propagated, or a firewall blocking inbound TCP/80 or TCP/443. Caddy tries HTTP-01 (port 80) first and falls back to TLS-ALPN-01 (port 443); at least one must be reachable from the public internet for cert issuance to succeed.
+
+### Setup page not shown on first login
+
+Verify the instance still requires setup:
+
+```bash
+curl -s https://<your-domain>/api/instance | jq .
+```
+
+If `setupRequired: false`, the owner account already exists.
+
+### `docker login ghcr.io` fails
+
+Verify the GHCR token has `read:packages` scope and that the username matches the one issued alongside the license keys.
