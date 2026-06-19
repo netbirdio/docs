@@ -139,8 +139,21 @@ emit_int() {
     log "invalid integer for $key: $value (must be decimal); skipping"
     return
   fi
+  if [[ "$key" == "wireguardPort" ]] && (( value < 1 || value > 65535 )); then
+    log "invalid integer for $key: $value (must be 1-65535); skipping"
+    return
+  fi
   printf '    <key>%s</key>\n    <integer>%s</integer>\n' "$key" "$value" >> "$PLIST_PATH.tmp"
   log "set $key = $value"
+}
+
+# emit_split_tunnel_mode validates that VALUE is "allow" or "disallow" and, if valid, appends a plist string entry for splitTunnelMode; on invalid input it logs a skip and does not emit the key.
+emit_split_tunnel_mode() {
+  local value="$1"
+  case "$value" in
+    allow|disallow) emit_string splitTunnelMode "$value" ;;
+    *) log "invalid splitTunnelMode: $value (must be allow/disallow); skipping" ;;
+  esac
 }
 
 # main builds the NetBird MDM plist from configured policy variables, validates and installs it to /Library/Managed Preferences/io.netbird.client.plist (root:wheel, 644) and optionally triggers the NetBird daemon to reload.
@@ -163,7 +176,7 @@ main() {
   is_set "$rosenpassEnabled"          && emit_bool    rosenpassEnabled          "$rosenpassEnabled"
   is_set "$rosenpassPermissive"       && emit_bool    rosenpassPermissive       "$rosenpassPermissive"
   is_set "$wireguardPort"             && emit_int     wireguardPort             "$wireguardPort"
-  is_set "$splitTunnelMode"           && emit_string  splitTunnelMode           "$splitTunnelMode"
+  is_set "$splitTunnelMode"           && emit_split_tunnel_mode                  "$splitTunnelMode"
   is_set "$splitTunnelApps"           && emit_string  splitTunnelApps           "$splitTunnelApps"
 
   end_plist
