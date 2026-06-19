@@ -1,0 +1,387 @@
+import { Note, Warning } from "@/components/mdx";
+
+export const description =
+  "Enforce NetBird client configuration through your MDM channel (Intune, Jamf, Kandji, Mosyle, Workspace ONE, JumpCloud, Group Policy). Push management URL, kill switches, and other settings to a fleet of Windows and macOS devices.";
+
+# MDM Integration
+
+NetBird's client honors policies pushed by your Mobile Device Management
+(MDM) channel, so an administrator can enforce configuration across a
+fleet of devices instead of touching each machine. On every supported
+platform the daemon reads from the **OS-native managed-configuration
+store** that your MDM already writes to. No agent of ours sits between
+you and the MDM provider; whatever you can push to that store (manually,
+via Group Policy, via a Configuration Profile, via your MDM console)
+becomes effective NetBird policy.
+
+This page covers Windows and macOS. iOS and Android support is on the
+roadmap.
+
+## At a glance
+
+| Platform | Where NetBird reads policy | How an admin writes it |
+| --- | --- | --- |
+| Windows | `HKLM\Software\Policies\NetBird` (registry) | Group Policy (ADMX) · Intune ADMX ingestion or OMA-URI · `reg import` · MDM-vendor scripts |
+| macOS | `/Library/Managed Preferences/io.netbird.client.plist` | Configuration Profile (`.mobileconfig`) pushed by your MDM, targeting bundle id `io.netbird.client` |
+
+Both backends are the de-facto convention for desktop apps (the same
+shape Chrome, Edge, Firefox, Zoom, Tailscale, Citrix Workspace, and
+others use). Any MDM that supports the platform also supports NetBird —
+there is no NetBird-specific integration to build.
+
+## How enforcement works
+
+When NetBird starts, and every minute while it runs, the daemon:
+
+1. Reads the platform-native managed-configuration store.
+2. Merges the values **on top of every other configuration layer**
+   (defaults → on-disk profile → environment variables → CLI/UI input →
+   **MDM**). MDM always wins.
+3. Locks any field that came from the MDM source. Attempts to change
+   that field from the GUI, the CLI (`netbird up --flag=...`, `netbird
+   login --flag=...`) or via direct gRPC are rejected with a clear
+   error listing the locked fields. The client UI greys these fields
+   out and tags them with **(MDM)** so the user knows they cannot
+   change them.
+4. If the MDM payload changes (admin pushes new values), the change
+   takes effect within ~1 minute on the device — no client restart
+   needed.
+
+<Note>
+MDM is **authoritative**. When a key is present in the MDM payload, the
+MDM value wins regardless of whether it is `true` or `false`. An admin
+pushing `disableNetworks=false` via MDM re-enables the feature even on a
+host that was installed with `--disable-networks`. The MDM payload is
+the source of truth as long as the policy is in place. MDM-supplied
+values are also never written back to the on-disk profile, so removing
+the policy at the MDM side takes effect on the next reload with no
+stale residue on the device.
+</Note>
+
+## Policy keys reference
+
+The same 16 keys apply on every platform. Names are camelCase in the
+managed-configuration payload; the Windows ADMX template renders the
+PascalCase variant in the Group Policy Editor — both are recognized.
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `managementURL` | string | Override the management server URL (e.g. `https://api.netbird.io:443` or a self-hosted URL). |
+| `preSharedKey` | string | WireGuard pre-shared key. Treated as secret and redacted in logs. |
+| `wireguardPort` | integer | UDP port the local WireGuard interface binds to. Range `1–65535`. |
+| `allowServerSSH` | boolean | Allow the embedded NetBird SSH server on this peer. |
+| `disableAutoConnect` | boolean | Skip auto-connecting on startup; require an explicit `netbird up`. |
+| `rosenpassEnabled` | boolean | Turn on the post-quantum Rosenpass key exchange. |
+| `rosenpassPermissive` | boolean | Permissive mode for Rosenpass (interop with non-Rosenpass peers). |
+| `blockInbound` | boolean | Drop all inbound traffic except established/related — kill-switch style. |
+| `disableClientRoutes` | boolean | This peer does not route traffic to other peers. |
+| `disableServerRoutes` | boolean | This peer is not a router for others. |
+| `disableMetricsCollection` | boolean | Disable anonymous usage telemetry. |
+| `disableUpdateSettings` | boolean | Block every configuration change from UI or CLI on this device (read-only mode). |
+| `disableProfiles` | boolean | Hide the profile menu in the GUI and reject profile CRUD via CLI. |
+| `disableNetworks` | boolean | Hide the Networks / Exit Node menus in the GUI and reject the related RPCs. |
+| `splitTunnelMode` | string | `allow` or `disallow` — split-tunnel policy mode (Android only at the client level; harmless on desktop). |
+| `splitTunnelApps` | string | Comma-separated list of package names that the split-tunnel mode applies to (Android only). |
+
+### Notes on a few keys
+
+- `disableUpdateSettings` and `disableProfiles` overlap with the
+  service-install CLI flags `--disable-update-settings` and
+  `--disable-profiles`. Either source can disable the feature; the MDM
+  value wins when present.
+- `disableUpdateSettings` keeps the Settings view in the GUI visible
+  (so users can inspect current values) but rejects every attempt to
+  save changes. Use it for read-only fleets.
+- `splitTunnelMode` and `splitTunnelApps` are wired into Android's
+  `VpnService.Builder.addAllowedApplication()` flow; on Windows and
+  macOS the daemon parses the keys but ignores them. They are safe to
+  ship in a cross-platform payload.
+- The `disableMetricsCollection` key is reserved for an upcoming
+  metrics integration; the client recognizes it today but no metrics
+  pipeline is shipped yet.
+
+## Windows
+
+The NetBird daemon reads policies from
+`HKLM\Software\Policies\NetBird`. Anything that ends up under that
+registry key — through whichever delivery channel — becomes policy.
+The shapes are:
+
+| Value name | Registry type | Example |
+| --- | --- | --- |
+| `ManagementURL`, `PreSharedKey`, `SplitTunnelMode`, `SplitTunnelApps` | `REG_SZ` | `"https://api.netbird.io:443"` |
+| All `Disable*` flags, `AllowServerSSH`, `RosenpassEnabled`, `RosenpassPermissive` | `REG_DWORD` (0 / 1) | `0x00000001` |
+| `WireguardPort` | `REG_DWORD` | `0x0000ca6c` (51820 decimal) |
+
+Choose one of the delivery channels below. All four converge on the
+same registry key.
+
+### Group Policy (on-prem AD / local gpedit)
+
+1. Copy the ADMX/ADML files into the system Policy Definitions store:
+   - Place `netbird.admx` in `C:\Windows\PolicyDefinitions\`.
+   - Place `netbird.adml` in `C:\Windows\PolicyDefinitions\en-US\`.
+2. Open `gpedit.msc` (or the AD Group Policy Management Editor).
+3. Navigate to **Computer Configuration → Administrative Templates →
+   NetBird**.
+4. Edit any policy (e.g. **Management URL**), set it to **Enabled**
+   with the desired value, and click **OK**.
+5. Run `gpupdate /force` on each target device (or wait for the
+   periodic refresh).
+6. Verify with `reg query HKLM\Software\Policies\NetBird` — the values
+   you set should appear there.
+
+Download the templates: <a href="/docs-static/files/netbird.admx" download>netbird.admx</a> / <a href="/docs-static/files/netbird.adml" download>netbird.adml</a>.
+
+### Microsoft Intune (ADMX ingestion)
+
+Recommended for cloud-managed Windows fleets.
+
+1. In the Intune admin center, go to **Devices → Configuration → Import
+   ADMX**, upload `netbird.admx` together with `netbird.adml`. Wait for
+   the **Available** status.
+2. Create a new **Configuration Profile → Templates → Imported
+   Administrative templates → NetBird**.
+3. Configure the policies you want to enforce.
+4. Assign the profile to your device group(s) and save.
+
+Devices pick up the policy on the next Intune sync (typically within
+8 hours, sooner if you trigger a manual sync from the device). The
+values end up in `HKLM\Software\Policies\NetBird`.
+
+### Microsoft Intune (custom OMA-URI)
+
+If you cannot ingest the ADMX template, you can push individual values
+via OMA-URI under
+`./Device/Vendor/MSFT/Policy/ConfigOperations/ADMXInstall/...` or via
+the Registry CSP at
+`./Device/Vendor/MSFT/Registry/HKEY_LOCAL_MACHINE/Software/Policies/NetBird/<ValueName>`.
+ADMX ingestion is simpler and gives admins the same UI as on-prem GPO,
+so prefer that.
+
+### `.reg` import (single source of truth)
+
+For fleets without an MDM, or as a quick-test path, you can carry the
+whole policy in a single `.reg` file:
+
+1. Configure the policy values on a reference machine (via `gpedit` or
+   `reg add`).
+2. Export the key:
+   ```
+   reg export "HKLM\Software\Policies\NetBird" netbird-policy.reg /y
+   ```
+3. Distribute the resulting file and apply with:
+   ```
+   reg import netbird-policy.reg
+   ```
+
+Download a sample: <a href="/docs-static/files/netbird-policy.reg" download>netbird-policy.reg</a>.
+
+### JumpCloud
+
+NetBird ships a JumpCloud companion script: <a href="/docs-static/files/netbird-policy.reg.ps1" download>netbird-policy.reg.ps1</a>. To use it:
+
+1. In the JumpCloud admin console, go to **Device Management →
+   Commands → +**.
+2. Type: **Windows PowerShell**. Run as: **SYSTEM**.
+3. Paste `netbird-policy.reg.ps1` verbatim into the command body.
+4. In the same command, attach the `netbird-policy.reg` file you
+   produced above. JumpCloud copies attached files into the command's
+   working directory before invoking the script.
+5. Bind the command to the target system group and run it.
+
+The script wipes the existing `HKLM\Software\Policies\NetBird` key
+before importing the `.reg`, so the `.reg` is the **single source of
+truth** for that device. To unset all policy, attach an empty (header-
+only) `.reg`; the daemon will pick up the absence on the next reload.
+
+## macOS
+
+The NetBird daemon reads policy from
+`/Library/Managed Preferences/io.netbird.client.plist`. macOS writes
+that file when an MDM provider pushes a Configuration Profile whose
+`com.apple.ManagedClient.preferences` payload targets the bundle id
+`io.netbird.client`.
+
+<Warning>
+macOS wipes the contents of `/Library/Managed Preferences/` on every
+boot if the device is not MDM-enrolled. Manual `defaults write` works
+for a quick test but does not survive a reboot on an un-enrolled Mac.
+Use a real MDM channel for production rollouts.
+</Warning>
+
+### Custom Configuration Profile (recommended)
+
+This is the canonical macOS path and works with every MDM
+(Jamf, Kandji, Mosyle, Microsoft Intune for Mac, Workspace ONE,
+JumpCloud, Apple Configurator 2, etc.).
+
+1. Start from the template <a href="/docs-static/files/netbird-macos.mobileconfig" download>netbird-macos.mobileconfig</a>. Open it in your editor (or in
+   [iMazing Profile Editor](https://imazing.com/profile-editor) /
+   [ProfileCreator](https://github.com/ProfileCreator/ProfileCreator)).
+2. Inside the `mcx_preference_settings` dictionary, set the keys you
+   want to enforce. Keep the bundle id `io.netbird.client` as the
+   preference domain.
+3. Replace the placeholder `PayloadUUID` values with freshly generated
+   UUIDs (`uuidgen` on macOS) so each deployment has unique ids.
+4. (Optional, recommended for production) sign the profile with your
+   organization's Developer ID Installer certificate using
+   `productsign` — unsigned profiles on Sonoma/Sequoia/Tahoe require
+   an extra user confirmation on install.
+5. Upload the resulting `.mobileconfig` to your MDM as a **Custom
+   Configuration Profile** and scope it to the target device group.
+
+Verify on a target device with:
+
+```bash
+sudo defaults read "/Library/Managed Preferences/io.netbird.client"
+```
+
+The output should match the keys you set in the profile.
+
+### MDM-specific notes
+
+- **Jamf Pro**: upload as **Computers → Configuration Profiles → New →
+  Application & Custom Settings → External Applications → Upload File
+  (Plist file)** for the preference domain `io.netbird.client`.
+- **Kandji**: use the **Custom Profile** assignment library item.
+- **Mosyle**: **Profiles → Add new profile → Custom Settings** with
+  domain `io.netbird.client`.
+- **Microsoft Intune (for Mac)**: **Devices → Configuration → Create
+  profile → macOS → Templates → Custom**, upload the `.mobileconfig`.
+- **Apple Configurator 2** (no MDM, ideal for testing on a tethered
+  device): drag the `.mobileconfig` onto the device in Configurator and
+  push.
+
+### JumpCloud
+
+JumpCloud supports two delivery channels for the NetBird policy on
+macOS. Pick whichever fits how your fleet is enrolled.
+
+#### MDM Custom Configuration Profile (recommended for MDM-enrolled fleets)
+
+If your Macs are MDM-enrolled with JumpCloud, push the policy as a
+managed-preferences plist:
+
+1. In the JumpCloud admin console, open **Policy Management →
+   Policies → +** and choose the **Mac** platform.
+2. Pick the **MDM Custom Configuration Profile** policy template.
+3. Upload <a href="/docs-static/files/io.netbird.client.plist" download>io.netbird.client.plist</a>
+   as the plist payload. Edit the file before upload to enable just
+   the keys you want to enforce — leave the rest commented out.
+4. Bind the policy to the target Device Group and save.
+
+Notes:
+
+- JumpCloud's **MDM Custom Configuration Profile** accepts a bare
+  managed-preferences plist (the inner Apple managed-prefs dictionary)
+  — **not** a full `.mobileconfig` envelope. Uploading
+  `netbird-macos.mobileconfig` will be rejected. Use the bare
+  `io.netbird.client.plist` for this code path; reserve
+  `netbird-macos.mobileconfig` for other MDMs that expect the full
+  Configuration Profile shape.
+- Keep the filename as `io.netbird.client.plist`. The Apple
+  convention for managed-preferences plists is
+  `<bundle.id>.plist` (this is how macOS materializes the file at
+  `/Library/Managed Preferences/<bundle.id>.plist`), and JumpCloud's
+  policy form does not currently expose a separate bundle-identifier
+  field — keeping the canonical filename is the safest path. If your
+  JumpCloud console version surfaces a bundle-id / preference-domain
+  field elsewhere in the policy wizard, set it to `io.netbird.client`
+  too.
+
+JumpCloud wraps the plist into an Apple Configuration Profile and
+pushes it via the MDM channel. The OS materializes the file at
+`/Library/Managed Preferences/io.netbird.client.plist`, where the
+NetBird daemon picks it up within the next 1-minute reload tick.
+Removing the policy from JumpCloud removes the file on the next sync,
+which un-locks the corresponding fields on the client.
+
+#### Shell Command (no MDM enrollment required)
+
+If your fleet is JumpCloud-managed but not MDM-enrolled, NetBird ships
+a companion script: <a href="/docs-static/files/netbird-macos.sh" download>netbird-macos.sh</a>. It is the macOS
+counterpart of the Windows `.reg.ps1` script — same fleet, different
+backend:
+
+1. Edit the `### POLICY VALUES ###` block at the top of the script;
+   set the variables for the keys you want to enforce and leave the
+   rest at `$NULL`.
+2. In the JumpCloud admin console, go to **Device Management →
+   Commands → +**. Type: **Mac, Shell**. Run as: **root**.
+3. Paste the edited script verbatim into the command body.
+4. Bind to the target system group and run.
+
+The script writes
+`/Library/Managed Preferences/io.netbird.client.plist`, sets ownership
+to `root:wheel` with mode `644`, and kicks the NetBird daemon so the
+change applies immediately. On MDM-enrolled devices the file survives
+reboots; on un-enrolled devices the file is wiped at the next reboot
+(macOS-imposed). Prefer the Custom Mac Application Settings policy
+above when the fleet is enrolled.
+
+## Verifying enforcement
+
+On any platform, the cleanest verification is the daemon's own debug
+dump:
+
+```bash
+netbird debug config
+```
+
+The response includes a `mDMManagedFields` array that lists every key
+the daemon is currently honoring from the MDM source. If a key you
+expected to be locked is missing from that array, the MDM payload did
+not reach the device (or used a value name the daemon does not
+recognize).
+
+The client UI mirrors the same state: any submenu item, settings field,
+or kill switch driven by MDM appears greyed out with a **(MDM)** tag
+next to its label.
+
+Daemon logs (`/var/log/netbird/client.log` on Linux/macOS,
+`%ProgramData%\Netbird\` on Windows) contain a one-line
+`MDM enrolled with N managed key(s): [...]` entry on every reload, plus
+one `MDM override <key> = <value>` line per applied key. Secrets are
+redacted.
+
+## Troubleshooting
+
+**The policy did not apply at all.**
+Check that the daemon can see the source.
+
+- Windows: `reg query HKLM\Software\Policies\NetBird` — if empty, the
+  delivery channel did not write the values. Check `gpresult /h` for
+  GPO failures or the Intune sync status in **Settings → Accounts →
+  Access work or school → Info → Sync**.
+- macOS:
+  `sudo defaults read /Library/Managed\ Preferences/io.netbird.client`
+  — if the file is missing, the MDM payload was not pushed or the
+  bundle id in the profile does not match `io.netbird.client`.
+
+**The key shows up in the registry / plist but not in `netbird debug
+config` `mDMManagedFields`.**
+The value name is misspelled. Names are case-insensitive but must match
+one of the keys in the reference table above. The daemon log emits an
+`MDM ignoring unknown <key>` warning when this happens.
+
+**The user can still change the field from the GUI / CLI.**
+The change is being rejected by the daemon but the UI may not have
+caught up yet. The UI refreshes within a couple of seconds after a
+config change; try closing and reopening the Settings window. If the
+change actually sticks, double-check that the MDM payload is still
+present on the device — it may have been removed by another policy.
+
+**On macOS, the file disappears after a reboot.**
+The device is not MDM-enrolled. macOS protects
+`/Library/Managed Preferences/` by wiping it at boot if no MDM
+controls the directory. Enroll the device with a real MDM provider for
+persistent rollouts.
+
+**My MDM provider is not in the list above.**
+Any MDM that can push a Configuration Profile on macOS or write a
+registry value on Windows works. The mechanism is OS-native, not
+NetBird-specific. If you hit a quirk specific to your provider, please
+open an issue at
+https://github.com/netbirdio/netbird/issues with the provider name and
+what you observed.
