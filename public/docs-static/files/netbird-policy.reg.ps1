@@ -5,7 +5,7 @@
   by importing a sidecar netbird-policy.reg file.
 
 .DESCRIPTION
-  Windows counterpart of docs/netbird-macos.sh. Outcome:
+  Windows counterpart of netbird-macos.sh. Outcome:
   HKLM\Software\Policies\NetBird populated from the attached
   netbird-policy.reg file, daemon picks up the change via the
   1-minute MDM reload ticker.
@@ -85,11 +85,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # Audit dump so the JumpCloud per-execution log captures the applied state.
 Write-Host "[netbird-mdm] final policy state under $RegKey :"
-if (Test-Path "Registry::$RegKey") {
-    & reg.exe query $RegKey /s
-} else {
-    Write-Host "[netbird-mdm] no policy values present under $RegKey"
-}
+& reg.exe query $RegKey /s
 
 # Daemon's 1-min reload ticker picks up the change automatically.
 # Uncomment to force immediate convergence (skips the ticker wait):
