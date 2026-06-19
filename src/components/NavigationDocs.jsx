@@ -752,6 +752,7 @@ export const docsNavigation = [
   {
     title: 'CLIENT',
     links: [
+      { title: 'Desktop App', href: '/client/desktop-app' },
       { title: 'Profiles', href: '/client/profiles' },
       { title: 'Environment Variables', href: '/client/environment-variables' },
       {
