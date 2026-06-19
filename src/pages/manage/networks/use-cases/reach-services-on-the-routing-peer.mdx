@@ -1,0 +1,45 @@
+# Reach Services on the Routing Peer
+
+Most routing-peer guides cover reaching resources behind the peer. This one covers the opposite case: reaching a service that runs *on the routing peer itself*, at the peer's own LAN IP — the shape you get when the only machine running the NetBird client *is* the service host. The classic example is a file server that runs NetBird and serves SMB/DFS shares to remote users.
+
+## The scenario
+
+Every peer has two addresses: its **NetBird IP** (its `100.x` overlay address, the one in `netbird status`) and its **LAN IP** (its address on the local network). This case is about reaching a service at the peer's **LAN IP** — the address its name resolves to on the corporate network.
+
+The NetBird client is installed only on the file server, so the file server *is* the routing peer. Remote users resolve the file server's name (and any DFS paths) to its LAN IP — but that address belongs to the routing peer itself, so traffic to it must be *delivered locally on the peer, not forwarded* to a network behind it. The symptom: DNS resolves, yet SMB connections and pings to the file server fail.
+
+```
+Remote user ──tunnel──► File server = routing peer  (its own SMB/DFS share at its LAN IP)
+ (NetBird)                         └──► Domain Controller (clientless, on the same LAN)
+```
+
+## The setup
+
+The target *is* the routing peer, addressed by its own LAN IP. Set up the following together:
+
+1. **A route to the address** — a resource covering the file server's LAN IP: a `/32`, or a domain resource set to its DNS name (the peer resolves its own name and keeps the route current if the IP changes).
+2. **A peer-to-peer policy** from your users' group to the routing peer (or routing peer group), on the service port (SMB = **TCP 445**). Reaching the peer *itself* is a separate permission from reaching machines *behind* it — this grants it.
+3. **On a Windows or macOS routing peer, set the `NB_ENABLE_LOCAL_FORWARDING` [environment variable](/client/environment-variables)** — it lets the NetBird client deliver to a service on its own LAN IP, not just forward onward:
+
+   ```powershell
+   netbird service reconfigure --service-env NB_ENABLE_LOCAL_FORWARDING=true
+   ```
+
+   A Linux peer doesn't need this with its default kernel forwarding — only in netstack mode.
+
+Steps 1 and 3 exist only because clients reach the file server at its **LAN IP**. Reaching a peer at its **NetBird IP** needs only the policy in step 2 — every client already has a route to it, with no resource to add and no forwarding flag.
+
+With these in place, a mapped drive to the share works unchanged — reached at its LAN IP over the tunnel.
+
+**Domain-joined clients (AD/DFS)** need one more thing — a NetBird **DNS nameserver** for your AD domain. Add one with the match domain `corp.example.com` pointing at the DC's IP address (e.g. `10.0.0.10`), so clients resolve corp DNS and can log in. The DC must also be reachable over NetBird. See **[Active Directory & Windows File Shares](/manage/networks/use-cases/active-directory)** for the full setup.
+
+## Verify
+
+- Test reachability with `Test-NetConnection <host> -Port <port>` (or `nc -z`), not `ping`. ICMP needs its own peer-to-peer policy; a service working while `ping` fails is the signature of a missing ICMP policy, not a broken route.
+- The service should now answer at the routing peer's LAN IP over the tunnel — for a file server, a mapped drive opens unchanged.
+
+## Fallback: resolve the name to the NetBird IP
+
+If you can't set `NB_ENABLE_LOCAL_FORWARDING` on the file server, there's an alternative that needs no resource, route, or forwarding flag: make each client resolve the file server's name to its NetBird IP (its `100.x` address) instead of its LAN IP — with a `hosts` file entry or a Windows NRPT rule (a per-name DNS override). The client then connects to it directly over the NetBird overlay. Logins still work, because Kerberos is tied to the server's *name*, not its IP address.
+
+Treat this as a *last resort, not the main path*: it has to be set up on every client, whereas the setup above is configured once in NetBird and is invisible to clients.
