@@ -289,6 +289,16 @@ export const docsNavigation = [
             title: 'Troubleshooting',
             href: '/manage/reverse-proxy/troubleshooting',
           },
+          {
+            title: 'Use Cases',
+            isOpen: false,
+            links: [
+              {
+                title: 'No Public Inbound',
+                href: '/manage/reverse-proxy/use-cases/private-no-inbound',
+              },
+            ],
+          },
         ],
       },
       {
