@@ -167,6 +167,11 @@ server:
   logFile: "console"
   dataDir: "/var/lib/netbird"
 
+  # Force-enable the embedded STUN alongside external STUN (optional)
+  # enableLocalSTUN: true
+  # Force-enable the embedded relay alongside external relay (optional)
+  # enableLocalRelay: true
+
   # External STUN servers (your relay servers)
   stuns:
     - uri: "stun:relay-us.example.com:3478"
@@ -187,8 +192,56 @@ server:
     # ... rest of auth config
 ```
 
+### Using Embedded and External Services Together
+
+To keep the local services running alongside the external ones, set `enableLocalSTUN: true` and/or `enableLocalRelay: true`. Note that `enableLocalRelay: true` requires `authSecret` to remain configured. The `relays.secret` and `authSecret` must be consistent — if they differ, the embedded relay will reject tokens signed by management with `relays.secret`. When `relays.secret` is omitted, management falls back to `authSecret`, guaranteeing consistency:
+
+```yaml
+server:
+  listenAddress: ":80"
+  exposedAddress: "https://netbird.example.com:443"
+
+  # Keep authSecret — required when enableLocalRelay is true
+  authSecret: "your-secret-key-here"
+
+  # Remove or comment out stunPorts since we're using external STUN
+  # stunPorts:
+  #   - 3478
+  metricsPort: 9090
+  healthcheckAddress: ":9000"
+  logLevel: "info"
+  logFile: "console"
+  dataDir: "/var/lib/netbird"
+
+  # Force-enable the embedded STUN alongside external STUN
+  enableLocalSTUN: true
+
+  # Force-enable the embedded relay alongside external relay
+  enableLocalRelay: true
+
+  # External STUN servers
+  stuns:
+    - uri: "stun:relay-us.example.com:3478"
+      proto: "udp"
+    - uri: "stun:relay-eu.example.com:3478"
+      proto: "udp"
+
+  # External relay servers
+  relays:
+    addresses:
+      - "rels://relay-us.example.com:443"
+      - "rels://relay-eu.example.com:443"
+    # Omit secret so management falls back to authSecret — guarantees consistency
+    # secret: "your-shared-secret-here"
+    credentialsTTL: "24h"
+
+  auth:
+    issuer: "https://netbird.example.com/oauth2"
+    # ... rest of auth config
+```
+
 <Warning>
-The `secret` under `relays` and the `NB_AUTH_SECRET` on all relay servers **must be identical**. Mismatched secrets will cause relay connections to fail silently.
+NetBird uses a single token model for relay authentication. The management server signs tokens with <code>relays.secret</code> (or falls back to <code>authSecret</code> when <code>relays.secret</code> is empty), and every relay — embedded or external — validates tokens against the same secret. This means <code>authSecret</code> (embedded relay) and <code>relays.secret</code> (external relay token signing) must resolve to the same value. Either omit <code>relays.secret</code> to rely on the fallback, or set it explicitly to match <code>authSecret</code>.
 </Warning>
 
 ### Update docker-compose.yml (Optional)
