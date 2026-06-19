@@ -72,14 +72,28 @@ sudo ip route del 100.64.0.0/10 via <PEER_LAN_IP>
 
 ## Persistent configuration
 
-Pick **one** of the methods below — your host uses one network manager, not both:
+Follow **only one** of the two methods below — they're alternatives, not consecutive steps. Check which network manager your host uses:
 
-- **Netplan** if `/etc/netplan/` already has yaml files (most Ubuntu hosts).
-- **systemd-networkd** otherwise (Debian Server, minimal installs, or hosts using systemd-networkd directly without a netplan frontend).
+```bash
+ls /etc/netplan/
+```
+
+- If you see `.yaml` files, use **Netplan** (most Ubuntu hosts).
+- If the directory is empty or missing, use **systemd-networkd** (Debian Server, minimal installs, or hosts using systemd-networkd directly without a netplan frontend).
+
+Don't mix them — on Netplan hosts, systemd-networkd config you add by hand is silently ignored.
+
+Both methods need the destination host's LAN interface name — find it with `ip -br addr` (e.g. `eth0` or `ens18`). Substitute it wherever the steps below show `<IFACE>`.
 
 ### Netplan (Ubuntu 18.04+)
 
-On Ubuntu Server, `/etc/netplan/` usually already has a yaml from cloud-init (`50-cloud-init.yaml`) or the installer (`00-installer-config.yaml`). Append a new entry to the interface's `routes:` list (don't add a second `routes:` key — YAML won't accept that). The `addresses:` and default-route values shown below are placeholders for whatever is already in your file — not values to copy as-is:
+On Ubuntu Server, `/etc/netplan/` usually already has a yaml from cloud-init (`50-cloud-init.yaml`) or the installer (`00-installer-config.yaml`). Open the file `ls` showed in a text editor — `nano` is the simplest (run `sudo apt install nano` first if it's missing):
+
+```bash
+sudo nano /etc/netplan/50-cloud-init.yaml
+```
+
+Append the new route to the interface's existing `routes:` list (don't add a second `routes:` key — YAML won't accept that). The `addresses:` and default-route values shown below are placeholders for whatever is already in your file — not values to copy as-is:
 
 ```yaml
 network:
@@ -96,7 +110,7 @@ network:
 
 If `/etc/netplan/` is empty (uncommon, but possible on minimal installs or when netplan was just `apt install`ed), create `/etc/netplan/01-netbird.yaml` with the full stanza, substituting real values for `addresses:` and the default gateway.
 
-Apply:
+Save and exit. In nano: press `Ctrl+O` then `Enter` to write the file, then `Ctrl+X` to quit. Then apply the change:
 
 ```bash
 sudo netplan apply
@@ -108,17 +122,15 @@ Recent netplan versions require `0600` permissions on yaml files under `/etc/net
 
 ### systemd-networkd
 
-Either append to the relevant `.network` file in `/etc/systemd/network/`, or drop a snippet into `/etc/systemd/network/<IFACE>.network.d/100-netbird.conf`:
+Create a drop-in for your interface (replace `<IFACE>` with your LAN interface, e.g. `eth0`). This block creates the file and reloads in one paste:
 
-```ini
+```bash
+sudo mkdir -p /etc/systemd/network/<IFACE>.network.d
+sudo tee /etc/systemd/network/<IFACE>.network.d/100-netbird.conf > /dev/null <<'EOF'
 [Route]
 Destination=100.64.0.0/10
 Gateway=<PEER_LAN_IP>
-```
-
-Apply:
-
-```bash
+EOF
 sudo networkctl reload
 ```
 

@@ -18,8 +18,6 @@ Site A device ──► Routing Peer ──► NetBird Tunnel ──► Routing 
 <Note>
 Networks is the recommended way to build site-to-site. It has per-Resource access control, is Zero Trust by default, and is the actively developed system.
 
-Use [Network Routes](/manage/network-routes/use-cases/site-to-site) instead only when you need site-to-site without any Policy gating traffic — the legacy "wide open" mode with empty Access Control Groups. Networks requires at least one Policy per Resource and has no equivalent.
-
 For the reverse — clientless devices at a site initiating connections to NetBird peers — see [Site-to-VPN](/manage/networks/use-cases/site-to-vpn).
 </Note>
 
@@ -96,25 +94,74 @@ Destination: 10.1.0.0/24       # remote network
 Gateway:     10.0.0.50         # local routing peer
 ```
 
-**Per-device fallback** — Linux:
+**Per-device fallback** — if you can't touch the router, add the route on each device instead.
 
-```bash
-sudo ip route add 10.1.0.0/24 via 10.0.0.50
-```
-
-Windows (PowerShell, persistent):
+**Windows** (PowerShell as Administrator) — `-p` makes it persistent:
 
 ```powershell
 route -p add 10.1.0.0 mask 255.255.255.0 10.0.0.50
 ```
 
+**Linux** — first test the route (this form disappears on the next reboot):
+
+```bash
+sudo ip route add 10.1.0.0/24 via 10.0.0.50
+```
+
+Once a peer at the other site is reachable, make it permanent. The method depends on which network manager the device uses — check with:
+
+```bash
+ls /etc/netplan/
+```
+
+Follow **only one** of the two methods below — the one that matches what `ls` showed. They're alternatives, not consecutive steps: if you see `.yaml` files use Netplan (most Ubuntu hosts); if the directory is empty or missing use systemd-networkd (Debian, minimal installs). Don't mix them — on Netplan hosts, systemd-networkd config you add by hand is silently ignored.
+
+Both methods need your LAN interface name — find it with `ip -br addr` (look for the connection carrying the device's local IP, e.g. `eth0` or `ens18`). Substitute it wherever the steps below show `<IFACE>`.
+
+**Option A — Netplan** (you saw `.yaml` files) — open the file `ls` showed (e.g. `50-cloud-init.yaml`) in a text editor. `nano` is the simplest; this command opens the file in it (run `sudo apt install nano` first if it's missing):
+
+```bash
+sudo nano /etc/netplan/50-cloud-init.yaml
+```
+
+Find your interface under `ethernets:` and add the route. If a `routes:` list is already there, add the `- to:` lines to it — don't create a second `routes:` key:
+
+```yaml
+network:
+  version: 2
+  ethernets:
+    <IFACE>:                         # your interface, from ip -br addr
+      dhcp4: true                    # whatever was already here
+      routes:                        # add this block (or reuse an existing routes: list)
+        - to: 10.1.0.0/24            #   remote network
+          via: 10.0.0.50             #   local routing peer
+```
+
+Save and exit. In nano: press `Ctrl+O` then `Enter` to write the file, then `Ctrl+X` to quit. Then apply the change:
+
+```bash
+sudo netplan apply
+```
+
 <Note>
-The Linux `ip route add` form above applies only until the next reboot. For persistent Linux routes (Netplan or systemd-networkd), follow the same pattern shown in [Persistent configuration](/manage/networks/masquerade#persistent-configuration), substituting your remote site's CIDR (`10.1.0.0/24` in this example) for the destination shown there. The Windows `route -p add` form is already persistent.
+Recent Netplan needs `0600` permissions on files under `/etc/netplan/`. Run `sudo chmod 0600 /etc/netplan/*.yaml` if `netplan apply` warns.
 </Note>
+
+**Option B — systemd-networkd** (the `/etc/netplan/` directory was empty) — create a drop-in for your interface. Replace both `<IFACE>` below with your interface name, then paste the block — it creates the file and reloads in one go:
+
+```bash
+sudo mkdir -p /etc/systemd/network/<IFACE>.network.d
+sudo tee /etc/systemd/network/<IFACE>.network.d/100-netbird.conf > /dev/null <<'EOF'
+[Route]
+Destination=10.1.0.0/24
+Gateway=10.0.0.50
+EOF
+sudo networkctl reload
+```
 
 Repeat this on the other site with the values swapped, so Site B's router or devices know to reach `10.0.0.0/24` via the local Site B routing peer. Bidirectional site-to-site needs the static routes on both sides.
 
-This step assumes Masquerade is enabled on both routing peers (the default in Step 3). Site-to-site over Networks requires Masquerade to be on — disabling it on a routing peer causes the WireGuard tunnel to drop traffic whose source isn't the peer's NetBird IP, so source-IP preservation isn't currently supported for site-to-site. If you need to preserve source IPs end to end, use the [Network Routes site-to-site setup](/manage/network-routes/use-cases/site-to-site) instead, which supports running with Masquerade disabled.
+This step assumes Masquerade is enabled on both routing peers (the default in Step 3). Site-to-site over Networks requires Masquerade to be on — disabling it on a routing peer causes the WireGuard tunnel to drop traffic whose source isn't the peer's NetBird IP, so source-IP preservation isn't currently supported for site-to-site. If you need to preserve source IPs end to end, use the [Routes site-to-site setup](/manage/network-routes/use-cases/site-to-site) instead, which supports running with Masquerade disabled.
 
 ## Step 6: Verify
 
@@ -139,4 +186,4 @@ When the routing peer is a cloud instance, the VPC needs to allow it to forward 
 - [Masquerade](/manage/networks/masquerade) — how source NAT works on routing peers
 - [Site-to-VPN](/manage/networks/use-cases/site-to-vpn) — clientless devices initiating connections to NetBird peers
 - [Access Home Devices](/manage/networks/use-cases/access-home-devices) — reach a single site from your NetBird peers
-- [Network Routes Site-to-Site](/manage/network-routes/use-cases/site-to-site) — the legacy approach, for wide-open no-policy setups
+- [Routes Site-to-Site](/manage/network-routes/use-cases/site-to-site) — legacy approach for scenarios that require source-IP preservation or Routes-specific behavior
