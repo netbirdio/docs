@@ -77,6 +77,45 @@ export const docsNavigation = [
     ],
   },
   {
+    title: 'AGENT NETWORK',
+    links: [
+      { title: 'Overview', href: '/agent-network' },
+      { title: 'Quickstart', href: '/agent-network/quickstart' },
+      { title: 'Providers', href: '/agent-network/providers' },
+      {
+        title: 'Policies',
+        href: '/agent-network/policies',
+        links: [
+          {
+            title: 'Token & Budget Limits',
+            href: '/agent-network/policies/limits',
+          },
+          { title: 'Guardrails', href: '/agent-network/policies/guardrails' },
+        ],
+      },
+      { title: 'Global Limits', href: '/agent-network/global-limits' },
+      {
+        title: 'Usage & Logs',
+        href: '/agent-network/usage-and-logs',
+        links: [
+          {
+            title: 'Usage Overview',
+            href: '/agent-network/usage-and-logs/usage-overview',
+          },
+          {
+            title: 'Access Logs',
+            href: '/agent-network/usage-and-logs/access-logs',
+          },
+          {
+            title: 'Log Collection & Retention',
+            href: '/agent-network/usage-and-logs/log-collection',
+          },
+        ],
+      },
+      { title: 'Self-Hosting', href: '/agent-network/self-hosting' },
+    ],
+  },
+  {
     title: 'MANAGE NETBIRD',
     links: [
       { title: 'Control Center', href: '/manage/control-center' },
