@@ -1,8 +1,14 @@
+import { Note } from '@/components/mdx'
+
 export const description = 'Diagnose and fix common DNS issues in NetBird'
 
 # DNS Troubleshooting
 
 This guide helps you diagnose and resolve common DNS issues in NetBird. Follow the structured approach below to identify and fix problems quickly.
+
+<Note>
+The steps below use `ping` to check reachability. `ping` requires an **ICMP** peer-to-peer policy — when testing through or to a [routing peer](/manage/networks/how-routing-peers-work), name resolution and TCP can be healthy while ICMP is simply not allowed by policy. Prefer a TCP port test there: `Test-NetConnection <host> -Port <port>` (Windows) or `nc -z <host> <port>`.
+</Note>
 
 ## Quick Diagnostics Checklist
 
@@ -446,6 +452,24 @@ config domain
     option name 'company.internal'
     option ip '10.0.0.1'
 ```
+
+---
+
+### Issue 7: Active Directory Login or DFS Fails (but a file share by IP works)
+
+**Symptoms**:
+- Domain login, mapped drives, or DFS paths fail for remote users — yet the file server is reachable by IP
+- Errors like *"the specified domain is not available"*, or System error 1311 / 1312
+- `nslookup -type=srv _ldap._tcp.dc._msdcs.corp.example.com` returns nothing
+
+**Diagnosis**:
+
+A domain resource only resolves `A`/`AAAA` records. Active Directory also depends on the `SRV` / DC-locator records that *find a domain controller* — which the routing peer does not serve. So a client can resolve a host by name but can't locate a DC, and logon and DFS referrals fail even though plain name-to-IP resolution works.
+
+**Solutions**:
+
+- Add a **DNS nameserver** with match domain `corp.example.com` pointing at the DC's IP, distributed to your remote-users group — see [Active Directory & Windows File Shares → Give clients corp DNS](/manage/networks/use-cases/active-directory#step-5-give-clients-corp-dns).
+- Confirm the DC itself is reachable through the routing peer on the AD ports — see [Reaching a Domain Controller through a routing peer](/manage/dns/internal-dns-servers#reaching-a-domain-controller-through-a-routing-peer).
 
 ---
 

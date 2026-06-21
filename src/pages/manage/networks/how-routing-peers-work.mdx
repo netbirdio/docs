@@ -29,7 +29,7 @@ NetBird offers two ways to configure routing peers. Both are actively maintained
 - Resources are typed: IP, IP range, or domain.
 - Access control is built in from the start.
 
-**[Network Routes](/manage/network-routes) (legacy, still supported)**
+**[Routes](/manage/network-routes) (legacy, deprecated)**
 - Distribution Groups and ACL Groups are configured separately.
 - ACL Groups are optional, which means a route without them grants unrestricted access to the destination CIDR for every peer in the Distribution Group.
 - Only needed today for [exit node](/manage/network-routes/use-cases/exit-nodes) setups. Use Networks for everything else, including [site-to-site](/manage/networks/use-cases/site-to-site).
@@ -45,7 +45,7 @@ The walkthrough below describes the **Linux kernel-mode** path, where forwarding
 1. The originating peer encrypts the packet to the routing peer's WireGuard public key. The packet enters the tunnel at the source and exits on the routing peer's NetBird interface.
 2. The routing peer's kernel forwards the packet according to the host routing table. If the destination is on a directly attached network or reachable via the host's gateway, the packet is forwarded.
 3. Forwarded packets traverse the host firewall's **forward chain**. NetBird applies the policies attached to the route or network resource here. Policies that target the routing peer itself live in the **input chain** and are evaluated separately.
-4. If masquerade is enabled (the default), the routing peer SNATs the source IP to its own LAN-side address before the packet leaves. With masquerade disabled, the original NetBird overlay IP is preserved and the destination network must route return traffic back through the routing peer.
+4. If masquerade is enabled (the default), the routing peer SNATs the source IP to its own LAN-side address before the packet leaves. With masquerade disabled, the original NetBird IP is preserved and the destination network must route return traffic back through the routing peer.
 5. Replies follow the reverse path. The stateful firewall on the routing peer tracks established connections so return traffic does not need an explicit policy.
 
 ## Requirements
@@ -68,13 +68,25 @@ echo "net.ipv4.ip_forward=1" | sudo tee /etc/sysctl.d/99-netbird.conf
 echo "net.ipv6.conf.all.forwarding=1" | sudo tee -a /etc/sysctl.d/99-netbird.conf
 ```
 
-On Windows, no extra setup is needed to forward traffic to routed subnets. Only enable `NB_ENABLE_LOCAL_FORWARDING` if you also need clients to reach services bound to the routing peer's own local addresses — for example, a dashboard or service running on the routing peer host itself:
+### Local forwarding
+
+IP forwarding (above) carries traffic to machines *behind* the routing peer. Reaching a service on the routing peer's **own address** is a separate case (self-access), and it needs `NB_ENABLE_LOCAL_FORWARDING` — and only on peers that forward in software (the userspace router):
+
+| Routing peer | Data path | Reaching a service on the peer's own address |
+|---|---|---|
+| Windows, macOS | userspace router (always) | needs `NB_ENABLE_LOCAL_FORWARDING` |
+| Linux, netstack mode (`NB_USE_NETSTACK_MODE`) | userspace router | needs `NB_ENABLE_LOCAL_FORWARDING` |
+| Linux, native backend (nftables/iptables) | kernel forwarding | not needed |
+
+The flag is off by default on every platform (see [Client Environment Variables](/client/environment-variables)):
 
 ```powershell
 netbird service reconfigure --service-env NB_ENABLE_LOCAL_FORWARDING=true
 ```
 
-Leave it off otherwise. Turning it on can expose localhost-bound services on the routing peer unintentionally.
+This flag is only one of three things self-access needs — the peer also needs a route and a peer-to-peer policy. See [Reaching the routing peer itself](#reaching-the-routing-peer-itself) for the full picture. This is the common shape when the service host *is* the routing peer: a file server that runs the NetBird client, whose clients resolve its name to its LAN IP.
+
+Leave it off otherwise. With it on, any permitted peer can reach services bound to the routing peer's LAN addresses, not just the networks behind it — so don't enable it on a peer running local-only services you don't want exposed.
 
 ### Container capabilities
 
@@ -111,7 +123,7 @@ Masquerade is on by default. The routing peer SNATs forwarded traffic to its own
 Turn masquerade off when:
 
 - You need source IP visibility for auditing, compliance, or application logic.
-- You want the destination network's existing firewalls to filter NetBird peers by their overlay IP.
+- You want the destination network's existing firewalls to filter peers by their NetBird IP.
 
 With masquerade off, you must add a return route on the destination network pointing the NetBird CIDR (default `100.64.0.0/10`) at the routing peer.
 
@@ -125,7 +137,7 @@ This is the subtlest part of the model and the source of most policy mistakes.
 
 ### Two chains, two policy types
 
-- **Forward chain.** Packets routed *through* the peer to backend resources. Network resource policies (Networks) and ACL Groups (Network Routes) apply here.
+- **Forward chain.** Packets routed *through* the peer to backend resources. Network resource policies (Networks) and ACL Groups (Routes) apply here.
 - **Input chain.** Packets destined to the routing peer's own IP. [Peer-to-peer policies](/manage/access-control/manage-network-access) apply here.
 
 If users need to reach both the resources behind a routing peer **and** services running on the routing peer itself (Pi-hole, monitoring, jump-host SSH), you need one policy of each kind.
@@ -134,6 +146,18 @@ If users need to reach both the resources behind a routing peer **and** services
 
 1. **Network resource policy** (forward chain): `Engineers` → `10.10.0.0/16` resource. Permits traffic *through* the routing peer.
 2. **Peer-to-peer policy** (input chain): `Engineers` → routing peer group, on TCP/22 and TCP/3000. Permits traffic *to* the routing peer.
+
+### Reaching the routing peer itself
+
+Every peer has two addresses — its **NetBird IP** (its `100.x` overlay address, the one in `netbird status`) and its **LAN IP** (its address on the local network). Reaching the routing peer at each needs different things:
+
+- **At its NetBird IP** — a single peer-to-peer policy (input chain) is enough. Every client already has an overlay route to every peer.
+- **At its LAN IP** — when DNS (or a DFS path) resolves the service to its LAN address, the client has **no route** to that IP yet. Reaching it needs three things together:
+  - a **resource** that covers the LAN IP (the route),
+  - a **peer-to-peer policy** (the input-chain accept), and
+  - on userspace peers (Windows, macOS, Linux netstack), [`NB_ENABLE_LOCAL_FORWARDING`](#local-forwarding).
+
+For the full setup — the file-server scenario, the commands, the Active Directory tie-in, and a fallback for when you can't set the flag — see [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer).
 
 ### Directionality is forced for routed traffic
 
@@ -167,7 +191,7 @@ Clients running `0.59.0` and `0.59.1` may fail to resolve domain resources serve
 
 ### Routing Peer DNS Resolution
 
-Wildcard domain resources rely on Routing Peer DNS Resolution, which is enabled by default. With it on, DNS resolution happens on the routing peer rather than on the client.
+Domain resources rely on Routing Peer DNS Resolution, which is enabled by default. With it on, DNS resolution happens on the routing peer rather than on the client: the client forwards its name-to-IP lookups (`A`/`AAAA`) for a domain resource to the routing peer's resolver, and needs no nameserver of its own for that name. With it off, each client resolves the domain itself using its own DNS, so it must already be able to resolve the name — via a [nameserver](/manage/dns/internal-dns-servers) or its network adapter's DNS. Either way, this covers name-to-IP lookups only; Active Directory clients also need a nameserver for the `SRV` records Windows uses to find a domain controller.
 
 ### Pitfall: domains and IP ranges in the same network
 
@@ -205,6 +229,8 @@ Specifics:
 - Mixing domain and IP-range resources in the same network.
 - Exit node missing the ICMP policy, so clients can't connect to the routing peer in the first place.
 - DNS port mismatch when an account has a mix of pre-0.59 and post-0.59 peers.
+- Reaching a service on the routing peer's **own LAN IP** (not its NetBird IP) with only an input policy — it also needs a resource for the route, and on userspace peers `NB_ENABLE_LOCAL_FORWARDING`. See [Reaching the routing peer itself](#reaching-the-routing-peer-itself).
+- Health-checking that path with `ping` — ICMP needs its own peer-to-peer policy; a service up while ping is down is a missing ICMP policy, not a routing failure.
 
 <Tiles
     title="Related"
@@ -216,12 +242,12 @@ Specifics:
         },
         {
             href: '/manage/network-routes',
-            name: 'Network Routes',
-            description: 'Legacy routing peer feature still supported for scenarios Networks does not yet cover',
+            name: 'Routes',
+            description: 'Legacy routing peer feature, now deprecated — use Networks except for exit nodes',
         },
         {
             href: '/manage/network-routes/access-control',
-            name: 'Access Control on Network Routes',
+            name: 'Access Control on Routes',
             description: 'Use ACL Groups to restrict who reaches a routed network',
         },
         {

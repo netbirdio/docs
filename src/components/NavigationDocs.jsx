@@ -222,6 +222,14 @@ export const docsNavigation = [
                 title: 'Site-to-Site',
                 href: '/manage/networks/use-cases/site-to-site',
               },
+              {
+                title: 'Reach Services on the Routing Peer',
+                href: '/manage/networks/use-cases/reach-services-on-the-routing-peer',
+              },
+              {
+                title: 'Active Directory & Windows File Shares',
+                href: '/manage/networks/use-cases/active-directory',
+              },
             ],
           },
         ],
@@ -542,6 +550,10 @@ export const docsNavigation = [
             href: '/selfhosted/maintenance/configuration-files',
           },
           {
+            title: 'Environment Variables',
+            href: '/selfhosted/environment-variables',
+          },
+          {
             title: 'Scaling Your Deployment',
             href: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
             isOpen: false,
@@ -755,6 +767,7 @@ export const docsNavigation = [
       { title: 'Desktop App', href: '/client/desktop-app' },
       { title: 'Profiles', href: '/client/profiles' },
       { title: 'Environment Variables', href: '/client/environment-variables' },
+      { title: 'MDM Integration', href: '/client/mdm-integration' },
       {
         title: 'Settings',
         isOpen: false,
@@ -995,7 +1008,11 @@ function NavigationGroup({ group, className, hasChildren }) {
           }
           setIsOpen(!isOpen)
           if (!isOpen) {
-            if (!isActiveGroup && !isInsideMobileNavigation && group.links[0]?.href)
+            if (
+              !isActiveGroup &&
+              !isInsideMobileNavigation &&
+              group.links[0]?.href
+            )
               router.push(group.links[0].href)
             setActiveHighlight()
           } else {
