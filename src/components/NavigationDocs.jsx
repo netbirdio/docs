@@ -503,8 +503,8 @@ export const docsNavigation = [
                 isOpen: false,
                 links: [
                   {
-                    title: 'Highly Available Routing Peers',
-                    href: '/manage/integrations/kubernetes/use-cases/highly-available-routing-peers',
+                    title: 'Route to a Kubernetes Service',
+                    href: '/manage/integrations/kubernetes/use-cases/route-to-a-kubernetes-service',
                   },
                 ],
               },
