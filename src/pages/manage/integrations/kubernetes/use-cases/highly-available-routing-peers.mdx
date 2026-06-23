@@ -88,7 +88,7 @@ When you run more than one replica, the operator also creates a **PodDisruptionB
 
 ## Spread across failure domains
 
-Kubernetes already spreads replicas across nodes on a best-effort basis. To make that a hard guarantee — or to spread across availability zones — add scheduling rules through `spec.workloadOverride.podTemplate`:
+Kubernetes already spreads replicas across nodes on a best-effort basis. To strengthen that — or to spread across availability zones — add an explicit constraint through `spec.workloadOverride.podTemplate`:
 
 ```yaml
 apiVersion: netbird.io/v1alpha1
@@ -106,13 +106,17 @@ spec:
         topologySpreadConstraints:
           - maxSkew: 1
             topologyKey: kubernetes.io/hostname
-            whenUnsatisfiable: DoNotSchedule
+            whenUnsatisfiable: ScheduleAnyway
             labelSelector:
               matchLabels:
                 app.kubernetes.io/instance: prod
 ```
 
 Use `topologyKey: topology.kubernetes.io/zone` to spread across availability zones instead.
+
+<Note>
+`ScheduleAnyway` is a strong preference that never blocks scheduling. For a hard guarantee, use `whenUnsatisfiable: DoNotSchedule` — but keep **more schedulable nodes than replicas** (or set the Deployment's `maxSurge: 0`). With one peer already on every node, a rolling update's surge pod has nowhere to land that satisfies the constraint, and the rollout stalls.
+</Note>
 
 With one routing peer per node, a node failure only loses a single peer — clients fail over to the survivors, and the PodDisruptionBudget keeps drains to one at a time:
 
