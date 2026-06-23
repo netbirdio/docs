@@ -498,6 +498,16 @@ export const docsNavigation = [
                 title: 'Gateway API',
                 href: '/manage/integrations/kubernetes/gateway-api',
               },
+              {
+                title: 'Use Cases',
+                isOpen: false,
+                links: [
+                  {
+                    title: 'Highly Available Routing Peers',
+                    href: '/manage/integrations/kubernetes/use-cases/highly-available-routing-peers',
+                  },
+                ],
+              },
             ],
           },
         ],
