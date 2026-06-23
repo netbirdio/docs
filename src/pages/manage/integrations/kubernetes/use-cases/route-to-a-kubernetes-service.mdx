@@ -6,7 +6,11 @@ This guide walks the whole journey: create the NetBird-side pieces the operator 
 
 ## What you'll achieve
 
-A NetBird client (for example, your laptop) reaches a private Kubernetes `ClusterIP` Service by a stable DNS name, with traffic flowing through several routing-peer pods. Lose a pod or a node and clients fail over automatically to a healthy peer.
+A NetBird client (for example, your laptop) reaches a private Kubernetes `ClusterIP` Service by a stable DNS name, with traffic flowing through a pool of routing-peer pods spread across your nodes. Lose a pod or a node and clients fail over automatically to a healthy peer.
+
+<p>
+  <img src="/docs-static/img/manage/integrations/kubernetes/ha-routing-peers-spread-nodes.svg" alt="A NetBird client reaching a Kubernetes service through three routing-peer pods, one per node" className="imagewrapper-big"/>
+</p>
 
 ## Prerequisites
 
@@ -83,6 +87,29 @@ The operator registers all replicas in a single routing-peer group at one metric
 
 <Note>
 The operator already defaults to **3** replicas — set the field explicitly to be intentional, or raise it for more redundancy. See the [Routing Peer](/manage/integrations/kubernetes/routing-peer) page for the full `NetworkRouter` reference.
+</Note>
+
+On a multi-node cluster, Kubernetes spreads these replicas across nodes by default — so you already have node-level high availability: a node failure takes out only one routing peer and clients fail over to the rest.
+
+To **guarantee** that spread, or to spread across availability zones, add a constraint through `spec.workloadOverride.podTemplate`:
+
+```yaml
+spec:
+  workloadOverride:
+    replicas: 3
+    podTemplate:
+      spec:
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname    # or topology.kubernetes.io/zone
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/instance: kubernetes
+```
+
+<Note>
+`ScheduleAnyway` is a strong preference that never blocks scheduling. For a hard guarantee use `whenUnsatisfiable: DoNotSchedule` — but keep **more schedulable nodes than replicas** (or set the Deployment's `maxSurge: 0`), or a rolling update's surge pod has nowhere to land that satisfies the constraint and the rollout stalls.
 </Note>
 
 ## Step 4: Expose your Service
@@ -163,37 +190,6 @@ Then delete one routing-peer pod (or drain its node) while curling in a loop —
 ```shell
 kubectl -n netbird delete pod <routing-peer-pod>
 ```
-
-## Spread across failure domains
-
-On a multi-node cluster, Kubernetes spreads the replicas across nodes on a best-effort basis by default, so you get node-level redundancy out of the box. To strengthen that — or to spread across availability zones — add an explicit constraint through `spec.workloadOverride.podTemplate`:
-
-```yaml
-spec:
-  workloadOverride:
-    replicas: 3
-    podTemplate:
-      spec:
-        topologySpreadConstraints:
-          - maxSkew: 1
-            topologyKey: kubernetes.io/hostname
-            whenUnsatisfiable: ScheduleAnyway
-            labelSelector:
-              matchLabels:
-                app.kubernetes.io/instance: kubernetes
-```
-
-Use `topologyKey: topology.kubernetes.io/zone` to spread across availability zones instead.
-
-<Note>
-`ScheduleAnyway` is a strong preference that never blocks scheduling. For a hard guarantee use `whenUnsatisfiable: DoNotSchedule` — but keep **more schedulable nodes than replicas** (or set the Deployment's `maxSurge: 0`). With one peer already on every node, a rolling update's surge pod has nowhere to land that satisfies the constraint, and the rollout stalls.
-</Note>
-
-With one routing peer per node, a node failure only loses a single peer — clients fail over to the survivors, and the PodDisruptionBudget keeps drains to one at a time:
-
-<p>
-  <img src="/docs-static/img/manage/integrations/kubernetes/ha-routing-peers-spread-nodes.svg" alt="Three routing-peer pods spread one per node across three Kubernetes nodes, each reaching the service" className="imagewrapper-big"/>
-</p>
 
 ## Next Steps
 
