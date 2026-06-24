@@ -94,7 +94,6 @@ export const docsNavigation = [
           { title: 'Guardrails', href: '/agent-network/policies/guardrails' },
         ],
       },
-      { title: 'Global Limits', href: '/agent-network/global-limits' },
       {
         title: 'Usage & Logs',
         href: '/agent-network/usage-and-logs',
@@ -113,7 +112,7 @@ export const docsNavigation = [
           },
         ],
       },
-      { title: 'Self-Hosting', href: '/agent-network/self-hosting' },
+        { title: 'Global Limits', href: '/agent-network/global-limits' },
     ],
   },
   {

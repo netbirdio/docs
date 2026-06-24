@@ -1,26 +1,75 @@
 export const description =
-  'Cap LLM token usage and spend per user or per group within a policy, over a rolling window.'
+  'Cap LLM token usage and spend per user or per group within a policy, over a fixed time window.'
 
 # Token & Budget Limits
 
 Limits cap how much a policy's callers can consume. They come in two halves,
-each enforceable per user and per group over a rolling window.
+each enforceable per user and per group over a fixed time window.
 
-## Token limits
+<p>
+    <img src="/docs-static/img/agent-network/policies/agent-network-policy-limits.png" alt="agent network token and budget limits on a policy" className="imagewrapper" />
+</p>
+
+To enable limits, open the policy's **Limits** tab when creating or editing a policy, turn
+on the token and/or budget limit, and set the per-user and per-group caps and window.
+
+## Token Limits
 
 - **User cap** — maximum tokens per user in the window.
 - **Group cap** — maximum tokens per group in the window.
-- **Window** — the rolling period the cap applies to.
+- **Window** — the fixed period the cap applies to (see [below](#how-the-window-works)).
 
-## Budget limits
+## Budget Limits
 
 - **User cap (USD)** — maximum spend per user in the window.
 - **Group cap (USD)** — maximum spend per group in the window.
-- **Window** — the rolling period the cap applies to.
+- **Window** — the fixed period the cap applies to (see [below](#how-the-window-works)).
 
-## How enforcement works
+## How the Window Works
 
-Before each request, NetBird checks the applicable caps; when a cap is
-exhausted, the request is denied with a reason surfaced in the
-[access logs](/agent-network/usage-and-logs/access-logs). For account-wide caps
-that apply across all policies, see [Global Limits](/agent-network/global-limits).
+A cap applies to a **fixed window**, not a sliding one. NetBird divides time into
+back-to-back buckets of the window's length, aligned to a fixed grid starting from the
+Unix epoch (`1970-01-01T00:00:00Z`). Each request is counted into the bucket its timestamp
+falls in, and the cap is compared against the total accumulated in the **current** bucket.
+When the window rolls over to the next bucket, the counter effectively starts again at
+zero.
+
+The bucket boundary is computed as:
+
+```text
+window_start = floor(now / window) * window
+```
+
+This alignment is deliberate: because every node derives the same boundaries from the same
+clock, usage adds up consistently across a clustered deployment instead of drifting with
+each node's first request.
+
+**Example — a 1-hour (3600s) window.** Buckets run from the top of each hour in UTC:
+`13:00:00–13:59:59`, `14:00:00–14:59:59`, and so on. A request at `13:45` counts toward the
+`13:00` bucket; a request at `14:02` lands in a fresh `14:00` bucket with the counter back
+at zero — regardless of when the user's first request of the day was.
+
+## How Enforcement Works
+
+Caps are checked **before** the request runs, against usage already accumulated in the
+current window. The check is `used >= cap`: if the running total has not yet reached the
+cap, the request is allowed; once it has, the request is denied with a reason surfaced in
+the [access logs](/agent-network/usage-and-logs/access-logs).
+
+Because the check uses the total **before** the request (NetBird doesn't reserve or
+pre-estimate the request's own cost), a single request can push usage past the cap. The
+request that crosses the line still completes; the **next** one is blocked.
+
+**Example.** A token cap is set to `1000` for a group, and the group has used `999` in the
+current window:
+
+- The next request is checked: `999 >= 1000` is false, so it **goes through** — even though
+  it then consumes, say, 250 tokens and pushes the total to `1249`.
+- The following request is checked: `1249 >= 1000` is true, so it is **blocked** until the
+  window rolls over.
+
+So a cap is a floor for *when blocking starts*, not a hard ceiling on the exact total — plan
+caps with a little headroom if you need a strict upper bound.
+
+For account-wide caps that apply across all policies, see
+[Global Limits](/agent-network/global-limits).
