@@ -574,10 +574,6 @@ export const docsNavigation = [
                 title: 'Multiple Proxy Instances',
                 href: '/selfhosted/maintenance/scaling/multiple-proxy-instances',
               },
-              {
-                title: 'High Availability',
-                href: '/selfhosted/maintenance/scaling/high-availability',
-              },
             ],
           },
           { title: 'Backup', href: '/selfhosted/maintenance/backup' },
