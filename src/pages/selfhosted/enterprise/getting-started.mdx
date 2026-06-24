@@ -1,21 +1,21 @@
-export const description = 'Deploy or migrate a self-hosted NetBird Enterprise Commercial stack with the built-in embedded identity provider using the getting-started.sh and migrate-to-commercial.sh scripts — no external OIDC provider required.'
+export const description = 'Deploy or migrate a self-hosted NetBird Enterprise Commercial stack with the built-in embedded identity provider using the getting-started-enterprise.sh and migrate-to-enterprise.sh scripts — no external OIDC provider required.'
 
 # Getting Started with NetBird Enterprise Commercial License
 
 Two scripts deploy enterprise self-hosted NetBird:
 
-- **Fresh installation** with `getting-started.sh`.
-- **Migration** from an existing community combined-server deployment with `migrate-to-commercial.sh`.
+- **Fresh installation** with `getting-started-enterprise.sh`.
+- **Migration** from an existing community combined-server deployment with `migrate-to-enterprise.sh`.
 
 The scripts generate the Compose files, configuration, secrets, and Postgres setup — plus optional traffic-flow services — so there's no manual YAML to write.
 
 Both run the **embedded identity provider**, so no external OIDC provider is required. On a fresh install, you create the owner account from the dashboard on first login; you can connect an external provider later.
 
-NetBird issues `getting-started.sh`, the GHCR credentials, and the license key with your [Enterprise Commercial License](https://netbird.io/pricing#on-prem). `migrate-to-commercial.sh` is available on request — contact your account team.
+NetBird issues `getting-started-enterprise.sh`, the GHCR token, and the license key with your [Enterprise Commercial License](https://netbird.io/pricing#on-prem). `migrate-to-enterprise.sh` is available on request — contact your account team.
 
 ## 1. Fresh Installation
 
-`getting-started.sh` deploys a single-node self-hosted NetBird stack with the embedded IdP. Management, signal, relay, and STUN run in one `netbird-server` container alongside Caddy, the dashboard, and Postgres.
+`getting-started-enterprise.sh` deploys a single-node self-hosted NetBird stack with the embedded IdP. Management, signal, relay, and STUN run in one `netbird-server` container alongside Caddy, the dashboard, and Postgres.
 
 ### 1.1 Prerequisites
 
@@ -24,7 +24,7 @@ NetBird issues `getting-started.sh`, the GHCR credentials, and the license key w
 - `bash`, `curl`, `jq`, and `openssl` available on the host.
 - A real DNS-resolvable FQDN with an A record pointing at the host. Bare IP addresses are not supported.
 - Open inbound ports: `80/tcp`, `443/tcp`, and `3478/udp`.
-- GHCR username and token associated with the enterprise license.
+- GHCR token (PAT) associated with the enterprise license.
 - An enterprise license key authorized for the products you want to enable.
 
 ### 1.2 Run the script
@@ -34,7 +34,7 @@ Create an empty directory and run the script from inside it:
 ```bash
 mkdir -p netbird-enterprise
 cd netbird-enterprise
-bash getting-started.sh
+curl -fsSL https://pkgs.netbird.io/getting-started-enterprise.sh | bash
 ```
 
 The script prompts for:
@@ -42,7 +42,7 @@ The script prompts for:
 - Whether to enable traffic flow — required for traffic event logging and streaming.
 - The public NetBird domain.
 - A single license key (used for all enabled products and features).
-- GHCR username and token.
+- GHCR token (PAT).
 
 It then generates the deployment files, logs in to GHCR, pulls the required images, starts Postgres, waits for it to become ready, and starts the remaining services.
 
@@ -75,6 +75,25 @@ After the stack starts:
 - Check `docker compose logs -f netbird-server caddy`.
 - Open the dashboard and complete owner setup.
 - Add a test peer and confirm it connects.
+
+### 1.6 Stack components
+
+The combined stack:
+
+| Service | Image | Notes |
+| --- | --- | --- |
+| `caddy` | `caddy:2` | TLS termination, reverse proxy |
+| `dashboard` | `ghcr.io/netbirdio/dashboard-cloud:latest` | UI |
+| `postgres` | `postgres:17` | Datastore for management, embedded IdP, traffic events |
+| `netbird-server` | `ghcr.io/netbirdio/netbird-server-cloud:latest` | Management + signal + relay + embedded STUN on UDP/3478 |
+
+Enabling traffic flow adds:
+
+| Service | Image | Notes |
+| --- | --- | --- |
+| `nats` | `nats:2` | JetStream for traffic events |
+| `receiver` | `ghcr.io/netbirdio/flow-receiver-cloud:latest` | Traffic flow ingest |
+| `enricher` | `ghcr.io/netbirdio/flow-enricher-cloud:latest` | Traffic flow enrichment |
 
 ## 2. Connect Identity Providers
 
@@ -115,7 +134,7 @@ We recommend using SCIM provisioning where possible. In the following setup guid
 
 ## 3. Migrate an Existing Community Combined Deployment
 
-Use `migrate-to-commercial.sh` to convert an existing community combined-server deployment to the enterprise images. The same script also migrates SQLite data to Postgres and enables traffic flow, so no manual Compose or `config.yaml` edits are required for the supported migration path.
+Use `migrate-to-enterprise.sh` to convert an existing community combined-server deployment to the enterprise images. The same script also migrates SQLite data to Postgres and enables traffic flow, so no manual Compose or `config.yaml` edits are required for the supported migration path.
 
 <Note>
 The migration script is available on request — contact your account team to obtain it.
@@ -130,7 +149,7 @@ The script targets an existing combined-server deployment that has a `docker-com
 - `bash`, `openssl`, Docker, and Docker Compose are available on the host.
 - At least 5 GB of free disk space — the enterprise images (~2.2 GB) are pulled while the community images are still present (~1.5 GB extra), plus a SQLite backup and Postgres data.
 - `yq` is installed using the [Mike Farah implementation](https://github.com/mikefarah/yq); the Python wrapper is not supported.
-- GHCR username and token associated with the enterprise license.
+- GHCR token (PAT) associated with the enterprise license.
 - An enterprise license key authorized for the products you want to enable.
 - Access to the deployment directory that contains `docker-compose.yml`.
 
@@ -141,7 +160,7 @@ The script asks which steps to apply:
 | Step | What it does |
 | --- | --- |
 | Image swap | Replaces the community server and dashboard images with the enterprise images and adds the enterprise license key. |
-| Postgres migration | Adds Postgres, generates `config.yaml.commercial`, backs up the SQLite data volume, and runs `migrate-store --verify`. |
+| Postgres migration | Adds Postgres, generates `config.yaml.enterprise`, backs up the SQLite data volume, and runs `migrate-store --verify`. |
 | Traffic flow | Adds NATS, a flow receiver, and a flow enricher. Requires Postgres and traffic-flow licenses. |
 
 For SQLite deployments, the Postgres migration is handled by the script through the built-in `migrate-store` command. It copies the legacy SQLite stores (`store.db`, `integrations.db`, `events.db`, and `idp.db` when present) into Postgres and verifies row counts after the copy.
@@ -152,10 +171,10 @@ Run the script from the directory that contains the existing `docker-compose.yml
 
 ```bash
 cd /path/to/existing/netbird/deployment
-bash migrate-to-commercial.sh
+curl -fsSL https://pkgs.netbird.io/migrate-to-enterprise.sh | bash
 ```
 
-The script detects the combined-server service name, the dashboard service name, the host path for `config.yaml`, the data volume mounted at `/var/lib/netbird`, and the Compose network. It then prompts for the license key, GHCR credentials, whether to migrate to Postgres, and whether to enable traffic flow.
+The script detects the combined-server service name, the dashboard service name, the host path for `config.yaml`, the data volume mounted at `/var/lib/netbird`, and the Compose network. It then prompts for the license key, GHCR token, whether to migrate to Postgres, and whether to enable traffic flow.
 
 ### 3.4 Files created by the migration script
 
@@ -164,9 +183,9 @@ The script does not modify the existing `docker-compose.yml` or original `config
 | File or directory | Purpose |
 | --- | --- |
 | `docker-compose.override.yml` | Compose override with the enterprise images and optional Postgres or traffic-flow services. |
-| `config.yaml.commercial` | Generated only when Postgres migration is selected. Points the enterprise server at Postgres. |
+| `config.yaml.enterprise` | Generated only when Postgres migration is selected. Points the enterprise server at Postgres. |
 | `.env` additions | License key and generated secrets used by the override file. |
-| `backups/sqlite-pre-commercial-*` | SQLite data backup created before the Postgres migration. |
+| `backups/sqlite-pre-enterprise-*` | SQLite data backup created before the Postgres migration. |
 
 Docker Compose automatically merges `docker-compose.override.yml` with the existing `docker-compose.yml`.
 
@@ -189,7 +208,7 @@ Rollback generally means:
 
 - Stop the stack with Docker Compose.
 - If Postgres migration was selected, remove the generated Postgres volume and restore the SQLite backup created by the script.
-- Remove `docker-compose.override.yml` and `config.yaml.commercial`.
+- Remove `docker-compose.override.yml` and `config.yaml.enterprise`.
 - Remove the migration entries added to `.env`.
 - Start the original stack again.
 
@@ -199,7 +218,7 @@ Keep the SQLite backup until the enterprise deployment has been validated and yo
 
 Each entry follows the same structure: **Symptom → Cause → Resolution → Verification.**
 
-### 4.1 Boot fails: `server.store.encryptionKey is required`
+### Boot fails: `server.store.encryptionKey is required`
 
 - **Symptom:** The server exits immediately with this message in the logs.
 - **Cause:** `config.yaml` is missing `server.store.encryptionKey`, or the value is the empty string.
@@ -210,21 +229,21 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
 **Do not rotate the key on an existing deployment.** If you have already booted once with a key, that exact value must remain — otherwise encrypted records become unreadable.
 </Warning>
 
-### 4.2 Traffic flow warning: `traffic flow disabled: server.store.engine is "sqlite" but flow requires postgres`
+### Traffic flow warning: `traffic flow disabled: server.store.engine is "sqlite" but flow requires postgres`
 
 - **Symptom:** The server boots, but the warning above appears and no flow events are written.
 - **Cause:** `server.trafficFlow.enabled: true` while running on SQLite.
-- **Resolution:** Run `migrate-to-commercial.sh`, select the Postgres migration step, and enable traffic flow when prompted. The warning disappears once the server runs with Postgres-backed stores and traffic flow enabled.
+- **Resolution:** Run `migrate-to-enterprise.sh`, select the Postgres migration step, and enable traffic flow when prompted. The warning disappears once the server runs with Postgres-backed stores and traffic flow enabled.
 - **Verification:** `psql -c '\dt' netbird` shows `network_traffic_events` (and related) tables; events appear in the dashboard's flow view.
 
-### 4.3 Licensed features unavailable: `license is not valid`
+### Licensed features unavailable: `license is not valid`
 
 - **Symptom:** Enterprise features remain unavailable, or the server logs show `license is not valid`.
 - **Cause:** `NB_LICENSE_KEY` is missing, expired, or incorrect.
 - **Resolution:** Confirm the env var is exported and matches the key issued by NetBird.
 - **Verification:** The server logs show successful license validation and enterprise features unlock.
 
-### 4.4 Embedded IdP discovery returns 404
+### Embedded IdP discovery returns 404
 
 - **Symptom:** `curl https://<your-domain>/oauth2/.well-known/openid-configuration` returns 404.
 - **Cause:** The reverse proxy is routing `/oauth2/*` to a different upstream or stripping the prefix, or `server.auth.issuer` does not match the public URL.
@@ -234,21 +253,21 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
   3. Restart the server.
 - **Verification:** The discovery document JSON is returned with `issuer: https://<your-domain>/oauth2`.
 
-### 4.5 Boot loops on Postgres connection
+### Boot loops on Postgres connection
 
 - **Symptom:** `failed to connect to postgres: dial tcp ... connect: connection refused`, repeated every few seconds.
 - **Cause:** Not a startup-ordering issue on the generated stacks — the server already waits for a healthy Postgres. This usually means Postgres is unhealthy or unreachable: a crash-looping container, a wrong DSN, a `POSTGRES_PASSWORD` that no longer matches the existing `netbird_postgres` volume, or a blocked network path.
 - **Resolution:** Run `docker compose ps`; if `postgres` isn't `healthy`, check `docker compose logs postgres`, then confirm the DSN uses host `postgres` with a matching user, database, and password.
 - **Verification:** `docker compose ps` shows `postgres` as `healthy`; the server connects once on startup with no connection-refused loop.
 
-### 4.6 Caddy cannot issue a TLS certificate
+### Caddy cannot issue a TLS certificate
 
 - **Symptom:** HTTPS to the dashboard is unreachable or shows a TLS error; `docker compose logs caddy` shows ACME challenge failures.
 - **Cause:** The FQDN does not resolve to the host, or TCP/80 + TCP/443 are not reachable from Let's Encrypt's validation servers. Caddy tries HTTP-01 (port 80) first and falls back to TLS-ALPN-01 (port 443); at least one must be reachable from the public internet for cert issuance to succeed.
 - **Resolution:** Confirm the DNS A record for `NETBIRD_DOMAIN` points at the host, and that the firewall / cloud security group allows inbound TCP/80 and TCP/443.
 - **Verification:** `docker compose logs caddy` shows "certificate obtained successfully"; `curl -sI https://<your-domain>/` returns a valid response with a trusted certificate.
 
-### 4.7 First-login owner-setup page is not shown
+### First-login owner-setup page is not shown
 
 - **Symptom:** The dashboard loads, but the regular sign-in screen appears instead of the owner-setup flow.
 - **Cause:** An owner account already exists, so the API reports `setupRequired: false`. Either setup completed earlier in this deployment, or a previous run left state behind.
@@ -256,13 +275,13 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
   ```bash
   docker compose down --volumes   # removes containers and the postgres/embedded-IdP data
   rm -f .env docker-compose.yml Caddyfile config.yaml
-  bash getting-started.sh
+  curl -fsSL https://pkgs.netbird.io/getting-started-enterprise.sh | bash
   ```
 - **Verification:** `curl -s https://<your-domain>/api/instance | jq .` returns `setupRequired: true`; the dashboard now shows the owner-setup flow on first visit.
 
-### 4.8 `docker login ghcr.io` fails during the script
+### `docker login ghcr.io` fails during the script
 
-- **Symptom:** `getting-started.sh` aborts at the GHCR login step with an authentication error.
+- **Symptom:** `getting-started-enterprise.sh` aborts at the GHCR login step with an authentication error.
 - **Cause:** The token lacks the `read:packages` scope, or the username does not match the one issued alongside the enterprise license.
 - **Resolution:** Confirm the token at [github.com/settings/tokens](https://github.com/settings/tokens) has `read:packages` scope, and that the username matches the one NetBird issued with the license.
 - **Verification:** `echo "$TOKEN" | docker login ghcr.io -u "<username>" --password-stdin` returns `Login Succeeded`.
