@@ -40,12 +40,12 @@ into `metadata.tags` and its identity into the `x-litellm-end-user-id` header, s
 can apply tag budgets and per-user attribution.
 
 <p>
-    <img src="/docs-static/img/agent-network/how-it-works/agent-network-diagram.png" alt="agent network LLM request path through the NetBird proxy" className="imagewrapper-big" />
+    <img src="/docs-static/img/agent-network/how-it-works/agent-network-diagram-llm-apis.png" alt="agent network LLM request path through the NetBird proxy" className="imagewrapper-big" />
 </p>
 
 - **NetBird client** — the agent's device joins the overlay as a peer. Its requests to
   the endpoint are routed through the WireGuard tunnel, not the public internet.
-- **Proxy peer** — handles **LLM traffic only**. It terminates the request, establishes
+- **Proxy peer** — handles LLM traffic only. It terminates the request, establishes
   the caller's identity, runs the routing and policy pipeline, injects the provider key,
   and forwards to the upstream API or gateway.
 - **Management service** — the control plane. It holds providers, policies, guardrails,
@@ -71,10 +71,12 @@ access policies, so it can reach only the resources it is authorized for. Becaus
 traffic never passes through the proxy, this path has no agent network endpoint, no
 provider-key injection, and no token, budget, or per-request LLM logging — it is governed
 like standard NetBird peer-to-peer access. This keeps internal traffic fast and private,
-flowing straight between the two peers.
+flowing straight between the two peers. Because NetBird is a peer-to-peer network, this
+also works in reverse, so a resource can reach back to an agent when needed, such as to
+deliver a callback or webhook.
 
 <p>
-    <img src="/docs-static/img/agent-network/how-it-works/agent-network-diagram-2.png"
+    <img src="/docs-static/img/agent-network/how-it-works/agent-network-diagram-internal-resources.png"
          alt="agent network internal resource request path through WireGuard overlay" className="imagewrapper-big" />
 </p>
 
@@ -88,8 +90,8 @@ request through an ordered pipeline. Conceptually:
 ```text
   request ─▶ identity ─▶ parse model ─▶ route to provider ─▶ policy & limits
                                                                    │
-                                                          allow │ deny → 403
-                                                                ▼
+                                                             allow │ deny → 403
+                                                                   ▼
        response ◀─ meter tokens & cost ◀─ upstream call ◀─ inject provider key
            │
            ▼
