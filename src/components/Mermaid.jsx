@@ -39,6 +39,8 @@ function CloseIcon() {
 export function Mermaid({ chart, alt = 'Diagram' }) {
   let reactId = useId().replace(/[^a-zA-Z0-9]/g, '')
   let renderCount = useRef(0)
+  let renderRun = useRef(0)
+  let hasRendered = useRef(false)
   let [svg, setSvg] = useState('')
   let [error, setError] = useState(null)
   let [zoomed, setZoomed] = useState(false)
@@ -51,26 +53,30 @@ export function Mermaid({ chart, alt = 'Diagram' }) {
     async function render() {
       let dark = isDarkMode()
       // Skip redundant re-renders when an unrelated class toggles on <html>.
-      if (lastTheme === dark && svg) return
+      if (lastTheme === dark && hasRendered.current) return
       lastTheme = dark
+      let run = ++renderRun.current
 
       try {
         let mermaid = await loadMermaid()
         mermaid.initialize({
           startOnLoad: false,
-          securityLevel: 'loose',
+          securityLevel: 'strict',
           theme: dark ? 'dark' : 'default',
           fontFamily:
             "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
         })
         let id = `mermaid-${reactId}-${renderCount.current++}`
         let { svg: out } = await mermaid.render(id, chart)
-        if (!cancelled) {
+        if (!cancelled && run === renderRun.current) {
+          hasRendered.current = true
           setError(null)
           setSvg(out)
         }
       } catch (e) {
-        if (!cancelled) setError(e?.message || String(e))
+        if (!cancelled && run === renderRun.current) {
+          setError(e?.message || String(e))
+        }
       }
     }
 
