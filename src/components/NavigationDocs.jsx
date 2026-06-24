@@ -79,7 +79,8 @@ export const docsNavigation = [
   {
     title: 'AGENT NETWORK',
     links: [
-      { title: 'Overview', href: '/agent-network' },
+      { title: 'What is Agent Network?', href: '/agent-network' },
+      { title: 'How It Works', href: '/agent-network/how-it-works' },
       { title: 'Quickstart', href: '/agent-network/quickstart' },
       { title: 'Providers', href: '/agent-network/providers' },
       {
