@@ -397,7 +397,7 @@ services:
 | Env var | Required | Notes |
 |---|---|---|
 | `NB_EXPOSED_ADDRESS` | Yes | The Relay load balancer URL. **It must be identical on every instance.** This is the URL peers see, not the per-instance hostname. |
-| `NB_AUTH_SECRET` | Yes | Shared with `server.authSecret` and `server.relays.secret` on the Management pool. Must be byte-identical on every Relay instance and on every Management replica. |
+| `NB_AUTH_SECRET` | Yes | Shared with `server.relays.secret` in every Management replica's `config.yaml`. Must be byte-identical on every Relay instance and on every Management replica. |
 | `NB_LISTEN_ADDRESS` | Yes | The address the relay binds inside the container. |
 | `NB_LOG_LEVEL` | No | `debug`, `info` (default), `warn`, `error`. |
 | `NB_ENABLE_STUN` | No | Enables the embedded STUN server on UDP. |
@@ -435,8 +435,6 @@ Every Management replica's `config.yaml` references the Relay pool through a **s
 
 ```yaml
 server:
-  authSecret: "<NB_AUTH_SECRET; identical on every Relay instance>"
-
   # External STUN: per-instance hostnames (option 1) or external STUN/TURN (option 2)
   stuns:
     - uri: "stun:stun-1.example.com:3478"
@@ -448,7 +446,7 @@ server:
   relays:
     addresses:
       - "rels://relay.example.com:443"
-    secret: "<NB_AUTH_SECRET; same as server.authSecret>"
+    secret: "<NB_AUTH_SECRET; identical on every Relay instance>"
     credentialsTTL: "24h"
 ```
 
@@ -532,7 +530,6 @@ Now configure the Management replicas to point at everything you've set up: Post
 ```yaml
 server:
   exposedAddress: "https://app.example.com:443"
-  authSecret: "<NB_AUTH_SECRET; same value as on every Relay instance>"
   dataDir: "/var/lib/netbird/"
 
   # External STUN: see Step 5 for the per-instance and external STUN options
@@ -642,7 +639,7 @@ To **remove** an instance: mark it as draining in the LB, wait for streams to dr
 |---|---|
 | `POSTGRES_PASSWORD` / Postgres user password | Update the password in PostgreSQL, update the DSN in every Management replica's `config.yaml`, restart Management replicas one at a time. |
 | Redis password | Update Redis, update `server.ha.redisAddr` on every Management replica, restart Management replicas one at a time. |
-| `NB_AUTH_SECRET` (relay auth) | Update every Relay instance simultaneously, then update `server.authSecret` and `server.relays.secret` on every Management replica at the same time. Peer relay sessions can be rejected while the values differ. Restart Management and Relay together to minimise this window. |
+| `NB_AUTH_SECRET` (relay auth) | Update every Relay instance simultaneously, then update `server.relays.secret` on every Management replica at the same time. Peer relay sessions can be rejected while the values differ. Restart Management and Relay together to minimise this window. |
 | `server.store.encryptionKey` | **Do not rotate.** This key encrypts data at rest in PostgreSQL. Rotating it makes existing encrypted data unreadable. Plan a fresh deployment if you need to change it. |
 
 ## Troubleshooting
@@ -681,7 +678,7 @@ If a node is down, restart it and wait for it to rejoin the cluster. The `traffi
 
 ### Relay rejects peer connections with `auth: invalid token`
 
-`NB_AUTH_SECRET` differs between the Relay instances and the Management pool's `server.authSecret` / `server.relays.secret`. The three values must all be byte-identical. Confirm on every Relay container and in every Management replica's `config.yaml`.
+`NB_AUTH_SECRET` on the Relay instances differs from `server.relays.secret` on the Management replicas. The two values must be byte-identical. Confirm on every Relay container and in every Management replica's `config.yaml`.
 
 ### Management replica refuses to start: `Redis is required for multi-instance mode`
 
