@@ -82,56 +82,60 @@ deliver a callback or webhook.
 
 ## The Lifecycle of an LLM Request
 
-The pipeline below applies to **LLM traffic** — requests to the agent network endpoint.
-Access to internal resources skips this entirely and flows peer-to-peer (see [The Overlay
-Network](#the-overlay-network)). When an agent calls the endpoint, the proxy runs each
-request through an ordered pipeline. Conceptually:
+This pipeline applies to LLM traffic — requests to the agent network endpoint.
+Access to internal resources skips it entirely and flows peer-to-peer (see [Internal
+Resources](#internal-resources)).
 
-```text
-  request ─▶ identity ─▶ parse model ─▶ route to provider ─▶ policy & limits
-                                                                   │
-                                                             allow │ deny → 403
-                                                                   ▼
-       response ◀─ meter tokens & cost ◀─ upstream call ◀─ inject provider key
-           │
-           ▼
-   record usage (always)  +  access log (when log collection is enabled)
-```
+The proxy runs each request through an ordered chain of middleware. On the way to the
+upstream:
 
-1. **Identity.** The proxy resolves who is calling — see [Identity and
-   Authentication](#identity-and-authentication).
-2. **Parsing.** It reads the target model (and whether the response is streamed) from
-   the request body, tolerant of large payloads.
-3. **Routing.** It matches the model to a configured provider the caller is authorized
-   to use — see [Routing](#routing-matching-a-request-to-a-provider).
-4. **Policy & limits.** It asks management whether this identity may proceed and which
-   policy's budget the request counts against — see [Policies, Limits, and
+1. **Establish identity.** The request arrives over the WireGuard tunnel, so the proxy
+   maps it to the calling NetBird peer and its identity — tied to your IdP for a human
+   user, or the peer's own NetBird identity for an autonomous agent — together with its
+   group membership. See [Identity and Authentication](#identity-and-authentication).
+2. **Parse the request.** Read the target model and stream flag from the body, and
+   capture the prompt if prompt collection is enabled.
+3. **Route and inject the key.** Match the model to a provider the caller's groups are
+   authorized to use, rewrite the upstream target, strip any client-supplied auth headers,
+   and inject the provider's key from server-side storage — see
+   [Routing](#routing-matching-a-request-to-a-provider) and [Keyless Access](#keyless-access).
+4. **Check policy and limits.** Ask management to select the matching policy and evaluate
+   account- and policy-level token and budget caps. If unauthorized or a cap is exhausted,
+   the request is denied here — see [Policies, Limits, and
    Guardrails](#policies-limits-and-guardrails).
-5. **Key injection.** It removes any client-supplied auth headers and adds the
-   provider's key from server-side storage — see [Keyless
-   Access](#keyless-access).
-6. **Forwarding & metering.** It forwards to the upstream, extracts token counts from
-   the response, converts them to cost, and ticks the relevant usage counters.
-7. **Recording.** It always records lightweight usage; if log collection is on, it also
-   writes a full access-log entry — see [Usage and Access Logs](#usage-and-access-logs).
+5. **Stamp identity for the gateway.** Add the caller's identity to the upstream request
+   (for example into `metadata.tags` and `x-litellm-end-user-id`) for gateways that key
+   their own budgets and attribution off it.
+6. **Apply guardrails.** Enforce the model allowlist and the prompt-capture rules.
+
+The request is then forwarded to the upstream API or gateway. On the response leg, in
+reverse:
+
+7. **Meter.** Extract token counts from the response and convert them to cost.
+8. **Record.** Post the usage back to management to update the limit counters. Usage is
+   always recorded; a full access-log entry is written when log collection is on — see
+   [Usage and Access Logs](#usage-and-access-logs).
 
 A denial at any gate returns `403` to the client with a machine-readable reason, and the
 request is still recorded so it appears in your logs.
 
 ## Identity and Authentication
 
-Every request is tied to a real identity before any policy runs. There are two paths:
+Every request is tied to a real identity before any policy runs, and that identity always
+comes from the **NetBird tunnel**. Because the request arrives over WireGuard, the proxy
+maps its source to the enrolled peer and resolves the peer's NetBird identity and group
+membership:
 
-- **Tunnel peer.** Because the request arrives over WireGuard, the proxy maps its source
-  to the enrolled peer and, through it, to the NetBird user and the groups that user (or
-  agent) belongs to. This is the keyless fast path for agents running on enrolled
-  devices.
-- **OIDC session.** For interactive tools, the proxy can run a login flow against your
-  identity provider and issue a session, then read the user and groups from it.
+- For a **human user** — for example someone running Claude Code — the NetBird identity is
+  tied to your identity provider (Okta, Microsoft Entra ID, Google, …), so the request
+  carries that user and the groups they belong to.
+- For an **autonomous agent**, the identity is the agent's own NetBird peer identity and
+  the groups assigned to that peer.
 
-Either way the request carries a **user identity** and its **group membership**, captured
-at request time. Policies are written against those groups, so access follows the same
-identities your IdP already manages — no separate set of credentials for AI traffic.
+Either way the request carries a real identity and its **group membership**, captured at
+request time. There is no API key or separate login on the client — the tunnel is the
+credential. Policies are written against those groups, so access to AI follows the same
+identities your organization already manages.
 
 ## Routing: Matching a Request to a Provider
 
