@@ -7,42 +7,46 @@ Peer connectivity and relay problems on a self-hosted deployment. For other area
 
 ## Debugging TURN connections
 
-In the case that the peer-to-peer connection is not an option then the peer will use the TURN server for the secure connection establishment. If the connection is not possible even with TURN (Relay),
-then we need to confirm that your turn configuration is correct and that it is available.
+When peers can't establish a direct connection, they fall back to the TURN (relay) server. If the connection still fails with relay, confirm your TURN configuration is correct and reachable.
 
-To test your TURN configuration you can access the [online tester](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice).
-There you will find a ICE servers input box, where you can select and remove the existing server, then add your turn server
-configuration as follows:
-
-Please replace <b>netbird.DOMAIN.com</b> and <b>PASSWORD</b> with your STUN/TURN server details from your configuration (<b>config.yaml</b> for the combined setup, or the <b>TURNConfig</b> section in <b>management.json</b> for older multi-container setups), then click on <b>Add server</b>.
+To test it, open the [Trickle ICE test tool](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice). In the **ICE servers** box, remove the default server and add your TURN server. Replace <b>netbird.DOMAIN.com</b> and <b>PASSWORD</b> with your STUN/TURN details from your configuration (`config.yaml` for the combined setup, or the `TURNConfig` section in `management.json` for older multi-container setups), then click <b>Add server</b>.
 
 <p>
-    <img src="/docs-static/img/selfhosted/troubleshooting/turn.png" alt="turn" width="700" className="imagewrapper"/>
+    <img src="/docs-static/img/selfhosted/troubleshooting/turn.png" alt="The Trickle ICE test tool with a NetBird STUN/TURN server added to the ICE servers list" width="700" className="imagewrapper"/>
 </p>
 
-You should see an output similar to the following:
+*Add your STUN/TURN server in the ICE servers box, then click Add server.*
+
+Gather candidates and read the result:
+
 <p>
-    <img src="/docs-static/img/selfhosted/troubleshooting/turn-test-out.png" alt="turn" width="700" className="imagewrapper-nig"/>
+    <img src="/docs-static/img/selfhosted/troubleshooting/turn-test-out.png" alt="Trickle ICE test output listing host, srflx, and relay candidate types" width="700" className="imagewrapper-nig"/>
 </p>
-Where you have the following types: `host` (local address), `srflx` (STUN reflexive address), `relay`
-(TURN relay address). If `srflx` and `relay` are not present then the TURN server is not working or not accessible and you should review the required ports in the [requirements section](/selfhosted/selfhosted-guide#requirements).
+
+*A working TURN server returns `srflx` and `relay` candidates.*
+
+The candidate types are `host` (local address), `srflx` (STUN reflexive address), and `relay` (TURN relay address). If `srflx` and `relay` are missing, the TURN server is not working or not reachable. Review the required ports in the [requirements section](/selfhosted/selfhosted-guide#requirements).
 
 ## Peers can't connect to each other
 
-**Problem**: Peers are registered but can't establish connections.
+**Symptom**: Peers are registered and show in the dashboard, but can't establish a connection between them.
 
-**Solutions**:
-1. Check that UDP port 3478 is accessible (STUN/TURN)
-2. Verify the TURN server is working (see [TURN debugging](#debugging-turn-connections))
-3. Check firewall rules on both peers
-4. Review peer logs: `netbird status -d`
+**Likely causes and fixes** (most common first):
+
+1. **STUN/TURN is unreachable.** Confirm UDP/3478 (STUN/TURN) is open, then verify the relay path with the [TURN test above](#debugging-turn-connections).
+2. **A host firewall is dropping traffic** on one or both peers. Check the local firewall rules on each peer.
+3. **The peer itself is unhealthy.** Run `netbird status -d` on both peers and check the connection type and last handshake.
+
+**Confirm**: `netbird status -d` on both peers shows `Status: Connected` and a recent WireGuard handshake.
 
 ## Management service unreachable
 
-**Problem**: Clients can't connect to the Management service.
+**Symptom**: Clients can't register or stay connected, reporting that the Management service is unreachable.
 
-**Solutions**:
-1. Verify port 443 is accessible
-2. Check DNS resolution for your domain
-3. Review Management logs: `docker compose logs management`
-4. Test with curl: `curl -v https://your-domain.com/api/health`
+**Likely causes and fixes** (most common first):
+
+1. **TCP/443 is blocked** between the client and the server. Confirm the port is open end to end.
+2. **DNS doesn't resolve your domain** to the server's public IP. Check resolution from the client.
+3. **Management is down or erroring.** Review `docker compose logs management`, and test the endpoint directly: `curl -v https://YOUR_DOMAIN/api/health`.
+
+**Confirm**: `curl https://YOUR_DOMAIN/api/health` returns a healthy response, and `netbird status` shows `Management: Connected`.

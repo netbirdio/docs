@@ -7,20 +7,24 @@ TLS and certificate problems on a self-hosted deployment. For other areas, start
 
 ## Let's Encrypt certificate not renewing
 
-**Problem**: SSL certificate expires and doesn't auto-renew.
+**Symptom**: The TLS certificate expires and does not auto-renew, so clients and browsers report an expired or invalid certificate.
 
-**Solutions**:
-1. Ensure port 80 is accessible for ACME challenge
-2. Check Caddy logs: `docker compose logs caddy`
-3. Verify the domain points to the correct IP
-4. Manually trigger renewal: `docker exec -it netbird-caddy caddy reload`
+**Likely causes and fixes** (most common first):
+
+1. **Port 80 is not reachable from the internet.** The ACME HTTP challenge needs inbound TCP/80. Confirm your firewall and cloud security groups allow it.
+2. **The domain no longer points at this host.** Verify the `A`/`AAAA` record resolves to the server's public IP.
+3. **A renewal error in the proxy.** Check the certificate manager's logs: `docker compose logs caddy`. If needed, force a reload: `docker exec -it netbird-caddy caddy reload`.
+
+**Confirm**: `curl -vI https://YOUR_DOMAIN 2>&1 | grep -E "issuer|expire"` shows a current Let's Encrypt certificate.
 
 ## Certificate errors with custom reverse proxy
 
-**Problem**: SSL errors when using your own reverse proxy.
+**Symptom**: TLS errors when terminating TLS on your own reverse proxy instead of the bundled one.
 
-**Solutions**:
-1. Ensure your reverse proxy terminates SSL correctly
-2. Set `NETBIRD_DISABLE_LETSENCRYPT=true` in your configuration
-3. Configure proper headers (X-Forwarded-For, X-Forwarded-Proto)
-4. Verify HTTP/2 support is enabled for gRPC endpoints
+**Likely causes and fixes** (most common first):
+
+1. **Let's Encrypt is still enabled, so two components fight over TLS.** Set `NETBIRD_DISABLE_LETSENCRYPT=true` so NetBird stops managing certificates and leaves termination to your proxy.
+2. **Forwarded headers are missing.** Set `X-Forwarded-For` and `X-Forwarded-Proto` on the proxy so NetBird sees the original scheme and client.
+3. **gRPC fails without HTTP/2.** The Management gRPC endpoints need HTTP/2; enable it on the proxy.
+
+**Confirm**: The dashboard loads over your proxy without TLS warnings, and `netbird status` from a client shows `Management: Connected`.
