@@ -925,7 +925,7 @@ export const docsNavigation = [
             ],
           },
           {
-            title: 'NetBird Cloud',
+            title: 'Cloud & identity',
             isOpen: false,
             links: [
               {
