@@ -1,255 +1,72 @@
+import { TroubleshootingStart } from "@/components/TroubleshootingStart"
+import { TroubleshootingTiles } from "@/components/TroubleshootingTiles"
+
+export const description =
+  "Troubleshoot a self-hosted NetBird deployment: collect diagnostics, then jump to the area that matches your issue."
+
 # Troubleshooting
 
-This page will help with various issues when self-hosting NetBird.
-
-## Embedded IdP Issues
-
-### Setup page not accessible
-
-**Problem**: You can't access the `/setup` page to create the first user.
-
-**Solutions**:
-- The `/setup` page is only available when no users exist. If you've already created a user, use the regular login page.
-- Check that the embedded IdP is enabled in your configuration.
-- Verify the Management service is running: `docker compose logs management`
-
-### "Setup already completed" error (HTTP 412)
-
-**Problem**: The setup endpoint returns a 412 error.
-
-**Solution**: Setup has already been completed. The first user was already created. Use the regular login page to sign in.
-
-### Password not working after user creation
-
-**Problem**: You created a user but the password doesn't work.
-
-**Solutions**:
-- Passwords are shown only once during user creation. If you didn't save it, you'll need to delete and recreate the user.
-- Via API, you can create a new user with a new password.
-- For the owner account, you may need to reset the database if no other admins exist.
-
-### SSO connector not appearing on login page
-
-**Problem**: You configured an identity provider but it doesn't show on the login page.
-
-**Solutions**:
-1. Verify the connector was saved: Go to **Settings** → **Identity Providers**
-2. Check that the redirect URL is correctly configured in your IdP
-3. Review Management service logs for configuration errors: `docker compose logs management`
-4. Ensure the IdP application has the correct redirect URI from NetBird
-
-### "Invalid redirect URI" error from IdP
-
-**Problem**: When clicking an SSO button, the IdP returns an invalid redirect URI error.
-
-**Solutions**:
-1. Copy the exact redirect URL from NetBird (shown after saving the connector)
-2. Add it to your IdP's allowed redirect URIs
-3. Check for trailing slashes or typos
-4. Some IdPs are case-sensitive
-
-### Identity Providers tab not visible
-
-**Problem**: You don't see the Identity Providers tab in Settings.
-
-**Solution**: This tab is only visible when the embedded IdP is enabled. Check your deployment configuration:
-- For quickstart deployments, the embedded IdP should be enabled by default
-- For the combined setup, the embedded IdP is always enabled
-- For older multi-container deployments, ensure `EmbeddedIdP.Enabled` is set to `true` in `management.json`
-
-### Users not syncing from SSO provider
-
-**Problem**: Users who authenticate via SSO don't appear in the user list.
-
-**Solutions**:
-- Users appear after their first successful login, not immediately after connector configuration
-- Check that the SSO flow completes successfully (user should land on Dashboard)
-- Review Management logs for any token validation errors
-
-## Installation Script Issues
-
-### Script hangs on "Waiting for NetBird server to become ready"
-
-**Problem**: The `getting-started.sh` script stays on the wait line for several minutes, even though netbird-server itself looks healthy in `docker ps`.
-
-The wait check probes the OIDC endpoint through your reverse proxy, so a healthy server alone isn't enough. Something on the path from the public internet to netbird-server is broken. Check these in order:
-
-**1. DNS**
-
-Confirm your domain points at the host:
-
-```bash
-dig +short netbird.example.com
-```
-
-The result should be the public IP of the VM running NetBird. If it's empty or wrong, the cert challenge can't complete and the probe will never succeed.
-
-**2. Cert issuance**
-
-For options 0 (built-in Traefik) and 1 (existing Traefik), check that a real cert was issued:
-
-```bash
-curl -vI https://netbird.example.com 2>&1 | grep -E "subject|issuer"
-```
-
-If you see a self-signed or default cert, ACME hasn't completed. Check Traefik logs for ACME errors. Common causes: port 80 not reachable from the internet, DNS not propagated yet, or Let's Encrypt rate limit hit.
-
-**3. Traefik can talk to the Docker socket (option 1 only)**
-
-Traefik discovers NetBird containers via Docker labels. If the Docker socket is mounted but Traefik can't read it (old SDK, wrong path, permission denied), routes never get created. Check Traefik logs for errors like `client version is too old` or `permission denied while trying to connect to the Docker daemon socket`.
-
-**4. Network membership matches (option 1 only)**
-
-Confirm the Traefik container and NetBird containers are actually on the same Docker network:
-
-```bash
-docker network inspect <your-network-name> | grep -A 2 Containers
-```
-
-You should see both Traefik and the NetBird containers listed.
-
-**5. Routing works end to end**
-
-If the four above look fine, test the full path manually:
-
-```bash
-curl -k https://netbird.example.com/oauth2/.well-known/openid-configuration
-```
-
-A valid response is JSON containing `"issuer"`. Anything else (empty body, 404, 502, connection refused) tells you where to dig further: 502 means Traefik can't reach netbird-server, 404 means the labels aren't matched, connection refused means you're not hitting Traefik at all.
-
-You can let the script keep waiting while you debug. As soon as the probe succeeds, the script will continue. If you'd rather start over, kill it with Ctrl+C, run `docker compose down -v`, fix the issue, and re-run.
-
-### Script fails on existing installation check
-
-**Problem**: The script exits immediately with a message about generated files already existing.
-
-**Solution**: This is intentional and protects you from overwriting a working setup. To start fresh:
-
-```bash
-docker compose down --volumes
-rm -f docker-compose.yml dashboard.env config.yaml proxy.env \
-      traefik-dynamic.yaml nginx-netbird.conf caddyfile-netbird.txt \
-      npm-advanced-config.txt
-```
-
-Then re-run the script. Be aware this removes all NetBird data including users and peers.
-
-## Debugging TURN connections
-
-In the case that the peer-to-peer connection is not an option then the peer will use the TURN server for the secure connection establishment. If the connection is not possible even with TURN (Relay),
-then we need to confirm that your turn configuration is correct and that it is available.
-
-To test your TURN configuration you can access the [online tester](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice).
-There you will find a ICE servers input box, where you can select and remove the existing server, then add your turn server
-configuration as follows:
-
-Please replace <b>netbird.DOMAIN.com</b> and <b>PASSWORD</b> with your STUN/TURN server details from your configuration (<b>config.yaml</b> for the combined setup, or the <b>TURNConfig</b> section in <b>management.json</b> for older multi-container setups), then click on <b>Add server</b>.
-
-<p>
-    <img src="/docs-static/img/selfhosted/troubleshooting/turn.png" alt="turn" width="700" className="imagewrapper"/>
-</p>
-
-You should see an output similar to the following:
-<p>
-    <img src="/docs-static/img/selfhosted/troubleshooting/turn-test-out.png" alt="turn" width="700" className="imagewrapper-nig"/>
-</p>
-Where you have the following types: `host` (local address), `srflx` (STUN reflexive address), `relay`
-(TURN relay address). If `srflx` and `relay` are not present then the TURN server is not working or not accessible and you should review the required ports in the [requirements section](/selfhosted/selfhosted-guide#requirements).
-
-## Dashboard Issues
-
-### Dashboard shows blank page
-
-**Problem**: The Dashboard loads but shows a blank page or errors.
-
-**Solutions**:
-1. Check browser console for JavaScript errors (F12 → Console)
-2. Verify the Dashboard can reach the Management API
-3. Check CORS configuration if running behind a custom reverse proxy
-4. Clear browser cache and try again
-
-### "Unauthorized" or "403" errors
-
-**Problem**: API calls return unauthorized or forbidden errors.
-
-**Solutions**:
-1. Verify your authentication token is valid
-2. Check that the user has appropriate permissions
-3. For API access, ensure you're using a valid Personal Access Token (PAT)
-4. Review Management service logs for detailed error information
-
-## Certificate Issues
-
-### Let's Encrypt certificate not renewing
-
-**Problem**: SSL certificate expires and doesn't auto-renew.
-
-**Solutions**:
-1. Ensure port 80 is accessible for ACME challenge
-2. Check Caddy logs: `docker compose logs caddy`
-3. Verify the domain points to the correct IP
-4. Manually trigger renewal: `docker exec -it netbird-caddy caddy reload`
-
-### Certificate errors with custom reverse proxy
-
-**Problem**: SSL errors when using your own reverse proxy.
-
-**Solutions**:
-1. Ensure your reverse proxy terminates SSL correctly
-2. Set `NETBIRD_DISABLE_LETSENCRYPT=true` in your configuration
-3. Configure proper headers (X-Forwarded-For, X-Forwarded-Proto)
-4. Verify HTTP/2 support is enabled for gRPC endpoints
-
-## Connection Issues
-
-### Peers can't connect to each other
-
-**Problem**: Peers are registered but can't establish connections.
-
-**Solutions**:
-1. Check that UDP port 3478 is accessible (STUN/TURN)
-2. Verify the TURN server is working (see [TURN debugging](#debugging-turn-connections))
-3. Check firewall rules on both peers
-4. Review peer logs: `netbird status -d`
-
-### Management service unreachable
-
-**Problem**: Clients can't connect to the Management service.
-
-**Solutions**:
-1. Verify port 443 is accessible
-2. Check DNS resolution for your domain
-3. Review Management logs: `docker compose logs management`
-4. Test with curl: `curl -v https://your-domain.com/api/health`
-
-## Database Issues
-
-### Management service won't start after upgrade
-
-**Problem**: After upgrading, the Management service fails to start.
-
-**Solutions**:
-1. Check logs for migration errors: `docker compose logs management`
-2. Ensure you followed the [upgrade path](/selfhosted/selfhosted-quickstart#upgrade) for your version
-3. Restore from backup if needed
-4. For major version jumps, you may need intermediate upgrades
-
-### Data corruption after power loss
-
-**Problem**: Services don't start properly after unexpected shutdown.
-
-**Solutions**:
-1. Check for database lock files
-2. Review all service logs
-3. Consider restoring from backup
-4. For SQLite databases, you may need to run integrity checks
+This page helps with issues when self-hosting NetBird. Collect the diagnostics below, then pick the area that matches your problem.
+
+<TroubleshootingStart
+  eyebrow="Start here"
+  title="Collect diagnostics first"
+  description="Almost every self-hosted issue is faster to resolve with service status and logs in hand. Grab these before you go deeper."
+  steps={[
+    { label: "1. Check services", title: "Service status", command: "docker compose ps", hint: "Are management, signal, relay, and the dashboard all Up?" },
+    { label: "2. Read the logs", title: "Service logs", command: "docker compose logs -f management", hint: "Most config, auth, and migration errors surface here." },
+    { label: "3. Test reachability", title: "Proxy to API", command: "curl -v https://YOUR_DOMAIN/api/health", hint: "Confirms the reverse proxy can reach the Management API." },
+  ]}
+/>
+
+<TroubleshootingTiles
+  title="Find your issue by area"
+  id="find-your-issue-by-area"
+  description="Each area lives on its own page. Pick the one closest to your problem."
+  items={[
+    {
+      title: "Installation",
+      href: "/selfhosted/troubleshooting/installation",
+      icon: "terminal",
+      description: "The getting-started script: the readiness wait, DNS, certificates, Traefik, and re-running cleanly.",
+    },
+    {
+      title: "Embedded IdP",
+      href: "/selfhosted/troubleshooting/identity-provider",
+      icon: "shield",
+      description: "Setup page access, SSO connectors, redirect URIs, and users syncing from your provider.",
+    },
+    {
+      title: "Dashboard",
+      href: "/selfhosted/troubleshooting/dashboard",
+      icon: "globe",
+      description: "Blank pages and unauthorized or 403 errors in the self-hosted dashboard.",
+    },
+    {
+      title: "Certificates",
+      href: "/selfhosted/troubleshooting/certificates",
+      icon: "lock",
+      description: "Let's Encrypt renewal and TLS errors behind a custom reverse proxy.",
+    },
+    {
+      title: "Connectivity",
+      href: "/selfhosted/troubleshooting/connectivity",
+      icon: "firewall",
+      description: "Testing the TURN server, peer-to-peer failures, and an unreachable Management service.",
+    },
+    {
+      title: "Database",
+      href: "/selfhosted/troubleshooting/database",
+      icon: "database",
+      description: "The Management service failing to start after an upgrade, and recovery after power loss.",
+    },
+  ]}
+/>
 
 ## Getting Help
 
-If you're still experiencing issues:
+If you're still experiencing issues, see [Report bugs and issues](/help/report-bug-issues) for the right channel:
 
-1. **Check logs**: `docker compose logs` for all services
-2. **Search existing issues**: [GitHub Issues](https://github.com/netbirdio/netbird/issues)
-3. **Join our community**: [Slack Channel](/slack-url)
-4. **Open an issue**: Include logs, configuration (without secrets), and steps to reproduce
+1. **Gather evidence first**: `docker compose logs` for all services, your configuration (without secrets), and the steps to reproduce.
+2. **Open-source self-hosted and general questions** go to [Community Support](/help/community-support): the [Slack Channel](/slack-url) for quick questions, or [GitHub Discussions](https://github.com/netbirdio/netbird/discussions) for a written record.
+3. **Cloud customers and users, and commercial-license deployments** can reach the team through [NetBird Support](/help/netbird-support).

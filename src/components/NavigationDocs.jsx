@@ -736,7 +736,28 @@ export const docsNavigation = [
         ],
       },
       { title: 'Advanced Guide', href: '/selfhosted/selfhosted-guide' },
-      { title: 'Troubleshooting', href: '/selfhosted/troubleshooting' },
+      {
+        title: 'Troubleshooting',
+        isOpen: false,
+        links: [
+          { title: 'Overview', href: '/selfhosted/troubleshooting' },
+          { title: 'Installation', href: '/selfhosted/troubleshooting/installation' },
+          {
+            title: 'Embedded IdP',
+            href: '/selfhosted/troubleshooting/identity-provider',
+          },
+          { title: 'Dashboard', href: '/selfhosted/troubleshooting/dashboard' },
+          {
+            title: 'Certificates',
+            href: '/selfhosted/troubleshooting/certificates',
+          },
+          {
+            title: 'Connectivity',
+            href: '/selfhosted/troubleshooting/connectivity',
+          },
+          { title: 'Database', href: '/selfhosted/troubleshooting/database' },
+        ],
+      },
       {
         title: 'Migration Guides',
         isOpen: false,
@@ -856,14 +877,117 @@ export const docsNavigation = [
     title: 'GET MORE HELP',
     links: [
       {
-        title: 'Troubleshooting client issues',
-        href: '/help/troubleshooting-client',
+        title: 'Troubleshooting',
+        isOpen: false,
+        links: [
+          { title: 'Overview', href: '/help/troubleshooting' },
+          {
+            title: 'NetBird Client',
+            isOpen: false,
+            links: [
+              { title: 'Overview', href: '/help/troubleshooting-client' },
+              { title: 'Linux', href: '/help/troubleshooting-client/linux' },
+              { title: 'Windows', href: '/help/troubleshooting-client/windows' },
+              { title: 'macOS', href: '/help/troubleshooting-client/macos' },
+              { title: 'Android', href: '/help/troubleshooting-client/android' },
+              { title: 'iOS', href: '/help/troubleshooting-client/ios' },
+            ],
+          },
+          {
+            title: 'Self-hosted',
+            isOpen: false,
+            links: [
+              { title: 'Overview', href: '/selfhosted/troubleshooting' },
+              {
+                title: 'Installation',
+                href: '/selfhosted/troubleshooting/installation',
+              },
+              {
+                title: 'Embedded IdP',
+                href: '/selfhosted/troubleshooting/identity-provider',
+              },
+              {
+                title: 'Dashboard',
+                href: '/selfhosted/troubleshooting/dashboard',
+              },
+              {
+                title: 'Certificates',
+                href: '/selfhosted/troubleshooting/certificates',
+              },
+              {
+                title: 'Connectivity',
+                href: '/selfhosted/troubleshooting/connectivity',
+              },
+              {
+                title: 'Database',
+                href: '/selfhosted/troubleshooting/database',
+              },
+            ],
+          },
+          {
+            title: 'NetBird Cloud',
+            isOpen: false,
+            links: [
+              {
+                title: 'Pending approval',
+                href: '/help/troubleshooting-account-access',
+              },
+              { title: 'IdP & SSO setup', href: '/manage/team/single-sign-on' },
+              { title: 'User provisioning', href: '/manage/team/idp-sync' },
+              {
+                title: 'Plan limits & quotas',
+                href: '/manage/settings/plans-and-billing',
+              },
+            ],
+          },
+          {
+            title: 'Connectivity',
+            isOpen: false,
+            links: [
+              {
+                title: 'Relayed Connections',
+                href: '/help/troubleshooting-relayed-connections',
+              },
+              {
+                title: 'Resource Connectivity',
+                href: '/help/troubleshooting-resource-connectivity',
+              },
+              {
+                title: 'NAT & Connectivity',
+                href: '/about-netbird/understanding-nat-and-connectivity',
+              },
+              {
+                title: 'Ports & Firewalls',
+                href: '/about-netbird/ports-and-firewalls',
+              },
+            ],
+          },
+          {
+            title: 'Access control',
+            isOpen: false,
+            links: [
+              { title: 'Policies', href: '/manage/access-control' },
+              {
+                title: 'Posture checks',
+                href: '/manage/access-control/posture-checks',
+              },
+              {
+                title: 'Groups',
+                href: '/manage/access-control#understanding-groups',
+              },
+            ],
+          },
+          {
+            title: 'Report a bug',
+            isOpen: false,
+            links: [
+              { title: 'Overview', href: '/help/report-bug-issues' },
+              { title: 'Community Support', href: '/help/community-support' },
+              { title: 'NetBird Support', href: '/help/netbird-support' },
+            ],
+          },
+        ],
       },
-      {
-        title: 'Troubleshooting relayed connections',
-        href: '/help/troubleshooting-relayed-connections',
-      },
-      { title: 'Report bugs and issues', href: '/help/report-bug-issues' },
       {
         title: 'Support Matrix',
         isOpen: false,

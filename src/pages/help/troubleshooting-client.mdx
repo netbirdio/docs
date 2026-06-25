@@ -1,7 +1,74 @@
+import { TroubleshootingStart } from "@/components/TroubleshootingStart"
+import { TroubleshootingTiles } from "@/components/TroubleshootingTiles"
+
 # Troubleshooting client issues
 
 This document offers practical tips and insights to help you debug various problems, ensuring a seamless user
-experience.
+experience. The steps here are cross-platform; for OS-specific details, use the platform guides below.
+
+<TroubleshootingStart
+  eyebrow="Start here"
+  title="Collect diagnostics first"
+  id="collect-diagnostics-first"
+  description="Most client issues are quicker to resolve with two things in hand: the current status, and a debug bundle. Grab them before you go deeper. Each step links to the section that explains it."
+  steps={[
+    { label: "1. Check status", title: "Agent status", href: "#net-bird-agent-status", command: "netbird status -d", hint: "Is the peer Connected, and are Management, Signal, and the Relays reachable?" },
+    { label: "2. Collect debug bundle", title: "Debug bundle", href: "#debug-bundle", command: "netbird debug bundle -A -S", hint: "Logs, status, routes, and config in one archive. See what is inside." },
+  ]}
+/>
+
+<TroubleshootingTiles
+  title="Platform-specific guides"
+  id="platform-specific-guides"
+  description="OS-specific steps live on their own pages. Everything else on this page applies to all platforms."
+  items={[
+    {
+      title: "Linux",
+      href: "/help/troubleshooting-client/linux",
+      icon: "terminal",
+      description: "Permanent debug log level (systemd, service, Docker) and host-based firewall (UFW, firewalld).",
+      chips: [
+        { label: "Debug logs", href: "/help/troubleshooting-client/linux#set-the-log-level-permanently" },
+        { label: "Host firewall", href: "/help/troubleshooting-client/linux#host-based-firewall" },
+      ],
+    },
+    {
+      title: "Windows",
+      href: "/help/troubleshooting-client/windows",
+      icon: "windows",
+      description: "Debug log level, foreground mode via PSExec, Windows Firewall, and Windows DNS (NRPT/GPO, Active Directory).",
+      chips: [
+        { label: "Foreground (PSExec)", href: "/help/troubleshooting-client/windows#run-the-agent-in-foreground-mode" },
+        { label: "Windows DNS", href: "/help/troubleshooting-client/windows#windows-dns-scenarios" },
+      ],
+    },
+    {
+      title: "macOS",
+      href: "/help/troubleshooting-client/macos",
+      icon: "laptop",
+      description: "Permanent debug log level and host-based firewall on macOS.",
+      chips: [
+        { label: "Debug logs", href: "/help/troubleshooting-client/macos#set-the-log-level-permanently" },
+        { label: "Host firewall", href: "/help/troubleshooting-client/macos#host-based-firewall" },
+      ],
+    },
+    {
+      title: "Android",
+      href: "/help/troubleshooting-client/android",
+      icon: "android",
+      description: "Enable trace logs and capture them with ADB.",
+      chips: [
+        { label: "Trace logs (ADB)", href: "/help/troubleshooting-client/android#enable-trace-logs-and-capture-them-with-adb" },
+      ],
+    },
+    {
+      title: "iOS",
+      href: "/help/troubleshooting-client/ios",
+      icon: "mobile",
+      description: "Capturing logs from the app. On-device debugging is limited.",
+    },
+  ]}
+/>
 
 ## NetBird agent status
 
@@ -151,6 +218,22 @@ netbird debug bundle --anonymize --system-info
 This will output the path of the generated file. The output file is owned by and can only be accessed by the user
 NetBird is running as, by default it is: `Administrator` on Windows, `root` on MacOS/Linux or the operating system\'s
 equivalent.
+
+#### What's inside the bundle
+
+The archive collects the most useful diagnostics into one file, and every bundle ships a `README.txt` that documents each entry. The ones you will reach for most often:
+
+| File | What it holds |
+|---|---|
+| `status.txt` | Status output, the same view as `netbird status -d` |
+| `client.log`, `netbird.err`, `netbird.out` | Recent client logs, plus stderr and stdout |
+| `routes.txt`, `ip_rules.txt` | System routing table and IP rules (with `--system-info`) |
+| `iptables.txt`, `nftables.txt`, `ipset.txt` | Firewall rules with packet counters (Linux, with `--system-info`) |
+| `resolv.conf`, `scutil_dns.txt`, `resolved_domains.txt` | DNS resolver configuration and the domains NetBird resolved |
+| `network_map.json` | Sync response: peers, routes, DNS settings, and firewall rules |
+| `config.txt`, `state.json` | Client configuration and internal client state |
+
+With `--anonymize`, IP addresses, domains, and interface names are replaced consistently across every file, so the bundle stays readable while sensitive values are masked. Private keys and SSH keys are never included, and the packet capture (`capture.pcap`) is left out of anonymized bundles because it holds raw decrypted packets.
 
 ### Debug for a specific time
 
@@ -316,93 +399,22 @@ The next time the daemon is restarted, the log level will return to the configur
 
 Using `netbird down` and `netbird up` will not reset the log level.
 
-To permanently set the log level, see the following sections.
+To set the log level **permanently**, follow the steps for your platform: [Linux](/help/troubleshooting-client/linux#set-the-log-level-permanently), [Windows](/help/troubleshooting-client/windows#set-the-log-level-permanently), [macOS](/help/troubleshooting-client/macos#set-the-log-level-permanently), or [Android](/help/troubleshooting-client/android#enable-trace-logs-and-capture-them-with-adb).
 
 <Note>
   The default logging level is `info`. To revert back to the original state, you can repeat the procedure with `info` instead of `debug` or `trace`.
 </Note>
 
-### On Linux with systemd
-
-The default systemd unit file reads a set of environment variables from the path `/etc/sysconfig/netbird`.
-You can add the following line to the file to enable debug logs:
-
-```shell
-sudo mkdir -p /etc/sysconfig
-echo 'NB_LOG_LEVEL=debug' | sudo tee -a /etc/sysconfig/netbird
-sudo systemctl restart netbird
-```
-
-### On Other Linux and MacOS
-
-```shell
-sudo netbird service stop
-sudo netbird service uninstall
-sudo netbird service install --log-level debug # or trace
-sudo netbird service start
-```
-
-### On Windows
-
-You need to run the following commands with an elevated PowerShell or `cmd.exe` window.
-
-```powershell
-[Environment]::SetEnvironmentVariable("NB_LOG_LEVEL", "debug", "Machine")
-netbird service restart
-```
-
-### On Docker
-
-You can set the environment variable `NB_LOG_LEVEL` to `debug` to enable debug logs.
-
-```shell
-docker run --rm --name PEER_NAME --hostname PEER_NAME --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --cap-add=SYS_RESOURCE -d \
--e NB_SETUP_KEY=<SETUP KEY> -e NB_LOG_LEVEL=debug -v netbird-client:/var/lib/netbird netbirdio/netbird:latest
-```
-
-### On Android
-
-Enable the ADB in the developer menu on the Android device.
-In the app set the the Trace log level setting - it is a checkbox in the advanced menu.
-With the ADB tool, you can get the logs from your device. The ADB is part of the SDK platform tools pack (zip file).
-You can download it from [here](https://developer.android.com/tools/releases/platform-tools).
-Please extract it and run the next command in the case of Linux:
-
-```shell
-sudo adb logcat -v time | grep GoLog
-```
-
 ## Running the agent in foreground mode
 
-You can run the agent in foreground mode to see the logs in the terminal. This is useful to debugging issues with the
-agent.
-
-### Linux and MacOS
+You can run the agent in foreground mode to see the logs in the terminal. This is useful when debugging issues with the agent. On Linux and macOS:
 
 ```shell
 sudo netbird service stop
 sudo netbird up -F
 ```
 
-### Windows
-
-On Windows, the agent depends on the Wireguard's `wintun.dll` and can only be executed as a system account.
-To run the agent in foreground mode, you need to use a tool
-called [PSExec](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec).
-
-Once you have downloaded and extracted `psexec` open an elevated Powershell window:
-
-```shell
-netbird service stop
-.\PsExec64.exe -s cmd.exe /c "netbird up -F --log-level debug > c:\windows\temp\netbird.out.log 2>&1"
-```
-
-In case you need to configure environment variables, you need to add them as system variables so they get picked up by
-the agent on the next psexec run:
-
-```powershell
-[Environment]::SetEnvironmentVariable("PIONS_LOG_DEBUG", "all", "Machine")
-````
+On Windows, foreground mode needs PSExec because the agent runs as the system account. See [Run the agent in foreground mode](/help/troubleshooting-client/windows#run-the-agent-in-foreground-mode) on the Windows page.
 
 ## Enabling WireGuard in user space
 
@@ -443,10 +455,6 @@ NB_LOG_LEVEL=debug
 sudo netbird service stop
 sudo bash -c 'PIONS_LOG_DEBUG=all NB_LOG_LEVEL=debug netbird up -F' > /tmp/netbird.log
 ```
-
-## Host-based firewall issues
-
-NetBird automatically manages host-based firewall rules, but conflicts can occur with other firewall tools or security software. See [Ports & Firewalls — Host-based firewalls](/about-netbird/ports-and-firewalls#host-based-firewalls) for symptoms, platform-specific remediation (UFW, firewalld, Windows Firewall), and diagnostic commands.
 
 ## Client login failures
 
@@ -490,12 +498,9 @@ Key while the NetBird client daemon is stopped:
 
 ## Debugging access to network resources
 
-In this section we will be presenting methodology of troubleshooting access issues involving Netbird.
+This section is the hands-on, command-level playbook for the case where a peer is `Connected` but a service behind a routing peer is unreachable. For the conceptual model first (where the traffic stops, and the TCP handshake as the dividing line between a NetBird problem and an application problem), start with [Troubleshooting resource connectivity](/help/troubleshooting-resource-connectivity). This section then walks the same checks with concrete commands.
 
-We will start by presenting a glossary of all machines and services involved.
-A sub-section will describe a specific use case.
-Each will start with a concise summary of usual troubleshooting steps then expand into more detailed step-by-step
-guides.
+It uses a glossary of the machines and services involved, followed by a specific use case that opens with a concise summary of the usual steps and expands into a detailed, step-by-step walkthrough.
 
 ### Glossary
 
