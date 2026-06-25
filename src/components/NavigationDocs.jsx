@@ -113,6 +113,15 @@ export const docsNavigation = [
         ],
       },
         { title: 'Global Limits', href: '/agent-network/global-limits' },
+        {
+            title: 'Integrations',
+            href: '/agent-network/integrations',
+            links: [
+                { title: 'Claude Code', href: '/agent-network/integrations/claude-code' },
+                { title: 'Codex', href: '/agent-network/integrations/codex' },
+                { title: 'LiteLLM', href: '/agent-network/integrations/litellm' },
+            ],
+        },
     ],
   },
   {

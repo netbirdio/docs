@@ -1,0 +1,93 @@
+import { Note } from '@/components/mdx'
+
+export const description =
+  'Use a LiteLLM gateway behind NetBird Agent Network: NetBird forwards the caller identity so LiteLLM can apply its own tag budgets and per-user attribution.'
+
+# LiteLLM
+
+LiteLLM is an AI gateway that routes to many upstream providers. You **self-host** it,
+typically inside the same network as the NetBird proxy, so the proxy reaches it directly.
+Connecting it behind NetBird gives you keyless access over the tunnel **and** lets LiteLLM
+apply its own attribution and budgets, because NetBird forwards the caller's identity on
+every request.
+
+## Connect LiteLLM as a Provider
+
+Because LiteLLM is self-hosted, the upstream URL points at your own instance. Host it in the
+same network as the proxy so the proxy can reach it directly (for example
+`https://litellm.internal`).
+
+1. Go to **Agent Network → Providers** and click **Connect Provider**.
+2. Select **LiteLLM Proxy** and set the **Upstream URL** to your self-hosted LiteLLM instance.
+3. Paste a LiteLLM **virtual key** as the API key. NetBird stores it server-side.
+4. Save the provider. The key is now held server-side — the next step authorizes who can use it.
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-connect-litellm.png" alt="connect a self-hosted LiteLLM Proxy provider in NetBird Agent Network" className="imagewrapper" />
+</p>
+
+## Create a Policy
+
+By default nothing is allowed — a policy must connect a source group to the LiteLLM provider
+before anyone can route through it.
+
+1. Go to **Agent Network → Policies** and add a policy.
+2. Set the **Source** to the users or agents who should be able to use LiteLLM (for example
+   your `Engineering` group from your IdP).
+3. Set the **Provider** to the LiteLLM provider you just connected.
+4. Optionally attach per-user or per-group [token and budget limits](/agent-network/policies/limits)
+   and [guardrails](/agent-network/policies/guardrails) such as a model allowlist. These are
+   enforced by NetBird before the request reaches LiteLLM, on top of LiteLLM's own budgets.
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-create-policy-litellm.png" alt="create a NetBird Agent Network policy authorizing LiteLLM" className="imagewrapper" />
+</p>
+
+See [Policies](/agent-network/policies) for details.
+
+## How Identity Is Forwarded
+
+When the upstream is LiteLLM, NetBird maps the calling agent's identity onto the request so
+the gateway can attribute usage and enforce its own controls:
+
+- **Groups** are written into `metadata.tags` in the JSON body, so LiteLLM can apply tag
+  budgets and rate limits.
+- The **user identity** is sent in the `x-litellm-end-user-id` header.
+
+The proxy strips any client-supplied value first, so an app can't spoof its identity.
+
+<Note>
+  The configured key must be a LiteLLM **virtual key** with `metadata.allow_client_tags: true`,
+  otherwise LiteLLM silently drops the forwarded tags.
+</Note>
+
+## View Group Usage in LiteLLM
+
+Because NetBird writes each caller's IdP groups into `metadata.tags`, those groups show up in
+LiteLLM's own usage views as tags. In the LiteLLM UI, go to **Usage** and select the
+**Tag Usage** view, then filter by a tag to see spend and requests for that group. In our
+example, the `Engineering` group injected by NetBird appears here with its own
+**Tag Spend Overview**.
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-litellm-tag-usage.png" alt="LiteLLM Tag Usage view showing spend for the Engineering group injected by NetBird" className="imagewrapper-big" />
+</p>
+
+You can see every group forwarded from NetBird under **Experimental → Tag Management**, where
+each NetBird IdP group is listed as a tag passed dynamically in the request.
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-litellm-tag-management.png" alt="LiteLLM Tag Management listing the groups passed from NetBird, including Engineering" className="imagewrapper-big" />
+</p>
+
+## Result
+
+Agents point at the NetBird endpoint with no key. NetBird enforces your policies, limits,
+and guardrails first, then LiteLLM applies its own tag and end-user budgets on top — driven
+by the same NetBird identity. Every call is recorded in
+[Usage & Logs](/agent-network/usage-and-logs), where each LiteLLM request shows the caller's
+identity, auth group, model, tokens, cost, and status.
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-litellm-access-logs.png" alt="NetBird Access Logs showing LiteLLM Proxy requests with the Engineering auth group" className="imagewrapper-big" />
+</p>
