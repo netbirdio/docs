@@ -11,11 +11,11 @@ This guide gives you a method to choose the size and number of routing peers fro
 
 If your network is small you can stop reading here: a routing peer on 2 vCPUs and 4 GB of RAM comfortably serves light use, and you do not need to tune anything. Read on when you expect sustained high throughput, thousands of simultaneously active users, or a datacenter-scale link.
 
-Throughout, we will follow one example. **Acme has 6,000 people in one office**, pulling builds, code, and large files from servers in an on-site datacenter that sits behind NetBird routing peers. By the end we will know how many peers Acme needs and how big each one should be.
+Throughout, we will follow one example. **Acme has 6,000 remote users**, pulling builds, code, and large files from servers in an on-site datacenter that sits behind NetBird routing peers. By the end we will know how many peers Acme needs and how big each one should be.
 
 ## How a routing peer spends its capacity
 
-Picture a routing peer as a checkpoint that every packet has to cross. Traffic coming from a user was encrypted on the user's device, and the peer unwraps it (decrypts it) before handing it to the datacenter. Traffic going back to the user is wrapped (encrypted) at the peer. That wrapping and unwrapping is the work, and the peer's CPU does it one packet at a time, spread across its cores.
+Picture a routing peer as a checkpoint that every packet has to cross. Traffic coming from a user was encrypted on the user's device, and the peer unwraps it (decrypts it) before handing it to the local network. Traffic going back to the user is wrapped (encrypted) at the peer. That decryption and encryption is the work, and the peer's CPU does it one packet at a time, spread across its cores.
 
 Four facts follow from that picture, and they drive every decision below.
 
@@ -96,7 +96,7 @@ The interface column is the smallest network interface that will not bottleneck 
 
 These levers raise the capacity of one routing peer before you add more.
 
-- **Use kernel WireGuard.** On Linux, NetBird uses the in-kernel WireGuard module by default when it is present, and it is the right choice for a high-throughput gateway: in testing it ran several times faster than the userspace fallback, because only the kernel path spreads the work across all cores. Make sure the `wireguard` kernel module is available.
+- **Use kernel WireGuard.** On Linux, NetBird uses the in-kernel WireGuard module by default when it is present, and it is the right choice for a high-throughput routing peer: in testing it ran several times faster than the userspace fallback, because only the kernel path spreads the work across all cores.
 - **Match the network interface to the target.** At high aggregate rates the interface can limit you as much as the CPU. For tens of Gbps, choose an interface (and, in a cloud, an instance type) whose bandwidth matches the throughput you read from the table.
 - **Raise the MTU only on clean networks.** Throughput is largely bound by packets per second, so larger packets carry more for the same work. On a network that supports jumbo frames end to end, such as a datacenter backplane, a larger tunnel MTU raised per-peer throughput several-fold in testing. This helps only when the **entire path, clients included, supports the larger MTU**. Keep the default on paths that cross the public internet or reach ordinary 1500-byte clients, where it would only cause fragmentation.
 - **Add cores up to the knee, then stop.** Cores raise capacity up to about 16; past that the download direction inches up and the upload direction does not move at all. When you reach that knee, add another peer instead of a bigger one.
@@ -152,7 +152,7 @@ mpstat -P ALL 1                                # cores saturated means CPU bound
 
 Reading throughput at the WireGuard interface (rather than trusting one client's number) confirms the traffic actually went through the tunnel and captures the peer's true aggregate. The point where throughput stops rising as you add load is that peer's capacity. Use it to decide whether to **scale up** (a bigger peer, if CPU and interface still have headroom) or **scale out** (more peers, if a single peer is at its ceiling).
 
-## In one breath
+## Summary
 
 - Size against **aggregate active throughput in the direction your users use**, not the enrolled head count. Acme: 3,000 active pullers at 10 Mbps is 30 Gbps of download.
 - **One tunnel is about one core**; capacity comes from **many tunnels across cores**, and **16 to 32 cores** reaches nearly the same throughput as far larger boxes.
