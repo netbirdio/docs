@@ -66,7 +66,7 @@ Acme builds **two identical Networks**, each exposing the datacenter, each with 
 
 ## Per-peer capacity reference
 
-Representative measured throughput per routing-peer size, all measured on AWS **c6in.16xlarge** instances: 64 vCPUs and a 100 Gbps interface on 3rd-generation Intel Xeon Scalable (Ice Lake) with AVX-512 and a 3.5 GHz all-core turbo, running Linux kernel WireGuard with threaded NAPI (the kernel default), the default 1280-byte tunnel MTU, and direct connections, with load spread across many tunnels. Smaller core counts were produced by taking cores offline on that same box, so each row isolates the effect of core count. The Network interface column is the minimum interface to pair with a peer of that size so it does not bottleneck the result, not a separately tested NIC. Expect roughly 20% variation, and confirm in your own environment.
+Representative measured throughput per routing-peer size, all measured on AWS **c6in.16xlarge** instances: 64 vCPUs and a 100 Gbps interface on an Intel Xeon Platinum 8375C (Ice Lake, 2.90 GHz, AVX-512), running Linux kernel WireGuard with threaded NAPI (the kernel default), the default 1280-byte tunnel MTU, and direct connections, with load spread across many tunnels. Smaller core counts were produced by taking cores offline on that same box, so each row isolates the effect of core count. The Network interface column is the minimum interface to pair with a peer of that size so it does not bottleneck the result, not a separately tested NIC. Expect roughly 20% variation, and confirm in your own environment.
 
 | vCPUs | Network interface | Download (clients pulling) | Upload (clients pushing) | Active users at 5 Mbps |
 |---|---|---|---|---|
@@ -89,11 +89,33 @@ Two things to read from this table:
 
 **On small or commodity hardware, the interface is the limit, not the cores.** A homelab mini PC with a 1 or 2.5 GbE port runs out of *interface* long before CPU, so do not read it against the table's CPU rows — your ceiling is the port's line rate, often a couple of Gbps or less, where download and upload converge. Kernel WireGuard still matters.
 
+## Userspace mode
+
+The capacity table above is **kernel WireGuard**, the default on Linux when the `wireguard` kernel module is present. You run the slower **userspace** datapath (`wireguard-go`) in a few cases:
+
+- **The kernel module is missing, broken, or conflicts with other software.** NetBird falls back to userspace on its own, or you force it with [`NB_WG_KERNEL_DISABLED=true`](/client/environment-variables).
+- **The host has no TUN device**, as in unprivileged containers (the [rootless Docker image](/get-started/install/docker)) and some serverless platforms. This needs [netstack mode](/client/environment-variables) (`NB_USE_NETSTACK_MODE`), which runs WireGuard entirely in userspace.
+- **The routing peer is not Linux.** Windows, macOS, and the other platforms forward in userspace regardless (see [How Routing Peers Work](/manage/networks/how-routing-peers-work#requirements)).
+- **You want full traffic-event logging from the peer.** [Policy IDs and blocked-traffic events](/manage/activity/traffic-events-logging#limitations) are reported only when the destination or routing peer runs in userspace mode, not kernel mode. Forcing userspace for that visibility deliberately trades away the throughput above.
+
+On the same instances with the kernel module disabled, the numbers change shape:
+
+| vCPUs | Download (clients pulling) | Upload (clients pushing) | CPU actually used |
+|---|---|---|---|
+| 1 | ~1.6 Gbps | ~1.4 Gbps | the 1 core |
+| 2 | ~2.3 Gbps | ~1.9 Gbps | both cores |
+| 4 | ~6.8 Gbps | ~3.5 Gbps | ~3 of 4 |
+| 8 | ~6.8 Gbps | ~3.7 Gbps | ~4 of 8 |
+| 16 | ~6.8 Gbps | ~3.7 Gbps | ~4 of 16 |
+| 64 | ~5.8 Gbps | ~4.4 Gbps | ~5 of 64 |
+
+**Userspace WireGuard does not scale across cores.** Download plateaus around 6.8 Gbps by four cores and climbs no further; at 64 cores it even dips, because the work never spreads past the handful of cores `wireguard-go` uses (the "CPU actually used" column). Adding cores buys nothing. If you are stuck on userspace, size each peer for roughly 6 to 7 Gbps and add peers to go past it; if you need more from one peer, the fix is to enable the kernel module, not a bigger box.
+
 ## Tuning for more throughput
 
 These levers raise the capacity of one routing peer before you add more.
 
-- **Use kernel WireGuard.** On Linux, NetBird uses the in-kernel WireGuard module by default when it is present, and it is the right choice for a high-throughput routing peer: in testing it ran several times faster than the userspace fallback, because only the kernel path spreads the work across all cores.
+- **Use kernel WireGuard.** On Linux, NetBird uses the in-kernel module by default when it is present; it is the right choice for a high-throughput routing peer, because only the kernel path spreads the work across all cores. The [userspace datapath](#userspace-mode) plateaus at a few Gbps no matter the core count.
 - **Match the network interface to the target.** At high aggregate rates the interface can limit you as much as the CPU. For tens of Gbps, choose an interface (and, in a cloud, an instance type) whose bandwidth matches the throughput you read from the table.
 - **Raise the MTU only on clean networks.** Throughput is largely bound by packets per second, so larger packets carry more for the same work. On a network that supports jumbo frames end to end, such as a datacenter backplane, a larger tunnel MTU raised per-peer throughput several-fold in testing. This helps only when the **entire path, clients included, supports the larger MTU**. Keep the default on paths that cross the public internet or reach ordinary 1500-byte clients, where it would only cause fragmentation.
 - **Add cores up to the knee, then stop.** Cores raise capacity up to about 16; past that the download direction inches up and the upload direction does not move at all. When you reach that knee, add another peer instead of a bigger one.
