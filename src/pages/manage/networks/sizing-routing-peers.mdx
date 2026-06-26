@@ -1,7 +1,7 @@
 import { Note, Warning } from '@/components/mdx'
 import { Tiles } from '@/components/Tiles'
 
-export const description = "Choose the size and number of NetBird routing peers from measured throughput: a four-step method, a per-peer capacity table, the tuning levers that matter, and how to scale out with sharded Networks."
+export const description = "Choose the size and number of NetBird routing peers from measured throughput: a four-step method, a per-peer capacity table, the tuning levers that matter, and how to scale out across multiple Networks."
 
 # Sizing Routing Peers
 
@@ -58,7 +58,7 @@ Acme needs `ceil(30 / 20) = 2` peers actively carrying load. Step 4 turns that i
 
 ## Step 4: give each active peer its own Network
 
-Here is the subtlety that catches people. A single Network does not split its load across its routing peers: NetBird high availability either pins every client to one peer (different metrics) or sends each client to its nearest peer by latency (equal metrics) — neither evenly divides a busy site's traffic. So you split load by building **more Networks**, one per shard.
+Here is the subtlety that catches people. A single Network does not split its load across its routing peers: NetBird high availability either pins every client to one peer (different metrics) or sends each client to its nearest peer by latency (equal metrics) — neither evenly divides a busy site's traffic. So you split load by building **more Networks**, one for each share of the traffic.
 
 Make each active peer its own NetBird Network; have every Network expose the **same resources** (the same datacenter, the same `/32` hosts); and give every Network **two or more routing peers** so it carries its own failover. Then a policy sends each client group to a different Network. Because the Networks ride different routing peers, splitting clients across Networks splits the load across peers, by design.
 
@@ -85,7 +85,7 @@ Representative measured throughput per routing-peer size, all measured on AWS **
 Two things to read from this table:
 
 - **Download keeps scaling with cores; upload flattens around 15 Gbps at about 16 cores** and barely improves past that, because the decrypt path is harder to spread across cores. Beyond ~16 cores you gain mostly on the download direction.
-- **16 to 32 vCPUs is the practical sweet spot.** A 16-core peer reaches close to a 64-core peer's throughput, so prefer **more modest peers over fewer large ones** (see [Scaling out](#scaling-out-high-availability-and-sharding)).
+- **16 to 32 vCPUs is the practical sweet spot.** A 16-core peer reaches close to a 64-core peer's throughput, so prefer **more modest peers over fewer large ones** (see [Scaling out](#scaling-out-high-availability-and-splitting-load)).
 
 **On small or commodity hardware, the interface is the limit, not the cores.** A homelab mini PC with a 1 or 2.5 GbE port runs out of *interface* long before CPU, so do not read it against the table's CPU rows — your ceiling is the port's line rate, often a couple of Gbps or less, where download and upload converge. Kernel WireGuard still matters.
 
@@ -120,11 +120,11 @@ These levers raise the capacity of one routing peer before you add more.
 - **Raise the MTU only on clean networks.** Throughput is largely bound by packets per second, so larger packets carry more for the same work. On a network that supports jumbo frames end to end, such as a datacenter backplane, a larger tunnel MTU raised per-peer throughput several-fold in testing. This helps only when the **entire path, clients included, supports the larger MTU**. Keep the default on paths that cross the public internet or reach ordinary 1500-byte clients, where it would only cause fragmentation.
 - **Add cores up to the knee, then stop.** Cores raise capacity up to about 16; past that the download direction inches up and the upload direction does not move at all. When you reach that knee, add another peer instead of a bigger one.
 
-## Scaling out: high availability and sharding
+## Scaling out: high availability and splitting load
 
 A single peer has a ceiling. To go past it, run more than one, but understand what NetBird high availability does and does not do. It gives you two things: **failover** (different metrics: one peer carries all, the rest are reserve) and **nearest-peer selection** (equal metrics: each client uses its lowest-latency peer, switching only past a 20 ms difference). See [How Routing Peers Work](/manage/networks/how-routing-peers-work#high-availability) for the mechanism behind both.
 
-Neither balances a Network's load. Nearest-peer *does* spread traffic when peers sit in different regions and users are spread among them — EU users on the EU peer, US users on the US — but it splits by geography, not evenly, and not at all when peers sit together. To split load deterministically, shard into more identical Networks as in [Step 4](#step-4-give-each-active-peer-its-own-network).
+Neither balances a Network's load. Nearest-peer *does* spread traffic when peers sit in different regions and users are spread among them — EU users on the EU peer, US users on the US — but it splits by geography, not evenly, and not at all when peers sit together. To split load deterministically, build more identical Networks as in [Step 4](#step-4-give-each-active-peer-its-own-network).
 
 ## Cloud and virtualization notes
 
@@ -150,7 +150,7 @@ From each test client, drive load in the direction your users actually use:
 iperf3 -c <server-ip> -p 5201 -t 30 -P 4 -R
 
 # Upload (clients pushing into the network, the peer decrypts):
-iperf3 -c <server-ip> -p 5201 -t 30 -u -b 0 -l 1250   # keep the UDP datagram below the tunnel MTU
+iperf3 -c <server-ip> -p 5201 -t 30 -P 4
 ```
 
 Read the real throughput on the routing peer itself, from its WireGuard interface, while watching CPU:
@@ -167,7 +167,7 @@ Reading at the WireGuard interface, not one client's number, captures the peer's
 - Size against **aggregate active throughput in the direction your users use**, not the enrolled head count. Acme: 3,000 active pullers at 10 Mbps is 30 Gbps of download.
 - **One tunnel is about one core**; capacity comes from **many tunnels across cores**, and **16 to 32 cores** reaches nearly the same throughput as far larger boxes.
 - `active peers = ceil(aggregate / per-peer capacity)`, then give each its own **identical NetBird Network** (same resources, two or more peers for failover) and split clients across the Networks by policy. Acme: `ceil(30 / 20) = 2` Networks, each an HA pair, so **four** 16-core peers, 3,000 users per Network.
-- The levers, in order of effect: **kernel WireGuard**, a **matched interface**, **jumbo frames on a clean path**, and **cores up to ~16**. High availability is **failover or nearest-peer selection, never load balancing**; split load by sharding into more Networks.
+- The levers, in order of effect: **kernel WireGuard**, a **matched interface**, **jumbo frames on a clean path**, and **cores up to ~16**. High availability is **failover or nearest-peer selection, never load balancing**; split load across more Networks.
 - On **small or commodity hardware** (a homelab mini PC, a 1 or 2.5 GbE box), the **interface** is the limit before the CPU; size to the smaller of the two, and expect download and upload to converge.
 - When unsure, **measure** at your candidate size and watch where CPU or the interface saturates.
 
