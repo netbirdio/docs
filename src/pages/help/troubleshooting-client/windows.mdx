@@ -1,0 +1,47 @@
+import {Note} from "@/components/mdx"
+
+export const description =
+  "Windows-specific NetBird client troubleshooting: debug log level, foreground mode via PSExec, host-based firewall, and Windows DNS scenarios."
+
+# NetBird client on Windows
+
+Windows-specific steps for the NetBird client. For everything cross-platform (client status, the debug bundle, GRPC and ICE debugging, login failures, and reaching resources), start from [Troubleshooting client issues](/help/troubleshooting-client).
+
+## Set the log level permanently
+
+The [temporary log level](/help/troubleshooting-client#enabling-debug-logs-on-the-client) resets when the service restarts. To make it permanent, run an elevated PowerShell or `cmd.exe` window:
+
+```powershell
+[Environment]::SetEnvironmentVariable("NB_LOG_LEVEL", "debug", "Machine")
+netbird service restart
+```
+
+## Run the client in foreground mode
+
+On Windows the client depends on WireGuard's `wintun.dll` and can only run as the system account. To run it in foreground mode, use [PSExec](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec). In an elevated PowerShell window:
+
+```shell
+netbird service stop
+.\PsExec64.exe -s cmd.exe /c "netbird up -F --log-level debug > c:\windows\temp\netbird.out.log 2>&1"
+```
+
+To pass environment variables, set them as machine-level variables so the client picks them up on the next PSExec run:
+
+```powershell
+[Environment]::SetEnvironmentVariable("PIONS_LOG_DEBUG", "all", "Machine")
+```
+
+## Host-based firewall
+
+Windows Firewall or endpoint security software can block NetBird traffic before it leaves the machine. See [Ports & Firewalls: Host-based firewalls](/about-netbird/ports-and-firewalls#host-based-firewalls) for Windows Firewall symptoms, remediation, and diagnostic commands.
+
+## Windows DNS scenarios
+
+DNS on Windows has a few platform-specific failure modes worth checking separately:
+
+- **Match-domain names don't resolve, even though the NRPT (Name Resolution Policy Table) rule was written.** A lingering Group Policy `DnsPolicyConfig` container can stop NetBird's rule from taking effect on an off-domain machine. See [DNS Troubleshooting: Issue 8 (lingering GPO)](/manage/dns/troubleshooting#issue-8-windows-nrpt-rule-is-written-but-never-takes-effect-lingering-gpo).
+- **Active Directory login, mapped drives, or DFS fail** while a file share by IP works. This is usually a DC-locator (`SRV` record) problem. See [Domain Controllers as routing peers](/manage/dns/internal-dns-servers#domain-controllers-as-routing-peers).
+
+<Note>
+For the full DNS diagnostic flow on any platform, see [DNS Troubleshooting](/manage/dns/troubleshooting).
+</Note>

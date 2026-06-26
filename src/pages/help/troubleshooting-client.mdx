@@ -1,12 +1,86 @@
+import { TroubleshootingStart } from "@/components/TroubleshootingStart"
+import { TroubleshootingTiles } from "@/components/TroubleshootingTiles"
+import { HashRedirect } from "@/components/HashRedirect"
+
+<HashRedirect
+  map={{
+    "net-bird-agent-status": "/help/troubleshooting-client#net-bird-client-status",
+  }}
+/>
+
 # Troubleshooting client issues
 
 This document offers practical tips and insights to help you debug various problems, ensuring a seamless user
-experience.
+experience. The steps here are cross-platform; for OS-specific details, use the platform guides below.
 
-## NetBird agent status
+<TroubleshootingStart
+  eyebrow="Start here"
+  title="Collect diagnostics first"
+  id="collect-diagnostics-first"
+  description="Most client issues are quicker to resolve with two things in hand: the current status, and a debug bundle. Grab them before you go deeper. Each step links to the section that explains it."
+  steps={[
+    { label: "1. Check status", title: "Client status", href: "#net-bird-client-status", command: "netbird status -d", hint: "Is the peer Connected, and are Management, Signal, and the Relays reachable?" },
+    { label: "2. Collect debug bundle", title: "Debug bundle", href: "#debug-bundle", command: "netbird debug bundle -A -S", hint: "Logs, status, routes, and config in one archive. See what is inside." },
+  ]}
+/>
 
-The netbird agent is a daemon service that runs in the background; it provides information about peers connected and
-about the NetBird control services. You can check the status of the agent with the following command:
+<TroubleshootingTiles
+  title="Platform-specific guides"
+  id="platform-specific-guides"
+  description="OS-specific steps live on their own pages. Everything else on this page applies to all platforms."
+  items={[
+    {
+      title: "Linux",
+      href: "/help/troubleshooting-client/linux",
+      icon: "terminal",
+      description: "Permanent debug log level (systemd, service, Docker) and host-based firewall (UFW, firewalld).",
+      chips: [
+        { label: "Debug logs", href: "/help/troubleshooting-client/linux#set-the-log-level-permanently" },
+        { label: "Host firewall", href: "/help/troubleshooting-client/linux#host-based-firewall" },
+      ],
+    },
+    {
+      title: "Windows",
+      href: "/help/troubleshooting-client/windows",
+      icon: "windows",
+      description: "Debug log level, foreground mode via PSExec, Windows Firewall, and Windows DNS (NRPT/GPO, Active Directory).",
+      chips: [
+        { label: "Foreground (PSExec)", href: "/help/troubleshooting-client/windows#run-the-client-in-foreground-mode" },
+        { label: "Windows DNS", href: "/help/troubleshooting-client/windows#windows-dns-scenarios" },
+      ],
+    },
+    {
+      title: "macOS",
+      href: "/help/troubleshooting-client/macos",
+      icon: "laptop",
+      description: "Permanent debug log level and host-based firewall on macOS.",
+      chips: [
+        { label: "Debug logs", href: "/help/troubleshooting-client/macos#set-the-log-level-permanently" },
+        { label: "Host firewall", href: "/help/troubleshooting-client/macos#host-based-firewall" },
+      ],
+    },
+    {
+      title: "Android",
+      href: "/help/troubleshooting-client/android",
+      icon: "android",
+      description: "Enable trace logs and capture them with ADB.",
+      chips: [
+        { label: "Trace logs (ADB)", href: "/help/troubleshooting-client/android#enable-trace-logs-and-capture-them-with-adb" },
+      ],
+    },
+    {
+      title: "iOS",
+      href: "/help/troubleshooting-client/ios",
+      icon: "mobile",
+      description: "Capturing logs from the app. On-device debugging is limited.",
+    },
+  ]}
+/>
+
+## NetBird client status
+
+The NetBird client is a daemon service that runs in the background; it provides information about peers connected and
+about the NetBird control services. You can check the status of the client with the following command:
 
 ```shell
 netbird status --detail
@@ -108,7 +182,7 @@ log rotation conflict detected in: "/etc/logrotate.d/netbird", rotation is disab
 <Note>
 To use `logrotate`, we require `copytruncate` and not `create` to be set in the config file, otherwise the daemon needs to be restarted for the new log file to be opened after rotation.
 
-Netbird supports `compress`, `delaycompress` and `nocompress`.
+NetBird supports `compress`, `delaycompress` and `nocompress`.
 </Note>
 
 On macOS and BSD systems, the equivalent of `logrotate` is `newsyslog`, configured via `/etc/newsyslog.conf` or files in `/etc/newsyslog.d/`. NetBird does not auto-detect `newsyslog` configurations, so if you want `newsyslog` to manage `client.log` you must set [`NB_LOG_DISABLE_ROTATION=true`](/client/environment-variables#logging) on the daemon to disable the built-in rotation. An example `/etc/newsyslog.d/netbird.conf` entry:
@@ -151,6 +225,22 @@ netbird debug bundle --anonymize --system-info
 This will output the path of the generated file. The output file is owned by and can only be accessed by the user
 NetBird is running as, by default it is: `Administrator` on Windows, `root` on MacOS/Linux or the operating system\'s
 equivalent.
+
+#### What's inside the bundle
+
+The archive collects the most useful diagnostics into one file, and every bundle ships a `README.txt` that documents each entry. The ones you will reach for most often:
+
+| File | What it holds |
+|---|---|
+| `status.txt` | Status output, the same view as `netbird status -d` |
+| `client.log`, `netbird.err`, `netbird.out` | Recent client logs, plus stderr and stdout |
+| `routes.txt`, `ip_rules.txt` | System routing table and IP rules (with `--system-info`) |
+| `iptables.txt`, `nftables.txt`, `ipset.txt` | Firewall rules with packet counters (Linux, with `--system-info`) |
+| `resolv.conf`, `scutil_dns.txt`, `resolved_domains.txt` | DNS resolver configuration and the domains NetBird resolved |
+| `network_map.json` | Sync response: peers, routes, DNS settings, and firewall rules |
+| `config.txt`, `state.json` | Client configuration and internal client state |
+
+With `--anonymize`, IP addresses, domains, and interface names are replaced consistently across every file, so the bundle stays readable while sensitive values are masked. Private keys and SSH keys are never included, and the packet capture (`capture.pcap`) is left out of anonymized bundles because it holds raw decrypted packets.
 
 ### Debug for a specific time
 
@@ -298,7 +388,7 @@ On Linux, the userspace packet filter is only active when the kernel firewall ba
 
 The client has environment variables for tuning routing, firewall behavior, ICE connectivity, and WireGuard mode. These can help work around edge cases (e.g. `NB_USE_LEGACY_ROUTING` for routing loop issues, `NB_WG_KERNEL_DISABLED` to force userspace WireGuard, `NB_SKIP_NFTABLES_CHECK` to fall back to iptables). See the full list at [Client Environment Variables](/client/environment-variables).
 
-## Enabling debug logs on agent
+## Enabling debug logs on the client
 
 Logs can be temporarily set using the following command.
 
@@ -316,100 +406,29 @@ The next time the daemon is restarted, the log level will return to the configur
 
 Using `netbird down` and `netbird up` will not reset the log level.
 
-To permanently set the log level, see the following sections.
+To set the log level **permanently**, follow the steps for your platform: [Linux](/help/troubleshooting-client/linux#set-the-log-level-permanently), [Windows](/help/troubleshooting-client/windows#set-the-log-level-permanently), [macOS](/help/troubleshooting-client/macos#set-the-log-level-permanently), or [Android](/help/troubleshooting-client/android#enable-trace-logs-and-capture-them-with-adb).
 
 <Note>
   The default logging level is `info`. To revert back to the original state, you can repeat the procedure with `info` instead of `debug` or `trace`.
 </Note>
 
-### On Linux with systemd
+## Running the client in foreground mode
 
-The default systemd unit file reads a set of environment variables from the path `/etc/sysconfig/netbird`.
-You can add the following line to the file to enable debug logs:
-
-```shell
-sudo mkdir -p /etc/sysconfig
-echo 'NB_LOG_LEVEL=debug' | sudo tee -a /etc/sysconfig/netbird
-sudo systemctl restart netbird
-```
-
-### On Other Linux and MacOS
-
-```shell
-sudo netbird service stop
-sudo netbird service uninstall
-sudo netbird service install --log-level debug # or trace
-sudo netbird service start
-```
-
-### On Windows
-
-You need to run the following commands with an elevated PowerShell or `cmd.exe` window.
-
-```powershell
-[Environment]::SetEnvironmentVariable("NB_LOG_LEVEL", "debug", "Machine")
-netbird service restart
-```
-
-### On Docker
-
-You can set the environment variable `NB_LOG_LEVEL` to `debug` to enable debug logs.
-
-```shell
-docker run --rm --name PEER_NAME --hostname PEER_NAME --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --cap-add=SYS_RESOURCE -d \
--e NB_SETUP_KEY=<SETUP KEY> -e NB_LOG_LEVEL=debug -v netbird-client:/var/lib/netbird netbirdio/netbird:latest
-```
-
-### On Android
-
-Enable the ADB in the developer menu on the Android device.
-In the app set the the Trace log level setting - it is a checkbox in the advanced menu.
-With the ADB tool, you can get the logs from your device. The ADB is part of the SDK platform tools pack (zip file).
-You can download it from [here](https://developer.android.com/tools/releases/platform-tools).
-Please extract it and run the next command in the case of Linux:
-
-```shell
-sudo adb logcat -v time | grep GoLog
-```
-
-## Running the agent in foreground mode
-
-You can run the agent in foreground mode to see the logs in the terminal. This is useful to debugging issues with the
-agent.
-
-### Linux and MacOS
+You can run the client in foreground mode to see the logs in the terminal. This is useful when debugging issues with the client. On Linux and macOS:
 
 ```shell
 sudo netbird service stop
 sudo netbird up -F
 ```
 
-### Windows
-
-On Windows, the agent depends on the Wireguard's `wintun.dll` and can only be executed as a system account.
-To run the agent in foreground mode, you need to use a tool
-called [PSExec](https://learn.microsoft.com/en-us/sysinternals/downloads/psexec).
-
-Once you have downloaded and extracted `psexec` open an elevated Powershell window:
-
-```shell
-netbird service stop
-.\PsExec64.exe -s cmd.exe /c "netbird up -F --log-level debug > c:\windows\temp\netbird.out.log 2>&1"
-```
-
-In case you need to configure environment variables, you need to add them as system variables so they get picked up by
-the agent on the next psexec run:
-
-```powershell
-[Environment]::SetEnvironmentVariable("PIONS_LOG_DEBUG", "all", "Machine")
-````
+On Windows, foreground mode needs PSExec because the client runs as the system account. See [Run the client in foreground mode](/help/troubleshooting-client/windows#run-the-client-in-foreground-mode) on the Windows page.
 
 ## Enabling WireGuard in user space
 
 Sometimes, you want to test NetBird running on userspace mode instead of a kernel module. That can be a check to see if
 there is a problem with NetBird's firewall management in kernel mode.
 
-You must run the agent in foreground mode and set the environment variable `NB_WG_KERNEL_DISABLED` to `true`.
+You must run the client in foreground mode and set the environment variable `NB_WG_KERNEL_DISABLED` to `true`.
 
 ```shell
 sudo netbird service stop
@@ -418,7 +437,7 @@ sudo bash -c 'NB_WG_KERNEL_DISABLED=true netbird up -F'  > /tmp/netbird.log
 
 ## Debugging GRPC
 
-The NetBird agent communicates with the Management and Signal servers using the GRPC framework. With these parameters,
+The NetBird client communicates with the Management and Signal servers using the GRPC framework. With these parameters,
 you can
 set verbose logging for this service.
 
@@ -429,7 +448,7 @@ sudo bash -c 'GRPC_GO_LOG_VERBOSITY_LEVEL=99 GRPC_GO_LOG_SEVERITY_LEVEL=info net
 
 ## Debugging ICE connections
 
-The Netbird agent communicates with other peers through the Interactive Connectivity Establishment (ICE) protocol
+The NetBird client communicates with other peers through the Interactive Connectivity Establishment (ICE) protocol
 described in the [RFC 8445](https://datatracker.ietf.org/doc/html/rfc8445). To debug the connection procedure,
 set verbose logging for the the [Pion/ICE](https://github.com/pion/ice) library with the `PIONS_LOG_DEBUG` or
 `PIONS_LOG_TRACE` variable.
@@ -443,10 +462,6 @@ NB_LOG_LEVEL=debug
 sudo netbird service stop
 sudo bash -c 'PIONS_LOG_DEBUG=all NB_LOG_LEVEL=debug netbird up -F' > /tmp/netbird.log
 ```
-
-## Host-based firewall issues
-
-NetBird automatically manages host-based firewall rules, but conflicts can occur with other firewall tools or security software. See [Ports & Firewalls — Host-based firewalls](/about-netbird/ports-and-firewalls#host-based-firewalls) for symptoms, platform-specific remediation (UFW, firewalld, Windows Firewall), and diagnostic commands.
 
 ## Client login failures
 
@@ -490,37 +505,34 @@ Key while the NetBird client daemon is stopped:
 
 ## Debugging access to network resources
 
-In this section we will be presenting methodology of troubleshooting access issues involving Netbird.
+This section is the hands-on, command-level playbook for the case where a peer is `Connected` but a service behind a routing peer is unreachable. For the conceptual model first (where the traffic stops, and the TCP handshake as the dividing line between a NetBird problem and an application problem), start with [Troubleshooting resource connectivity](/help/troubleshooting-resource-connectivity). This section then walks the same checks with concrete commands.
 
-We will start by presenting a glossary of all machines and services involved.
-A sub-section will describe a specific use case.
-Each will start with a concise summary of usual troubleshooting steps then expand into more detailed step-by-step
-guides.
+It uses a glossary of the machines and services involved, followed by a specific use case that opens with a concise summary of the usual steps and expands into a detailed, step-by-step walkthrough.
 
 ### Glossary
 
-We will be using the following names for resources outside the Netbird network:
+We will be using the following names for resources outside the NetBird network:
 
 - `int-net1`: an internal network `10.123.45.0/24`,
 - `srv-c`: an internal HTTP server running at `10.123.45.17`,
 - `int-dns1`: an internal DNS server running at `10.123.45.6`,
-- `int-dns2`: an internal DNS server nunning at `10.7.8.9`,
+- `int-dns2`: an internal DNS server running at `10.7.8.9`,
 - `cf-dns`: an Internet-accessible CloudFlare DNS server at `1.1.1.1` and `1.0.0.1`,
 
-and following Netbird network resources:
+and following NetBird network resources:
 
-- `peer-a`: end user's device running Netbird Client,
-- `peer-b`: a linux server inside the internal network running Netbird Client,
+- `peer-a`: end user's device running the NetBird client,
+- `peer-b`: a Linux server inside the internal network running the NetBird client,
   - it has direct access to the whole `int-net1` IP range,
-- `users:employees`: a Netbird Group containing `peer-a`,
-- `routers:int-net1`: a Netbird Group containing `peer-b`,
-- `access:srv-c`: a Netbird Groups used as a target of ACL rules for `srv-c` only,
-- `access:int-net1`: a Netbird Groups used as a target of ACL rules for the whole subnet,
-- `net-a`: a Netbird Network
+- `users:employees`: a NetBird Group containing `peer-a`,
+- `routers:int-net1`: a NetBird Group containing `peer-b`,
+- `access:srv-c`: a NetBird Groups used as a target of ACL rules for `srv-c` only,
+- `access:int-net1`: a NetBird Groups used as a target of ACL rules for the whole subnet,
+- `net-a`: a NetBird Network
   - `net-a:srv-c`: a Network Resource handling traffic to `10.123.45.17/32` (`srv-c`),
   - `net-a:int-net1`: a Network Resource handling traffic to `10.123.45.0/24` (`int-net1`),
-- `route:int-net1`: a Netbird Network Route handling traffic to `10.123.45.0/24` (`int-net1`),
-- `route:srv-c`: a Netbird Network Route handling traffic to `10.123.45.17/32` (`srv-c`),
+- `route:int-net1`: a NetBird Network Route handling traffic to `10.123.45.0/24` (`int-net1`),
+- `route:srv-c`: a NetBird Network Route handling traffic to `10.123.45.17/32` (`srv-c`),
 
 ### Access from `peer-a` to `srv-c`
 
@@ -528,8 +540,8 @@ In short:
 
 1. Does `peer-b` have direct access to `srv-c`'s port `80`?
 2. Can a routing peer `peer-b` forward traffic to `srv-c`?
-3. Are Netbird's network routing resources configured?
-4. Do Netbird's Access Control rules allow access from `peer-a` to the target's ACL Group?
+3. Are NetBird's network routing resources configured?
+4. Do NetBird's Access Control rules allow access from `peer-a` to the target's ACL Group?
 5. Is `peer-a`'s operating system configured to use the route?
 
 Access Control rule is not required for connectivity from `peer-a` to `peer-b`
@@ -562,7 +574,7 @@ Linux operating system:
 net.ipv4.ip_forward = 1
 ```
 
-It should be set up automatically by the Netbird client unless it runs inside a container (which would not be able
+It should be set up automatically by the NetBird client unless it runs inside a container (which would not be able
 to modify `sysctl`), then it requires manual setup.
 
 For setting up the value persistently (across reboots) please consult your operating system's documentation.
@@ -574,9 +586,9 @@ Testing the functionality in practice involves:
 - adding a routing table entry to route `int-net1` (`10.123.45.0/24`) traffic through it,
 - trying to at least `ping 10.123.45.17` (`srv-c`)
 
-#### Are Netbird's network routing resources configured?
+#### Are NetBird's network routing resources configured?
 
-For Netbird network routing resources configurations you can use either (new) _Networks_ or (old) _Routes_.
+For NetBird network routing resources configurations you can use either (new) _Networks_ or (old) _Routes_.
 
 A Network `net-a` should have at minimum:
 
@@ -597,7 +609,7 @@ You can loosen the rules and replace following to grant access to the whole `int
 - _Address_: `10.123.45.17/32` -> `10.123.45.0/24`,
 - _Assigned Groups_ / _Access Control Groups_: `access:srv-c` -> `access:int-net1`
 
-#### Do Netbird's Access Control rules allow access from `peer-a` to the target's ACL Group?
+#### Do NetBird's Access Control rules allow access from `peer-a` to the target's ACL Group?
 
 You can skip this check, when you are using (old) Network Route feature without filling in _Access Control Groups (
 optional)_ section.
@@ -634,10 +646,10 @@ Just like with the previous section you can loosen the above example by:
 
 #### Is `peer-a`'s operating system configured to use the route?
 
-After all resources are configured in the Netbird management you should check whether they are
+After all resources are configured in the NetBird management you should check whether they are
 properly registered with your operating system.
 
-You can start by checking Netbird client's configuration with `netbird status -d` command:
+You can start by checking NetBird client's configuration with `netbird status -d` command:
 
 ```shell
 % netbird status -d                                                                                                                    
@@ -732,7 +744,7 @@ your specific subnet's clamped IP ranges (`10.123.45` in case of `int-net1`) and
 Depending on specifics of your Linux distribution (or even your configuration of it) you should be able to use either
 `iproute2` or `net-tools` family of network commands.
 
-Netbird client stores it's custom routes in the routing table `7120` (or `0x1BD0`) when it's available (through
+NetBird client stores its custom routes in the routing table `7120` (or `0x1BD0`) when it's available (through
 `iproute2` interface).
 
 For `iproute2`  (`ip`, `ss` tools):
