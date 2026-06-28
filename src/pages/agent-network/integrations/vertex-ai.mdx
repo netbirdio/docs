@@ -1,0 +1,129 @@
+import { Note, Warning } from '@/components/mdx'
+
+export const description =
+  'Connect Google Vertex AI to NetBird Agent Network using a Google Cloud service account, giving keyless, identity-based access to Gemini and Claude models on Vertex AI.'
+
+# Google Vertex AI
+
+[Vertex AI](https://cloud.google.com/vertex-ai) serves Google's **Gemini** models and
+Anthropic's **Claude** models on Google Cloud. Connecting it behind NetBird gives your
+agents keyless access over the tunnel: NetBird holds the Google credential server-side,
+ties every request to a real identity from your IdP, and applies your policies, limits, and
+audit on the way to Vertex.
+
+Unlike API-key providers, Vertex AI authenticates with a Google Cloud **service account**
+rather than a single key string. You create the service account in your project, grant it
+the Vertex AI roles, download a JSON key, and hand that key to NetBird, which stores it
+encrypted server-side.
+
+## Prerequisites
+
+- A Google Cloud project with the **Vertex AI API** enabled.
+- The [`gcloud` CLI](https://cloud.google.com/sdk/docs/install) authenticated against that
+  project.
+- Permission to create service accounts and grant IAM roles in the project.
+
+## Set Your Google Cloud Project
+
+```bash
+gcloud config set project <your-project>
+```
+
+## Create a Service Account
+
+Create a dedicated service account for NetBird so its access is scoped and auditable
+separately from your own credentials:
+
+```bash
+gcloud iam service-accounts create netbird-vertex \
+  --display-name="NetBird Vertex AI"
+```
+
+## Grant IAM Roles
+
+The service account needs two roles — one to call Vertex AI models, and one to consume the
+project's enabled services:
+
+```bash
+gcloud projects add-iam-policy-binding <your-project> \
+  --member="serviceAccount:netbird-vertex@<your-project>.iam.gserviceaccount.com" \
+  --role="roles/aiplatform.user"
+
+gcloud projects add-iam-policy-binding <your-project> \
+  --member="serviceAccount:netbird-vertex@<your-project>.iam.gserviceaccount.com" \
+  --role="roles/serviceusage.serviceUsageConsumer"
+```
+
+## Generate a JSON Key
+
+```bash
+gcloud iam service-accounts keys create netbird-vertex-key.json \
+  --iam-account=netbird-vertex@<your-project>.iam.gserviceaccount.com
+```
+
+<Warning>
+  The key file grants access to Vertex AI in your project. Treat it as a secret — store it
+  securely, never commit it to source control, and delete the local copy once it's stored in
+  NetBird.
+</Warning>
+
+If you'd rather paste the key as a single line, base64-encode it first:
+
+<CodeGroup>
+```bash {{ title: 'macOS' }}
+cat netbird-vertex-key.json | base64 | pbcopy
+```
+
+```bash {{ title: 'Linux' }}
+cat netbird-vertex-key.json | base64 -w 0
+```
+
+```powershell {{ title: 'Windows (PowerShell)' }}
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("netbird-vertex-key.json")) | Set-Clipboard
+```
+</CodeGroup>
+
+## Connect the Provider
+
+1. Go to **Agent Network → Providers** and click **Connect Provider**.
+2. Select **Google Vertex AI**. NetBird pre-fills the upstream URL
+   (`https://aiplatform.googleapis.com`) and the correct auth handling for Vertex.
+3. Provide the **service account key** you generated (`netbird-vertex-key.json`). NetBird stores it encrypted server-side and never returns it to callers.
+4. _(Optional)_ Restrict the **allowed models** and set per-model pricing — for example
+   `gemini-2.5-pro`, `gemini-2.5-flash`, `claude-sonnet-4-6`, or
+   `claude-opus-4-7`. Leaving the list empty allows any catalog model.
+5. Save the provider. The credential is now held server-side — the next step authorizes who
+   can use it.
+
+See [Providers](/agent-network/providers) for details.
+
+## Create a Policy
+
+By default nothing is allowed — a policy must connect a source group to the Vertex AI
+provider before anyone can route through it.
+
+1. Go to **Agent Network → Policies** and add a policy.
+2. Set the **Source** to the users or agents who should be able to reach Vertex AI (for
+   example your `Engineering` group from your IdP).
+3. Set the **Provider** to the Google Vertex AI provider you just connected.
+4. Optionally attach per-user or per-group [token and budget limits](/agent-network/policies/limits)
+   and [guardrails](/agent-network/policies/guardrails) such as a model allowlist.
+
+See [Policies](/agent-network/policies) for details.
+
+## Manage Service Account Keys
+
+List the keys for the service account, and revoke any you no longer need:
+
+```bash
+gcloud iam service-accounts keys list \
+  --iam-account=netbird-vertex@<your-project>.iam.gserviceaccount.com
+
+gcloud iam service-accounts keys delete <key-id> \
+  --iam-account=netbird-vertex@<your-project>.iam.gserviceaccount.com
+```
+
+<Note>
+  Rotating the key is a single server-side change in NetBird: generate a new JSON key, update
+  the provider's credential, then delete the old key in Google Cloud.
+</Note>
