@@ -121,6 +121,7 @@ export const docsNavigation = [
                 { title: 'Codex', href: '/agent-network/integrations/codex' },
                 { title: 'LiteLLM', href: '/agent-network/integrations/litellm' },
                 { title: 'Google Vertex AI', href: '/agent-network/integrations/vertex-ai' },
+                { title: 'AWS Bedrock', href: '/agent-network/integrations/bedrock' },
             ],
         },
     ],
