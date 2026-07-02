@@ -39,8 +39,8 @@ Before starting, ensure you have:
 
 - **Traefik** as your reverse proxy (see [Why Traefik is required](#why-traefik-is-required) above)
 - **Latest NetBird images** - pull the latest version to ensure the management server and CLI support the reverse proxy feature and token creation
-- **A domain for the proxy** - e.g., `proxy.example.com` or `netbird.example.com` (it can be the same domain as the NetBird server itself). Service subdomains will be created under this domain (e.g., `myapp.netbird.example.com`)
-- **Wildcard DNS capability** - ability to create a `*.netbird.example.com` DNS record pointing to your server
+- **A domain for the proxy** - preferably a dedicated domain such as `proxy.example.com`. It can share the NetBird server's domain, but that base hostname remains reserved for the dashboard and management server. Proxied services must use subdomains (e.g., `myapp.netbird.example.com`)
+- **Wildcard DNS capability** - ability to create a wildcard record such as `*.proxy.example.com` pointing to your server
 - **Port 443 accessible** - the proxy needs this for ACME TLS-ALPN-01 challenges (certificate provisioning)
 
 <Note>
@@ -72,10 +72,9 @@ The proxy authenticates with the management server using an access token. Genera
 ```bash
 docker exec -it netbird-server /go/bin/netbird-server token create \
   --name "my-proxy" --config <netbird-data-dir>/config.yaml
-
-# NOTE: <netbird-data-dir> is usually located at `/etc/netbird`.
 ```
 
+`<netbird-data-dir>` is usually `/etc/netbird`.
 
 **Multi-container** (separate `netbirdio/management` image):
 
@@ -83,7 +82,7 @@ docker exec -it netbird-server /go/bin/netbird-server token create \
 docker exec -it netbird-management /go/bin/netbird-mgmt token create --name "my-proxy"
 ```
 
-This outputs a token in the format `nbx_...` (40 characters). **Save the token immediately** - it is only displayed once. The management server stores only a SHA-256 hash. Make sure not to accidentally copy the 20 character Token ID instead.
+This outputs a token in the format `nbx_...` (40 characters). **Save the token immediately** - it is only displayed once. The management server stores only a SHA-256 hash. Make sure not to accidentally copy the 20-character Token ID instead.
 
 You can manage tokens later with:
 
@@ -122,11 +121,12 @@ proxy:
   labels:
     - traefik.enable=true
     - traefik.tcp.routers.proxy-passthrough.entrypoints=websecure
-    - traefik.tcp.routers.proxy-passthrough.rule=HostSNI(`*`)
+    - traefik.tcp.routers.proxy-passthrough.rule=HostSNI(`*`) && !HostSNI(`netbird.example.com`)
     - traefik.tcp.routers.proxy-passthrough.tls.passthrough=true
     - traefik.tcp.routers.proxy-passthrough.service=proxy-tls
     - traefik.tcp.routers.proxy-passthrough.priority=1
     - traefik.tcp.services.proxy-tls.loadbalancer.server.port=8443
+    - traefik.tcp.services.proxy-tls.loadbalancer.serverstransport=pp-v2@file
   logging:
     driver: "json-file"
     options:
@@ -155,6 +155,9 @@ NB_PROXY_ADDRESS=:8443
 NB_PROXY_ACME_CERTIFICATES=true
 NB_PROXY_ACME_CHALLENGE_TYPE=tls-alpn-01
 NB_PROXY_CERTIFICATE_DIRECTORY=/certs
+NB_PROXY_FORWARDED_PROTO=https
+NB_PROXY_PROXY_PROTOCOL=true
+NB_PROXY_TRUSTED_PROXIES=172.30.0.0/24
 ```
 
 **Multi-container** (separate `netbirdio/management` image):
@@ -168,6 +171,9 @@ NB_PROXY_ADDRESS=:8443
 NB_PROXY_ACME_CERTIFICATES=true
 NB_PROXY_ACME_CHALLENGE_TYPE=tls-alpn-01
 NB_PROXY_CERTIFICATE_DIRECTORY=/certs
+NB_PROXY_FORWARDED_PROTO=https
+NB_PROXY_PROXY_PROTOCOL=true
+NB_PROXY_TRUSTED_PROXIES=172.30.0.0/24
 ```
 
 <Note>
@@ -176,16 +182,66 @@ The proxy connects to the management server directly over the Docker network rat
 If your proxy and management server run on **separate hosts** and cannot communicate over a shared Docker network, see [Connecting through Traefik](#connecting-through-traefik-instead-of-docker-network) below.
 </Note>
 
+#### Preserve client IP addresses through Traefik
+
+Replace `172.30.0.0/24` in `NB_PROXY_TRUSTED_PROXIES` with the subnet of the Docker network shared by Traefik and the proxy. `172.30.0.0/24` is the subnet used by the current NetBird quickstart, but an existing deployment may use a different subnet.
+
+To find the network name and subnet, run:
+
+```bash
+# Replace netbird-traefik if your Traefik container has a different name
+docker inspect netbird-traefik \
+  --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}'
+
+docker network inspect <network-name> \
+  --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}'
+```
+
+<Warning>
+Do not copy a single Traefik container IP unless that address is assigned statically in `docker-compose.yml`. Docker can assign a different container IP after recreation. Trusting the actual Docker subnet keeps the configuration valid across container updates.
+</Warning>
+
+The PROXY protocol settings preserve the original client IP across Traefik's TCP passthrough. This is required for accurate access logs, CIDR and country restrictions, and CrowdSec decisions.
+
+Traefik must send PROXY protocol v2 to the proxy. Enable Traefik's file provider by adding this argument to the Traefik service's `command:` section:
+
+```yaml
+- "--providers.file.filename=/etc/traefik/dynamic.yaml"
+```
+
+Add this mount to the Traefik service's `volumes:` section:
+
+```yaml
+- ./traefik-dynamic.yaml:/etc/traefik/dynamic.yaml:ro
+```
+
+Create `traefik-dynamic.yaml` next to `docker-compose.yml`:
+
+```yaml
+tcp:
+  serversTransports:
+    pp-v2:
+      proxyProtocol:
+        version: 2
+```
+
+If your Traefik deployment already uses the file provider, add the `pp-v2` TCP servers transport to its existing dynamic configuration instead of configuring a second file provider.
+
 The Traefik labels configure a **TCP router** that:
-- Catches any request not matched by higher-priority HTTP routers via `HostSNI(*)` (wildcard)
+
+- Catches TLS requests via `HostSNI(*)` except the explicitly excluded HTTP hostnames
 - Uses the `websecure` entrypoint (port 443)
 - Passes the TLS connection through **without termination** (`tls.passthrough=true`)
-- Uses `priority=1` to avoid intercepting traffic meant for the main NetBird HTTP routers on the same entrypoint
+- Uses `priority=1` so more specific TCP routers can take precedence
 - Forwards traffic to the proxy container on port 8443
 
-<Note>
-The `HostSNI(*)` rule acts as a catch-all for any domain not matched by the existing NetBird HTTP routers. The `priority=1` ensures this TCP router only handles traffic that no other router claims. Any domain pointing to your server that isn't `netbird.example.com` will be forwarded to the proxy.
-</Note>
+<Warning>
+Traefik evaluates TCP routers before HTTP routers. A `HostSNI(*)` TCP router therefore also matches the hostname used by the NetBird dashboard and management server. The example rule excludes `netbird.example.com`; replace it with your management hostname. Add another `&& !HostSNI(...)` clause for every additional HTTP hostname on the same Traefik entrypoint.
+
+```yaml
+- traefik.tcp.routers.proxy-passthrough.rule=HostSNI(`*`) && !HostSNI(`netbird.example.com`)
+```
+</Warning>
 
 ### Exposing L4 ports
 
@@ -214,13 +270,14 @@ You only need port mappings for TCP and UDP mode services. HTTP and TLS mode ser
 
 ### Step 4: Set up DNS records
 
-Create one DNS record pointing to the server running your NetBird stack - one for the base proxy domain and one wildcard for service subdomains:
+Create DNS records pointing to the server running your NetBird stack: one for the base proxy domain and one wildcard for service subdomains.
 
 | Type | Name | Content |
 |------|------|---------|
-| `CNAME` | `*.netbird.example.com` | `netbird.example.com` |
+| `A` or `AAAA` | `proxy.example.com` | Your server's public IP address |
+| `CNAME` | `*.proxy.example.com` | `proxy.example.com` |
 
-The base domain record is required because a wildcard DNS record does not cover the bare domain itself. The wildcard record ensures that all service subdomains (e.g., `myapp.netbird.example.com`, `dashboard.netbird.example.com`) resolve to your server where Traefik forwards them to the proxy container.
+Use one domain consistently in both rows. For example, if `NB_PROXY_DOMAIN=proxy.example.com`, create `proxy.example.com` and `*.proxy.example.com`. You can use a `CNAME` for the base domain instead of `A`/`AAAA` when your DNS provider supports the required target. The base domain record is required because a wildcard record does not cover the bare domain itself.
 
 ### Step 5: Apply changes
 
@@ -266,7 +323,7 @@ A CrowdSec LAPI (Local API) container runs alongside your deployment, syncs deci
 | **enforce** | Blocked IPs are denied immediately. If the bouncer is not yet synced, connections are denied (fail-closed). |
 | **observe** | Blocked IPs are logged but not denied. Use this to evaluate CrowdSec before enforcing. |
 
-#### 7a. Add the CrowdSec container and configure Traefik/proxy.
+#### 7a. Add the CrowdSec container
 
 Add the following service to your `docker-compose.yml`:
 
@@ -295,7 +352,7 @@ Add the following service to your `docker-compose.yml`:
         max-file: "2"
 ```
 
-Add `crowdsec_db:` to the `volumes:` section, and update the proxy's `depends_on` so it waits for CrowdSec to be healthy:
+Add `crowdsec_db:` to the top-level `volumes:` section, and update the proxy's `depends_on` so it waits for CrowdSec to be healthy:
 
 ```yaml
   proxy:
@@ -306,34 +363,7 @@ Add `crowdsec_db:` to the `volumes:` section, and update the proxy's `depends_on
         condition: service_healthy
 ```
 
-Inside the configuration for the `traefik` service, inside the `command:` section, add:
-```yaml
-- "--providers.file.filename=/etc/traefik/dynamic.yaml"
-```
-
-Inside the `traefik` service `volumes:` section, add:
-```yaml
-- ./traefik-dynamic.yaml:/etc/traefik/dynamic.yaml:ro
-```
-
-Inside the `proxy` service `labels:` section, add:
-- traefik.tcp.services.proxy-tls.loadbalancer.serverstransport=pp-v2@file~
-
-Finally, create a new file called `traefik-dynamic.yaml` containing the following:
-```yaml
-tcp:
-  serversTransports:
-    pp-v2:
-      proxyProtocol:
-        version: 2
-```
-
-
-Then restart Traefik, we will restart the proxy later.
-
-```bash
-docker compose up -d traefik
-```
+If you installed the proxy using an older version of this guide, confirm that its configuration [preserves the original client IP](#preserve-client-ip-addresses-through-traefik). CrowdSec cannot make correct decisions if every request appears to come from Traefik.
 
 #### 7b. Start CrowdSec and register a bouncer
 
@@ -363,9 +393,6 @@ Add these lines to `proxy.env`:
 ```bash
 NB_PROXY_CROWDSEC_API_URL=http://crowdsec:8080
 NB_PROXY_CROWDSEC_API_KEY=<bouncer-key-from-above>
-NB_PROXY_FORWARDED_PROTO=https
-NB_PROXY_PROXY_PROTOCOL=true
-NB_PROXY_TRUSTED_PROXIES=172.30.0.10
 ```
 
 Then restart the proxy:
@@ -607,7 +634,7 @@ If your self-hosted deployment currently uses Nginx, Caddy, or another reverse p
 
 ## Environment variable reference
 
-The proxy is configured entirely through environment variables (each one maps to an equivalent CLI flag). The tables below cover every available option grouped by purpose. Only `NB_PROXY_TOKEN` and `NB_PROXY_DOMAIN` are required; the rest have sensible defaults.
+The proxy is configured through environment variables (each one maps to an equivalent CLI flag). The tables below cover the supported user-facing options grouped by purpose. Only `NB_PROXY_TOKEN` and `NB_PROXY_DOMAIN` are required; the rest have defaults.
 
 ### Core
 
@@ -647,7 +674,7 @@ The proxy is configured entirely through environment variables (each one maps to
 | Variable | Required | Description | Default |
 |----------|----------|-------------|---------|
 | `NB_PROXY_FORWARDED_PROTO` | No | Value to report in the `X-Forwarded-Proto` header for backends: `auto`, `http`, or `https`. | `auto` |
-| `NB_PROXY_TRUSTED_PROXIES` | No | Comma-separated list of trusted upstream proxy CIDR ranges (e.g. `10.0.0.0/8,192.168.1.1`) used when parsing forwarded client IPs. | - |
+| `NB_PROXY_TRUSTED_PROXIES` | No | Comma-separated list of trusted upstream proxy CIDR ranges or individual IP addresses (e.g. `10.0.0.0/8,192.168.1.1`) used for PROXY protocol and forwarded client IPs. | - |
 | `NB_PROXY_PROXY_PROTOCOL` | No | Enable PROXY protocol on TCP listeners to preserve client IPs behind L4 proxies. | `false` |
 | `NB_PROXY_WG_PORT` | No | WireGuard listen port (`0` = random). A fixed port only works with single-account deployments. | `0` |
 | `NB_PROXY_PRESHARED_KEY` | No | Pre-shared key for the tunnel between the proxy and peers. | - |
@@ -712,10 +739,21 @@ For a full explanation of TLS-ALPN-01 requirements, see [TLS-ALPN-01 requirement
 **Checklist**:
 1. Verify Traefik labels include `tls.passthrough=true`
 2. Confirm the router is configured as a **TCP** router (not HTTP) - labels should use `traefik.tcp.routers`, not `traefik.http.routers`
-3. Check that the `HostSNI` rule is set to `HostSNI(*)` (wildcard catch-all)
-4. Verify the TCP router has `priority=1` to prevent it from intercepting traffic meant for the main NetBird HTTP routers
+3. Check that the `HostSNI` rule catches proxy domains and explicitly excludes hostnames handled by HTTP routers
+4. Verify the TCP router has `priority=1` so more specific TCP routers take precedence
 5. Ensure the `websecure` entrypoint is configured in your Traefik configuration
 6. Restart Traefik after adding the proxy container: `docker compose restart traefik`
+
+### Client IPs show the Traefik address
+
+**Symptom**: Access logs, CIDR rules, country restrictions, or CrowdSec use Traefik's Docker IP instead of the original client IP.
+
+**Checklist**:
+1. Verify the proxy service uses the `pp-v2@file` servers transport
+2. Verify `traefik-dynamic.yaml` enables PROXY protocol version 2
+3. Verify `NB_PROXY_PROXY_PROTOCOL=true`
+4. Verify `NB_PROXY_TRUSTED_PROXIES` contains the actual shared Docker network subnet
+5. Recreate both services after changing the configuration: `docker compose up -d --force-recreate traefik proxy`
 
 ### Port conflicts
 
