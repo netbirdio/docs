@@ -120,6 +120,7 @@ export const docsNavigation = [
                 { title: 'Claude Code', href: '/agent-network/integrations/claude-code' },
                 { title: 'Codex', href: '/agent-network/integrations/codex' },
                 { title: 'LiteLLM', href: '/agent-network/integrations/litellm' },
+                { title: 'vLLM', href: '/agent-network/integrations/vllm' },
                 { title: 'Google Vertex AI', href: '/agent-network/integrations/vertex-ai' },
                 { title: 'AWS Bedrock', href: '/agent-network/integrations/bedrock' },
             ],
