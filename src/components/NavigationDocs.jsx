@@ -552,6 +552,16 @@ export const docsNavigation = [
                 title: 'Gateway API',
                 href: '/manage/integrations/kubernetes/gateway-api',
               },
+              {
+                title: 'Use Cases',
+                isOpen: false,
+                links: [
+                  {
+                    title: 'Route to a Kubernetes Service',
+                    href: '/manage/integrations/kubernetes/use-cases/route-to-a-kubernetes-service',
+                  },
+                ],
+              },
             ],
           },
         ],
