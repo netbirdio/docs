@@ -1,8 +1,16 @@
+import { Note } from '@/components/mdx'
+
 export const description = 'Diagnose and fix common DNS issues in NetBird'
 
 # DNS Troubleshooting
 
 This guide helps you diagnose and resolve common DNS issues in NetBird. Follow the structured approach below to identify and fix problems quickly.
+
+If a name resolves correctly but a service behind a routing peer is still unreachable, the problem is past DNS. See [Troubleshooting resource connectivity](/help/troubleshooting-resource-connectivity) to find which layer is dropping the traffic.
+
+<Note>
+The steps below use `ping` to check reachability. `ping` requires an **ICMP** peer-to-peer policy — when testing through or to a [routing peer](/manage/networks/how-routing-peers-work), name resolution and TCP can be healthy while ICMP is simply not allowed by policy. Prefer a TCP port test there: `Test-NetConnection <host> -Port <port>` (Windows) or `nc -z <host> <port>`.
+</Note>
 
 ## Quick Diagnostics Checklist
 
@@ -449,6 +457,55 @@ config domain
 
 ---
 
+### Issue 7: Active Directory Login or DFS Fails (but a file share by IP works)
+
+**Symptoms**:
+- Domain login, mapped drives, or DFS paths fail for remote users — yet the file server is reachable by IP
+- Errors like *"the specified domain is not available"*, or System error 1311 / 1312
+- `nslookup -type=srv _ldap._tcp.dc._msdcs.corp.example.com` returns nothing
+
+**Diagnosis**:
+
+A domain resource only resolves `A`/`AAAA` records. Active Directory also depends on the `SRV` / DC-locator records that *find a domain controller* — which the routing peer does not serve. So a client can resolve a host by name but can't locate a DC, and logon and DFS referrals fail even though plain name-to-IP resolution works.
+
+**Solutions**:
+
+- Add a **DNS nameserver** with match domain `corp.example.com` pointing at the DC's IP, distributed to your remote-users group — see [Active Directory & Windows File Shares → Give clients corp DNS](/manage/networks/use-cases/active-directory#step-5-give-clients-corp-dns).
+- Confirm the DC itself is reachable through the routing peer on the AD ports — see [Reaching a Domain Controller through a routing peer](/manage/dns/internal-dns-servers#reaching-a-domain-controller-through-a-routing-peer).
+
+---
+
+### Issue 8: Windows NRPT rule is written but never takes effect (lingering GPO)
+
+**Symptoms**:
+- Match-domain names don't resolve on a Windows client, even though `netbird status -d` shows the nameserver as Available and the client log records the NRPT (Name Resolution Policy Table) rule as written.
+- The machine is off-domain (not currently on the company network), often a remote or personal device that was once domain-joined.
+
+**Diagnosis**:
+
+NetBird writes its NRPT rule correctly, but a stale Windows Group Policy Object (GPO) `DnsPolicyConfig` container forces the rule into the *policy* store. On an off-domain machine Windows does not apply policy-store NRPT rules, so the rule exists but is never effective. The write succeeds while Windows quietly drops it from resolution.
+
+From a [debug bundle](/help/troubleshooting-client#debug-bundle), `client.log` and the matching entry in `state.json` show whether the NetBird client detected a GPO in place.
+
+Then compare the rule NetBird wrote against what Windows is actually applying (PowerShell):
+
+```powershell
+Get-DnsClientNrptRule                # the rule NetBird wrote
+Get-DnsClientNrptPolicy -Effective   # what Windows is actually applying
+```
+
+If the rule appears in `Get-DnsClientNrptRule` but not in the `-Effective` output, a lingering GPO container is blocking it.
+
+**Solutions**:
+
+This is a Windows Group Policy state issue, not a NetBird misconfiguration, and the fix has to happen locally:
+- Have local IT clear the stale `DnsPolicyConfig` GPO container from the machine's registry, or
+- Connect the machine to the company network and run `gpupdate /force` so Windows reconciles and removes the lingering container.
+
+NetBird cannot remove a Group Policy container from the client side.
+
+---
+
 ## Verifying Configuration
 
 ### Public nameservers
@@ -835,6 +892,6 @@ Avoid future DNS issues:
 ## Related Documentation
 
 - **[DNS Overview](/manage/dns)** - Understand DNS architecture
-- **[Configuring Nameservers](/manage/dns/nameserver-groups)** - Configuration guide
+- **[Internal DNS Servers](/manage/dns/internal-dns-servers)** - Nameserver configuration and internal DNS
 - **[DNS Settings](/manage/dns/dns-settings)** - Management modes
 - **[API Reference](/ipa/resources/dns)** - Automate DNS

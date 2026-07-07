@@ -1,0 +1,167 @@
+import { Note } from '@/components/mdx'
+
+# Active Directory & Windows File Shares
+
+Remote, domain-joined users expect their mapped drives, DFS (Distributed File System) paths, and domain login to *just work*, even when the domain controllers and file servers sit on a private LAN with nothing exposed publicly. This guide is the end-to-end journey for that over NetBird. It builds on two underlying pieces, [How Routing Peers Work](/manage/networks/how-routing-peers-work) and [Internal DNS Servers](/manage/dns/internal-dns-servers), and ties them together into a single setup.
+
+<Note>
+**TL;DR** — AD over NetBird is [a handful of NetBird objects](#what-you-configure-in-net-bird): a routing peer, a route to the file server, a route to the domain controller, access control policies for both, and a DNS nameserver pointing at the DC.
+</Note>
+
+The core idea: a domain-joined client's everyday actions quietly depend on **two kinds of server**, and both must be reachable over NetBird:
+
+- the **domain controller (DC)**, for DNS, Kerberos authentication, and DFS namespace referrals;
+- the **file server(s)**, the machines that actually hold the shares.
+
+```
+Remote user ──tunnel──► routing peer ──LAN──► Domain Controller   (DNS, Kerberos, DFS referral)
+ (NetBird)                              └─────► File server(s)      (the SMB/DFS share data)
+```
+
+## What one mapped drive actually depends on
+
+When a user opens a DFS path such as `\\corp.example.com\dfs\share`, Windows:
+
+1. resolves `corp.example.com` and finds a **domain controller** (ordinary DNS, plus special `SRV` records);
+2. asks the DC which file server actually holds that folder (the DFS **referral**);
+3. resolves that **file server's** name;
+4. connects to the file server over SMB, authenticated by **Kerberos** (tickets from the DC).
+
+The domain controller is in almost every step: DNS (steps 1 and 3), the referral (step 2), and Kerberos (step 4). The file server itself only enters at step 4. If any one of these is unreachable — the DC, the file server, or the DNS linking them — the drive fails, often with an error that points nowhere near the real cause. The steps below make all of it reachable.
+
+## Step 1: Decide where the NetBird client runs
+
+You rarely install the NetBird client on every server. Pick one of two shapes:
+
+- **A dedicated routing peer at the site.** A separate machine runs the NetBird client and routes to the DC and file servers across the LAN. Natural when shares are spread across several servers.
+- **The file server is the routing peer.** The NetBird client runs on the file server itself; the DC stays clientless behind it. Saves a machine, but on a Windows server it costs file-transfer performance (see the note below).
+
+Use a dedicated routing peer, and make it a **Linux machine**: a small VM next to the servers is enough. The rest of this guide assumes that. If the file server itself runs the client, only Step 2 changes (reach it via [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer) instead), while Steps 3–5 (routing the DC, its ports, and DNS) apply either way.
+
+<Note>
+**Why Linux: performance.** A Linux routing peer forwards traffic in the kernel at almost no cost; Windows and macOS peers process every packet in userspace, which caps file-transfer throughput well below LAN speed and loads the machine (see [How Routing Peers Work](/manage/networks/how-routing-peers-work)). Running the client directly on a Windows file server adds an extra internal delivery step on top. If remote users report documents opening much slower over NetBird than in the office, this choice is the first thing to check.
+</Note>
+
+## Step 2: Make the file server(s) reachable
+
+- **If a separate machine is the routing peer**, each file server is an ordinary host behind it. You will need:
+  - a Network resource — a `/32`, or a domain resource set to its FQDN (e.g. `fileserver1.corp.example.com`)
+  - an access control policy from your remote-users group to it on **TCP 445** (or whatever the service requires)
+- **If the file server is the routing peer**, clients address it at its own LAN IP (the *self-access* case) — follow [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer).
+
+If your DFS folders are spread across several file servers, route each one. Find the targets from a machine with the DFS Management tools (RSAT) installed:
+
+```powershell
+Get-DfsnFolderTarget '\\corp.example.com\dfs\share'
+```
+
+Each result's `TargetPath` (for example `\\fileserver1.corp.example.com\share`) names a file server — add the server portion, `fileserver1.corp.example.com`, as a domain resource in your NetBird network.
+
+## Step 3: Route the domain controller
+
+The DC is almost always clientless and reached *through* the routing peer. Add it as a resource in the NetBird Network:
+
+- a `/32` of the DC's IP, or
+- a domain resource for `corp.example.com`, whose A record points at the DCs (this routes them by name, and the routing peer must be able to resolve the domain).
+
+Keep it granular — least privilege is the NetBird default, so route only what you need. A single `*.corp.example.com` wildcard covers the DC, file servers, and DFS targets in one resource, but trades away per-host control (see note).
+
+<Note>
+A wildcard is one resource with **one policy scope** — the ports you open apply to *every* host under the domain, so you can't give the DC the full AD port set while limiting file servers to `445`. When you want that per-host scoping, use separate resources.
+</Note>
+
+Routing the DC through a single routing peer works: domain logon, Kerberos, and DFS all function over it. One caution: don't make a single peer the *only* path to the DC if you can avoid it. It works, but for resilience add a second routing peer for high availability.
+
+<Note>
+Running the NetBird client *on* a DC is a different pattern with its own caveats. See [Domain Controllers as Routing Peers](/manage/dns/internal-dns-servers#domain-controllers-as-routing-peers) and the [WireGuard port conflict](/manage/dns/internal-dns-servers#wire-guard-port-conflict-on-domain-controllers) note.
+</Note>
+
+## Step 4: Allow the AD ports
+
+Create a TCP policy and a UDP policy from your remote-users group to the DC, covering these baseline ports:
+
+| Port | Protocol | Needed for |
+|---|---|---|
+| 53 | TCP/UDP | DNS — locating the DC and resolving AD `SRV` records |
+| 88 | TCP/UDP | Kerberos — domain logon |
+| 123 | UDP | Time sync (`w32time`) — clock skew beyond ~5 minutes breaks Kerberos, so this matters more than it looks |
+| 135 | TCP | RPC endpoint mapper — netlogon secure-channel setup |
+| 389 | TCP/UDP | LDAP / CLDAP — directory queries and DC location |
+| 445 | TCP | SMB — SYSVOL (Group Policy), file shares, and DFS |
+| 464 | TCP/UDP | Password changes and resets (kpasswd) — without it, a remote user whose password expires can't set a new one and is locked out |
+
+NetBird renders one rule per access control policy, so a single policy can't mix protocols. Build **two** policies and sort each port into one or both:
+
+- **TCP policy** — `53`, `88`, `135`, `389`, `445`, `464`
+- **UDP policy** — `53`, `88`, `123`, `389`, `464`
+
+The ports that are both TCP and UDP (`53`, `88`, `389`, `464`) go in **both** policies.
+
+### Beyond the basics: extra DC ports
+
+The ports above cover the everyday AD experience: logon, Kerberos, DNS, time sync, password changes, SMB/DFS, and Group Policy. Some environments need more. Add these to the DC policies as your deployment requires (keeping one protocol per policy, so each new TCP port joins the TCP policy and each new UDP port the UDP policy):
+
+| Port | Protocol | Needed for |
+|---|---|---|
+| 3268 / 3269 | TCP | **Global Catalog** (LDAP / LDAPS). In multi-domain forests, used by UPN-style logons (`user@domain`) and many directory-aware apps. |
+| 636 | TCP | **LDAPS**, for apps that bind to AD over TLS. |
+| 9389 | TCP | **AD Web Services**, the transport for the RSAT Active Directory PowerShell module (`Get-ADUser`, and similar). |
+| dynamic RPC | TCP | **Replication, some MMC consoles, and deep secure-channel checks.** Port 135 (the RPC endpoint mapper) is already in the baseline, but the high port range it hands out is not. Open it only if you manage AD this way. |
+
+Each of these is independent — add only what you need; leaving one out affects only that feature.
+
+## Step 5: Give clients corp DNS
+
+A domain-joined client has to resolve many `corp.example.com` names: the file server, the DFS root, and the `SRV` records Windows uses to locate a DC. Add a **DNS nameserver** with `corp.example.com` as its **match domain**, pointing at the DC's IP address, and distribute it to your remote-users group. See [Internal DNS Servers](/manage/dns/internal-dns-servers).
+
+<Note>
+A domain resource does not remove this need: the routing peer answers name-to-IP lookups but not the `SRV` / DC-locator records login and DFS require, so an AD client always needs this nameserver (and it only works once the DC is reachable, Step 3).
+</Note>
+
+## Verify
+
+Run these checks while signed in as the everyday domain user who will actually use the share. That user already holds a Kerberos login ticket from signing in, which is what makes the share connect cleanly.
+
+**1. Check the file server answers on the file-sharing port.** File sharing (SMB) uses TCP port 445, so test that exact port:
+
+```powershell
+Test-NetConnection <fileserver> -Port 445
+```
+
+On Linux or macOS, use `nc -z <fileserver> 445` instead.
+
+Do not use `ping` for this check. Because the policies above allow specific ports rather than all traffic, ICMP isn't included — so `ping` can fail even when file sharing works perfectly. A successful port 445 test is the reliable signal.
+
+**2. Map a drive by name.** Run:
+
+```
+net use G: \\corp.example.com\dfs\share
+```
+
+It should connect exactly as it does in the office. Always use the server's **name** (the full `corp.example.com` address), never its IP. Windows logs you in by name using Kerberos — the ticket-based sign-in your domain controller provides. If you connect by IP (`\\<ip>\share`), Windows falls back to the older NTLM method, which usually fails here with *"the specified domain is not available."*
+
+<Note>
+Two errors here look like a NetBird routing problem but are actually Windows quirks:
+
+- Mapping a share **by IP address** can fail with **System error 1311**.
+- Connecting **with a typed-in username** (`net use ... /user:CORP\you`) can fail with **System error 1312**.
+
+Both come from how Windows handles Kerberos logins, not from routing. Avoid them by testing the normal way: signed in as the domain user, connecting by name.
+</Note>
+
+## What you configure in NetBird
+
+The whole setup is these pieces — create each one and domain login, shares, and DFS all work:
+
+- **A routing peer** — a peer at the site that routes to the DC and file servers: a dedicated Linux machine, or the file server itself. *(Step 1)*
+- **A route to the file server** — a Network resource (`/32` or FQDN, e.g. `fileserver1.corp.example.com`) for each share host. *(Step 2)*
+- **A route to the domain controller** — a Network resource (`/32` or `corp.example.com`). *(Step 3)*
+- **An access control policy to the file server** — on **TCP 445** (or whatever the service needs). *(Step 2)*
+- **Access control policies to the domain controller** — a TCP and a UDP policy on the AD ports. *(Step 4)*
+- **A DNS nameserver** — match domain `corp.example.com` pointing at the DC's IP, distributed to your remote-users group. *(Step 5)*
+
+## Related
+
+- [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer) — the self-access setup, for when the file server *is* the routing peer.
+- [How Routing Peers Work](/manage/networks/how-routing-peers-work) — forwarding, the two policy chains, and masquerade.
+- [Internal DNS Servers](/manage/dns/internal-dns-servers) — nameservers, Routing Peer DNS Resolution, and domain controllers.

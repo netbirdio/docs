@@ -1,5 +1,4 @@
 const template = `
-
 export const title = '<%- tag %>'
 
 <% operations.forEach(function(operation){ %>
@@ -8,14 +7,14 @@ export const title = '<%- tag %>'
 
 <Row>
   <Col>
-    <%- operation.description %>
+    <%- escapeMdx(operation.description) %>
     <% if(operation.parameters && operation.parameters.filter((parameter) => parameter.in === 'path').length > 0){ %>
     ### Path Parameters
     <Properties>
         <%  operation.parameters.filter((parameter) => parameter.in === 'path').forEach(function(parameter){ %>
           <Property name="<%- parameter.name %>" type="string" required=\{true\}> 
-            <%- parameter.description %>
-          </Property>   
+            <%- escapeMdx(parameter.description) %>
+          </Property>
         <% }); -%>
     </Properties>
     <% }; -%>
@@ -24,7 +23,7 @@ export const title = '<%- tag %>'
     <Properties>
         <%  operation.parameters.filter((parameter) => parameter.in === 'query').forEach(function(parameter){ %>
             <Property name="<%- parameter.name %>" type="<%- parameter.schema.type %>" required=\{false\}>
-              <%- parameter.description %>
+              <%- escapeMdx(parameter.description) %>
             </Property>
         <% }); -%>
     </Properties>
@@ -66,7 +65,7 @@ function renderProperties(properties, required = [], depth = 0) {
         %>>%>
         <% if ((type === 'object' && value.properties) || (type === 'object[]' && value.items.properties)) { %>
             <details className="custom-details" open>
-                <summary><%- value.description || 'More Information' %></summary>
+                <summary><%- (value.description || 'More Information').replace(/\\s+/g, ' ').trim() %></summary>
                 <Properties>
                 <% if (type === 'object[]') { %>
                     <% renderProperties(value.items.properties, value.items.required || [], depth + 1); %>
@@ -76,7 +75,7 @@ function renderProperties(properties, required = [], depth = 0) {
                 </Properties>
             </details>
         <% } else { %>
-            <% if(value.description) { %><%- value.description %><% } %>
+            <% if(value.description) { %><%- escapeMdx(value.description) %><% } %>
         <% } %>
         </Property>
     <% });
@@ -179,7 +178,7 @@ func main() {
   if err != nil {
     fmt.Println(err)
     return
-  <% if(true){%>{<% }; -%>
+  }
   
   <% if(operation.requestBody?.content && operation.requestBody?.content['application/json']){ %>
   req.Header.Add("Content-Type", "application/json")<% }; -%>

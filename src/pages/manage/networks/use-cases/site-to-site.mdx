@@ -1,0 +1,189 @@
+import { Note } from '@/components/mdx'
+
+# Site-to-Site
+
+Site-to-Site connects two networks through routing peers at each end. Neither end-device needs NetBird installed — the routing peers forward traffic across the NetBird tunnel. This guide builds it with [Networks](/manage/networks), where each site is a Resource gated by its own Policy.
+
+## Architecture
+
+<div className="not-prose w-fit max-w-full">
+
+```
+Site A device ──► Routing Peer ──► NetBird Tunnel ──► Routing Peer ──► Site B device
+ (no NetBird)       (peer)                              (peer)         (no NetBird)
+```
+
+</div>
+
+<Note>
+Networks is the recommended way to build site-to-site. It has per-Resource access control, is Zero Trust by default, and is the actively developed system.
+
+For the reverse — clientless devices at a site initiating connections to NetBird peers — see [Site-to-VPN](/manage/networks/use-cases/site-to-vpn).
+</Note>
+
+## Prerequisites
+
+- An always-on device at each site to act as the routing peer
+- Different subnets at each site. If both sites use the same range (e.g. `192.168.1.0/24`), see [Overlapping Routes](/manage/network-routes/overlapping-routes)
+
+## Example
+
+Two sites, A and B:
+- Site A: `10.0.0.0/24`, routing peer group `site-a-routers`
+- Site B: `10.1.0.0/24`, routing peer group `site-b-routers`
+
+## Step 1: Create setup keys for each site
+
+Create one setup key per site with an auto-assigned group for that site's routing peers.
+
+1. Go to **Settings** → **Setup Keys** → **Create Setup Key**
+2. For Site A: name "Site A Routing Peer", auto-assign group `site-a-routers`
+3. Repeat for Site B with group `site-b-routers`
+
+<Note>
+You can also assign groups manually after the peer connects, under **Peers** → **Servers** → select peer → **Assigned Groups**.
+</Note>
+
+## Step 2: Install NetBird on the routing peers
+
+On each site's routing peer:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+sudo netbird up --setup-key YOUR_SETUP_KEY
+```
+
+## Step 3: Create a Network for each site
+
+Each site becomes its own Network: a Resource for that site's subnet, served by that site's routing peers.
+
+**Network A:**
+
+1. Go to **Network Routing** → **Networks** → **Add Network**, name it `site-a`, and click **Create Network**
+2. Inside the network, click **Add Resource**:
+   - Enter a name like `site-a-subnet`
+   - Enter the address `10.0.0.0/24` (a subnet, or a single host like `10.0.0.50/32`)
+   - Expand **Additional Options** and under **Resource Groups**, create a group called `site-a-cidr` (this group represents the subnet for use in policies)
+3. Click **Add Routing Peer**, select the `site-a-routers` group, and leave **Masquerade** enabled (the default)
+
+<Note>
+Leave Masquerade enabled on both routing peers. NetBird's tunnel drops traffic whose source isn't the peer's NetBird IP, so Masquerade is what makes site-to-site work — disabling it on a routing peer breaks the flow. Masquerade is enabled by default everywhere, and the toggle to turn it off only exists on Linux.
+
+NetBird only performs the required outbound SNAT itself on Linux routing peers. Other platforms (OPNsense and pfSense are common examples) don't do this SNAT unless you configure it manually, so use a Linux routing peer for site-to-site.
+</Note>
+
+**Network B:** repeat the steps — name `site-b`, Resource address `10.1.0.0/24` with group `site-b-cidr`, and routing peer group `site-b-routers`.
+
+## Step 4: Create access control policies
+
+Networks requires a Policy on every Resource — without one, the dashboard will not allow access to it. Add one Policy per Network:
+
+- **Network A's Resource:** Source Groups = `site-b-routers` → destination = the `site-a-subnet` Resource
+- **Network B's Resource:** Source Groups = `site-a-routers` → destination = the `site-b-subnet` Resource
+
+Tighten by protocol/port if needed; use **All** to allow any.
+
+## Step 5: Tell clientless devices about the remote subnet
+
+Devices without NetBird need a static route pointing to the local routing peer.
+
+**Router-level (recommended)** — add a static route on the site's router so all devices inherit it:
+
+```
+Destination: 10.1.0.0/24       # remote network
+Gateway:     10.0.0.50         # local routing peer
+```
+
+**Per-device fallback** — if you can't touch the router, add the route on each device instead.
+
+**Windows** (PowerShell as Administrator) — `-p` makes it persistent:
+
+```powershell
+route -p add 10.1.0.0 mask 255.255.255.0 10.0.0.50
+```
+
+**Linux** — first test the route (this form disappears on the next reboot):
+
+```bash
+sudo ip route add 10.1.0.0/24 via 10.0.0.50
+```
+
+Once a peer at the other site is reachable, make it permanent. The method depends on which network manager the device uses — check with:
+
+```bash
+ls /etc/netplan/
+```
+
+Follow **only one** of the two methods below — the one that matches what `ls` showed. They're alternatives, not consecutive steps: if you see `.yaml` files use Netplan (most Ubuntu hosts); if the directory is empty or missing use systemd-networkd (Debian, minimal installs). Don't mix them — on Netplan hosts, systemd-networkd config you add by hand is silently ignored.
+
+Both methods need your LAN interface name — find it with `ip -br addr` (look for the connection carrying the device's local IP, e.g. `eth0` or `ens18`). Substitute it wherever the steps below show `<IFACE>`.
+
+**Option A — Netplan** (you saw `.yaml` files) — open the file `ls` showed (e.g. `50-cloud-init.yaml`) in a text editor. `nano` is the simplest; this command opens the file in it (run `sudo apt install nano` first if it's missing):
+
+```bash
+sudo nano /etc/netplan/50-cloud-init.yaml
+```
+
+Find your interface under `ethernets:` and add the route. If a `routes:` list is already there, add the `- to:` lines to it — don't create a second `routes:` key:
+
+```yaml
+network:
+  version: 2
+  ethernets:
+    <IFACE>:                         # your interface, from ip -br addr
+      dhcp4: true                    # whatever was already here
+      routes:                        # add this block (or reuse an existing routes: list)
+        - to: 10.1.0.0/24            #   remote network
+          via: 10.0.0.50             #   local routing peer
+```
+
+Save and exit. In nano: press `Ctrl+O` then `Enter` to write the file, then `Ctrl+X` to quit. Then apply the change:
+
+```bash
+sudo netplan apply
+```
+
+<Note>
+Recent Netplan needs `0600` permissions on files under `/etc/netplan/`. Run `sudo chmod 0600 /etc/netplan/*.yaml` if `netplan apply` warns.
+</Note>
+
+**Option B — systemd-networkd** (the `/etc/netplan/` directory was empty) — create a drop-in for your interface. Replace both `<IFACE>` below with your interface name, then paste the block — it creates the file and reloads in one go:
+
+```bash
+sudo mkdir -p /etc/systemd/network/<IFACE>.network.d
+sudo tee /etc/systemd/network/<IFACE>.network.d/100-netbird.conf > /dev/null <<'EOF'
+[Route]
+Destination=10.1.0.0/24
+Gateway=10.0.0.50
+EOF
+sudo networkctl reload
+```
+
+Repeat this on the other site with the values swapped, so Site B's router or devices know to reach `10.0.0.0/24` via the local Site B routing peer. Bidirectional site-to-site needs the static routes on both sides.
+
+This step assumes Masquerade is enabled on both routing peers (the default in Step 3). Site-to-site over Networks requires Masquerade to be on — disabling it on a routing peer causes the WireGuard tunnel to drop traffic whose source isn't the peer's NetBird IP, so source-IP preservation isn't currently supported for site-to-site. If you need to preserve source IPs end to end, use the [Routes site-to-site setup](/manage/network-routes/use-cases/site-to-site) instead, which supports running with Masquerade disabled.
+
+## Step 6: Verify
+
+From Site A, ping a device at Site B:
+
+```bash
+ping 10.1.0.100
+```
+
+Reverse from Site B to confirm both directions work. The destination sees the connection coming from its local routing peer's LAN IP — source IPs are masqueraded at both routing peers.
+
+## Cloud routing peers
+
+When the routing peer is a cloud instance, the VPC needs to allow it to forward traffic on behalf of other addresses:
+
+- **AWS**: Disable the source/destination check on the routing peer's ENI. Add a VPC route table entry with the remote CIDR as the destination and the routing peer's ENI as the target. Security groups must allow traffic from the routing peer.
+- **GCP**: Enable IP forwarding on the instance. Add a custom route in the VPC with the remote CIDR as the destination and the routing peer instance as the next hop. Firewall rules must allow traffic from the routing peer's internal IP.
+- **Azure**: Enable IP forwarding on the routing peer's NIC. Add a route table entry with the remote CIDR pointing at the routing peer. Network security groups must allow the traffic.
+
+## Next steps
+
+- [Masquerade](/manage/networks/masquerade) — how source NAT works on routing peers
+- [Site-to-VPN](/manage/networks/use-cases/site-to-vpn) — clientless devices initiating connections to NetBird peers
+- [Access Home Devices](/manage/networks/use-cases/access-home-devices) — reach a single site from your NetBird peers
+- [Routes Site-to-Site](/manage/network-routes/use-cases/site-to-site) — legacy approach for scenarios that require source-IP preservation or Routes-specific behavior

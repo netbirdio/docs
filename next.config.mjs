@@ -23,12 +23,22 @@ const nextConfig = {
         return [
             {
                 source: '/slack-url',
-                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-3no4al9zm-Hljj_9F7QdggIebTk2kyUw',
+                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-3wwkb0b9y-opbG_pFSoOgP41KUV00MtA',
                 permanent: false,
             },
             {
                 source: '/how-to/networks-concept',
                 destination: '/manage/networks',
+                permanent: true,
+            },
+            {
+                source: '/about-netbird/browser-client-architecture',
+                destination: '/manage/peers/browser-client/architecture',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/by-scenario/site-to-vpn',
+                destination: '/manage/networks/use-cases/site-to-vpn',
                 permanent: true,
             },
             {
@@ -48,7 +58,7 @@ const nextConfig = {
             },
             {
                 source: '/docs/how-to-guides/nameservers',
-                destination: '/manage/dns/nameserver-groups',
+                destination: '/manage/dns/internal-dns-servers',
                 permanent: true,
             },
             {
@@ -77,11 +87,6 @@ const nextConfig = {
                 permanent: true,
             },
             {
-                source: '/docs/overview/setup-keys',
-                destination: '/manage/peers/register-machines-using-setup-keys',
-                permanent: true,
-            },
-            {
                 source: '/docs',
                 destination: '/',
                 permanent: true,
@@ -100,6 +105,16 @@ const nextConfig = {
             {
                 source: '/selfhosted/self-hosted-vs-cloud-netbird',
                 destination: '/about-netbird/self-hosted-vs-cloud',
+                permanent: true,
+            },
+            {
+                source: '/about-netbird/why-wireguard-with-netbird',
+                destination: '/about-netbird/netbird-vs-traditional-vpn',
+                permanent: true,
+            },
+            {
+                source: '/about-netbird/other',
+                destination: '/introduction',
                 permanent: true,
             },
             // documentation redirects for access control
@@ -252,7 +267,7 @@ const nextConfig = {
             },
             {
                 source: '/how-to/db-workload-migration',
-                destination: '/manage/peers/site-to-site/db-workload-migration',
+                destination: '/manage/network-routes/use-cases/site-to-site',
                 permanent: true,
             },
             // documentation redirects for use-cases
@@ -289,22 +304,22 @@ const nextConfig = {
             },
             {
                 source: '/how-to/routing-traffic-to-multiple-resources',
-                destination: '/manage/networks/routing-traffic-to-multiple-resources',
+                destination: '/manage/networks',
                 permanent: true,
             },
             {
                 source: '/how-to/accessing-restricted-domain-resources',
-                destination: '/manage/networks/accessing-restricted-domain-resources',
+                destination: '/manage/networks',
                 permanent: true,
             },
             {
                 source: '/how-to/accessing-entire-domains-within-networks',
-                destination: '/manage/networks/accessing-entire-domains-within-networks',
+                destination: '/manage/networks',
                 permanent: true,
             },
             {
                 source: '/how-to/access-home-network',
-                destination: '/manage/networks/homelab/access-home-network',
+                destination: '/manage/networks/use-cases/access-home-devices',
                 permanent: true,
             },
             // documentation redirects for network-routes
@@ -315,17 +330,17 @@ const nextConfig = {
             },
             {
                 source: '/how-to/configuring-default-routes-for-internet-traffic',
-                destination: '/manage/network-routes/configuring-default-routes-for-internet-traffic',
+                destination: '/manage/network-routes/use-cases/exit-nodes',
                 permanent: true,
             },
             {
                 source: '/how-to/configuring-routes-with-access-control',
-                destination: '/manage/network-routes/configuring-routes-with-access-control',
+                destination: '/manage/network-routes/access-control',
                 permanent: true,
             },
             {
                 source: '/how-to/resolve-overlapping-routes',
-                destination: '/manage/network-routes/resolve-overlapping-routes',
+                destination: '/manage/network-routes/overlapping-routes',
                 permanent: true,
             },
             {
@@ -454,7 +469,17 @@ const nextConfig = {
             // documentation redirects for integrations
             {
                 source: '/how-to/enable-post-quantum-cryptography',
-                destination: '/manage/integrations/enable-post-quantum-cryptography',
+                destination: '/client/post-quantum-cryptography',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/enable-post-quantum-cryptography',
+                destination: '/client/post-quantum-cryptography',
+                permanent: true,
+            },
+            {
+                source: '/client/enable-post-quantum-cryptography',
+                destination: '/client/post-quantum-cryptography',
                 permanent: true,
             },
             {
@@ -496,6 +521,16 @@ const nextConfig = {
             },
             // documentation redirects for client
             {
+                source: '/client/allow-ssh',
+                destination: '/manage/peers/ssh#enabling-ssh',
+                permanent: true,
+            },
+            {
+                source: '/client/enable-lazy-connections',
+                destination: '/manage/peers/lazy-connection',
+                permanent: true,
+            },
+            {
                 source: '/how-to/profiles',
                 destination: '/client/profiles',
                 permanent: true,
@@ -524,33 +559,68 @@ const nextConfig = {
             },
             {
                 source: '/manage/peers/site-to-site/db-workload-migration',
-                destination: '/manage/network-routes/use-cases/by-scenario/site-to-site-cloud',
+                destination: '/manage/network-routes/use-cases/site-to-site',
                 permanent: true,
             },
             {
                 source: '/manage/network-routes/use-cases/site-to-site-cloud',
-                destination: '/manage/network-routes/use-cases/by-scenario/site-to-site-cloud',
+                destination: '/manage/network-routes/use-cases/site-to-site',
                 permanent: true,
             },
             {
                 source: '/manage/networks/homelab/access-home-network',
-                destination: '/manage/networks/use-cases/by-scenario/access-home-devices',
+                destination: '/manage/networks/use-cases/access-home-devices',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/by-scenario/access-home-devices',
+                destination: '/manage/networks/use-cases/access-home-devices',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/by-scenario/cloud-to-on-premise',
+                destination: '/manage/networks/use-cases/cloud-to-on-premise',
                 permanent: true,
             },
             // Networks guides moved to use-cases
             {
                 source: '/manage/networks/routing-traffic-to-multiple-resources',
-                destination: '/manage/networks/use-cases/by-resource-type/routing-traffic-to-multiple-resources',
+                destination: '/manage/networks',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/by-resource-type/routing-traffic-to-multiple-resources',
+                destination: '/manage/networks',
                 permanent: true,
             },
             {
                 source: '/manage/networks/accessing-restricted-domain-resources',
-                destination: '/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources',
+                destination: '/manage/networks',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/by-resource-type/accessing-restricted-domain-resources',
+                destination: '/manage/networks',
                 permanent: true,
             },
             {
                 source: '/manage/networks/accessing-entire-domains-within-networks',
-                destination: '/manage/networks/use-cases/by-resource-type/accessing-entire-domains-within-networks',
+                destination: '/manage/networks',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/by-resource-type/accessing-entire-domains-within-networks',
+                destination: '/manage/networks',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/by-scenario/remote-worker-access',
+                destination: '/manage/networks',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases',
+                destination: '/manage/networks',
                 permanent: true,
             },
             // Network Routes guides moved to use-cases
@@ -566,17 +636,57 @@ const nextConfig = {
             },
             {
                 source: '/manage/network-routes/configuring-default-routes-for-internet-traffic',
-                destination: '/manage/network-routes/use-cases/by-scenario/exit-nodes',
+                destination: '/manage/network-routes/use-cases/exit-nodes',
                 permanent: true,
             },
             {
                 source: '/manage/network-routes/configuring-routes-with-access-control',
-                destination: '/manage/network-routes/use-cases/by-configuration/access-control',
+                destination: '/manage/network-routes/access-control',
                 permanent: true,
             },
             {
                 source: '/manage/network-routes/resolve-overlapping-routes',
-                destination: '/manage/network-routes/use-cases/by-configuration/overlapping-routes',
+                destination: '/manage/network-routes/overlapping-routes',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases',
+                destination: '/manage/network-routes',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/by-scenario/site-to-site-home',
+                destination: '/manage/network-routes/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/by-scenario/site-to-site-office',
+                destination: '/manage/network-routes/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/by-scenario/site-to-site-cloud',
+                destination: '/manage/network-routes/use-cases/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/by-scenario/exit-nodes',
+                destination: '/manage/network-routes/use-cases/exit-nodes',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/by-configuration/access-control',
+                destination: '/manage/network-routes/access-control',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/by-configuration/overlapping-routes',
+                destination: '/manage/network-routes/overlapping-routes',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/by-configuration/advanced-configuration',
+                destination: '/manage/network-routes/advanced-configuration',
                 permanent: true,
             },
             // Site-to-Site section redirects (overview and comprehensive guides)
@@ -602,7 +712,7 @@ const nextConfig = {
             },
             {
                 source: '/manage/site-to-site/advanced-configuration',
-                destination: '/manage/network-routes/use-cases/by-configuration/advanced-configuration',
+                destination: '/manage/network-routes/advanced-configuration',
                 permanent: true,
             },
             // Use-cases flat pages -> categorized
@@ -634,6 +744,49 @@ const nextConfig = {
             {
                 source: '/use-cases/distributed-multi-cloud-ai-argocd-microk8s-vllm',
                 destination: '/use-cases/cloud/distributed-multi-cloud-ai',
+                permanent: true,
+            },
+            // selfhosted reverse proxy rename
+            {
+                source: '/selfhosted/reverse-proxy',
+                destination: '/selfhosted/external-reverse-proxy',
+                permanent: true,
+            },
+            // selfhosted scaling redirect
+            {
+                source: '/scaling-your-self-hosted-deployment',
+                destination: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
+                permanent: true,
+            },
+            // selfhosted maintenance reorganization
+            {
+                source: '/selfhosted/configuration-files',
+                destination: '/selfhosted/maintenance/configuration-files',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/sqlite-store',
+                destination: '/selfhosted/maintenance/sqlite-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/postgres-store',
+                destination: '/selfhosted/maintenance/postgres-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/activity-postgres-store',
+                destination: '/selfhosted/maintenance/activity-postgres-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/activity-mysql-store',
+                destination: '/selfhosted/maintenance/activity-mysql-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/geo-support',
+                destination: '/selfhosted/maintenance/geo-support',
                 permanent: true,
             },
         ]

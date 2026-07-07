@@ -1,0 +1,144 @@
+import { Note } from '@/components/mdx'
+
+export const description =
+  'Get an LLM request routed through NetBird Agent Network end to end: set up the NetBird server with the proxy, connect a provider, create a policy, and make your first keyless call.'
+
+# NetBird Agent Network Quickstart
+
+This guide takes you from a fresh server to a working, keyless LLM call through
+Agent Network.
+
+<Note>
+    NetBird Agent Network is open source and self-hosted. This guide sets up a minimal deployment with core functionality;
+    you can enable the full platform later.
+
+    It is currently in beta, and the setup process installs release candidate versions of the platform.
+</Note>
+
+## Infrastructure Requirements
+
+- A Linux VM with at least **1 CPU** and **2 GB** of memory.
+- The VM must be publicly accessible on **TCP ports 80 and 443**, and **UDP port 3478**.
+- A **public domain** that resolves to the VM's public IP (e.g. `netbird.example.com`),
+  plus a **wildcard record** (e.g. `*.netbird.example.com`) so agent-network
+  endpoints resolve.
+
+The public domain is not used for the Agent Network itself. It is only used to establish network connectivity
+and manage the platform.
+
+## Software Requirements
+
+- Docker with the docker-compose plugin v2 or higher ([Docker installation guide](https://docs.docker.com/engine/install/))
+- [jq](https://jqlang.github.io/jq/) — install with `sudo apt install jq` or `sudo yum install jq`
+- [curl](https://curl.se/) — install with `sudo apt install curl` or `sudo yum install curl`
+
+### Installation script
+
+Download and run the installation script:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/getting-started.sh | NETBIRD_AGENT_NETWORK=true bash
+```
+
+Once the script finishes, open `https://netbird.example.com`, create your admin
+account on the setup page, create an admin user, and log in.
+
+## Add Your Device to the Network
+
+Agent network endpoints are private and reachable only over the NetBird overlay network.
+To access one, your agent’s device must run the NetBird client and be authenticated, keeping access keyless, authorized,
+and protected by a peer-to-peer encrypted WireGuard tunnel.
+
+1. In the NetBird dashboard go to **Peers > User Devices**.
+2. Click **Add Peer** and download the NetBird client app for your device.
+3. Run the client app, click "Connect", and log in with your NetBird account when prompted
+
+<p>
+    <img src="/docs-static/img/agent-network/quickstart/agent-network-connect-device.png" alt="agent network connect" className="imagewrapper-medium" />
+</p>
+
+You should now see your device in the peers list in the NetBird dashboard.
+
+To access a provider via NetBird, you need to use an **agent network endpoint**, which is generated when you connect your
+first provider.
+
+## Connect a Provider
+
+A **provider** is an upstream LLM service that NetBird routes requests to, such as
+OpenAI, Anthropic, any AI gateway, or a local model served by Ollama
+or vLLM.
+
+1. Go to **Agent Network > Providers** and click **Connect Provider**.
+2. Select the provider, such as **Anthropic** if you use Claude Code.
+3. Paste the provider’s API key.
+4. _(Optional)_ Set a list of allowed models and a custom token price.
+5. Save the provider.
+
+NetBird stores the provider API key server-side and returns a tunnel-only endpoint that agents use to reach it.
+The key never lives on the client.
+
+See [Providers](/agent-network/providers) for more details.
+
+<p>
+    <img src="/docs-static/img/agent-network/quickstart/agent-network-add-provider.png" alt="agent network add provider" className="imagewrapper" />
+</p>
+
+You should now see a newly-generated endpoint above the **Providers** table.
+
+<p>
+    <img src="/docs-static/img/agent-network/quickstart/agent-network-endpoint.png" alt="agent network endpoint" className="imagewrapper" />
+</p>
+
+## Configure Your Agent
+
+Point your agent at the NetBird endpoint as its **base URL**. No provider API key
+is needed on the client. NetBird authorizes each request against your policies and
+injects the upstream provider key server-side.
+
+1. Next to your agent network endpoint, click **Agent Config**.
+2. Pick the tab that matches your tool — Claude Code, Codex, OpenAI SDK, or cURL. The
+   dashboard pre-fills your endpoint for you.
+3. Copy the snippet and apply it. Claude Code reads `~/.claude/settings.json` and Codex
+   reads `~/.codex/config.toml`.
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-configure-agent-claude-code.png" alt="NetBird Configure Your Agent modal showing Claude Code configuration" className="imagewrapper" />
+</p>
+
+## Create a Policy
+
+By default, Agent Network denies every request. Nothing reaches a provider until a
+policy explicitly allows it. A policy connects a **Source Group** (your users or
+agent devices) to one or more **Providers**, and is where you attach optional token
+and budget limits and guardrails.
+
+1. Go to **Team > Users** and add your user to a group, such as **Engineering**.
+2. Go to **Agent Network > Policies** and click **Add Policy**.
+3. Select the **Source Group** you want to authorize.
+4. Choose the **Provider** that members of the group can access.
+5. _(Optional)_ Set **token / budget limits** and attach **guardrails**.
+6. Save the policy.
+
+<p>
+    <img src="/docs-static/img/agent-network/quickstart/agent-network-add-policy.png" alt="agent network add policy" className="imagewrapper" />
+</p>
+
+With the policy in place, the agent you configured above can now reach the provider.
+Run it as usual, or send a quick test request, using a model your provider allows:
+
+```bash
+curl https://<your-endpoint>/v1/messages \
+  --header "Content-Type: application/json" \
+  --header "anthropic-version: 2023-06-01" \
+  --data '{"model":"claude-opus-4-8","max_tokens":1024,"messages":[{"role":"user","content":"What is NetBird?"}]}'
+```
+
+## Verify in Usage & Logs
+
+Open **Usage & Logs** to confirm the request was
+recorded with the caller identity, model, tokens, and cost.
+
+<p>
+    <img src="/docs-static/img/agent-network/quickstart/agent-network-usage-and-logs.png" alt="agent network usage & logs"
+         className="imagewrapper-big" />
+</p>

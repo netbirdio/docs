@@ -1,0 +1,171 @@
+import { Note, Warning } from '@/components/mdx'
+
+# Masquerade
+
+Masquerade is on by default. The routing peer SNATs forwarded traffic to its own LAN-side IP, so the destination network does not need any awareness of NetBird. Turn it off when you need:
+
+- Source IP visibility for auditing, compliance, or application logic.
+- The destination network's existing firewalls to filter NetBird peers by their overlay IP.
+
+## What changes when masquerade is off
+
+- The original NetBird overlay IP is preserved end-to-end.
+- The destination host (or, if it sits in a different subnet, its gateway) must have a return route for the NetBird CIDR (default `100.64.0.0/10`) pointing at the routing peer's LAN IP.
+- High availability stops working — return traffic must flow back through one specific routing peer, so the destination network has no way to follow a failover. See [How Routing Peers Work — Masquerade](/manage/networks/how-routing-peers-work#masquerade).
+
+<Note>
+Masquerade can only be turned off on Linux routing peers.
+</Note>
+
+## Disable masquerade on the routing peer
+
+In the dashboard: **Network Routing** → **Networks** → your network → the **routing peer** row → toggle **Masquerade** off. The change takes effect within seconds; the routing peer stops SNATing forwarded traffic for this network.
+
+You can also flip it through the API:
+
+```bash
+curl -X PUT https://api.netbird.io/api/networks/<NETWORK_ID>/routers/<ROUTER_ID> \
+  -H "Authorization: Token <API_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"peer": "<PEER_ID>", "masquerade": false, "metric": 9999, "enabled": true}'
+```
+
+The rest of this page covers the return-route prerequisite the destination network needs once masquerade is off.
+
+## Inputs to substitute
+
+The examples below use placeholders. Swap in:
+
+- `100.64.0.0/10` — default NetBird CIDR. See [Find your account's NetBird range](#find-your-accounts-netbird-range) below for the narrower `/16` you should use in practice.
+- `<PEER_LAN_IP>` — the routing peer's IP on the destination subnet.
+- `<IFACE>` — the LAN interface on the destination host. Use `ip -br addr` to identify it.
+
+## Find your account's NetBird range
+
+NetBird assigns each account a single `/16` block from inside the `100.64.0.0/10` CGNAT range (one of 64 possible blocks such as `100.64.0.0/16`, `100.121.0.0/16`, `100.127.0.0/16`, …). The block is chosen randomly per account and can be customised. Use that `/16` for the return route below — not the whole `/10` — so you don't funnel unrelated CGNAT ranges through your routing peer.
+
+Read it off any enrolled peer:
+
+```bash
+$ netbird status | grep "NetBird IP"
+NetBird IP: 100.121.195.4/16
+# → this account's block is 100.121.0.0/16
+```
+
+<Note>
+Wherever the examples below show `100.64.0.0/10`, use your account's `/16` instead.
+</Note>
+
+## Test the route before making it persistent
+
+Add the route temporarily on the destination host:
+
+```bash
+sudo ip route add 100.64.0.0/10 via <PEER_LAN_IP>
+```
+
+From a NetBird peer, confirm reachability with a protocol/port your NetBird policy allows — for example `curl http://<destination-ip>:<port>`, or `nc -zv <destination-ip> <port>` for a non-HTTP service. Then remove the test route before committing the persistent version:
+
+```bash
+sudo ip route del 100.64.0.0/10 via <PEER_LAN_IP>
+```
+
+## Persistent configuration
+
+Follow **only one** of the two methods below — they're alternatives, not consecutive steps. Check which network manager your host uses:
+
+```bash
+ls /etc/netplan/
+```
+
+- If you see `.yaml` files, use **Netplan** (most Ubuntu hosts).
+- If the directory is empty or missing, use **systemd-networkd** (Debian Server, minimal installs, or hosts using systemd-networkd directly without a netplan frontend).
+
+Don't mix them — on Netplan hosts, systemd-networkd config you add by hand is silently ignored.
+
+Both methods need the destination host's LAN interface name — find it with `ip -br addr` (e.g. `eth0` or `ens18`). Substitute it wherever the steps below show `<IFACE>`.
+
+### Netplan (Ubuntu 18.04+)
+
+On Ubuntu Server, `/etc/netplan/` usually already has a yaml from cloud-init (`50-cloud-init.yaml`) or the installer (`00-installer-config.yaml`). Open the file `ls` showed in a text editor — `nano` is the simplest (run `sudo apt install nano` first if it's missing):
+
+```bash
+sudo nano /etc/netplan/50-cloud-init.yaml
+```
+
+Append the new route to the interface's existing `routes:` list (don't add a second `routes:` key — YAML won't accept that). The `addresses:` and default-route values shown below are placeholders for whatever is already in your file — not values to copy as-is:
+
+```yaml
+network:
+  version: 2
+  ethernets:
+    <IFACE>:                         # destination's LAN interface, e.g. eth0
+      addresses: [192.168.1.50/24]   # existing
+      routes:
+        - to: default                # existing
+          via: 192.168.1.1
+        - to: 100.64.0.0/10          # add this
+          via: <PEER_LAN_IP>         # routing peer's local IP on this subnet
+```
+
+If `/etc/netplan/` is empty (uncommon, but possible on minimal installs or when netplan was just `apt install`ed), create `/etc/netplan/01-netbird.yaml` with the full stanza, substituting real values for `addresses:` and the default gateway.
+
+Save and exit. In nano: press `Ctrl+O` then `Enter` to write the file, then `Ctrl+X` to quit. Then apply the change:
+
+```bash
+sudo netplan apply
+```
+
+<Note>
+Recent netplan versions require `0600` permissions on yaml files under `/etc/netplan/`. Set with `sudo chmod 0600 /etc/netplan/*.yaml` if `netplan apply` warns.
+</Note>
+
+### systemd-networkd
+
+Create a drop-in for your interface (replace `<IFACE>` with your LAN interface, e.g. `eth0`). This block creates the file and reloads in one paste:
+
+```bash
+sudo mkdir -p /etc/systemd/network/<IFACE>.network.d
+sudo tee /etc/systemd/network/<IFACE>.network.d/100-netbird.conf > /dev/null <<'EOF'
+[Route]
+Destination=100.64.0.0/10
+Gateway=<PEER_LAN_IP>
+EOF
+sudo networkctl reload
+```
+
+<Note>
+The drop-in path only takes effect when a `.network` file already matches the interface. Run `networkctl status <IFACE>` and check the **Network File** line to confirm which one — on netplan-managed hosts it's generated under `/run/systemd/network/`.
+</Note>
+
+## Verify after reboot
+
+```bash
+ip route show 100.64.0.0/10
+```
+
+Expect output like (where `192.168.1.10` stands for the routing peer's LAN IP — not the destination's own address):
+
+```
+100.64.0.0/10 via 192.168.1.10 dev eth0
+```
+
+Trailing fields such as `proto static`, `onlink`, or `metric 100` may appear depending on the network manager — those are normal.
+
+Then send a request from a NetBird peer and confirm the destination logs the original overlay IP:
+
+```bash
+# from a NetBird peer
+curl http://<destination-ip>:<port>
+
+# on the destination, tail the relevant log or capture briefly:
+sudo tcpdump -ni <IFACE> "src net 100.64.0.0/10 and port <port>"
+```
+
+The source IP should fall inside your account's `/16` (e.g. `100.121.x.x`), not the routing peer's LAN IP.
+
+## Security considerations
+
+<Warning>
+The return route exposes the destination subnet to whatever NetBird range you configured — your account's `/16` if you narrowed it (recommended), otherwise the full `100.64.0.0/10`. The OS-level route does no filtering on its own — source IP transparency is the whole reason masquerade is off, so tighten access at the NetBird policy layer with source groups, ports, and posture checks. If only a subset of the destination subnet should reach NetBird peers, add host-level firewall rules (iptables, nftables, firewalld) alongside the route.
+</Warning>

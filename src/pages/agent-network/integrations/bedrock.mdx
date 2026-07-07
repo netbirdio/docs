@@ -1,0 +1,76 @@
+import { Note, Warning } from '@/components/mdx'
+
+export const description =
+  'Connect Amazon Bedrock to NetBird Agent Network with a Bedrock API key, giving keyless, identity-based access to Claude, Llama, and Nova models on AWS.'
+
+# AWS Bedrock
+
+[Amazon Bedrock](https://aws.amazon.com/bedrock/) serves Anthropic's **Claude** models
+alongside **Meta Llama** and **Amazon Nova** on AWS. Connecting it behind NetBird gives your
+agents keyless access over the tunnel: NetBird holds the Bedrock API key server-side, ties
+every request to a real identity from your IdP, and applies your policies, limits, and audit
+on the way to Bedrock.
+
+Bedrock authenticates with a **Bedrock API key** — a long-term key you generate in AWS that
+NetBird injects as a bearer token on every request. You create the key once, hand it to
+NetBird, and it stays server-side.
+
+## Prerequisites
+
+- An AWS account with **Amazon Bedrock** available in your target region.
+- **Model access** granted for the models you plan to use (Amazon Bedrock console →
+  **Model access**), per region.
+- Permission to generate a Bedrock API key.
+
+## Generate a Bedrock API Key
+
+In the AWS console, open **Amazon Bedrock → API keys** and generate a **long-term API key**.
+See [Bedrock API keys](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html)
+for details.
+
+<Warning>
+  The Bedrock API key grants access to models in your AWS account. Treat it as a secret —
+  store it securely, never commit it to source control, and delete the local copy once it's
+  stored in NetBird.
+</Warning>
+
+## Connect the Provider
+
+1. Go to **Agent Network → Providers** and click **Connect Provider**.
+2. Select **AWS Bedrock**. Set the **Upstream URL** to your region's Bedrock runtime host —
+   for example `https://bedrock-runtime.us-east-1.amazonaws.com`. Bedrock is region-specific,
+   so the host must include the region you enabled model access in.
+3. Paste the **Bedrock API key**. NetBird stores it encrypted server-side, injects it as
+   `Authorization: Bearer …` on each request, and never returns it to callers.
+4. _(Optional)_ Restrict the **allowed models** — for example `anthropic.claude-opus-4-8`,
+   `anthropic.claude-sonnet-4-6`, `meta.llama3-3-70b-instruct`, or `amazon.nova-pro`. Leaving
+   the list empty allows any catalog model.
+5. Save the provider. The key is now held server-side — the next step authorizes who can use
+   it.
+
+See [Providers](/agent-network/providers) for details.
+
+## Create a Policy
+
+By default nothing is allowed — a policy must connect a source group to the Bedrock provider
+before anyone can route through it.
+
+1. Go to **Agent Network → Policies** and add a policy.
+2. Set the **Source** to the users or agents who should be able to reach Bedrock (for example
+   your `Engineering` group from your IdP).
+3. Set the **Provider** to the AWS Bedrock provider you just connected.
+4. Optionally attach per-user or per-group [token and budget limits](/agent-network/policies/limits)
+   and [guardrails](/agent-network/policies/guardrails) such as a model allowlist.
+
+See [Policies](/agent-network/policies) for details.
+
+## Use with Claude Code
+
+To route [Claude Code](/agent-network/integrations/claude-code) through this Bedrock provider
+instead of the Anthropic API, see [Use Claude on AWS Bedrock](/agent-network/integrations/claude-code#use-claude-on-aws-bedrock)
+on the Claude Code integration page.
+
+<Note>
+  Rotating the key is a single server-side change in NetBird: generate a new Bedrock API key,
+  update the provider's credential, then disable the old key in AWS.
+</Note>

@@ -1,0 +1,161 @@
+export const description =
+  'Route Claude Code through NetBird Agent Network by pointing it at your agent network endpoint as the Anthropic base URL — no API key on the client.'
+
+# Keyless Access to Claude Code
+
+Point Claude Code at your [agent network endpoint](/agent-network/how-it-works#llm-apis-and-ai-gateways)
+as its Anthropic base URL. NetBird holds the Anthropic API key server-side, so no key lives
+on your machine.
+
+Running Claude Code through Agent Network turns it from a tool that needs a shared
+Anthropic key into one your team reaches with their existing identity:
+
+- **Keyless access through your IdP.** No Anthropic API key is distributed to or stored on
+  any developer's machine. Each person runs Claude Code over the NetBird tunnel, and the
+  request is tied to their real identity from your identity provider (Okta, Microsoft
+  Entra ID, Google, …). Onboarding and offboarding follow the same IdP groups you already
+  manage — there's no key to hand out, copy, or revoke.
+- **Usage tracking per developer and group.** Every request is metered by identity, model,
+  tokens, and cost, so you can see exactly who is using Claude Code and how much it costs,
+  broken down per person and aggregated per IdP group (team, department, project) in
+  [Usage & Logs](/agent-network/usage-and-logs).
+- **Budget and token limits.** Attach per-user or per-group token and spend caps over a
+  rolling window in your [policies](/agent-network/policies), so Claude Code usage stays
+  within budget and a single user can't run up the whole account's bill.
+
+The rest of this page walks through connecting the provider and pointing Claude Code at
+your endpoint.
+
+## Connect the Provider
+
+1. Go to **Agent Network → Providers** and click **Connect Provider**.
+2. Select **Anthropic** and paste your Anthropic API key.
+3. Save the provider. The key is now held server-side — the next step authorizes who can use it.
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-connect-anthropic.png" alt="connect Anthropic provider in NetBird Agent Network" className="imagewrapper" />
+</p>
+
+See [Providers](/agent-network/providers) for details.
+
+## Create a Policy
+
+By default nothing is allowed — a policy must connect a source group to the Anthropic
+provider before anyone can route Claude Code through it.
+
+1. Go to **Agent Network → Policies** and add a policy.
+2. Set the **Source** to the users or agents who should be able to use Claude Code (for example
+   your `Engineering` group from your IdP).
+3. Set the **Provider** to the Anthropic provider you just connected.
+4. Optionally attach per-user or per-group [token and budget limits](/agent-network/policies/limits)
+   so Claude Code usage stays within budget, and [guardrails](/agent-network/policies/guardrails)
+   such as a model allowlist.
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-create-policy.png" alt="create a NetBird Agent Network policy authorizing Claude Code" className="imagewrapper" />
+</p>
+
+See [Policies](/agent-network/policies) for details.
+
+## Configure with `settings.json`
+
+Next to your agent network endpoint in the NetBird dashboard, click **Agent Config**. The
+modal shows tabs for Claude Code, Codex, OpenAI SDK, and cURL — pick **Claude Code** and copy
+the pre-filled configuration.
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-configure-agent-claude-code.png" alt="NetBird Configure Your Agent modal showing Claude Code settings.json configuration" className="imagewrapper" />
+</p>
+
+Add the following to `~/.claude/settings.json`. The `apiKeyHelper` returns a dummy value so
+Claude Code doesn't prompt for a key — NetBird supplies the real one.
+
+```json
+{
+  "apiKeyHelper": "echo '-'",
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://<your-endpoint>"
+  }
+}
+```
+
+## Configure with Shell Variables
+
+Alternatively, export the variables before launching Claude Code:
+
+```bash
+export ANTHROPIC_BASE_URL=https://<your-endpoint>
+export ANTHROPIC_API_KEY=none
+claude
+```
+
+That's it — Claude Code now sends every request over the NetBird tunnel, where it's tied to
+your identity, checked against your policies and limits, and recorded in
+[Usage & Logs](/agent-network/usage-and-logs) — broken down per developer and aggregated
+per IdP group.
+
+<p>
+    <img src="/docs-static/img/agent-network/usage-and-logs/agent-network-access-logs.png" alt="NetBird Agent Network access logs showing per-request Claude Code identity, group, model, cost, and status" className="imagewrapper-big" />
+</p>
+
+## Use Claude on Vertex AI
+
+If you reach Claude through **Google Vertex AI** instead of the Anthropic API, point Claude
+Code's Vertex backend at your agent network endpoint. NetBird holds the Google service
+account credential server-side and mints the Vertex access token, so Claude Code skips
+Google authentication entirely — the client stays keyless.
+
+First connect a [Google Vertex AI provider](/agent-network/integrations/vertex-ai) in NetBird.
+Set its upstream URL to the region-less host `https://aiplatform.googleapis.com` — not the
+`<region>-aiplatform.googleapis.com` form — so it matches `CLOUD_ML_REGION=global` below.
+
+Then add the following to `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "CLOUD_ML_REGION": "global",
+    "ANTHROPIC_VERTEX_PROJECT_ID": "<your-gcp-project-id>",
+    "CLAUDE_CODE_USE_VERTEX": "1",
+    "CLAUDE_CODE_SKIP_VERTEX_AUTH": "1",
+    "ANTHROPIC_VERTEX_BASE_URL": "https://<your-endpoint>/v1"
+  }
+}
+```
+
+- `CLAUDE_CODE_USE_VERTEX=1` routes Claude Code through the Vertex backend.
+- `CLAUDE_CODE_SKIP_VERTEX_AUTH=1` skips Google auth on the client — NetBird injects the
+  OAuth token server-side.
+- `ANTHROPIC_VERTEX_BASE_URL` is your agent network endpoint with the `/v1` suffix.
+- `CLOUD_ML_REGION=global` pairs with the region-less provider URL above.
+
+## Use Claude on AWS Bedrock
+
+If you reach Claude through **AWS Bedrock** instead of the Anthropic API, point Claude Code's
+Bedrock backend at your agent network endpoint. NetBird holds the Bedrock API key
+server-side and injects it, so Claude Code skips AWS authentication entirely — the client
+stays keyless.
+
+First connect an [AWS Bedrock provider](/agent-network/integrations/bedrock) in NetBird.
+Then add the following to `~/.claude/settings.json`:
+
+```json
+{
+  "env": {
+    "ANTHROPIC_MODEL": "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    "ANTHROPIC_BEDROCK_BASE_URL": "https://<your-endpoint>/bedrock",
+    "CLAUDE_CODE_USE_BEDROCK": "1",
+    "CLAUDE_CODE_SKIP_BEDROCK_AUTH": "1"
+  }
+}
+```
+
+- `CLAUDE_CODE_USE_BEDROCK=1` routes Claude Code through the Bedrock backend.
+- `CLAUDE_CODE_SKIP_BEDROCK_AUTH=1` skips AWS auth on the client — NetBird injects the
+  Bedrock API key server-side.
+- `ANTHROPIC_BEDROCK_BASE_URL` is your agent network endpoint with the `/bedrock` suffix
+  (the optional gateway-namespace prefix that disambiguates Bedrock from other providers).
+- `ANTHROPIC_MODEL` is the full Bedrock model ID including the region prefix (e.g.
+  `eu.anthropic.claude-sonnet-4-5-20250929-v1:0`). Some models may not be available in all
+  regions — if the model above doesn't work, switch to one in your provider's allowed list,
+  or change it in Claude Code with `/model <model-id>`.

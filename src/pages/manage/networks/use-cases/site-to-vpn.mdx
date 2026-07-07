@@ -1,0 +1,407 @@
+import { Note, Warning } from '@/components/mdx'
+
+# Site-to-VPN: Clientless Devices Reaching NetBird Peers
+
+This guide shows how to let a device that does **not** have NetBird installed
+initiate a connection to a NetBird peer over the overlay — the reverse of the
+more common VPN-to-Site direction.
+
+## What You'll Achieve
+
+After following this guide, a clientless device on your local network can
+reach a NetBird peer by its overlay IP or NetBird DNS name. Typical examples:
+
+- An on-premise monitoring system pushing metrics to a NetBird-connected
+  collector
+- A legacy server initiating outbound backups to a NetBird peer in the cloud
+- An office printer reporting status to a NetBird-connected management
+  application
+
+```
+Clientless Device ──► Routing Peer ──► NetBird Overlay ──► NetBird Peer
+   (no NetBird)         (peer)                              (peer)
+```
+
+<Warning>
+The routing peer must perform **outbound source NAT** for site traffic
+entering the NetBird overlay. The dashboard **Masquerade** flag does not
+cover this direction on any route — you must install the SNAT rule
+manually on the routing peer (or on its upstream firewall) on every
+platform. Without this, the overlay peer drops the traffic at its access
+control.
+</Warning>
+
+## Prerequisites
+
+- A device on the local network to serve as the routing peer. Linux is
+  assumed throughout this guide; on other platforms the steps are the
+  same but the [Step 3](#step-3-configure-the-outbound-snat) SNAT rule
+  has to be installed via the platform's native NAT mechanism.
+- A separate device running the NetBird client that the clientless device
+  needs to reach
+- The ability to either add a static route on the clientless device (or its
+  upstream router), or to install a port-forwarding rule on the routing peer
+  — both options are covered below
+
+## Example Setup
+
+- **Local site:** `192.168.50.0/24`
+- **Routing peer (`site-router`):** site IP `192.168.50.10`, NetBird IP
+  assigned at enrollment
+- **Clientless device:** `192.168.50.20`
+- **Target NetBird peer (`overlay-peer`):** runs the NetBird client; we
+  reach it on TCP port `8080`
+
+## Step 1: Create Setup Keys with Groups
+
+Before installing NetBird on the routing peer, create a setup key with an
+auto-assigned group so the peer lands in the right place:
+
+1. Go to **Settings** → **Setup Keys** in the NetBird dashboard
+2. Click **Create Setup Key**
+3. Configure:
+   - Name: "Site Routing Peer"
+   - Auto-assigned groups: create and add `site-routing-peers`
+4. Click **Create** and note the key
+
+The target peer is a regular NetBird peer; nothing special needs to be
+configured on it for this scenario. If the target peer is a service or
+appliance (not a user device), create a second setup key for it the same
+way and add it to a group like `overlay-peers`. User peers — laptops
+and workstations — enroll through SSO instead and pick up their group via
+your existing group assignments.
+
+## Step 2: Deploy the Routing Peer
+
+Install NetBird on the routing peer and enroll it:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/install.sh | sh
+sudo netbird up --setup-key YOUR_SITE_SETUP_KEY
+```
+
+Confirm the peer appears in the dashboard and shows the `site-routing-peers`
+group.
+
+## Step 3: Configure the Outbound SNAT
+
+The routing peer must SNAT site traffic onto its NetBird interface so the
+overlay peer's access control sees a NetBird IP it recognises — the
+overlay peer's per-policy ipset only contains the NetBird IPs of source
+peers, so unrewritten packets sourced from a routed CIDR are dropped.
+
+This step is **required on every routing peer**, regardless of OS or
+WireGuard mode. The dashboard **Masquerade** flag (Step 4) does not
+install a SNAT for the Site-to-VPN direction.
+
+### Linux
+
+Install the SNAT rule via `iptables-persistent` so it survives reboot.
+This works on systems using either `iptables-legacy` or `iptables-nft`
+underneath:
+
+```bash
+sudo apt-get install -y iptables-persistent
+sudo iptables -t nat -A POSTROUTING -s 192.168.50.0/24 -o wt0 -j MASQUERADE
+sudo netfilter-persistent save
+```
+
+### Other platforms
+
+On non-Linux routing peers, install the equivalent rule via the
+platform's native NAT mechanism. Any outbound source NAT that rewrites
+the site-CIDR source to the routing peer's NetBird IP (or to the `wt0`
+interface address) on egress from `wt0` is sufficient.
+
+## Step 4: Create the Network
+
+In the NetBird dashboard:
+
+1. Go to **Network Routing** → **Networks** and click **Add Network**
+2. Name: `site-50-network`
+3. Click **Create Network**
+
+Now add the site CIDR as a resource:
+
+1. In the new network, click **Add Resource**
+2. Configure:
+   - **Name:** `site-50`
+   - **Address:** `192.168.50.0/24`
+   - **Type:** Subnet
+   - **Groups:** create and add `site-50-cidr` (this group represents the
+     site CIDR for use in policies)
+3. Click **Add Resource**
+
+Attach the routing peer:
+
+1. In the network, click **Add Routing Peer**
+2. Select `site-router` (or the `site-routing-peers` group)
+3. **Masquerade:** Leave at the default. This flag controls SNAT for
+   traffic flowing **outbound from NetBird peers through the routing
+   peer** (the VPN-to-Site direction). It has no effect on Site-to-VPN
+   traffic, which is what this guide configures — the manual SNAT from
+   [Step 3](#step-3-configure-the-outbound-snat) is what makes Site-to-VPN
+   work.
+4. Click **Save**
+
+## Step 5: Create the Access Policy
+
+The routing peer needs to be allowed to reach the target peer over the
+overlay. Because Step 3's SNAT rewrites the source to the routing peer's
+NetBird IP, the policy uses peer groups:
+
+1. Go to **Access Control** → **Policies** and click **Add Policy**
+2. Configure:
+   - **Name:** `Site Router to Overlay Peer`
+   - **Protocol:** `TCP`
+   - **Ports:** `8080` (or `All` to allow any port)
+   - **Source Groups:** `site-routing-peers`
+   - **Destination Groups:** `overlay-peers`
+3. Click **Add Policy**
+
+## Step 6: Direct Site Traffic Through the Routing Peer
+
+Tell the clientless device — or the site's upstream router — to send
+traffic destined for your account's NetBird IP range through the routing
+peer.
+
+### Find your account's NetBird range
+
+NetBird assigns each account a single `/16` block from inside the
+`100.64.0.0/10` CGNAT range (one of 64 possible blocks such as
+`100.64.0.0/16`, `100.121.0.0/16`, `100.127.0.0/16`, …). The block is
+chosen randomly per account and can be customised. Use that `/16` for the
+site's static route — not the whole `/10` — so you don't route unrelated
+CGNAT addresses through the routing peer.
+
+Read it off any enrolled peer:
+
+```bash
+$ netbird status | grep "NetBird IP"
+NetBird IP: 100.121.195.4/16
+# → this account's block is 100.121.0.0/16
+```
+
+In the examples below, replace `100.121.0.0/16` with your own block.
+
+### Install the route
+
+**On a Linux clientless device with netplan** (Ubuntu Server default):
+
+```yaml
+# /etc/netplan/99-netbird-route.yaml
+network:
+  version: 2
+  ethernets:
+    eth0:  # the interface holding the device's site IP
+      routes:
+        - to: 100.121.0.0/16
+          via: 192.168.50.10
+```
+
+```bash
+sudo chmod 600 /etc/netplan/99-netbird-route.yaml
+sudo netplan apply
+```
+
+**On a Linux clientless device with NetworkManager** (RHEL / Fedora /
+desktop distros):
+
+```bash
+sudo nmcli connection modify "<connection>" \
+  +ipv4.routes "100.121.0.0/16 192.168.50.10"
+sudo nmcli connection up "<connection>"
+```
+
+**On Windows** (the `-p` flag persists the route across reboots):
+
+```powershell
+route -p add 100.121.0.0 mask 255.255.0.0 192.168.50.10
+```
+
+**On a site router that issues DHCP:** add a classless static route option
+(DHCP option 121) pointing your account's `/16` to the routing peer. Every
+device on the network will then learn the route automatically.
+
+The clientless device can now reach the target peer by its NetBird IP:
+
+```bash
+curl http://<TARGET_PEER_NETBIRD_IP>:8080/
+```
+
+To use NetBird's DNS names instead of IPs, see
+[Resolving NetBird DNS Names](#resolving-netbird-dns-names) below.
+
+If you cannot add a static route on the clientless device or the site
+router — or you only need to expose a small number of specific services —
+see [Appendix: Per-Service Port Forwarding](#appendix-per-service-port-forwarding)
+for a DNAT-based alternative.
+
+## Test Connectivity
+
+From the clientless device:
+
+```bash
+curl -v http://<TARGET_PEER_NETBIRD_IP>:8080/
+```
+
+Verify on the target peer that the request arrived:
+
+```bash
+sudo ss -tan | grep :8080
+```
+
+The connection appears as a `TIME-WAIT` entry for about a minute after
+curl closes; its remote address is the **routing peer's NetBird IP**,
+not the clientless device's local IP.
+
+## Resolving NetBird DNS Names
+
+By default, the clientless device has no way to resolve `*.netbird.cloud`
+hostnames — that lookup happens locally on each NetBird peer. You can
+publish those names to the site by running a forwarding resolver on the
+routing peer.
+
+A minimal `dnsmasq` configuration on the routing peer:
+
+```ini
+# /etc/dnsmasq.d/netbird.conf
+bind-interfaces
+listen-address=192.168.50.10
+interface=eth0
+
+# Forward NetBird-managed names to this peer's local NetBird resolver.
+# The NetBird daemon listens on the peer's NetBird IP, port 53.
+server=/netbird.cloud/<ROUTING_PEER_NETBIRD_IP>
+
+# Everything else to upstream
+server=8.8.8.8
+server=1.1.1.1
+```
+
+Then point the clientless device's DNS at `192.168.50.10` (via DHCP,
+`/etc/resolv.conf`, or static configuration) and use the NetBird hostname
+directly:
+
+```bash
+curl http://overlay-peer.netbird.cloud:8080/
+```
+
+<Note>
+The NetBird daemon binds its DNS resolver on the peer's own NetBird IP,
+not on `127.0.0.1`. Substitute the routing peer's actual NetBird IP into
+the `server=/netbird.cloud/...` line — you can find it with
+`netbird status` on the routing peer.
+</Note>
+
+## Troubleshooting
+
+**Connection times out from the clientless device.**
+
+Check that the static route is in place:
+
+```bash
+ip route get <TARGET_PEER_NETBIRD_IP>
+# Should show "via 192.168.50.10 dev <iface>"
+```
+
+If you are using the appendix DNAT alternative instead, verify the
+forwarding rule on the routing peer:
+
+```bash
+sudo iptables -t nat -L PREROUTING -n -v
+# Should show your DNAT rule with non-zero packet counters when traffic flows
+```
+
+**Routing peer receives packets but they don't reach the target peer.**
+
+Check that IP forwarding is enabled and confirm the target peer is reachable
+from the routing peer directly:
+
+```bash
+# On the routing peer
+cat /proc/sys/net/ipv4/ip_forward    # should be 1
+curl http://<TARGET_PEER_NETBIRD_IP>:8080/   # should succeed
+```
+
+If the second command fails, the access policy is wrong — verify the policy
+allows `site-routing-peers` → target peer's group on the required port.
+
+**Target peer receives packets but drops them.**
+
+The outbound SNAT from
+[Step 3](#step-3-configure-the-outbound-snat) is missing or not effective.
+On the routing peer, packets going out `wt0` must have their source IP
+rewritten to the routing peer's NetBird IP:
+
+```bash
+# Verify packet counters on the MASQUERADE rule installed in Step 3:
+sudo iptables -t nat -L POSTROUTING -n -v
+# Or watch overlay traffic on the way out:
+sudo tcpdump -ni wt0 'src net 192.168.50.0/24'
+# Seeing site IPs here means SNAT is NOT firing; the target peer will drop.
+```
+
+If the Step 3 rule is missing or its counters stay at zero, re-install it
+(and add it to your persistence layer so it survives a reboot):
+
+```bash
+sudo iptables -t nat -A POSTROUTING -s 192.168.50.0/24 -o wt0 -j MASQUERADE
+```
+
+**DNS resolution returns NXDOMAIN or times out.**
+
+Confirm the `server=/netbird.cloud/...` line in
+`/etc/dnsmasq.d/netbird.conf` still matches the routing peer's current
+NetBird IP — re-enrolling the peer changes it. Isolate from the
+clientless device:
+
+```bash
+dig @<ROUTING_PEER_SITE_IP> <hostname>.netbird.cloud
+```
+
+A timeout means `dnsmasq` isn't reachable on the routing peer's site IP
+(check `listen-address` in the config). `SERVFAIL` means `dnsmasq`
+received the query but its forward to the NetBird resolver failed.
+`NXDOMAIN` means the NetBird resolver answered but doesn't know that
+hostname — verify the target peer's actual FQDN with `netbird status`
+on the peer itself.
+
+## Appendix: Per-Service Port Forwarding
+
+If you cannot change routing on the site — for example, the clientless
+device's IP stack is fixed and the upstream router is out of your control —
+you can still expose individual NetBird services through the routing peer
+using DNAT. This avoids the [Step 6](#step-6-direct-site-traffic-through-the-routing-peer)
+static route entirely, but each service has to be configured explicitly.
+
+First identify the routing peer's site-facing interface:
+
+```bash
+ip -br addr
+# Pick the interface that holds the routing peer's site IP (e.g. eth0, ens18).
+```
+
+Then install the DNAT rule on the routing peer:
+
+```bash
+sudo iptables -t nat -A PREROUTING -i <site-iface> -p tcp --dport 18080 \
+  -j DNAT --to-destination <TARGET_PEER_NETBIRD_IP>:8080
+# Persist via iptables-persistent / netfilter-persistent
+```
+
+The clientless device now reaches the service through the routing peer's
+local IP and the forwarded port:
+
+```bash
+curl http://192.168.50.10:18080/
+```
+
+The outbound SNAT configured in
+[Step 3](#step-3-configure-the-outbound-snat) applies to this
+traffic as well — the target peer still observes the
+routing peer's NetBird IP as the source.
+
+Each forwarded service needs its own DNAT rule. This pattern is a good fit
+for a small number of well-known services; for general overlay access, use
+the static-route approach in Step 6 instead.

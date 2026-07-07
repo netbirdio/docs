@@ -1,0 +1,119 @@
+# API Server Proxy
+
+Managing access to a Kubernetes cluster can be challenging. Security requirements may prohibit exposing the API server to the public internet. While integrations with existing authorization systems may be impossible. The NetBird API server proxy solves both the access and authorization problem in a single solution by exposing the API server through NetBirds network while using the NetBird identity to append permissions to the incoming request. All done without the need to store any credentials on the local machine.
+
+## Deploying Proxy
+
+The proxy needs a service account with impersonation permissions. This is required so that the correct identity can be appended to the request. These RBAC resources cannot be created by the operator as it would require the operator itself to have these elevated permissions.
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: clusterproxy-prod
+  namespace: netbird
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: clusterproxy-prod
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - users
+      - groups
+    verbs:
+      - impersonate
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - userextras/*
+      - uids
+    verbs:
+      - impersonate
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: clusterproxy-prod
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: clusterproxy-prod
+subjects:
+  - kind: ServiceAccount
+    name: clusterproxy-prod
+    namespace: netbird
+```
+
+We can create the cluster proxy once the RBAC resources have been created. The cluster will be accessible once the proxy pod is ready.
+
+```yaml
+apiVersion: netbird.io/v1alpha1
+kind: ClusterProxy
+metadata:
+  name: prod
+  namespace: netbird
+spec:
+  clusterName: prod
+  serviceAccountName: clusterproxy-prod
+```
+
+## Assigning Permissions
+
+The proxy uses [user impersonation](https://kubernetes.io/docs/reference/access-authn-authz/user-impersonation/) to grant to each call based on the source of the request. The request to the API server is modified to include the NetBird users and groups the user is a member of. The group name can then be used in role bindings to assign permissions. In this example any NetBird users who is a member of the kubernetes-read group will get full read access to the cluster.
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: netbird-cluster-reader
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: netbird-cluster-reader
+subjects:
+  - kind: Group
+    name: kubernetes-read
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: netbird-cluster-reader
+  apiGroup: rbac.authorization.k8s.io
+```
+
+## Accessing Cluster
+
+The cluster can be found through the NetBird CLI.
+
+```bash
+netbird kubernetes list
+```
+
+All clusters that the user has access to will show up.
+
+```bash
+Available Kubernetes clusters:
+
+  - Name: prod
+    FQDN: prod.netbird-kubeapi-proxy.netbird.cloud.
+    Version: v1.35.0
+```
+
+Configuration to access the cluster can then be appended to the local kubeconfig file.
+
+```bash
+netbird kubernetes write-kubeconfig prod
+```
+
+We should not be able to list all pods in the cluster.
+
+```bash
+kubectl --context prod get pods -A
+```

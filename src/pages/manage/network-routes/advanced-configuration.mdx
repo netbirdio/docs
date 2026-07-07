@@ -1,0 +1,146 @@
+import { Warning } from '@/components/mdx'
+
+# Advanced Configuration
+
+This page covers masquerade trade-offs, a Networks-vs-Routes comparison, and troubleshooting.
+
+For the basics — masquerade behavior, ACL Groups, HA — see [Routes Concepts](/manage/network-routes#key-concepts). For ACL Group setup, see [Access Control](/manage/network-routes/access-control). For Site-to-Site walkthroughs, see [Site-to-Site](/manage/network-routes/use-cases/site-to-site).
+
+## Masquerade: when to enable or disable
+
+[Masquerade](/manage/network-routes#masquerade) is the default. It NATs traffic through the routing peer so the remote network sees the routing peer's IP instead of the original source.
+
+**With masquerade (default):**
+- Works out of the box — no return route needed on the remote network
+- Compatible with ACL Groups and Network Resources
+- Source IP is hidden, so audit logs show the routing peer IP rather than the originating device
+
+**Without masquerade:**
+- Original source IPs are preserved for accurate auditing
+- Required if your compliance regime needs source-IP visibility on the remote network
+- Requires a return route on the remote network's infrastructure back to the NetBird CIDR
+
+See [Masquerade](/manage/networks/masquerade) for persistent return-route configuration on the destination host.
+
+<Warning>
+ACL Groups on **Routes** (this page) match against peer NetBird IPs only, which limits source-IP-preserving access control on this path. For masquerade-off deployments with policy-layer ACLs, use the newer **Networks** path — see [Masquerade](/manage/networks/masquerade).
+</Warning>
+
+### Choosing the right approach
+
+| Requirement | Approach |
+|---|---|
+| Simple remote access | [Networks](/manage/networks) with masquerade |
+| Site-to-Site with access control | Routes with masquerade + ACL Groups |
+| Audit trail needs source IPs | Routes without masquerade + OS firewall on the remote network |
+| Compliance requirements | Depends on the specific framework |
+
+## Networks vs Routes
+
+| Aspect | Networks | Routes |
+|--------|----------|----------------|
+| Supported scenarios | All (VPN-to-Site, Site-to-VPN, Site-to-Site) | All (VPN-to-Site, Site-to-VPN, Site-to-Site) |
+| Access control | Per-resource policies | Per-route with ACL Groups |
+| Masquerade | Always enabled | Configurable |
+| Setup complexity | Simpler | More manual configuration |
+| Routing peer redundancy | Built-in | Manual configuration |
+| Policy requirement | Resource policies only | Routing peer + ACL Group policies |
+
+## Troubleshooting
+
+### Route not active
+
+**Symptoms:** Peers do not see the route; `netbird routes list` shows nothing.
+
+**Causes:**
+1. No access policy grants access to the routing peer
+2. Routing peer is offline
+3. ACL Group has no policies granting access
+
+**Solution:**
+- Ensure at least one policy connects to the routing peer's group
+- Verify routing peer status in the dashboard
+- Check that ACL Group policies exist
+
+### Traffic times out
+
+**Symptoms:** Ping or connections hang with no response.
+
+**Causes:**
+1. Routing peer cannot reach the destination network
+2. Masquerade is disabled and no return route exists
+3. Firewall is blocking traffic
+
+**Solution:**
+- Test from the routing peer: `ping <destination>` directly
+- If masquerade is off, verify return routes are configured on the remote network
+- Check the OS firewall on the routing peer: `iptables -L -n` or equivalent
+
+### Connection works one way
+
+**Symptoms:** Can reach the remote site but responses do not return.
+
+**Causes:**
+1. Missing reverse route (Site-to-Site)
+2. Asymmetric policies
+3. Stateful firewall issues
+
+**Solution:**
+- Ensure routes exist in both directions
+- Verify policies allow return traffic
+- Check firewall state tracking
+
+### Wrong traffic routed
+
+**Symptoms:** Unexpected traffic going through NetBird.
+
+**Causes:**
+1. Overlapping routes
+2. Route priority issues
+3. Incorrect subnet configuration
+
+**Solution:**
+- Review all Routes for overlaps — see [Overlapping Routes](/manage/network-routes/overlapping-routes)
+- Use more specific routes where needed
+- Verify subnet CIDR notation is correct
+
+### Debug commands
+
+**On the routing peer:**
+
+```bash
+# NetBird status
+netbird status
+
+# Active routes
+netbird routes list
+
+# System routes
+ip route show
+
+# Monitor traffic (Linux)
+sudo tcpdump -i any -n host <destination>
+
+# Confirm IP forwarding is enabled
+cat /proc/sys/net/ipv4/ip_forward
+```
+
+**On a client peer:**
+
+```bash
+# Which networks/routes are selected
+netbird networks ls
+
+# Trace the path
+traceroute <destination>
+```
+
+## Performance
+
+- Place routing peers on machines with good network connectivity to the resources they serve and to the internet
+- Avoid routing through bandwidth-constrained links
+- For high-throughput scenarios, consider dedicated hardware
+- Track CPU, memory, network throughput, and connection count on routing peers
+- Use [activity logging](/manage/activity) to monitor access patterns and troubleshoot issues
+
+For high availability (multiple routing peers per route), see [High Availability](/manage/network-routes#high-availability) on the concept page.

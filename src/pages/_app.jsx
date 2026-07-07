@@ -14,6 +14,9 @@ import 'react-toastify/dist/ReactToastify.css';
 import {dom} from "@fortawesome/fontawesome-svg-core";
 import {AnnouncementBannerProvider} from "@/components/announcement-banner/AnnouncementBannerProvider";
 import {ImageZoom} from "@/components/ImageZoom";
+import {MatomoTagManager} from "@/components/Matomo";
+import {CookieConsentProvider, useCookieConsent} from "@/components/cookie-consent/CookieConsentProvider";
+import {CookieConsent} from "@/components/cookie-consent/CookieConsent";
 
 function onRouteChange() {
   useMobileNavigationStore.getState().close()
@@ -22,11 +25,14 @@ function onRouteChange() {
 Router.events.on('routeChangeStart', onRouteChange)
 Router.events.on('hashChangeStart', onRouteChange)
 
-export default function App({ Component, pageProps }) {
+function AppInner({ Component, pageProps }) {
   let router = useRouter()
-    let tableOfContents = collectHeadings(pageProps.sections)
+  let tableOfContents = collectHeadings(pageProps.sections)
+  const { isAccepted } = useCookieConsent()
+
   return (
     <>
+      <MatomoTagManager consentGiven={isAccepted} />
       <Head>
         <style>{dom.css()}</style>
         {router.route.startsWith('/ipa') ?
@@ -43,7 +49,16 @@ export default function App({ Component, pageProps }) {
       </AnnouncementBannerProvider>
       <ToastContainer />
       <ImageZoom />
+      <CookieConsent />
     </>
+  )
+}
+
+export default function App(props) {
+  return (
+    <CookieConsentProvider>
+      <AppInner {...props} />
+    </CookieConsentProvider>
   )
 }
 
