@@ -283,7 +283,7 @@ const nextConfig = {
             },
             {
                 source: '/how-to/routing-peers-and-kubernetes',
-                destination: '/use-cases/cloud/routing-peers-and-kubernetes',
+                destination: '/use-cases/kubernetes/routing-peers-and-kubernetes',
                 permanent: true,
             },
             {
@@ -499,7 +499,7 @@ const nextConfig = {
             },
             {
                 source: '/how-to/kubernetes-operator',
-                destination: '/manage/integrations/kubernetes',
+                destination: '/use-cases/kubernetes',
                 permanent: true,
             },
             // documentation redirects for public-api
@@ -553,6 +553,41 @@ const nextConfig = {
             },
             // Use cases reorg: scenario guides consolidated under /use-cases
             {
+                source: '/manage/integrations/kubernetes',
+                destination: '/use-cases/kubernetes',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/kubernetes/routing-peer',
+                destination: '/use-cases/kubernetes/routing-peer',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/kubernetes/client-sidecar',
+                destination: '/use-cases/kubernetes/client-sidecar',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/kubernetes/api-server-proxy',
+                destination: '/use-cases/kubernetes/api-server-proxy',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/kubernetes/gateway-api',
+                destination: '/use-cases/kubernetes/gateway-api',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/cloud/route-to-a-kubernetes-service',
+                destination: '/use-cases/kubernetes/route-to-a-kubernetes-service',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/cloud/routing-peers-and-kubernetes',
+                destination: '/use-cases/kubernetes/routing-peers-and-kubernetes',
+                permanent: true,
+            },
+            {
                 source: '/use-cases/site-to-site',
                 destination: '/use-cases/remote-access',
                 permanent: true,
@@ -594,7 +629,7 @@ const nextConfig = {
             },
             {
                 source: '/manage/integrations/kubernetes/use-cases/route-to-a-kubernetes-service',
-                destination: '/use-cases/cloud/route-to-a-kubernetes-service',
+                destination: '/use-cases/kubernetes/route-to-a-kubernetes-service',
                 permanent: true,
             },
             {
@@ -784,7 +819,7 @@ const nextConfig = {
             },
             {
                 source: '/use-cases/routing-peers-and-kubernetes',
-                destination: '/use-cases/cloud/routing-peers-and-kubernetes',
+                destination: '/use-cases/kubernetes/routing-peers-and-kubernetes',
                 permanent: true,
             },
             {

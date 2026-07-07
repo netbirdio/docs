@@ -496,32 +496,6 @@ export const docsNavigation = [
               },
             ],
           },
-          {
-            title: 'Kubernetes',
-            isOpen: true,
-            links: [
-              {
-                title: 'Getting Started',
-                href: '/manage/integrations/kubernetes',
-              },
-              {
-                title: 'Routing Peer',
-                href: '/manage/integrations/kubernetes/routing-peer',
-              },
-              {
-                title: 'Client Sidecar',
-                href: '/manage/integrations/kubernetes/client-sidecar',
-              },
-              {
-                title: 'API Server Proxy',
-                href: '/manage/integrations/kubernetes/api-server-proxy',
-              },
-              {
-                title: 'Gateway API',
-                href: '/manage/integrations/kubernetes/gateway-api',
-              },
-            ],
-          },
         ],
       },
 
@@ -882,7 +856,7 @@ export const docsNavigation = [
         ],
       },
       {
-        title: 'Cloud & Kubernetes',
+        title: 'Cloud',
         isOpen: false,
         links: [
           { title: 'Overview', href: '/use-cases/cloud' },
@@ -895,16 +869,39 @@ export const docsNavigation = [
             href: '/use-cases/cloud/netbird-on-faas',
           },
           {
-            title: 'Routing Peers and Kubernetes',
-            href: '/use-cases/cloud/routing-peers-and-kubernetes',
+            title: 'Distributed Multi-Cloud AI',
+            href: '/use-cases/cloud/distributed-multi-cloud-ai',
+          },
+        ],
+      },
+      {
+        title: 'Kubernetes',
+        isOpen: false,
+        links: [
+          { title: 'Getting Started', href: '/use-cases/kubernetes' },
+          {
+            title: 'Routing Peer',
+            href: '/use-cases/kubernetes/routing-peer',
+          },
+          {
+            title: 'Client Sidecar',
+            href: '/use-cases/kubernetes/client-sidecar',
+          },
+          {
+            title: 'API Server Proxy',
+            href: '/use-cases/kubernetes/api-server-proxy',
+          },
+          {
+            title: 'Gateway API',
+            href: '/use-cases/kubernetes/gateway-api',
           },
           {
             title: 'Route to a Kubernetes Service',
-            href: '/use-cases/cloud/route-to-a-kubernetes-service',
+            href: '/use-cases/kubernetes/route-to-a-kubernetes-service',
           },
           {
-            title: 'Distributed Multi-Cloud AI',
-            href: '/use-cases/cloud/distributed-multi-cloud-ai',
+            title: 'Deploy Routing Peers to a Cluster',
+            href: '/use-cases/kubernetes/routing-peers-and-kubernetes',
           },
         ],
       },
