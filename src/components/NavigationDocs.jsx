@@ -826,32 +826,32 @@ export const docsNavigation = [
         links: [
           { title: 'Overview', href: '/use-cases/remote-access' },
           {
-            title: 'Site-to-Site',
-            href: '/use-cases/remote-access/site-to-site',
+            title: 'Access Home Devices',
+            href: '/use-cases/remote-access/access-home-devices',
           },
           {
-            title: 'Site-to-VPN',
-            href: '/use-cases/remote-access/site-to-vpn',
+            title: 'Active Directory & Windows File Shares',
+            href: '/use-cases/remote-access/active-directory',
           },
           {
             title: 'Cloud to On-Premise',
             href: '/use-cases/remote-access/cloud-to-on-premise',
           },
           {
-            title: 'Access Home Devices',
-            href: '/use-cases/remote-access/access-home-devices',
+            title: 'Exit Nodes',
+            href: '/use-cases/remote-access/exit-nodes',
           },
           {
             title: 'Reach Services on the Routing Peer',
             href: '/use-cases/remote-access/reach-services-on-the-routing-peer',
           },
           {
-            title: 'Exit Nodes',
-            href: '/use-cases/remote-access/exit-nodes',
+            title: 'Site-to-Site',
+            href: '/use-cases/remote-access/site-to-site',
           },
           {
-            title: 'Active Directory & Windows File Shares',
-            href: '/use-cases/remote-access/active-directory',
+            title: 'Site-to-VPN',
+            href: '/use-cases/remote-access/site-to-vpn',
           },
         ],
       },
