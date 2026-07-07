@@ -71,6 +71,7 @@ export const docsNavigation = [
           { title: 'pfSense', href: '/get-started/install/pfsense' },
           { title: 'OPNsense', href: '/get-started/install/opnsense' },
           { title: 'OpenWrt', href: '/get-started/install/openwrt' },
+          { title: 'MikroTik', href: '/get-started/install/mikrotik' },
           { title: 'Raspberry Pi', href: '/get-started/install/raspberrypi' },
         ],
       },
@@ -253,36 +254,6 @@ export const docsNavigation = [
             title: 'Masquerade',
             href: '/manage/networks/masquerade',
           },
-          {
-            title: 'Use Cases',
-            isOpen: false,
-            links: [
-              {
-                title: 'Access Home Devices',
-                href: '/manage/networks/use-cases/access-home-devices',
-              },
-              {
-                title: 'Cloud to On-Premise',
-                href: '/manage/networks/use-cases/cloud-to-on-premise',
-              },
-              {
-                title: 'Site-to-VPN',
-                href: '/manage/networks/use-cases/site-to-vpn',
-              },
-              {
-                title: 'Site-to-Site',
-                href: '/manage/networks/use-cases/site-to-site',
-              },
-              {
-                title: 'Reach Services on the Routing Peer',
-                href: '/manage/networks/use-cases/reach-services-on-the-routing-peer',
-              },
-              {
-                title: 'Active Directory & Windows File Shares',
-                href: '/manage/networks/use-cases/active-directory',
-              },
-            ],
-          },
         ],
       },
       {
@@ -291,18 +262,8 @@ export const docsNavigation = [
         links: [
           { title: 'Overview', href: '/manage/network-routes' },
           {
-            title: 'Use Cases',
-            isOpen: false,
-            links: [
-              {
-                title: 'Site-to-Site',
-                href: '/manage/network-routes/use-cases/site-to-site',
-              },
-              {
-                title: 'Exit Nodes',
-                href: '/manage/network-routes/use-cases/exit-nodes',
-              },
-            ],
+            title: 'Site-to-Site (legacy)',
+            href: '/manage/network-routes/use-cases/site-to-site',
           },
           {
             title: 'Access Control',
@@ -347,16 +308,6 @@ export const docsNavigation = [
           {
             title: 'Troubleshooting',
             href: '/manage/reverse-proxy/troubleshooting',
-          },
-          {
-            title: 'Use Cases',
-            isOpen: false,
-            links: [
-              {
-                title: 'No Public Inbound',
-                href: '/manage/reverse-proxy/use-cases/private-no-inbound',
-              },
-            ],
           },
         ],
       },
@@ -562,16 +513,6 @@ export const docsNavigation = [
               {
                 title: 'Gateway API',
                 href: '/manage/integrations/kubernetes/gateway-api',
-              },
-              {
-                title: 'Use Cases',
-                isOpen: false,
-                links: [
-                  {
-                    title: 'Route to a Kubernetes Service',
-                    href: '/manage/integrations/kubernetes/use-cases/route-to-a-kubernetes-service',
-                  },
-                ],
               },
             ],
           },
@@ -899,21 +840,40 @@ export const docsNavigation = [
       {
         title: 'Remote Access',
         isOpen: false,
-        links: [{ title: 'Overview', href: '/use-cases/site-to-site' }],
-      },
-      {
-        title: 'Homelab',
-        isOpen: false,
         links: [
-          { title: 'Overview', href: '/use-cases/homelab' },
+          { title: 'Overview', href: '/use-cases/remote-access' },
           {
-            title: 'NetBird on MikroTik Router',
-            href: '/use-cases/homelab/client-on-mikrotik-router',
+            title: 'Site-to-Site with Networks',
+            href: '/use-cases/remote-access/site-to-site',
+          },
+          {
+            title: 'Site-to-VPN',
+            href: '/use-cases/remote-access/site-to-vpn',
+          },
+          {
+            title: 'Cloud to On-Premise',
+            href: '/use-cases/remote-access/cloud-to-on-premise',
+          },
+          {
+            title: 'Access Home Devices',
+            href: '/use-cases/remote-access/access-home-devices',
+          },
+          {
+            title: 'Reach Services on the Routing Peer',
+            href: '/use-cases/remote-access/reach-services-on-the-routing-peer',
+          },
+          {
+            title: 'Exit Nodes',
+            href: '/use-cases/remote-access/exit-nodes',
+          },
+          {
+            title: 'Active Directory & Windows File Shares',
+            href: '/use-cases/remote-access/active-directory',
           },
         ],
       },
       {
-        title: 'Cloud',
+        title: 'Cloud & Kubernetes',
         isOpen: false,
         links: [
           { title: 'Overview', href: '/use-cases/cloud' },
@@ -930,6 +890,10 @@ export const docsNavigation = [
             href: '/use-cases/cloud/routing-peers-and-kubernetes',
           },
           {
+            title: 'Route to a Kubernetes Service',
+            href: '/use-cases/cloud/route-to-a-kubernetes-service',
+          },
+          {
             title: 'Distributed Multi-Cloud AI',
             href: '/use-cases/cloud/distributed-multi-cloud-ai',
           },
@@ -944,8 +908,13 @@ export const docsNavigation = [
             title: 'Implement Zero Trust',
             href: '/use-cases/security/implement-zero-trust',
           },
+          {
+            title: 'Private Proxy Without Inbound Ports',
+            href: '/use-cases/security/private-no-inbound',
+          },
         ],
       },
+      { title: 'Homelab', href: '/use-cases/homelab' },
     ],
   },
   {
