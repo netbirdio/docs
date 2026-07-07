@@ -556,10 +556,16 @@ export const docsNavigation = [
   {
     title: 'AGENT NETWORK',
     links: [
-      { title: 'What is Agent Network?', href: '/agent-network' },
-      { title: 'How It Works', href: '/agent-network/how-it-works' },
-      { title: 'Quickstart', href: '/agent-network/quickstart' },
-      { title: 'Providers', href: '/agent-network/providers' },
+      {
+        title: 'Getting Started',
+        href: '/agent-network',
+        links: [
+          { title: 'What is Agent Network?', href: '/agent-network' },
+          { title: 'How It Works', href: '/agent-network/how-it-works' },
+          { title: 'Quickstart', href: '/agent-network/quickstart' },
+          { title: 'Providers', href: '/agent-network/providers' },
+        ],
+      },
       {
         title: 'Policies',
         href: '/agent-network/policies',
@@ -587,9 +593,9 @@ export const docsNavigation = [
             title: 'Log Collection & Retention',
             href: '/agent-network/usage-and-logs/log-collection',
           },
+          { title: 'Global Limits', href: '/agent-network/global-limits' },
         ],
       },
-      { title: 'Global Limits', href: '/agent-network/global-limits' },
       {
         title: 'Integrations',
         href: '/agent-network/integrations',
