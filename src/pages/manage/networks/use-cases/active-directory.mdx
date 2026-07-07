@@ -33,17 +33,21 @@ The domain controller is in almost every step: DNS (steps 1 and 3), the referral
 
 You rarely install the NetBird client on every server. Pick one of two shapes:
 
-- **A dedicated routing peer at the site.** A separate machine runs the NetBird client and routes to the DC and file servers across the LAN. Natural when shares are spread across several servers.
-- **The file server is the routing peer.** The NetBird client runs on the file server itself; the DC stays clientless behind it. Natural when one file server holds the shares.
+- **A dedicated routing peer at the site.** A separate machine runs the NetBird client and routes to the DC and file servers across the LAN. Natural when shares are spread across several servers, and the fastest shape for file transfers.
+- **The file server is the routing peer.** The NetBird client runs on the file server itself; the DC stays clientless behind it. Tempting when one file server holds the shares, because it saves a machine, but it is the slowest shape for exactly the traffic this guide is about (see the performance note below).
 
-Most setups use a dedicated routing peer, and the rest of this guide assumes that. If the file server itself runs the client, only Step 2 changes — reach it via [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer) instead — while Steps 3–5 (routing the DC, its ports, and DNS) apply either way.
+Use a dedicated routing peer, and make it a **Linux machine**: a small VM next to the servers is enough. The rest of this guide assumes that. If the file server itself runs the client, only Step 2 changes (reach it via [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer) instead), while Steps 3–5 (routing the DC, its ports, and DNS) apply either way.
+
+<Note>
+**Why Linux, and why not the file server itself: performance.** A Linux routing peer forwards traffic in the kernel, so moving files through it costs the machine almost nothing. On Windows and macOS the NetBird client processes every packet in userspace instead: routing file-share traffic through a Windows peer caps throughput well below LAN speed and puts sustained CPU load on that machine. Running the client directly on a Windows file server compounds it, because traffic to the server's own LAN IP takes an extra internal delivery step that is slowest in the read direction — and reading is what opening and copying documents from a share is. Every shape works; they differ in how fast the same share feels to users. If remote users report documents opening much slower over NetBird than in the office, this choice is the first thing to check.
+</Note>
 
 ## Step 2: Make the file server(s) reachable
 
 - **If a separate machine is the routing peer**, each file server is an ordinary host behind it. You will need:
   - a Network resource — a `/32`, or a domain resource set to its FQDN (e.g. `fileserver1.corp.example.com`)
   - an access control policy from your remote-users group to it on **TCP 445** (or whatever the service requires)
-- **If the file server is the routing peer**, clients address it at its own LAN IP (the *self-access* case) — follow [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer).
+- **If the file server is the routing peer**, clients address it at its own LAN IP (the *self-access* case) — follow [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer). This works, but it is the slowest shape for serving files; see the Step 1 performance note.
 
 If your DFS folders are spread across several file servers, route each one. Find the targets from a machine with the DFS Management tools (RSAT) installed:
 
@@ -149,7 +153,7 @@ Both come from how Windows handles Kerberos logins, not from routing. Avoid them
 
 The whole setup is these pieces — create each one and domain login, shares, and DFS all work:
 
-- **A routing peer** — a peer at the site that routes to the DC and file servers: a dedicated machine, or the file server itself. *(Step 1)*
+- **A routing peer** — a peer at the site that routes to the DC and file servers: a dedicated Linux machine for the best file-transfer performance, or the file server itself. *(Step 1)*
 - **A route to the file server** — a Network resource (`/32` or FQDN, e.g. `fileserver1.corp.example.com`) for each share host. *(Step 2)*
 - **A route to the domain controller** — a Network resource (`/32` or `corp.example.com`). *(Step 3)*
 - **An access control policy to the file server** — on **TCP 445** (or whatever the service needs). *(Step 2)*
