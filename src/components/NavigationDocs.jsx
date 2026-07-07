@@ -861,11 +861,11 @@ export const docsNavigation = [
         links: [
           { title: 'Overview', href: '/use-cases/cloud' },
           {
-            title: 'NetBird on AWS ECS',
+            title: 'AWS ECS',
             href: '/use-cases/cloud/aws-ecs-terraform',
           },
           {
-            title: 'NetBird on Serverless (FaaS)',
+            title: 'Serverless (FaaS)',
             href: '/use-cases/cloud/netbird-on-faas',
           },
           {
