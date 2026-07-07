@@ -114,18 +114,24 @@ export const docsNavigation = [
           },
         ],
       },
-        { title: 'Global Limits', href: '/agent-network/global-limits' },
-        {
-            title: 'Integrations',
-            href: '/agent-network/integrations',
-            links: [
-                { title: 'Claude Code', href: '/agent-network/integrations/claude-code' },
-                { title: 'Codex', href: '/agent-network/integrations/codex' },
-                { title: 'LiteLLM', href: '/agent-network/integrations/litellm' },
-                { title: 'Google Vertex AI', href: '/agent-network/integrations/vertex-ai' },
-                { title: 'AWS Bedrock', href: '/agent-network/integrations/bedrock' },
-            ],
-        },
+      { title: 'Global Limits', href: '/agent-network/global-limits' },
+      {
+        title: 'Integrations',
+        href: '/agent-network/integrations',
+        links: [
+          {
+            title: 'Claude Code',
+            href: '/agent-network/integrations/claude-code',
+          },
+          { title: 'Codex', href: '/agent-network/integrations/codex' },
+          { title: 'LiteLLM', href: '/agent-network/integrations/litellm' },
+          {
+            title: 'Google Vertex AI',
+            href: '/agent-network/integrations/vertex-ai',
+          },
+          { title: 'AWS Bedrock', href: '/agent-network/integrations/bedrock' },
+        ],
+      },
     ],
   },
   {
@@ -757,7 +763,10 @@ export const docsNavigation = [
         isOpen: false,
         links: [
           { title: 'Overview', href: '/selfhosted/troubleshooting' },
-          { title: 'Installation', href: '/selfhosted/troubleshooting/installation' },
+          {
+            title: 'Installation',
+            href: '/selfhosted/troubleshooting/installation',
+          },
           {
             title: 'Embedded IdP',
             href: '/selfhosted/troubleshooting/identity-provider',
@@ -843,7 +852,7 @@ export const docsNavigation = [
         links: [
           { title: 'Overview', href: '/use-cases/remote-access' },
           {
-            title: 'Site-to-Site with Networks',
+            title: 'Site-to-Site',
             href: '/use-cases/remote-access/site-to-site',
           },
           {
@@ -931,9 +940,15 @@ export const docsNavigation = [
             links: [
               { title: 'Overview', href: '/help/troubleshooting-client' },
               { title: 'Linux', href: '/help/troubleshooting-client/linux' },
-              { title: 'Windows', href: '/help/troubleshooting-client/windows' },
+              {
+                title: 'Windows',
+                href: '/help/troubleshooting-client/windows',
+              },
               { title: 'macOS', href: '/help/troubleshooting-client/macos' },
-              { title: 'Android', href: '/help/troubleshooting-client/android' },
+              {
+                title: 'Android',
+                href: '/help/troubleshooting-client/android',
+              },
               { title: 'iOS', href: '/help/troubleshooting-client/ios' },
             ],
           },
