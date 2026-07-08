@@ -201,9 +201,8 @@ export const docsNavigation = [
                         href: '/manage/networks/how-routing-peers-work',
                     },
                     {
+                        title: 'Sizing Routing Peers',
                         href: '/manage/networks/sizing-routing-peers',
-                        name: 'Sizing Routing Peers',
-                        description: 'Choose the size and number of routing peers from measured throughput',
                     },
                     {
                         title: 'Masquerade',
