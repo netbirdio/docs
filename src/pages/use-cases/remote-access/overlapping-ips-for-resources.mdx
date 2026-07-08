@@ -1,0 +1,200 @@
+import {Note} from "@/components/mdx";
+
+export const description =
+  'Choose the right fix when two sites share one internal IP address, from installing the NetBird client on the device itself to running a small TCP proxy on each site\'s routing peer to reach both sites at once.'
+
+# Overlapping IPs for Resources
+
+Two of your sites use the same internal address. Site A and Site B each run an app at
+`10.0.0.5:8080`, and each site has its own NetBird [routing peer](/manage/networks/how-routing-peers-work).
+You give a laptop access to both sites, but it can only ever reach one of them at a time. Restart something and it may silently start
+talking to the other site instead.
+
+This happens because an address can point to only one place in a routing table. When two routing
+peers both advertise `10.0.0.0/24`, NetBird picks one of them and sends all traffic for `10.0.0.5`
+there. Picking a single winner is the right behavior when several routing peers serve the *same*
+network, which is what a high-availability setup wants. It is the wrong outcome when the peers lead
+to *different* places that happen to share an address.
+
+This guide walks through the fixes in order of preference, then shows the last-resort pattern in
+full: reaching both sites at once when you cannot install NetBird on the devices themselves.
+
+## The running example
+
+- **Site A**, internal app at `10.0.0.5:8080`, reached through routing peer `site-a-router`.
+- **Site B**, a different app, also at `10.0.0.5:8080`, reached through routing peer `site-b-router`.
+- A **user** whose laptop needs both apps open at once.
+
+## Choosing a fix
+
+Not every case needs this page: if the sites don't actually share an address, add a
+[resource](/manage/networks) for each and grant access directly. A genuine overlap has four fixes,
+in order of preference:
+
+1. **Install the NetBird client on the device itself.** If the app servers can run the client,
+   [install it](/get-started/install), make each server a peer, and grant access with a direct
+   policy. Each device gets its own name and address, so there is no overlap to work around.
+2. **Pick one site at a time.** If the laptop never needs both sites at once,
+   [route selection](/manage/network-routes/overlapping-routes) (`netbird networks select`) is the
+   supported way to choose which site's route is active. It answers "which site am I on," not
+   "both sites at once."
+3. **Renumber one site.** If you need broad access to many services across both sites,
+   re-addressing one site so the ranges no longer overlap is the durable fix. Everything else here
+   works around the overlap; renumbering removes it.
+4. **Run a small TCP proxy on each site's routing peer.** When you cannot touch the devices, need
+   both sites at once, and only need a handful of services, give each site its own name instead.
+   The rest of this guide shows how.
+
+Two other paths look like they should work and don't, so it is worth naming them:
+
+- **The built-in [Reverse Proxy](/manage/reverse-proxy)** exists to expose services that have their
+  own distinct address or name, with a public URL and managed TLS. The proxy still reaches its
+  target service over the NetBird mesh, so a service pointed at `10.0.0.5` runs into the same
+  single-route choice and reaches only one site. It cannot tell two identical addresses apart.
+- **Custom NAT remapping on the routing peer** (a `NETMAP` rule that presents one site under an
+  alias range) is the classic fix for overlapping subnets, but it is not supportable on NetBird: the
+  NetBird client picks one of its two internal firewall backends automatically, and on one of them
+  the remapped traffic is silently dropped. It also forces the access policy to open the real range
+  rather than the alias, leaving a broader rule than you intended.
+
+## The fix: a name per site
+
+The proxy pattern stops asking the laptop (or a central proxy) to disambiguate one shared address,
+and instead gives each site its own name. Run a small TCP proxy **on each site's routing peer**.
+That peer reaches its own local `10.0.0.5` directly, with no overlap to resolve, and the user
+connects to two different peer names.
+
+<Note>
+  This pattern pins each site to one named routing peer. If a site uses multiple routing
+  peers for high availability, failing over to the standby becomes a manual step: see
+  [Limits](#limits) before adopting it.
+</Note>
+
+## Prerequisites
+
+- A [Network](/manage/networks) per site, each with its routing peer already routing that site.
+- Three NetBird groups: `users` containing the user's laptop, `site-a` containing the peer
+  `site-a-router`, and `site-b` containing `site-b-router`. Policies always reference groups, never
+  individual peers, so each routing peer needs a group of its own.
+- The internal service address and port at each site (`10.0.0.5:8080` here).
+
+## Steps
+
+### 1. Run a proxy on each routing peer
+
+The proxy is nginx's `stream` module, which forwards plain TCP connections without touching what is
+inside them. If nginx is new to you, one command installs both nginx and the module (Debian/Ubuntu;
+on many other distributions the module ships in the main nginx package):
+
+```bash
+sudo apt install nginx libnginx-mod-stream
+```
+
+Then, on `site-a-router`, add a `stream` block to `/etc/nginx/nginx.conf` that forwards a port on
+the peer's own NetBird address to the local service:
+
+```nginx
+# /etc/nginx/nginx.conf on site-a-router
+stream {
+    server {
+        listen 100.92.10.4:8080;     # this peer's NetBird IP, from `netbird status`
+        proxy_pass 10.0.0.5:8080;    # the local app at Site A
+    }
+}
+```
+
+Place the block at the top level of the file, next to the `http` block rather than inside it: nginx
+rejects a nested one with `"stream" directive is not allowed here`. If you see
+`unknown directive "stream"` instead, the module is not installed. Check the config and apply it with:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Repeat on `site-b-router`, using **its** NetBird IP in the `listen` line and its own `10.0.0.5`.
+
+The `listen` port is yours to choose: it only has to match the policy in step 2 and the URL the
+user types in step 3. This example keeps the app's own port, so for the user only the hostname
+changes.
+
+Because the listener sits on the NetBird address, access over the tunnel is gated by the policies you
+add next, and nothing is exposed to the internet: no firewall port to open, no inbound rule to manage.
+
+Two things can break that `listen` address later. After a reboot, nginx can start before the NetBird
+interface exists and fail to bind: order it after the NetBird service. And a peer that is ever
+re-registered keeps its name but gets a new NetBird IP, so update the `listen` line to match.
+
+### 2. Grant least-privilege access, one port per site
+
+In **Access Control**, add two policies:
+
+- `users` to `site-a` (the group holding `site-a-router`), protocol TCP, port `8080`.
+- `users` to `site-b` (the group holding `site-b-router`), protocol TCP, port `8080`.
+
+These grant access *to the routing peer itself* on a single port, not *through* it to the routed
+network. (That "to the peer" versus "through the peer" distinction is the one covered on the
+[Networks](/manage/networks) page.) Scope each policy to the exact proxy port and nothing more.
+
+### 3. Reach each site by its peer name
+
+From the laptop, use the two distinct peer names instead of the shared IP. Each peer's full name is
+shown in the dashboard's Peers list and in `netbird status`:
+
+```bash
+curl http://site-a-router.netbird.cloud:8080/    # Site A
+curl http://site-b-router.netbird.cloud:8080/    # Site B
+```
+
+## Verify
+
+Run both commands from step 3 again, together, repeatedly, in any order. The `site-a-router` name
+answers with Site A's app and the `site-b-router` name with Site B's, every time, with no flapping.
+This holds even while the conflicting `10.0.0.0/24` routes still exist underneath: the two names
+resolve to two different peers, so the shared `10.0.0.5` behind each is never in conflict on the
+laptop.
+
+## Optional: friendlier names with a custom DNS zone
+
+The fix works by giving each site its own name, so it is worth making those names good ones. With a
+[custom DNS zone](/manage/dns/custom-zones), users can call the apps by service names instead of
+remembering which router serves which site.
+
+In **DNS** → **Zones**, create a zone `corp.internal`, distribute it to the `users` group
+only, and add one CNAME per site pointing at its routing peer's name:
+
+| Record | Type | Target |
+|---|---|---|
+| `app-a.corp.internal` | CNAME | `site-a-router.netbird.cloud` |
+| `app-b.corp.internal` | CNAME | `site-b-router.netbird.cloud` |
+
+The laptop resolves the CNAME through to the peer, so the same test now reads:
+
+```bash
+curl http://app-a.corp.internal:8080/    # Site A
+curl http://app-b.corp.internal:8080/    # Site B
+```
+
+Prefer CNAME records here. An A record maps a name directly to an IP, so it would pin the routing
+peer's NetBird IP, which changes if the peer ever re-registers. A CNAME can only target another
+name, in this case the peer's stable name, so NetBird keeps resolving the current IP for you.
+
+The name only picks the peer. DNS records carry no port, so the port in the URL is what selects the
+service on that peer, and it must match the proxy's `listen` line and the step 2 policy. If you
+enable the zone's search-domain option, users can shorten the names to `app-a` and `app-b`.
+
+## Limits
+
+- Works for any TCP service. nginx `stream` also proxies UDP: add `udp` to the `listen` directive.
+- You run and maintain the proxy on each routing peer. This is a pattern, not a NetBird-managed
+  feature, and it costs one listener and one policy port per service, per site: the work grows with
+  every service you add.
+- A site's high-availability routing does not extend to the proxy path: each listener lives on one
+  named peer, and nothing moves users to another router automatically. If a site has two routing
+  peers, running the same proxy on both keeps a warm standby (the group-based policy already covers
+  it), but moving users to the standby is a manual step: they switch to its name, or you repoint
+  the DNS record.
+- TLS passes through untouched, but the laptop now dials the peer's name, so the app's certificate
+  must also cover that name (or the connecting app must be told which name to expect).
+- The proxy listens on the routing peer's NetBird address. NetBird policies gate tunnel-side traffic,
+  but a host on the peer's own local network can still reach the listener. If that matters, add a
+  local firewall rule on the peer that limits the proxy port to the NetBird interface.

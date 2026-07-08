@@ -848,6 +848,10 @@ export const docsNavigation = [
             href: '/use-cases/remote-access/exit-nodes',
           },
           {
+            title: 'Overlapping IPs for Resources',
+            href: '/use-cases/remote-access/overlapping-ips-for-resources',
+          },
+          {
             title: 'Reach Services on the Routing Peer',
             href: '/use-cases/remote-access/reach-services-on-the-routing-peer',
           },
