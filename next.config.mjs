@@ -38,7 +38,7 @@ const nextConfig = {
             },
             {
                 source: '/manage/network-routes/use-cases/by-scenario/site-to-vpn',
-                destination: '/manage/networks/use-cases/site-to-vpn',
+                destination: '/use-cases/remote-access/site-to-vpn',
                 permanent: true,
             },
             {
@@ -283,12 +283,12 @@ const nextConfig = {
             },
             {
                 source: '/how-to/routing-peers-and-kubernetes',
-                destination: '/use-cases/cloud/routing-peers-and-kubernetes',
+                destination: '/use-cases/kubernetes/routing-peers-and-kubernetes',
                 permanent: true,
             },
             {
                 source: '/how-to/client-on-mikrotik-router',
-                destination: '/use-cases/homelab/client-on-mikrotik-router',
+                destination: '/get-started/install/mikrotik',
                 permanent: true,
             },
             {
@@ -319,7 +319,7 @@ const nextConfig = {
             },
             {
                 source: '/how-to/access-home-network',
-                destination: '/manage/networks/use-cases/access-home-devices',
+                destination: '/use-cases/remote-access/access-home-devices',
                 permanent: true,
             },
             // documentation redirects for network-routes
@@ -330,7 +330,7 @@ const nextConfig = {
             },
             {
                 source: '/how-to/configuring-default-routes-for-internet-traffic',
-                destination: '/manage/network-routes/use-cases/exit-nodes',
+                destination: '/use-cases/remote-access/exit-nodes',
                 permanent: true,
             },
             {
@@ -499,7 +499,7 @@ const nextConfig = {
             },
             {
                 source: '/how-to/kubernetes-operator',
-                destination: '/manage/integrations/kubernetes',
+                destination: '/use-cases/kubernetes',
                 permanent: true,
             },
             // documentation redirects for public-api
@@ -551,10 +551,101 @@ const nextConfig = {
                 destination: '/manage/dns/custom-zones',
                 permanent: true,
             },
+            // Use cases reorg: scenario guides consolidated under /use-cases
+            {
+                source: '/manage/integrations/kubernetes',
+                destination: '/use-cases/kubernetes',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/kubernetes/routing-peer',
+                destination: '/use-cases/kubernetes/routing-peer',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/kubernetes/client-sidecar',
+                destination: '/use-cases/kubernetes/client-sidecar',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/kubernetes/api-server-proxy',
+                destination: '/use-cases/kubernetes/api-server-proxy',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/kubernetes/gateway-api',
+                destination: '/use-cases/kubernetes/gateway-api',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/cloud/route-to-a-kubernetes-service',
+                destination: '/use-cases/kubernetes/route-to-a-kubernetes-service',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/cloud/routing-peers-and-kubernetes',
+                destination: '/use-cases/kubernetes/routing-peers-and-kubernetes',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/site-to-site',
+                destination: '/use-cases/remote-access',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/site-to-site',
+                destination: '/use-cases/remote-access/site-to-site',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/site-to-vpn',
+                destination: '/use-cases/remote-access/site-to-vpn',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/cloud-to-on-premise',
+                destination: '/use-cases/remote-access/cloud-to-on-premise',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/access-home-devices',
+                destination: '/use-cases/remote-access/access-home-devices',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/reach-services-on-the-routing-peer',
+                destination: '/use-cases/remote-access/reach-services-on-the-routing-peer',
+                permanent: true,
+            },
+            {
+                source: '/manage/networks/use-cases/active-directory',
+                destination: '/use-cases/remote-access/active-directory',
+                permanent: true,
+            },
+            {
+                source: '/manage/network-routes/use-cases/exit-nodes',
+                destination: '/use-cases/remote-access/exit-nodes',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/kubernetes/use-cases/route-to-a-kubernetes-service',
+                destination: '/use-cases/kubernetes/route-to-a-kubernetes-service',
+                permanent: true,
+            },
+            {
+                source: '/manage/reverse-proxy/use-cases/private-no-inbound',
+                destination: '/use-cases/security/private-no-inbound',
+                permanent: true,
+            },
+            {
+                source: '/use-cases/homelab/client-on-mikrotik-router',
+                destination: '/get-started/install/mikrotik',
+                permanent: true,
+            },
             // Site-to-site documentation restructure redirects
             {
                 source: '/use-cases/setup-site-to-site-access',
-                destination: '/use-cases/site-to-site',
+                destination: '/use-cases/remote-access',
                 permanent: true,
             },
             {
@@ -569,17 +660,17 @@ const nextConfig = {
             },
             {
                 source: '/manage/networks/homelab/access-home-network',
-                destination: '/manage/networks/use-cases/access-home-devices',
+                destination: '/use-cases/remote-access/access-home-devices',
                 permanent: true,
             },
             {
                 source: '/manage/networks/use-cases/by-scenario/access-home-devices',
-                destination: '/manage/networks/use-cases/access-home-devices',
+                destination: '/use-cases/remote-access/access-home-devices',
                 permanent: true,
             },
             {
                 source: '/manage/networks/use-cases/by-scenario/cloud-to-on-premise',
-                destination: '/manage/networks/use-cases/cloud-to-on-premise',
+                destination: '/use-cases/remote-access/cloud-to-on-premise',
                 permanent: true,
             },
             // Networks guides moved to use-cases
@@ -636,7 +727,7 @@ const nextConfig = {
             },
             {
                 source: '/manage/network-routes/configuring-default-routes-for-internet-traffic',
-                destination: '/manage/network-routes/use-cases/exit-nodes',
+                destination: '/use-cases/remote-access/exit-nodes',
                 permanent: true,
             },
             {
@@ -671,7 +762,7 @@ const nextConfig = {
             },
             {
                 source: '/manage/network-routes/use-cases/by-scenario/exit-nodes',
-                destination: '/manage/network-routes/use-cases/exit-nodes',
+                destination: '/use-cases/remote-access/exit-nodes',
                 permanent: true,
             },
             {
@@ -692,22 +783,22 @@ const nextConfig = {
             // Site-to-Site section redirects (overview and comprehensive guides)
             {
                 source: '/manage/site-to-site',
-                destination: '/use-cases/site-to-site',
+                destination: '/use-cases/remote-access',
                 permanent: true,
             },
             {
                 source: '/manage/site-to-site/connect-home-networks',
-                destination: '/use-cases/site-to-site',
+                destination: '/use-cases/remote-access',
                 permanent: true,
             },
             {
                 source: '/manage/site-to-site/connect-office-networks',
-                destination: '/use-cases/site-to-site',
+                destination: '/use-cases/remote-access',
                 permanent: true,
             },
             {
                 source: '/manage/site-to-site/connect-cloud-environments',
-                destination: '/use-cases/site-to-site',
+                destination: '/use-cases/remote-access',
                 permanent: true,
             },
             {
@@ -728,7 +819,7 @@ const nextConfig = {
             },
             {
                 source: '/use-cases/routing-peers-and-kubernetes',
-                destination: '/use-cases/cloud/routing-peers-and-kubernetes',
+                destination: '/use-cases/kubernetes/routing-peers-and-kubernetes',
                 permanent: true,
             },
             {
@@ -738,7 +829,7 @@ const nextConfig = {
             },
             {
                 source: '/use-cases/client-on-mikrotik-router',
-                destination: '/use-cases/homelab/client-on-mikrotik-router',
+                destination: '/get-started/install/mikrotik',
                 permanent: true,
             },
             {
