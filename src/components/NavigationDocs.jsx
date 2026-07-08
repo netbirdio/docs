@@ -201,6 +201,10 @@ export const docsNavigation = [
             href: '/manage/networks/how-routing-peers-work',
           },
           {
+            title: 'Sizing Routing Peers',
+            href: '/manage/networks/sizing-routing-peers',
+          },
+          {
             title: 'Masquerade',
             href: '/manage/networks/masquerade',
           },
