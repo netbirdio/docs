@@ -1,0 +1,71 @@
+# Getting Started
+
+Accessing private Kubernetes clusters can be challenging, especially when connecting from remote locations or having multiple clusters to manage. NetBird Kubernetes operator simplifies this process by enabling secure access to your Kubernetes clusters using custom resource configurations and annotations to expose your cluster and services in your NetBird network.
+
+The NetBird Kubernetes operator automatically creates [Networks and Resources](/manage/networks) in your NetBird account, allowing you to seamlessly access your Kubernetes services and control plane from your NetBird network.
+
+<Note>
+For the mental model — see [How Routing Peers Work — Requirements](/manage/networks/how-routing-peers-work#requirements).
+</Note>
+
+## Prerequisites
+
+- Access to a Kubernetes cluster.
+- Kubectl and Helm installed locally.
+
+## Steps
+
+Install cert-manager, it is recommended so the Kubernetes API can communicate with the operator's admission webhooks. Skip this step if you already have cert-manager installed.
+
+```shell
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml
+```
+
+Create the NetBird namespace and API secret. The operator needs a NetBird personal access token to authenticate with the NetBird Management API. You can create a PAT by following the steps [here](/manage/public-api#creating-a-service-user).
+
+```shell
+kubectl create namespace netbird
+kubectl -n netbird create secret generic netbird-mgmt-api-key --from-literal=NB_API_KEY=${NB_API_KEY}
+```
+
+Install the NetBird operator.
+
+```shell
+helm upgrade --install --create-namespace -n netbird netbird-operator oci://ghcr.io/netbirdio/helm-charts/netbird-operator
+```
+
+Verify the installation by checking the operator pod.
+
+```shell
+kubectl get pods -n netbird
+```
+
+All pods should be in a `Running` state before continuing.
+
+```shell
+NAME                               READY   STATUS    RESTARTS   AGE
+netbird-operator-b74984867-d68c8   1/1     Running   0          98s
+```
+
+## Choosing a pattern
+
+The operator supports several ways to connect a cluster, and they answer **different questions** rather than competing with each other. Pick by **what you're exposing** and **whether each workload needs its own identity**.
+
+| Pattern | Exposes | Identity | Reach it via | Best for |
+|---|---|---|---|---|
+| [NetworkRouter](/use-cases/kubernetes/routing-peer) | a `ClusterIP` Service | a shared routing peer | a DNS name in the NetworkRouter's zone (`service.namespace.<zone>`) | stable internal services (databases, APIs) that many peers reach |
+| [Client Sidecar](/use-cases/kubernetes/client-sidecar) | the pod itself | the pod becomes its own peer | the pod's overlay IP | workloads that need their own identity or per-pod access rules (ephemeral CI jobs, per-pod audit) |
+| [API Server Proxy](/use-cases/kubernetes/api-server-proxy) | the Kubernetes API | your NetBird user | `netbird kubernetes` + `kubectl` | operating remote clusters with `kubectl` |
+| [Gateway API](/use-cases/kubernetes/gateway-api) <Badge status="experimental" text="Beta" /> | Services via Gateway CRDs | a gateway routing peer | route hostname / overlay | teams standardizing on Gateway API CRDs |
+
+### Rules of thumb
+
+- **Default to a routing peer** for "let my peers reach a service in this cluster." One routing peer fronts many services and is the cheapest to operate — see the [Route to a Kubernetes service](/use-cases/kubernetes/route-to-a-kubernetes-service) how-to, including how to run it highly available.
+- **Reach for a client sidecar** only when per-pod identity matters. The pod becomes a first-class peer: it can be reached directly *and* originate connections out onto the NetBird network as itself. That's why a sidecar — not a routing peer — is the answer when a workload needs to *initiate* traffic onto the overlay. The cost is one peer per pod, so it's more to manage than a shared gateway.
+- **A routing peer exposes in-cluster services to your peers; it does not give other pods in the cluster a path out onto the overlay.** If an in-cluster workload needs to reach the NetBird network, give that pod a sidecar.
+- **The API Server Proxy is orthogonal** — it's about *operating* the cluster, not reaching the apps inside it. Combine it with any of the others.
+- **Gateway API is the future-standard surface but still Beta** — prefer the routing peer or sidecar for anything you depend on today.
+
+<Note>
+NetBird is deny-by-default and the operator does **not** write your access policies. Whichever pattern you choose, put your peers in a dedicated group (never `All`) and create a policy that allows the access you want.
+</Note>
