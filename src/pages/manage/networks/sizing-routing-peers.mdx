@@ -117,8 +117,29 @@ These levers raise the capacity of one routing peer before you add more.
 
 - **Use kernel WireGuard.** On Linux, NetBird uses the in-kernel module by default when it is present; it is the right choice for a high-throughput routing peer, because only the kernel path spreads the work across all cores. The [userspace datapath](#userspace-mode) plateaus at a few Gbps no matter the core count.
 - **Match the network interface to the target.** At high aggregate rates the interface can limit you as much as the CPU. For tens of Gbps, choose an interface (and, in a cloud, an instance type) whose bandwidth matches the throughput you read from the table.
-- **Raise the MTU only on clean networks.** Throughput is largely bound by packets per second, so larger packets carry more for the same work. On a network that supports jumbo frames end to end, such as a datacenter backplane, a larger tunnel MTU raised per-peer throughput several-fold in testing. This helps only when the **entire path, clients included, supports the larger MTU**. Keep the default on paths that cross the public internet or reach ordinary 1500-byte clients, where it would only cause fragmentation.
+- **Raise the tunnel MTU on a jumbo-capable path.** The single biggest lever inside a datacenter: larger frames carry more data per packet, and per-peer throughput multiplied several-fold in testing. It applies only when the entire path supports the larger MTU — see [Jumbo frames in a datacenter](#jumbo-frames-in-a-datacenter).
 - **Add cores up to the knee, then stop.** Cores raise capacity up to about 16; past that the download direction inches up and the upload direction does not move at all. When you reach that knee, add another peer instead of a bigger one.
+
+## Jumbo frames in a datacenter
+
+The capacity table uses NetBird's default 1280-byte tunnel MTU, and that default is conservative on purpose: it survives the public internet without fragmenting. But it also holds the ceiling down, because a routing peer is bound by **packets per second**, not by bytes. Each packet costs about the same crypto work whether it carries 1,280 bytes or nine thousand, so on a network that can move larger frames, bigger packets carry far more data for the same CPU.
+
+Inside a single datacenter or cloud VPC the whole path can usually carry **jumbo frames** (roughly a 9000-byte MTU) end to end. Raise the tunnel MTU to match and per-peer throughput multiplies. Measured on the same 64 vCPU c6in.16xlarge as the capacity table, kernel WireGuard, load spread across many tunnels, with an 8920-byte tunnel MTU riding a 9001-byte underlay (WireGuard's per-packet overhead sits just below the physical MTU):
+
+| Tunnel MTU | Download (clients pulling) | Upload (clients pushing) |
+|---|---|---|
+| 1280 (default) | ~31 Gbps | ~15.5 Gbps |
+| 8920 (jumbo) | ~95 Gbps | ~66 Gbps |
+
+That is roughly **3x on download and 4x on upload** from one setting. At jumbo the download direction reached ~95 Gbps, essentially the 100 GbE interface's line rate, so the interface capped it before the CPU did; the upload direction still ran about 29% idle, so it had further left to climb. The practical result is that a single 16-vCPU-or-larger peer on a jumbo path can approach interface line rate, which cuts the peer count sharply: carrying 100 Gbps of downloads drops from four or five default-MTU peers to one or two.
+
+<Warning>
+Jumbo frames need the **entire path** at the larger MTU, clients included. A WireGuard tunnel can only be as large as the smallest link beneath it, so a remote user on an ordinary 1500-byte connection, or anyone crossing the public internet, keeps the tunnel near 1280 to 1420 and gets the default-MTU figures from the capacity table. Raise the MTU only where you control both ends: datacenter-to-datacenter links, a jumbo-capable LAN, or traffic that stays inside one VPC. On a mixed path a too-large tunnel MTU only fragments packets and slows things down.
+</Warning>
+
+This is why the running example keeps the default: Acme's 6,000 people connect as ordinary ~1500-MTU remote users, so the 20 Gbps-per-peer figure stands for them. Jumbo is a datacenter-to-datacenter lever, not a remote-access one.
+
+Jumbo helps the [userspace datapath](#userspace-mode) too (about 2.5x), but userspace stays single-threaded and lands roughly 6x below kernel WireGuard even at jumbo, and below kernel WireGuard at the default MTU. On a datacenter peer, use kernel WireGuard and jumbo frames together.
 
 ## Scaling out: high availability and splitting load
 
@@ -130,7 +151,7 @@ Neither balances a Network's load. Nearest-peer *does* spread traffic when peers
 
 - **A single flow is capped below the peer's total.** Many clouds limit one network flow to a few Gbps (on AWS, about 5 Gbps, or near 10 Gbps inside a cluster placement group). Because one client tunnel is a single flow, this caps any single tunnel regardless of how large the peer is, which is another reason capacity comes from many tunnels rather than one fast one.
 - **Pick a network-optimized instance for tens of Gbps.** A general-purpose instance's "up to" burst bandwidth is not the sustained rate; size on the sustained figure.
-- **Jumbo frames inside a VPC or datacenter.** Within one cloud network or datacenter, jumbo frames are usually available end to end, which is where the MTU lever above applies. Across the public internet the usable MTU drops, so keep the default there.
+- **Jumbo frames inside a VPC or datacenter.** Within one cloud network or datacenter a jumbo path is usually available end to end, and it is a large per-peer win: see [Jumbo frames in a datacenter](#jumbo-frames-in-a-datacenter). Across the public internet the usable MTU drops, so keep the default there.
 - **No inbound ports are needed.** A routing peer makes outbound connections and relies on NetBird for reachability, so you never open an inbound port to it. Direct (peer-to-peer) connections give the best throughput; when a direct path is not available NetBird falls back to an encrypted relay, which is the designed answer rather than a port-forward.
 
 ## Measure in your own environment
