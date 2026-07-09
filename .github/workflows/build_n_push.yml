@@ -3,31 +3,66 @@ on:
   push:
     branches:
       - main
+  # Build-only (no push) on PRs that touch the build/deploy pipeline, so
+  # Dockerfile / workflow changes are validated before they reach main.
+  pull_request:
+    paths:
+      - 'docker/**'
+      - '.github/workflows/build_n_push.yml'
+      - 'next.config.mjs'
+      - 'package-lock.json'
   workflow_dispatch:
-  
+
 jobs:
   docs_build_n_push:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      -
-        name: Docker meta
+      - uses: actions/checkout@v4
+        with:
+          # Full history so gen:last-updated / gen:sitemap can read real
+          # per-file commit dates (a shallow clone would yield wrong dates).
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore Next.js build cache
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'mdx/**', 'next.config.mjs') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
+
+      - name: Build
+        run: npm run build
+
+      - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v3
+        uses: docker/metadata-action@v5
         with:
           images: netbirdio/docs.netbird.io
-      -
-        name: Login to DockerHub
+
+      - name: Login to DockerHub
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_TOKEN }}
-      -
-        name: Docker build and push
-        uses: docker/build-push-action@v2
+
+      - name: Docker build and push
+        uses: docker/build-push-action@v6
         with:
+          context: .
           file: docker/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
+          # Keep a single-arch manifest (no attestation index) so the server's
+          # `docker compose pull` stays happy.
+          provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
