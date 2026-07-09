@@ -8,6 +8,13 @@ on:
         default: "refs/tags/vX.Y.Z"
         type: string
 
+# One run at a time: overlapping dispatches (several release tags in a day
+# happen — see run history) regenerate the same files and would collide. A
+# queued run superseded by a newer dispatch is fine: every run regenerates the
+# whole directory from its own tag, so the latest dispatch is the end state.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+
 jobs:
   generate_api_pages:
     runs-on: macos-latest
@@ -77,4 +84,9 @@ jobs:
           # changes like a rewritten package-lock.json.
           git add src/pages/ipa/resources
           git commit -m "Update API pages with v${{ steps.semver_parser.outputs.fullversion }}"
+          # The run takes minutes; if the branch moved meanwhile, replay our
+          # single generated-files commit on top instead of failing the push.
+          # A conflict is only possible against a concurrent edit of the
+          # generated files themselves and fails the run loudly.
+          git pull --rebase origin "${GITHUB_REF_NAME}"
           git push
