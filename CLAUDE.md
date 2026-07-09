@@ -8,6 +8,8 @@ Documentation website for [NetBird](https://netbird.io), an open-source WireGuar
 
 There is no test suite in this project. Validate changes with `npm run build`.
 
+`package-lock.json` is committed, so installs are pinned. When you change dependencies in `package.json`, regenerate the lockfile (`npm install`) and commit it in the same change — otherwise local, CI, and Docker builds resolve different trees.
+
 ## Common Commands
 
 ```bash
