@@ -10,8 +10,8 @@ RUN npm install --global pm2
 # Utilise Docker cache to save re-installing dependencies if unchanged
 COPY ./package*.json ./
 
-# Install dependencies
-RUN npm install --production
+# Install dependencies (npm ci = clean, reproducible install from the lockfile)
+RUN npm ci --omit=dev
 
 # Copy all files
 COPY ./ ./
