@@ -12,6 +12,8 @@ on:
 # happen — see run history) regenerate the same files and would collide. A
 # queued run superseded by a newer dispatch is fine: every run regenerates the
 # whole directory from its own tag, so the latest dispatch is the end state.
+# NB "latest dispatched", not "newest tag" — re-dispatching an older tag after
+# a newer one regresses the pages to the older spec.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
@@ -29,6 +31,16 @@ jobs:
       - uses: actions/checkout@v6
         with:
           token: ${{ secrets.DEV_GITHUB_TOKEN }}
+
+      # A run queued behind another (see concurrency above) checks out the
+      # commit pinned at its dispatch time, not the branch's current tip.
+      # Sync before generating so the diff is computed against reality —
+      # otherwise the pre-push rebase replays a stale-base snapshot, and a
+      # file the newer spec removed could silently survive from the prior run.
+      - name: Sync to branch tip
+        run: |
+          git fetch origin "${GITHUB_REF_NAME}"
+          git reset --hard "origin/${GITHUB_REF_NAME}"
 
       - name: Create directory
         run: mkdir -p generator/openapi
