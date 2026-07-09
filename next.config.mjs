@@ -16,6 +16,10 @@ const withMDX = nextMDX({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+    // Emit a self-contained server (.next/standalone) with a traced, minimal
+    // node_modules, so the Docker image ships just the server + static assets
+    // instead of the full source and dependency tree.
+    output: 'standalone',
     assetPrefix: undefined,
     reactStrictMode: true,
     pageExtensions: ['js', 'jsx', 'ts', 'tsx', 'mdx'],
