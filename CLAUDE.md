@@ -16,7 +16,7 @@ There is no test suite in this project. Validate changes with `npm run build`.
 npm install              # Install dependencies
 npm run dev              # Start dev server (also runs gen:llm, gen:edit-routes, gen:last-updated, gen:sitemap)
 npm run build            # Production build (also runs gen:llm, gen:edit-routes, gen:last-updated, gen:sitemap)
-npm run start            # Serve the production build
+npm run start            # Serve the production build (warns under `output: 'standalone'` — safe to ignore locally; prod runs `node server.js` from `.next/standalone`)
 npm run lint             # ESLint (next/core-web-vitals) on src/
 npm run gen              # Regenerate API docs from NetBird OpenAPI spec
 npm run gen:llm          # Regenerate LLM-friendly markdown (auto-runs with dev/build)
