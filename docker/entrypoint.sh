@@ -15,8 +15,10 @@ NEXT_PUBLIC_DOCSEARCH_INDEX_NAME=${NEXT_PUBLIC_DOCSEARCH_INDEX_NAME:-"none"}
 
 # Escape the characters that are special in a sed replacement (\ and &) and
 # our s### delimiter (#), so values containing them substitute literally.
+# CR/LF are stripped first: a one-line s### command cannot carry a raw
+# newline, and no legitimate DocSearch token contains one.
 escape() {
-  printf '%s' "$1" | sed -e 's/[\\&#]/\\&/g'
+  printf '%s' "$1" | tr -d '\r\n' | sed -e 's/[\\&#]/\\&/g'
 }
 
 # Rewrite only the files that still contain the placeholder — after the first
@@ -26,9 +28,14 @@ substitute() {
   grep -rlZ "$1" /usr/app/.next | xargs -0 -r sed -i "s#$1#$2#g"
 }
 
-if substitute APP_NEXT_PUBLIC_DOCSEARCH_APP_ID "$(escape "$NEXT_PUBLIC_DOCSEARCH_APP_ID")" &&
-   substitute APP_NEXT_PUBLIC_DOCSEARCH_API_KEY "$(escape "$NEXT_PUBLIC_DOCSEARCH_API_KEY")" &&
-   substitute APP_NEXT_PUBLIC_DOCSEARCH_INDEX_NAME "$(escape "$NEXT_PUBLIC_DOCSEARCH_INDEX_NAME")"; then
+# Each substitution runs independently: one failing value must not stop the
+# remaining placeholders from being applied.
+ok=1
+substitute APP_NEXT_PUBLIC_DOCSEARCH_APP_ID "$(escape "$NEXT_PUBLIC_DOCSEARCH_APP_ID")" || ok=0
+substitute APP_NEXT_PUBLIC_DOCSEARCH_API_KEY "$(escape "$NEXT_PUBLIC_DOCSEARCH_API_KEY")" || ok=0
+substitute APP_NEXT_PUBLIC_DOCSEARCH_INDEX_NAME "$(escape "$NEXT_PUBLIC_DOCSEARCH_INDEX_NAME")" || ok=0
+
+if [ "$ok" = 1 ]; then
   echo "DocSearch configuration applied"
 else
   # Serve the docs even if search wiring failed — a docs site with broken
