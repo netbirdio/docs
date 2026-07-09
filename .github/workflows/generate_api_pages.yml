@@ -43,8 +43,17 @@ jobs:
       - name: Remove old generated files
         run: rm -rf src/pages/ipa/resources/*
 
-      - name: Npm install
-        run: npm install
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # npm ci: this workflow never changes dependencies, so install exactly
+      # the committed lockfile and never mutate it (macos-latest's npm can
+      # differ from the one that generated package-lock.json).
+      - name: Install dependencies
+        run: npm ci
 
       - name: Generate api pages for netbird main openapi definition
         run: npx ts-node generator/index.ts gen --input generator/openapi/expanded.yml --output src/pages/ipa/resources
@@ -52,7 +61,7 @@ jobs:
       - name: Check git diff and untracked files
         id: git_diff
         run: |
-          if [ -n "$(git status --porcelain)" ]; then
+          if [ -n "$(git status --porcelain src/pages/ipa/resources)" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -64,6 +73,8 @@ jobs:
           git config --global user.email "dev@netbird.io"
           git config --global user.name "netbirddev"
 
-          git add -A
+          # Stage only the regenerated API pages — never sweep up incidental
+          # changes like a rewritten package-lock.json.
+          git add src/pages/ipa/resources
           git commit -m "Update API pages with v${{ steps.semver_parser.outputs.fullversion }}"
-          git push --force
+          git push
