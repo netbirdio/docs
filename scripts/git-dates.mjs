@@ -32,13 +32,24 @@ let _dateMapCache
  * repo-relative with forward slashes, matching path.relative(repoRoot, file).
  *
  * Returns an empty map if git is unavailable (e.g. inside the Docker image,
- * which has no git binary); callers then fall back to no date, exactly as the
- * per-file getGitLastModified() did.
+ * which has no git binary) or the checkout is shallow; callers then fall back
+ * to no date, exactly as the per-file getGitLastModified() did.
  */
 export function buildGitDateMap() {
   if (_dateMapCache) return _dateMapCache
   const map = new Map()
   try {
+    // On a shallow clone (e.g. actions/checkout without fetch-depth: 0) git log
+    // only sees the fetched commits, so every file would report the same wrong
+    // date. Emit no dates rather than wrong ones.
+    const shallow = execSync('git rev-parse --is-shallow-repository', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim()
+    if (shallow === 'true') {
+      _dateMapCache = map
+      return map
+    }
     // core.quotePath=false keeps non-ASCII paths unquoted so line parsing is safe.
     const out = execSync(
       'git -c core.quotePath=false log --format=%cI --name-only',

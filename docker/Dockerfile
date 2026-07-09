@@ -10,16 +10,15 @@ RUN npm install --global pm2
 # Utilise Docker cache to save re-installing dependencies if unchanged
 COPY ./package*.json ./
 
-# Install dependencies (npm ci = clean, reproducible install from the lockfile)
+# Install runtime dependencies (npm ci = clean, reproducible install from the lockfile)
 RUN npm ci --omit=dev
 
-# Copy all files
+# Copy the app, including the prebuilt .next output. The build now runs on the
+# CI runner (see .github/workflows/build_n_push.yml) with a warm .next/cache,
+# so there is no `npm run build` step here — we only package the result.
 COPY ./ ./
 
 COPY /docker/entrypoint.sh ./entrypoint.sh
-
-# Build app
-RUN npm run build
 
 RUN chmod u+x /usr/app/entrypoint.sh
 
