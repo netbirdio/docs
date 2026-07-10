@@ -2,7 +2,12 @@
 
 import {Note, Warning} from "@/components/mdx";
 
-This guide is part of the [Splitting Your Self-Hosted Deployment](/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment) guide. It covers deploying external relay and STUN servers and configuring your main server to use them.
+This guide is part of the [Splitting Your Self-Hosted Deployment](/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment) guide. It covers deploying external relay servers and configuring your main server either to use them alongside the embedded relay or to replace the embedded relay and STUN service completely.
+
+NetBird supports two external relay modes:
+
+- `server.additionalRelays` keeps the combined server's embedded relay and STUN service running and appends external relay addresses.
+- `server.relays` replaces the embedded relay. In the combined server, this also disables the embedded STUN service, so replacement STUN addresses must be configured under `server.stuns`.
 
 For each relay server you want to deploy:
 
@@ -12,18 +17,23 @@ For each relay server you want to deploy:
 - Public IP address
 - A domain name pointing to the server (e.g., `relay-us.example.com`)
 - Docker installed
-- Firewall ports open: **80/tcp** (Let's Encrypt HTTP challenge), **443/tcp** (relay), and **3478/udp** (STUN). If you configure multiple STUN ports, open all of them
+- Firewall ports open: **80/tcp** (Let's Encrypt HTTP challenge) and **443/tcp** (relay). Open **3478/udp** only if this external relay also serves STUN; if you configure multiple STUN ports, open all of them
 
 ## Generate Authentication Secret
 
-All relay servers must share the same authentication secret with your main server. You can generate one with:
+All relay servers advertised by one Management server must use the same authentication secret.
+
+- When keeping the embedded relay, reuse the existing `server.authSecret` value as `NB_AUTH_SECRET` on every external relay.
+- When replacing the embedded relay, use the same new value for `NB_AUTH_SECRET` on every external relay and `server.relays.secret` on the main server.
+
+For a new deployment, generate a secret with:
 
 ```bash
 # Generate a secure random secret
 openssl rand -base64 32
 ```
 
-Save this secret - you'll need it for both the relay servers and your main server's config.
+Save this secret securely. Do not commit it to source control.
 
 ## Create Relay Configuration
 
@@ -56,6 +66,10 @@ NB_STUN_PORTS=3478
 Replace `relay-us.example.com` with your relay server's domain and `your-shared-secret-here` with the secret you generated.
 </Note>
 
+<Note>
+`additionalRelays` advertises relay addresses only. If you keep the embedded STUN service, external relays do not need to run STUN and you can set `NB_ENABLE_STUN=false`. Configuring `server.stuns` advertises external STUN addresses but disables the embedded STUN service.
+</Note>
+
 Create `docker-compose.yml`:
 
 ```yaml
@@ -66,7 +80,7 @@ services:
     restart: unless-stopped
     ports:
       - '443:443'
-      # Expose all ports listed in NB_STUN_PORTS
+      # Required only when NB_ENABLE_STUN=true. Expose every NB_STUN_PORTS value.
       - '3478:3478/udp'
     env_file:
       - relay.env
@@ -112,7 +126,7 @@ Verify it's running:
 docker compose logs -f
 ```
 
-You should see:
+With `NB_ENABLE_STUN=true`, you should see both services start:
 ```
 level=info msg="Starting relay server on :443"
 level=info msg="Starting STUN server on port 3478"
@@ -139,9 +153,46 @@ If deploying multiple relays (e.g., for different regions), repeat the steps abo
 
 ## Update Main Server Configuration
 
-Now update your main NetBird server to use the external relays instead of the embedded one.
+Choose one of the following modes. Do not configure both `additionalRelays` and `relays`; when `relays.addresses` is present, replacement mode takes precedence.
 
-### Edit config.yaml
+### Keep the Embedded Relay and STUN
+
+Use `additionalRelays` to add external relay capacity while keeping the combined server's local relay and STUN service. Keep the existing `authSecret` and `stunPorts` settings:
+
+```yaml
+server:
+  listenAddress: ":80"
+  exposedAddress: "https://netbird.example.com:443"
+  metricsPort: 9090
+  healthcheckAddress: ":9000"
+  logLevel: "info"
+  logFile: "console"
+  dataDir: "/var/lib/netbird"
+
+  # Used by the embedded relay and every additional relay.
+  authSecret: "your-shared-secret-here"
+
+  # Keep the embedded STUN service.
+  stunPorts:
+    - 3478
+
+  # Appended after the automatically generated embedded relay address.
+  additionalRelays:
+    - "rels://relay-us.example.com:443"
+    - "rels://relay-eu.example.com:443"
+
+  auth:
+    issuer: "https://netbird.example.com/oauth2"
+    # ... rest of auth config
+```
+
+Every external relay's `NB_AUTH_SECRET` must be byte-for-byte identical to `server.authSecret`. The combined server advertises its automatically generated local relay address first, followed by the addresses in `additionalRelays`.
+
+Keep TCP port 443 and UDP port 3478 exposed on the main server because its embedded relay and STUN services remain active.
+
+### Replace the Embedded Relay and STUN
+
+Use `relays` when the main server should advertise only external relays. In the combined server, replacement mode disables both the embedded relay and its STUN listener.
 
 On your main server, edit the `config.yaml` file:
 
@@ -150,13 +201,13 @@ cd ~/netbird  # or wherever your deployment is
 nano config.yaml
 ```
 
-Remove the `authSecret` from the `server` section and add `relays` and `stuns` sections pointing to your external servers. The presence of the `relays` section disables both the embedded relay and the embedded STUN server, so the `stuns` section is required to provide external STUN addresses:
+Add `relays` and `stuns` sections pointing to your external servers. The `authSecret` setting is no longer required when the embedded relay is disabled because replacement relay credentials come from `relays.secret`:
 
 ```yaml
 server:
   listenAddress: ":80"
   exposedAddress: "https://netbird.example.com:443"
-  # Remove authSecret to disable the embedded relay
+  # authSecret is not required when the embedded relay is disabled.
   # authSecret: ...
   # Remove or comment out stunPorts since we're using external STUN
   # stunPorts:
@@ -191,7 +242,7 @@ server:
 The `secret` under `relays` and the `NB_AUTH_SECRET` on all relay servers **must be identical**. Mismatched secrets will cause relay connections to fail silently.
 </Warning>
 
-### Update docker-compose.yml (Optional)
+### Update docker-compose.yml for Replacement Mode (Optional)
 
 If your main server was exposing STUN port 3478, you can remove it since STUN is now handled by external relays:
 
@@ -225,7 +276,20 @@ docker compose up -d
 docker compose logs netbird-server
 ```
 
-Verify that the embedded relay is disabled and your external relay addresses are listed:
+With `additionalRelays`, verify that the embedded relay and STUN service remain enabled:
+
+```
+INFO combined/cmd/root.go:   Relay: true (log level: info)
+INFO combined/cmd/root.go:     STUN ports: [3478]
+```
+
+The advertised addresses contain the automatically generated embedded relay first and then the additional relays:
+
+```
+Relay addresses: [rels://netbird.example.com:443 rels://relay-us.example.com:443 rels://relay-eu.example.com:443]
+```
+
+With replacement-mode `relays`, verify that the embedded relay is disabled and only the external relay addresses are listed:
 
 ```
 INFO combined/cmd/root.go:   Management: true (log level: info)
@@ -239,13 +303,13 @@ Relay addresses: [rels://relay-us.example.com:443 rels://relay-eu.example.com:44
 
 ### Check Peer Status
 
-Connect a NetBird client and verify that both STUN and relay services are available:
+Connect a NetBird client and verify that its selected STUN and relay services are available:
 
 ```bash
 netbird status -d
 ```
 
-The output should list your external STUN and relay servers. All configured STUN servers will appear, but only one randomly chosen relay is used per client:
+The `Relays` section shows connections that the client currently maintains; it might not display every relay address at the same time. In replacement mode, an example is:
 
 ```
 Relays:
@@ -254,7 +318,16 @@ Relays:
   [rels://relay-eu.example.com:443] is Available
 ```
 
-You can also test failover by stopping one of the relay servers and checking the status again. The client will detect the unavailable server and use the remaining one:
+To prove that peer traffic is using a relay, first generate traffic to another peer and inspect that peer in the detailed status output:
+
+```
+Connection type: Relayed
+Relay server address: rels://relay-eu.example.com:443
+```
+
+You can test failover by stopping the relay shown in `Relay server address` while traffic is running. The client detects the outage and reconnects through another advertised relay. Stopping a relay that is not carrying the connection does not interrupt traffic.
+
+After failover, the maintained relay list might look like:
 
 ```
 Relays:
