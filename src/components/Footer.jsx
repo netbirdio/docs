@@ -6,6 +6,7 @@ import { Transition } from '@headlessui/react'
 import { Button } from '@/components/Button'
 import {apiNavigation, flattenNavItems} from '@/components/NavigationAPI'
 import {docsNavigation} from "@/components/NavigationDocs";
+import {useCookieConsent} from '@/components/cookie-consent/CookieConsentProvider'
 
 function CheckIcon(props) {
   return (
@@ -227,11 +228,20 @@ function SocialLink({ href, icon: Icon, children }) {
 }
 
 function SmallPrint() {
+  const { openCookieSettings } = useCookieConsent()
+
   return (
     <div className="flex flex-col items-center justify-between gap-5 border-t border-zinc-900/5 pt-8 dark:border-white/5 sm:flex-row">
-      <p className="text-xs text-zinc-600 dark:text-zinc-400">
-        &copy; Copyright {new Date().getFullYear()}. All rights reserved.
-      </p>
+      <div className="flex items-center gap-4 text-xs text-zinc-600 dark:text-zinc-400">
+        <p>&copy; Copyright {new Date().getFullYear()}. All rights reserved.</p>
+        <button
+          type="button"
+          onClick={openCookieSettings}
+          className="underline underline-offset-4 transition hover:text-zinc-900 dark:hover:text-white"
+        >
+          Cookie Settings
+        </button>
+      </div>
       <div className="flex gap-4">
         <SocialLink href="https://x.com/netbird" icon={TwitterIcon}>
           Follow us on X
