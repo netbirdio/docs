@@ -1059,9 +1059,22 @@ export const docsNavigation = [
                         title: 'Report a bug',
                         isOpen: false,
                         links: [
-                            { title: 'Overview', href: '/help/report-bug-issues' },
-                            { title: 'Community Support', href: '/help/community-support' },
-                            { title: 'NetBird Support', href: '/help/netbird-support' },
+                            {
+                                title: 'Overview',
+                                href: '/help/report-bug-issues',
+                                isOpen: false,
+                                links: [
+                                    {
+                                        title: 'Community Support',
+                                        href: '/help/community-support',
+                                    },
+                                    {
+                                        title: 'NetBird Support',
+                                        href: '/help/netbird-support',
+                                    },
+                                ],
+                            },
+                            { title: 'Record a HAR file', href: '/help/recording-a-har-file' },
                         ],
                     },
                 ],
