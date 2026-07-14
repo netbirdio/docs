@@ -746,6 +746,7 @@ export const docsNavigation = [
     links: [
       { title: 'Profiles', href: '/client/profiles' },
       { title: 'Environment Variables', href: '/client/environment-variables' },
+      { title: 'Daemon JSON Socket', href: '/client/json-socket' },
       {
         title: 'Settings',
         isOpen: false,

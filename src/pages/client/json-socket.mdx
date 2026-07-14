@@ -1,0 +1,125 @@
+import {Note, Warning} from "@/components/mdx"
+
+export const description = 'Use the NetBird daemon HTTP/JSON socket from integrations that cannot use gRPC.'
+
+# NetBird daemon JSON socket
+
+The NetBird daemon normally exposes a local gRPC socket used by the NetBird CLI and desktop client. The optional JSON socket exposes the same daemon API through HTTP with JSON request and response bodies.
+
+Use it when you are building a local integration, automation, or UI that needs to control or inspect the NetBird daemon but cannot integrate with gRPC. For example, it can be a good alternative for tools that only support HTTP/JSON requests, shell scripts that use `curl`, or runtimes without practical gRPC support. It is not a replacement for the NetBird management API.
+
+<Warning>
+  The JSON gateway does not add authentication or TLS. Anyone who can connect to the socket can call daemon methods, including methods that connect, disconnect, or change client configuration. Treat access to the socket as privileged.
+</Warning>
+
+## Enable the JSON socket
+
+The JSON socket is disabled by default. Enable it when installing the service:
+
+```shell
+sudo netbird service install --enable-json-socket
+```
+
+To enable it for an existing service, reconfigure the service:
+
+```shell
+sudo netbird service reconfigure --enable-json-socket
+```
+
+By default, NetBird serves the gateway over this Unix socket:
+
+```text
+/var/run/netbird-http.sock
+```
+
+The equivalent socket address is `unix:///var/run/netbird-http.sock`.
+
+<Note>
+  The `--enable-json-socket` setting and its address are persisted in the service configuration. Passing `--json-socket` by itself is not enough; it requires `--enable-json-socket`.
+</Note>
+
+### Use a custom socket address
+
+Set `--json-socket` to either a Unix-socket path or TCP host and port:
+
+```shell
+# Unix socket
+sudo netbird service reconfigure \
+  --enable-json-socket \
+  --json-socket unix:///run/netbird/netbird-http.sock
+
+# TCP socket restricted to the local machine
+sudo netbird service reconfigure \
+  --enable-json-socket \
+  --json-socket tcp://127.0.0.1:8080
+```
+
+For TCP, bind to `127.0.0.1` or another explicitly protected address. Do not bind the gateway to `0.0.0.0` or expose it through a proxy, firewall rule, or port forwarding unless you add appropriate access controls outside NetBird.
+
+## Call the API
+
+The gateway maps daemon RPCs to HTTP `POST` requests using this path format:
+
+```text
+/daemon.DaemonService/<Method>
+```
+
+Send a JSON request body and the `Content-Type: application/json` header. Field names use the protobuf JSON representation, typically lower camel case.
+
+### Get daemon status
+
+The `Status` request has no fields, so send an empty JSON object.
+
+#### Unix socket
+
+```shell
+curl --fail --silent --show-error \
+  --unix-socket /var/run/netbird-http.sock \
+  --request POST \
+  --header 'Content-Type: application/json' \
+  --data '{}' \
+  http://localhost/daemon.DaemonService/Status
+```
+
+A successful response includes fields such as `status`, `fullStatus`, and `daemonVersion`:
+
+```json
+{
+  "status": "Connected",
+  "daemonVersion": "<version>"
+}
+```
+
+#### TCP socket
+
+If the gateway is configured at `tcp://127.0.0.1:8080`, call the same endpoint over loopback:
+
+```shell
+curl --fail --silent --show-error \
+  --request POST \
+  --header 'Content-Type: application/json' \
+  --data '{}' \
+  http://127.0.0.1:8080/daemon.DaemonService/Status
+```
+
+### Call other daemon methods
+
+Replace `Status` with the required daemon method and provide its request fields as JSON. For example, `Up` accepts an `async` field. Setting it to `true` tells the daemon to begin connecting and return immediately:
+
+```shell
+curl --fail --silent --show-error \
+  --unix-socket /var/run/netbird-http.sock \
+  --request POST \
+  --header 'Content-Type: application/json' \
+  --data '{"async":true}' \
+  http://localhost/daemon.DaemonService/Up
+```
+
+The available methods and request fields correspond to the daemon gRPC API. See [`client/proto/daemon.proto`](https://github.com/netbirdio/netbird/blob/main/client/proto/daemon.proto) in the NetBird source for the method and message definitions.
+
+## Security considerations
+
+- Prefer the default Unix socket when the integration runs on the same host. The socket is accessible to local users, so limit access to the host and any process that can use it.
+- When a TCP listener is necessary, bind it to loopback (`127.0.0.1`) by default. The gateway itself does not authenticate callers or encrypt TCP traffic.
+- Do not expose the socket directly to an untrusted network. If remote access is unavoidable, put it behind an authenticated and encrypted local proxy with a narrowly scoped access policy.
+- Give the integrating process only the host and socket access it needs. A caller with socket access can invoke sensitive daemon operations.
