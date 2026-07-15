@@ -1031,6 +1031,10 @@ export const docsNavigation = [
                                 href: '/help/troubleshooting-resource-connectivity',
                             },
                             {
+                                title: 'Reverse Proxy',
+                                href: '/manage/reverse-proxy/troubleshooting',
+                            },
+                            {
                                 title: 'NAT & Connectivity',
                                 href: '/about-netbird/understanding-nat-and-connectivity',
                             },
