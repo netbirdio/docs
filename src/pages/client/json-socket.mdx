@@ -1,0 +1,212 @@
+import { Note, Warning } from '@/components/mdx'
+
+export const description =
+  'Use the NetBird daemon HTTP/JSON socket to build local integrations in environments where gRPC is unavailable.'
+
+# HTTP/JSON Daemon Socket
+
+The NetBird daemon can expose its local API over HTTP with JSON request and response bodies. A [gRPC-Gateway](https://grpc-ecosystem.github.io/grpc-gateway/) receives those HTTP/JSON requests and passes them to the daemon's gRPC API.
+
+The daemon's primary local API is documented in [gRPC Daemon Socket](/client/grpc-socket). Use that socket when your integration supports gRPC and generated Protocol Buffer bindings.
+
+Use the JSON socket when your integration cannot use gRPC. For example, it works well in runtimes that only have an HTTP client, local monitoring agents, and application sandboxes where adding a gRPC client and generated protobuf bindings is not practical.
+
+<Note>
+  The HTTP/JSON socket controls the **local NetBird daemon**. It is separate
+  from the NetBird Management API and does not replace it.
+</Note>
+
+## Enable the JSON Socket
+
+The JSON socket is disabled by default. To enable it while installing the NetBird service, run:
+
+```shell
+sudo netbird service install --enable-json-socket
+```
+
+The default address is:
+
+```text
+unix:///var/run/netbird-http.sock
+```
+
+To enable it on an existing installation, reconfigure the service:
+
+```shell
+sudo netbird service reconfigure --enable-json-socket
+```
+
+NetBird saves this setting with the service configuration, so it stays enabled after a restart.
+
+### Use a Custom Unix Socket
+
+Pass an address with the `unix://` scheme to change the socket path:
+
+```shell
+sudo netbird service reconfigure \
+  --enable-json-socket \
+  --json-socket unix:///run/netbird/integration.sock
+```
+
+The parent directory must already exist and be writable by the NetBird service.
+
+### Use a TCP Socket
+
+Pass an address with the `tcp://` scheme to expose the gateway over TCP:
+
+```shell
+sudo netbird service reconfigure \
+  --enable-json-socket \
+  --json-socket tcp://127.0.0.1:8080
+```
+
+<Warning>
+  The gateway does not add authentication or TLS. Keep TCP listeners bound to a
+  trusted interface such as `127.0.0.1` and do not expose them to an untrusted
+  network. The API includes operations that can read or change the local NetBird
+  daemon's state.
+</Warning>
+
+To disable the gateway again, run:
+
+```shell
+sudo netbird service reconfigure --enable-json-socket=false
+```
+
+## Make Requests
+
+Each daemon RPC is exposed as an HTTP `POST` endpoint using this path format:
+
+```text
+/daemon.DaemonService/<MethodName>
+```
+
+Send the request message as JSON with the `Content-Type: application/json` header. If an RPC has no required request fields, send an empty JSON object (`{}`). Responses use the standard [Protocol Buffers JSON mapping](https://protobuf.dev/programming-guides/json/).
+
+### Query Status Through the Unix Socket
+
+With the default socket path:
+
+```shell
+curl --unix-socket /var/run/netbird-http.sock \
+  --request POST \
+  --header 'Content-Type: application/json' \
+  --data '{}' \
+  http://localhost/daemon.DaemonService/Status
+```
+
+The response is a JSON representation of the daemon's status response. For example, it includes the daemon status and version:
+
+```json
+{
+  "status": "Connected",
+  "daemonVersion": "..."
+}
+```
+
+The exact fields and values depend on the client version and current connection state.
+
+### Query Status Through a TCP Socket
+
+If the gateway is listening on `tcp://127.0.0.1:8080`, use a normal HTTP request:
+
+```shell
+curl --request POST \
+  --header 'Content-Type: application/json' \
+  --data '{}' \
+  http://127.0.0.1:8080/daemon.DaemonService/Status
+```
+
+### Call the API from an Integration
+
+The following Python example calls the status endpoint over a Unix socket using only the standard library:
+
+```python
+import http.client
+import json
+import socket
+
+
+class UnixHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, socket_path):
+        super().__init__("localhost")
+        self.socket_path = socket_path
+
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.connect(self.socket_path)
+
+
+connection = UnixHTTPConnection("/var/run/netbird-http.sock")
+connection.request(
+    "POST",
+    "/daemon.DaemonService/Status",
+    body=json.dumps({}),
+    headers={"Content-Type": "application/json"},
+)
+response = connection.getresponse()
+
+if response.status != 200:
+    raise RuntimeError(f"NetBird returned HTTP {response.status}: {response.read().decode()}")
+
+status = json.load(response)
+print(status["status"])
+connection.close()
+```
+
+For a TCP listener, any standard HTTP client can call the same path and JSON body without Unix-socket support.
+
+## Map gRPC Methods to HTTP
+
+The gateway exposes every method in `daemon.DaemonService`, and every endpoint uses
+`POST`. Add the method name to the service path:
+
+```text
+daemon.DaemonService/Status
+          ↓
+/daemon.DaemonService/Status
+```
+
+For example:
+
+| gRPC method    | HTTP endpoint                        |
+| -------------- | ------------------------------------ |
+| `Status`       | `/daemon.DaemonService/Status`       |
+| `GetConfig`    | `/daemon.DaemonService/GetConfig`    |
+| `ListNetworks` | `/daemon.DaemonService/ListNetworks` |
+| `Up`           | `/daemon.DaemonService/Up`           |
+| `Down`         | `/daemon.DaemonService/Down`         |
+
+The [`DaemonService` protobuf definition](https://github.com/netbirdio/netbird/blob/main/client/proto/daemon.proto)
+is the complete API reference for method names and request and response schemas.
+See [gRPC Daemon Socket](/client/grpc-socket#service-definition) for an overview of
+the service and guidance on using the protobuf definition.
+
+### Server-Streaming Methods
+
+Server-streaming RPCs use the same path. The HTTP request stays open and returns
+JSON messages until the stream ends or the caller closes the connection. Check the
+protobuf definition for streaming methods and their response types.
+
+The gateway exposes control operations as well as read-only methods. Only give
+socket access to processes that you trust to control the local NetBird client.
+
+## Troubleshooting
+
+### The Socket File Does Not Exist
+
+Confirm that the service was installed or reconfigured with `--enable-json-socket`, then check the service status:
+
+```shell
+sudo netbird service status
+```
+
+If you supplied `--json-socket` without `--enable-json-socket`, NetBird rejects the configuration. Setting a custom address does not enable the gateway on its own.
+
+### Curl Reports Permission Denied
+
+Verify that the process running the integration can access the socket and every parent directory in its path. NetBird creates its Unix socket with read and write permissions for all users, but directory permissions can still prevent access.
+
+### A TCP Request Cannot Connect
+
+Confirm that the host and port in the request match the value passed to `--json-socket`. Prefer `127.0.0.1` over `0.0.0.0` unless remote access is explicitly required and protected by an additional security boundary.
