@@ -539,6 +539,7 @@ export const docsNavigation = [
         title: 'SELF-HOST NETBIRD',
         links: [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
+            { title: 'Manual Setup', href: '/selfhosted/manual-setup' },
             { title: 'Automated Setup', href: '/selfhosted/automated-setup' },
             {
                 title: 'Infrastructure as Code',
