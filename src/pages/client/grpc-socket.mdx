@@ -23,6 +23,14 @@ The HTTP/JSON gateway is optional. The gRPC socket is available whenever the Net
 | Linux and macOS | `unix:///var/run/netbird.sock` |
 | Windows         | `tcp://127.0.0.1:41731`        |
 
+<Warning>
+  **Security warning:** On supported Linux installations, the default Unix
+  socket allows read and write access for local users. The API exposes control
+  operations as well as status. If you require local-user isolation, place a
+  custom socket inside a restricted directory and ensure that the directory is
+  recreated securely at boot.
+</Warning>
+
 On Linux installations that use an instance-specific systemd service, the socket can instead be under `/var/run/netbird/<instance>.sock`. The NetBird CLI automatically uses the only socket in that directory when the default socket does not exist. If multiple instance sockets exist, pass the intended address explicitly with `--daemon-addr`.
 
 You can see the address option in the CLI help:
@@ -40,20 +48,31 @@ unix:///path/to/netbird.sock
 tcp://host:port
 ```
 
+<Warning>
+  **Connectivity warning:** Reconfiguring the service restarts NetBird and can
+  briefly interrupt tunnel connectivity, routes, and DNS.
+</Warning>
+
 ### Use a Custom Unix Socket
 
 ```shell
 sudo netbird service reconfigure \
-  --daemon-addr unix:///run/netbird/integration.sock
+  --daemon-addr unix:///var/run/netbird-integration-grpc.sock
 ```
 
-The parent directory must already exist and be writable by the NetBird service.
+The parent directory must already exist and be writable by the NetBird service. If you use a dedicated directory to restrict access, configure systemd or tmpfiles to recreate it securely because directories under `/run` do not persist across reboots.
 
 After changing the socket, pass the same address to NetBird CLI commands that need to contact the daemon:
 
 ```shell
-netbird --daemon-addr unix:///run/netbird/integration.sock status
+netbird --daemon-addr unix:///var/run/netbird-integration-grpc.sock status
 ```
+
+<Note>
+  This `--daemon-addr` command only works after configuring the custom gRPC
+  listener above. If the daemon uses its default listener, run `netbird status`
+  instead. Do not pass an HTTP/JSON socket to `--daemon-addr`.
+</Note>
 
 ### Use a TCP Socket
 
@@ -69,10 +88,10 @@ netbird --daemon-addr tcp://127.0.0.1:41731 status
 ```
 
 <Warning>
-  The daemon gRPC server does not add authentication or TLS. Keep TCP listeners
-  bound to a trusted interface such as `127.0.0.1` and do not expose them to an
-  untrusted network. The API includes operations that can read or change the
-  local NetBird daemon's state.
+  **Security warning:** The daemon gRPC server does not add authentication or
+  TLS. Keep TCP listeners bound to a trusted interface such as `127.0.0.1` and
+  do not expose them to an untrusted network. The API includes operations that
+  can read or change the local NetBird daemon's state.
 </Warning>
 
 ## Service Definition
@@ -104,13 +123,23 @@ The service also includes methods that change configuration, profiles, network s
 
 ## Test the Socket with grpcurl
 
-[`grpcurl`](https://github.com/fullstorydev/grpcurl) is a command-line tool for invoking gRPC methods. Clone the NetBird repository so `grpcurl` can load the daemon's Protocol Buffer definition:
+[`grpcurl`](https://github.com/fullstorydev/grpcurl) is a command-line tool for invoking gRPC methods. First, check the installed NetBird version:
 
 ```shell
-git clone --depth 1 https://github.com/netbirdio/netbird.git
+netbird version
 ```
 
-Run the following examples from the directory that contains the cloned `netbird` directory.
+Clone the matching release tag so `grpcurl` uses the same Protocol Buffer definition as the installed daemon. The tag below is an example; replace `v0.75.0-rc.6` with the release tag reported by your installed client. For a development build without a release tag, check out its matching source commit.
+
+```shell
+NETBIRD_VERSION=v0.75.0-rc.6
+git clone --depth 1 \
+  --branch "$NETBIRD_VERSION" \
+  https://github.com/netbirdio/netbird.git
+cd netbird
+```
+
+Run the following examples from the root of the cloned `netbird` repository.
 
 ### Query Status Through the Unix Socket
 
@@ -118,23 +147,25 @@ Run the following examples from the directory that contains the cloned `netbird`
 grpcurl \
   -plaintext \
   -unix \
-  -import-path ./netbird/client/proto \
+  -import-path ./client/proto \
   -proto daemon.proto \
   -d '{}' \
-  /var/run/netbird.sock \
+  unix:///var/run/netbird.sock \
   daemon.DaemonService/Status
 ```
 
 To request full peer status, set fields from `StatusRequest` in the JSON request body:
 
+**Sensitive output:** Full peer status may contain network topology, endpoint, route, and peer information. Review or redact it before sharing the output.
+
 ```shell
 grpcurl \
   -plaintext \
   -unix \
-  -import-path ./netbird/client/proto \
+  -import-path ./client/proto \
   -proto daemon.proto \
   -d '{"getFullPeerStatus": true}' \
-  /var/run/netbird.sock \
+  unix:///var/run/netbird.sock \
   daemon.DaemonService/Status
 ```
 
@@ -145,14 +176,14 @@ For the default Windows listener or a custom loopback TCP listener:
 ```shell
 grpcurl \
   -plaintext \
-  -import-path ./netbird/client/proto \
+  -import-path ./client/proto \
   -proto daemon.proto \
   -d '{}' \
   127.0.0.1:41731 \
   daemon.DaemonService/Status
 ```
 
-`-plaintext` is required because the local daemon socket does not use TLS. For a Unix socket, pass the filesystem path without the `unix://` prefix to `grpcurl` and include its `-unix` option.
+`-plaintext` is required because the local daemon socket does not use TLS. For a Unix socket, pass the full `unix:///...` URI and include `-unix`. The URI form also avoids a Unix-socket regression in some `grpcurl` 1.9.x builds.
 
 ### Subscribe to Status Changes
 
@@ -162,10 +193,10 @@ Server-streaming methods remain connected and print each response as it arrives.
 grpcurl \
   -plaintext \
   -unix \
-  -import-path ./netbird/client/proto \
+  -import-path ./client/proto \
   -proto daemon.proto \
   -d '{}' \
-  /var/run/netbird.sock \
+  unix:///var/run/netbird.sock \
   daemon.DaemonService/SubscribeStatus
 ```
 

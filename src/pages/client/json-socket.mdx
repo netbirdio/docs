@@ -12,6 +12,10 @@ The daemon's primary local API is documented in [gRPC Daemon Socket](/client/grp
 Use the JSON socket when your integration cannot use gRPC. For example, it works well in runtimes that only have an HTTP client, local monitoring agents, and application sandboxes where adding a gRPC client and generated protobuf bindings is not practical.
 
 <Note>
+  The HTTP/JSON daemon socket requires NetBird client v0.75.0 or later.
+</Note>
+
+<Note>
   The HTTP/JSON socket controls the **local NetBird daemon**. It is separate
   from the NetBird Management API and does not replace it.
 </Note>
@@ -30,7 +34,21 @@ The default address is:
 unix:///var/run/netbird-http.sock
 ```
 
+<Warning>
+  **Security warning:** On supported Linux installations, the default Unix
+  socket allows read and write access for local users. The API exposes control
+  operations as well as status. If you require local-user isolation, place a
+  custom socket inside a restricted directory and ensure that the directory is
+  recreated securely at boot.
+</Warning>
+
 To enable it on an existing installation, reconfigure the service:
+
+<Warning>
+  **Connectivity warning:** Every `netbird service reconfigure` command on this
+  page restarts NetBird and can briefly interrupt tunnel connectivity, routes,
+  and DNS.
+</Warning>
 
 ```shell
 sudo netbird service reconfigure --enable-json-socket
@@ -45,10 +63,22 @@ Pass an address with the `unix://` scheme to change the socket path:
 ```shell
 sudo netbird service reconfigure \
   --enable-json-socket \
-  --json-socket unix:///run/netbird/integration.sock
+  --json-socket unix:///var/run/netbird-integration-http.sock
 ```
 
-The parent directory must already exist and be writable by the NetBird service.
+The parent directory must already exist and be writable by the NetBird service. If you use a dedicated directory to restrict access, configure systemd or tmpfiles to recreate it securely because directories under `/run` do not persist across reboots.
+
+`--json-socket` configures an HTTP endpoint. Query it with an HTTP client such as `curl`; do not pass this address to `netbird --daemon-addr`.
+
+```shell
+curl --silent --show-error \
+  --unix-socket /var/run/netbird-integration-http.sock \
+  --request POST \
+  --header 'Content-Type: application/json' \
+  --data '{}' \
+  --write-out '\n' \
+  http://localhost/daemon.DaemonService/Status
+```
 
 ### Use a TCP Socket
 
@@ -61,10 +91,10 @@ sudo netbird service reconfigure \
 ```
 
 <Warning>
-  The gateway does not add authentication or TLS. Keep TCP listeners bound to a
-  trusted interface such as `127.0.0.1` and do not expose them to an untrusted
-  network. The API includes operations that can read or change the local NetBird
-  daemon's state.
+  **Security warning:** The gateway does not add authentication or TLS. Keep TCP
+  listeners bound to a trusted interface such as `127.0.0.1` and do not expose
+  them to an untrusted network. The API includes operations that can read or
+  change the local NetBird daemon's state.
 </Warning>
 
 To disable the gateway again, run:
@@ -88,10 +118,12 @@ Send the request message as JSON with the `Content-Type: application/json` heade
 With the default socket path:
 
 ```shell
-curl --unix-socket /var/run/netbird-http.sock \
+curl --silent --show-error \
+  --unix-socket /var/run/netbird-http.sock \
   --request POST \
   --header 'Content-Type: application/json' \
   --data '{}' \
+  --write-out '\n' \
   http://localhost/daemon.DaemonService/Status
 ```
 
@@ -111,9 +143,11 @@ The exact fields and values depend on the client version and current connection 
 If the gateway is listening on `tcp://127.0.0.1:8080`, use a normal HTTP request:
 
 ```shell
-curl --request POST \
+curl --silent --show-error \
+  --request POST \
   --header 'Content-Type: application/json' \
   --data '{}' \
+  --write-out '\n' \
   http://127.0.0.1:8080/daemon.DaemonService/Status
 ```
 
@@ -122,18 +156,18 @@ curl --request POST \
 The following Python example calls the status endpoint over a Unix socket using only the standard library:
 
 ```python
-import http.client
-import json
-import socket
+from http import client
+from json import dumps, load
+from socket import AF_UNIX, SOCK_STREAM, socket
 
 
-class UnixHTTPConnection(http.client.HTTPConnection):
+class UnixHTTPConnection(client.HTTPConnection):
     def __init__(self, socket_path):
         super().__init__("localhost")
         self.socket_path = socket_path
 
     def connect(self):
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock = socket(AF_UNIX, SOCK_STREAM)
         self.sock.connect(self.socket_path)
 
 
@@ -141,7 +175,7 @@ connection = UnixHTTPConnection("/var/run/netbird-http.sock")
 connection.request(
     "POST",
     "/daemon.DaemonService/Status",
-    body=json.dumps({}),
+    body=dumps({}),
     headers={"Content-Type": "application/json"},
 )
 response = connection.getresponse()
@@ -149,7 +183,7 @@ response = connection.getresponse()
 if response.status != 200:
     raise RuntimeError(f"NetBird returned HTTP {response.status}: {response.read().decode()}")
 
-status = json.load(response)
+status = load(response)
 print(status["status"])
 connection.close()
 ```
@@ -205,7 +239,7 @@ If you supplied `--json-socket` without `--enable-json-socket`, NetBird rejects 
 
 ### Curl Reports Permission Denied
 
-Verify that the process running the integration can access the socket and every parent directory in its path. NetBird creates its Unix socket with read and write permissions for all users, but directory permissions can still prevent access.
+Verify that the process running the integration can access the socket and every parent directory in its path. A custom restricted directory can prevent access even when the socket itself allows it.
 
 ### A TCP Request Cannot Connect
 
