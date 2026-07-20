@@ -1,7 +1,7 @@
 import {Note} from "@/components/mdx"
 
 export const description =
-  "Windows-specific NetBird client troubleshooting: debug log level, foreground mode via PSExec, host-based firewall, and Windows DNS scenarios."
+  "Windows-specific NetBird client troubleshooting: debug log level, foreground mode via PSExec, SSO login port (TCP 53000) conflicts, host-based firewall, and Windows DNS scenarios."
 
 # NetBird client on Windows
 
@@ -30,6 +30,65 @@ To pass environment variables, set them as machine-level variables so the client
 ```powershell
 [Environment]::SetEnvironmentVariable("PIONS_LOG_DEBUG", "all", "Machine")
 ```
+
+## SSO login fails to bind TCP 53000
+
+NetBird's interactive SSO login (`netbird up`, including with `--no-browser`) needs a local loopback listener to catch the OAuth redirect. The callback port comes from a short list of redirect URLs registered with your identity provider, by default `http://localhost:53000/`, and often `http://localhost:54000/` as well.
+
+So the port is not a single hardcoded value, and self-hosted deployments can set the list with `NETBIRD_AUTH_PKCE_REDIRECT_URL_PORTS`. What you cannot do is point the client at an arbitrary port, because each one has to be a redirect URI the identity provider already knows. So the fix is to free the port the client needs, usually 53000, not to reconfigure the client.
+
+When the client cannot bind that port, login fails like this:
+
+```
+daemon up failed: sso login failed: ... listen tcp :53000: bind: <error>
+```
+
+The Winsock error at the end tells you which of the two cases below you are hitting.
+
+### Bind forbidden (WSAEACCES / 10013)
+
+The bind fails with *"An attempt was made to access a socket in a way forbidden by its access permissions"*, even from an elevated prompt, and nothing is actually listening on 53000 (`netstat` shows it free). The port sits inside a Windows reserved dynamic-port exclusion range held by Hyper-V's `winnat` service (also pulled in by WSL2 and Docker Desktop). This often starts after a Windows Update, or after installing or enabling Hyper-V, WSL2, or Docker, which is why a client that worked for months can suddenly begin failing.
+
+Check whether 53000 falls inside an excluded range:
+
+```powershell
+netsh int ipv4 show excludedportrange protocol=tcp
+```
+
+If it does, reserve 53000 so the dynamic pool stops claiming it, leaving it free for NetBird to bind. In an elevated `cmd.exe`:
+
+```shell
+net stop winnat
+netsh int ipv4 add excludedportrange protocol=tcp startport=53000 numberofports=1 store=persistent
+net start winnat
+```
+
+Reboot, then retry `netbird up`.
+
+### Address already in use (WSAEADDRINUSE / 10048)
+
+The bind fails with *"Only one usage of each socket address is normally permitted"*. Here a process really is holding 53000, often a stale or hung `netbird` process, or a previous SSO attempt that did not finish.
+
+Find the process holding the port, then identify it by its PID:
+
+```shell
+netstat -ano | findstr :53000
+tasklist /fi "pid eq <PID>"
+```
+
+Close the conflicting process. If it is a stale `netbird`, restart the service and retry login:
+
+```powershell
+Restart-Service netbird
+```
+
+### When neither case fits
+
+Sometimes a port is refused even though `netstat` shows it free and it is not in any excluded range. This can happen when endpoint security software such as antivirus or endpoint detection and response (EDR), a VPN or packet-filtering driver, or another network shim reserves or intercepts the loopback bind without surfacing it to `netstat` or `netsh`. If 53000 looks free by every check above but the bind is still refused, suspect third-party security or networking software: review what is installed and, where policy allows, retest with it briefly paused.
+
+<Note>
+If login still fails after these checks, capture a [debug bundle](/help/troubleshooting-client#debug-bundle) and reach out through [Report a bug](/help/report-bug-issues).
+</Note>
 
 ## Host-based firewall
 
