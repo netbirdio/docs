@@ -1,0 +1,84 @@
+import { Note } from '@/components/mdx'
+
+export const description = 'What the NetBird Enterprise Commercial License adds to a self-hosted deployment, and answers to common questions about high availability, upgrades, scale, multi-tenancy, and evaluation.'
+
+# NetBird Enterprise Commercial License
+
+If you are weighing whether to replace your VPN with a self-hosted NetBird control plane, the first question is usually what the commercial license buys you over the free open source version, and whether a self-hosted deployment can meet real production requirements: surviving upgrades without downtime, scaling as you add peers, and serving more than one set of users.
+
+This page explains the **NetBird Enterprise Commercial License** and answers the questions we hear most often from teams evaluating self-hosted NetBird for production. It runs entirely on your own infrastructure.
+
+Throughout this page, **control plane** means the server-side services you self-host: **Management**, **Signal**, and **Relay**. It does not mean your traffic. NetBird traffic is peer-to-peer (or relayed) between clients, so the control plane can restart without dropping established connections.
+
+<Note>
+**"Business plan" is a NetBird Cloud term, not a self-hosted one.** Team and Business are subscription tiers of [NetBird Cloud](https://netbird.io/pricing) (the SaaS we host for you). When you self-host on your own infrastructure, the paid features come from the **Enterprise Commercial License** instead, available on the [on-prem pricing page](https://netbird.io/pricing#on-prem). High availability, SCIM, and traffic-flow logging on a self-hosted deployment are unlocked by the commercial license, not by a "Business plan."
+</Note>
+
+## How the license works on your own cloud
+
+The commercial license is designed for running NetBird on infrastructure you control: your own cloud account, data center, or private environment. Nothing phones home for your network traffic.
+
+With the license, NetBird issues you three things: an install script, a GitHub Container Registry (GHCR) token to pull the enterprise container images (the `-cloud` image variants), and a license key. You set the key as `NB_LICENSE_KEY` in the deployment's `.env` file; on startup the server validates it and unlocks the licensed features.
+
+To obtain a license, contact the NetBird team through the [on-prem pricing page](https://netbird.io/pricing#on-prem).
+
+## What the license unlocks
+
+The core connectivity, access control, and routing features are the same in the open source Community Edition and the commercial build. The commercial license adds the capabilities most teams need in production:
+
+| Capability | Community Edition (open source) | Enterprise Commercial License |
+| --- | --- | --- |
+| Core networking, access control, and routing | Yes | Yes |
+| Active-active high availability (Management + Signal) | No | Yes |
+| SCIM user and group provisioning | No | Yes |
+| EDR and MDM integrations (CrowdStrike, SentinelOne, Intune, and others) | No | Yes |
+| Traffic-flow event logging and streaming | No | Yes |
+| Support | Community (Slack, GitHub) | Standard support included |
+
+## Frequently asked questions
+
+### Can we move from the open source Community Edition without starting over?
+
+Yes. A script migrates your existing open source deployment to the commercial license in place, keeping your account, peers, and configuration intact, so you don't rebuild your network. NetBird provides it during your proof of concept and when you roll out to production.
+
+### Can we upgrade the control plane with zero downtime?
+
+Yes, with the commercial license. It helps to be precise about what "downtime" means here, because control-plane downtime is not the same as network downtime.
+
+**Single-server deployment (no HA).** Upgrading takes Management offline for the duration of the restart. During that window, existing peer connections keep working, because traffic flows directly between peers (or through Relay) and does not pass through Management. What you cannot do until it comes back is change configuration, apply new policies, or onboard new peers. For many teams a short maintenance window is acceptable.
+
+**High-availability deployment (commercial license).** Management, Signal, and Relay each run as a load-balanced pool of two or more instances, backed by shared PostgreSQL, Redis, and NATS. You upgrade by draining one instance, upgrading it, returning it to the load balancer, and repeating. This is a rolling upgrade with **no control-plane downtime** at any point. Schema migrations run once, automatically, on the first upgraded Management instance.
+
+### Does the control plane slow down as we add peers, policies, and users?
+
+Bulk changes (adding many peers, policies, or users at once) are handled by Management and do **not** affect the throughput of your network traffic, which stays peer-to-peer. There is no known control-plane bottleneck at the scales teams typically run.
+
+When you do need more headroom, there are two paths:
+
+- **Scale vertically.** Run the control plane on a larger host. This is the simplest option and is available without high availability.
+- **Scale horizontally.** With the commercial license, run Management as a load-balanced pool backed by **PostgreSQL** (not the default SQLite store), which also gives you high availability. This is the right choice for large fleets.
+
+For sizing a large deployment, contact the NetBird team.
+
+### Can we put multiple customers under one deployment, with tenant separation?
+
+No. This is the point where self-hosting has a hard boundary worth stating plainly. A self-hosted NetBird deployment, open source or commercial, is a **single account**. The commercial license does not add multi-tenancy. Within that one account you can segment users and resources with groups, policies, and networks, but that is segmentation, not isolated tenants. Everyone shares the same account.
+
+To serve multiple isolated customers you have two options:
+
+- **NetBird Cloud MSP Portal.** Purpose-built for managing many customer tenants from one place, with per-tenant configuration and billing. This is a [Cloud feature](/manage/for-partners/msp-portal) and is not available in a self-hosted deployment.
+- **A separate self-hosted control plane per customer.** You run one independent stack per customer. Commercial licenses are issued per legal entity, so each customer's stack needs its own license. Talk to the NetBird team about licensing for multiple deployments.
+
+### How does evaluation work, and for how long?
+
+You can start evaluating today for free: the **open source Community Edition is free to self-host for as long as you like**, with no license and no time limit. That is the right way to try core NetBird (the control plane, peers, policies, and routing) while you decide whether it fits.
+
+To evaluate the commercial-only features (active-active HA, SCIM, traffic-flow logging), contact the sales team through the [on-prem pricing page](https://netbird.io/pricing#on-prem) to run a managed proof of concept with the commercial license.
+
+## Summary
+
+- The **Enterprise Commercial License** is the paid tier for self-hosting on your own infrastructure (the equivalent of Cloud's Business plan, but for the stack you run).
+- It unlocks **active-active high availability** for Management and Signal, so you can do **zero-downtime rolling upgrades** of the control plane; a single-server deployment survives an upgrade too, just without accepting changes during the restart.
+- The control plane has **no known scaling bottleneck**; grow it **vertically**, or **horizontally with PostgreSQL** under the commercial license.
+- A self-hosted deployment is **single-tenant**; serve multiple isolated customers with the **Cloud MSP Portal** or a **separate licensed stack per customer**.
+- Evaluate **core NetBird free** with the open source edition; for the commercial features, ask the team for a **managed proof of concept**.
