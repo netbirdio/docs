@@ -531,6 +531,10 @@ export const docsNavigation = [
                         href: '/agent-network/integrations/vertex-ai',
                     },
                     { title: 'AWS Bedrock', href: '/agent-network/integrations/bedrock' },
+                    {
+                        title: 'Kimi (Moonshot AI)',
+                        href: '/agent-network/integrations/kimi',
+                    },
                 ],
             },
         ],
