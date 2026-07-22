@@ -1,7 +1,7 @@
 import { Note } from '@/components/mdx'
 
 export const description =
-  'Connect Kimi (Moonshot AI) to NetBird Agent Network for keyless, identity-based access to the Kimi K3 coding model from Claude Code, Codex, and Kimi CLI.'
+  'Connect Kimi (Moonshot AI) to NetBird Agent Network for keyless, identity-based access to the Kimi K3 coding model from Claude Code and Kimi CLI.'
 
 # Kimi (Moonshot AI)
 
@@ -25,11 +25,10 @@ through the endpoint, so pick it based on the tools you plan to connect (see bel
 2. Select **Kimi**. NetBird pre-fills the upstream URL `https://api.moonshot.ai` and the
    bearer auth header.
 3. Set the **Upstream URL** for the API shape your agents use:
-   - Keep `https://api.moonshot.ai` for **OpenAI-shaped** agents — Codex with
-     `wire_api = "chat"`, the OpenAI SDK, or anything else that calls
-     `/v1/chat/completions`.
    - Change it to `https://api.moonshot.ai/anthropic` for **Anthropic-shaped** agents —
-     Claude Code, or Kimi CLI's `anthropic` provider type.
+     Claude Code, or Kimi CLI's `anthropic` provider type. This is the common case.
+   - Keep `https://api.moonshot.ai` for **OpenAI-shaped** callers — the OpenAI SDK, or
+     anything else that calls `/v1/chat/completions`.
 4. Paste your Moonshot **API key**. The same key works for both API shapes; it is stored
    encrypted server-side and never sent to callers.
 5. Save the provider.
@@ -77,7 +76,7 @@ See [Policies](/agent-network/policies) for details.
 ## Configure Your Agent
 
 Next to your agent network endpoint in the NetBird dashboard, click **Agent Config**. With a
-Kimi provider connected, the modal shows tabs for Claude Code, Codex, and Kimi CLI — pick
+Kimi provider connected, the modal shows Kimi configurations for Claude Code and Kimi CLI — pick
 your tool and copy the pre-filled configuration. The sections below walk through each one.
 
 ## Use with Claude Code
@@ -94,40 +93,32 @@ Claude Code doesn't prompt for a key — NetBird supplies the real one.
   "env": {
     "ANTHROPIC_BASE_URL": "https://<your-endpoint>",
     "ANTHROPIC_MODEL": "kimi-k3",
-    "ANTHROPIC_SMALL_FAST_MODEL": "kimi-k3"
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "kimi-k3",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "kimi-k3",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "kimi-k3",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "kimi-k3",
+    "ENABLE_TOOL_SEARCH": "false"
   }
 }
 ```
 
-`ANTHROPIC_MODEL` and `ANTHROPIC_SMALL_FAST_MODEL` point both of Claude Code's model slots
-at Kimi K3, so no Anthropic model names leak into requests.
+The model variables pin every slot Claude Code fills on its own — the Opus/Sonnet/Haiku
+tiers and subagents — to Kimi K3, so no Anthropic model names leak into requests the
+Moonshot upstream can't serve. `ENABLE_TOOL_SEARCH` must be off because Moonshot's
+endpoint rejects the `tool_reference` blocks Claude Code's tool search emits. Both come
+from [Moonshot's Claude Code guide](https://platform.kimi.ai/docs/guide/claude-code-kimi),
+which also recommends `CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144"` to make better use of
+Kimi K3's 1M-token context — optional, but worth adding for long sessions.
+
+<Note>
+  If your shell exports a leftover `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` from a
+  previous setup, remove it — a stale credential overrides the `apiKeyHelper` and produces
+  confusing auth errors. NetBird injects the real Moonshot key server-side, so the client
+  needs no key at all.
+</Note>
 
 <p>
     <img src="/docs-static/img/agent-network/integrations/agent-network-configure-agent-kimi-claude-code.png" alt="NetBird Configure Your Agent modal showing the Claude Code settings.json configuration for Kimi" className="imagewrapper" />
-</p>
-
-## Use with Codex
-
-Codex speaks the OpenAI shape, so it needs the Kimi provider whose upstream URL is
-`https://api.moonshot.ai`. Add a model provider to `~/.codex/config.toml` and select it as
-the default:
-
-```toml
-model_provider = "netbird"
-model = "kimi-k3"
-
-[model_providers.netbird]
-name = "NetBird"
-base_url = "https://<your-endpoint>/v1"
-wire_api = "chat"
-```
-
-`wire_api = "chat"` makes Codex use the Chat Completions API — Moonshot serves that rather
-than the OpenAI Responses API. The `/v1` suffix is the OpenAI-compatible base path on your
-endpoint.
-
-<p>
-    <img src="/docs-static/img/agent-network/integrations/agent-network-configure-agent-kimi-codex.png" alt="NetBird Configure Your Agent modal showing the Codex config.toml configuration for Kimi with wire_api chat" className="imagewrapper" />
 </p>
 
 ## Use with Kimi CLI
