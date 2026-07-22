@@ -67,12 +67,32 @@ jobs:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
+      # Concurrency prevents simultaneous pushes, but GitHub does not guarantee
+      # run ordering. If an older run starts after a newer one, build it for
+      # validation but do not let it move the published tag backwards.
+      - name: Check whether this ref is still current
+        id: freshness
+        if: github.event_name != 'pull_request'
+        run: |
+          remote_sha="$(git ls-remote origin "${GITHUB_REF}" | awk 'NR == 1 { print $1 }')"
+          if [ -z "$remote_sha" ]; then
+            echo "Could not resolve ${GITHUB_REF} on origin" >&2
+            exit 1
+          fi
+
+          if [ "$GITHUB_SHA" = "$remote_sha" ]; then
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping image push: ${GITHUB_SHA} is stale; ${GITHUB_REF} is now ${remote_sha}"
+          fi
+
       - name: Docker build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ steps.freshness.outputs.push == 'true' }}
           # Keep a single-arch manifest (no attestation index) so the server's
           # `docker compose pull` stays happy.
           provenance: false

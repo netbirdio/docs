@@ -8,6 +8,10 @@ on:
         default: "refs/tags/vX.Y.Z"
         type: string
 
+permissions:
+  actions: read
+  contents: read
+
 # One run at a time: overlapping dispatches (several release tags in a day
 # happen — see run history) regenerate the same files and would collide. A
 # queued run superseded by a newer dispatch is fine: every run regenerates the
@@ -86,8 +90,36 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Commit and push changes
+      # Concurrency serialises runs but does not guarantee dispatch order. A
+      # delayed older run must not overwrite output from a newer dispatch.
+      - name: Check whether this is the latest dispatch
+        id: freshness
         if: steps.git_diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          latest_run_id="$(
+            curl --fail --silent --show-error \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              --get \
+              --data-urlencode "event=workflow_dispatch" \
+              --data-urlencode "branch=${GITHUB_REF_NAME}" \
+              --data-urlencode "per_page=1" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/generate_api_pages.yml/runs" \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["workflow_runs"][0]["id"])'
+          )"
+
+          if [ "$GITHUB_RUN_ID" = "$latest_run_id" ]; then
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping generated-page commit: run ${GITHUB_RUN_ID} was superseded by ${latest_run_id}"
+          fi
+
+      - name: Commit and push changes
+        if: steps.git_diff.outputs.changed == 'true' && steps.freshness.outputs.push == 'true'
         run: |
           git config --global user.email "dev@netbird.io"
           git config --global user.name "netbirddev"
