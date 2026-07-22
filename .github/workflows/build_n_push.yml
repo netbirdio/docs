@@ -8,10 +8,22 @@ on:
   pull_request:
     paths:
       - 'docker/**'
+      - '.dockerignore'
       - '.github/workflows/build_n_push.yml'
       - 'next.config.mjs'
+      - 'package.json'
       - 'package-lock.json'
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Serialise non-PR runs while allowing superseded PR validation to be canceled.
+# Builds publish only an immutable SHA tag; the mutable ref tag is promoted
+# separately after the build and a final ref check.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   docs_build_n_push:
@@ -55,7 +67,10 @@ jobs:
           username: ${{ secrets.DOCKER_USER }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
-      - name: Docker build and push
+      # Non-PR runs publish an immutable image first. A canceled or stale run
+      # can leave this tag behind, but it cannot change :main (or another
+      # mutable ref tag).
+      - name: Docker build and publish immutable image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -64,5 +79,39 @@ jobs:
           # Keep a single-arch manifest (no attestation index) so the server's
           # `docker compose pull` stays happy.
           provenance: false
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: netbirdio/docs.netbird.io:${{ github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      # Promotion is a single remote manifest-tag update after the expensive
+      # build. Combined with serialisation and the final ref comparison, an
+      # older run cannot replace the mutable tag after a newer run publishes.
+      - name: Promote current image to ref tag
+        if: github.event_name != 'pull_request'
+        env:
+          SOURCE_IMAGE: netbirdio/docs.netbird.io:${{ github.sha }}
+          TARGET_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          remote_sha="$(git ls-remote origin "${GITHUB_REF}" | awk 'NR == 1 { print $1 }')"
+          if [ -z "$remote_sha" ]; then
+            echo "Could not resolve ${GITHUB_REF} on origin" >&2
+            exit 1
+          fi
+
+          if [ "$GITHUB_SHA" != "$remote_sha" ]; then
+            echo "Skipping tag promotion: ${GITHUB_SHA} is stale; ${GITHUB_REF} is now ${remote_sha}"
+            exit 0
+          fi
+
+          if [ -z "$TARGET_TAGS" ]; then
+            echo "Docker metadata produced no target tags" >&2
+            exit 1
+          fi
+
+          while IFS= read -r target_tag; do
+            if [ -n "$target_tag" ]; then
+              docker buildx imagetools create \
+                --prefer-index=false \
+                --tag "$target_tag" \
+                "$SOURCE_IMAGE"
+            fi
+          done <<< "$TARGET_TAGS"
