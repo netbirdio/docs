@@ -483,28 +483,60 @@ Running the NetBird client directly **on** a Domain Controller is a separate cas
 
 **Symptoms**:
 - Match-domain names don't resolve on a Windows client, even though `netbird status -d` shows the nameserver as Available and the client log records the NRPT (Name Resolution Policy Table) rule as written.
-- The machine is off-domain (not currently on the company network), often a remote or personal device that was once domain-joined.
+- Resolving the same host by IP still works; only name resolution for the match domain fails.
+- Common on machines that are domain-joined, or were once domain-joined (a remote or personal device that has since gone off-domain).
 
 **Diagnosis**:
 
-NetBird writes its NRPT rule correctly, but a stale Windows Group Policy Object (GPO) `DnsPolicyConfig` container forces the rule into the *policy* store. On an off-domain machine Windows does not apply policy-store NRPT rules, so the rule exists but is never effective. The write succeeds while Windows quietly drops it from resolution.
+To steer match-domain queries to its resolver, the NetBird client writes a *local* NRPT rule on Windows. Windows gives **Group Policy** NRPT rules precedence over local ones: they live in the `DnsPolicyConfig` policy store, and while that store is present it overrides the rule NetBird wrote. Two variants cause this:
 
-From a [debug bundle](/help/troubleshooting-client#debug-bundle), `client.log` and the matching entry in `state.json` show whether the NetBird client detected a GPO in place.
+- **A GPO defines NRPT rules.** The policy-store rules win over NetBird's local rule, so match-domain queries never reach NetBird's resolver.
+- **A lingering empty NRPT list.** NRPT rules created and then deleted under older Windows versions leave an empty list behind in the GPO's `registry.pol`. Applied to a device, that empty policy store still takes precedence and leaves no working rule.
 
-Then compare the rule NetBird wrote against what Windows is actually applying (PowerShell):
+1. Confirm NetBird's rule is written but not effective (PowerShell):
 
 ```powershell
 Get-DnsClientNrptRule                # the rule NetBird wrote
 Get-DnsClientNrptPolicy -Effective   # what Windows is actually applying
 ```
 
-If the rule appears in `Get-DnsClientNrptRule` but not in the `-Effective` output, a lingering GPO container is blocking it.
+If the rule shows in `Get-DnsClientNrptRule` but not in the `-Effective` output, a Group Policy container is overriding it. A [debug bundle](/help/troubleshooting-client#debug-bundle)'s `client.log` and `state.json` also record whether the client detected a GPO.
+
+2. Confirm a GPO is responsible by checking for the policy-store container on the device:
+
+```
+HKLM\Software\Policies\Microsoft\Windows NT\DNSClient\DnsPolicyConfig
+```
+
+If that key exists, Group Policy NRPT rules are being applied.
+
+3. Find which GPO. On the device, generate a policy report and look for an NRPT section:
+
+```powershell
+gpresult /h GPReport.html
+```
+
+To locate the source across the domain, scan the `SYSVOL` share for `registry.pol` files that carry NRPT (`DnsPolicyConfig`) entries:
+
+```powershell
+# Set this to your domain's SYSVOL Policies path, for example:
+# \\dc1.corp.example.com\sysvol\corp.example.com\Policies
+$sysvolPath = "\\<DC FQDN>\sysvol\<domain FQDN>\Policies"
+
+$matches = Get-ChildItem -Path $sysvolPath -Recurse -Filter "registry.pol" -File |
+  Where-Object { (Get-Content -Path $_.FullName -Encoding Unicode) -like "*dnspolicyconfig*" }
+
+if ($matches) { "GPOs with NRPT rules:"; $matches.FullName }
+else          { "No GPOs with NRPT rules found." }
+```
 
 **Solutions**:
 
-This is a Windows Group Policy state issue, not a NetBird misconfiguration, and the fix has to happen locally:
-- Have local IT clear the stale `DnsPolicyConfig` GPO container from the machine's registry, or
-- Connect the machine to the company network and run `gpupdate /force` so Windows reconciles and removes the lingering container.
+This is a Windows Group Policy state issue, not a NetBird misconfiguration, so the fix is on the Windows side. Pick by situation:
+
+- **Device-local (off-domain machines):** have local IT clear the stale `DnsPolicyConfig` container from the device's registry, or reconnect the machine to the company network and run `gpupdate /force` so Windows reconciles and drops the lingering container.
+- **At the source, empty lingering list:** edit the offending GPO's NRPT section. If it's empty, add a throwaway rule, update the policy, delete that rule, and update again. This removes the leftover `DnsPolicyConfig` from `registry.pol` that an older Windows version created.
+- **At the source, real rules:** if the section actually contains rules, confirm they're still needed and delete them if not. If they are needed, note that applying that GPO to a device running the NetBird client will override NetBird's rule and break match-domain resolution. The two have to be planned around each other.
 
 NetBird cannot remove a Group Policy container from the client side.
 

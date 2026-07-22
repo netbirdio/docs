@@ -544,6 +544,7 @@ export const docsNavigation = [
         links: [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
             { title: 'Automated Setup', href: '/selfhosted/automated-setup' },
+            { title: 'Commercial License', href: '/selfhosted/enterprise' },
             {
                 title: 'Infrastructure as Code',
                 isOpen: false,
@@ -570,6 +571,10 @@ export const docsNavigation = [
                     {
                         title: 'Environment Variables',
                         href: '/selfhosted/environment-variables',
+                    },
+                    {
+                        title: 'Admin CLI',
+                        href: '/selfhosted/maintenance/admin-cli',
                     },
                     {
                         title: 'Scaling Your Deployment',
@@ -808,6 +813,8 @@ export const docsNavigation = [
         links: [
             { title: 'Desktop App', href: '/client/desktop-app' },
             { title: 'Profiles', href: '/client/profiles' },
+            { title: 'gRPC Daemon Socket', href: '/client/grpc-socket' },
+            { title: 'HTTP/JSON Daemon Socket', href: '/client/json-socket' },
             { title: 'Environment Variables', href: '/client/environment-variables' },
             { title: 'MDM Integration', href: '/client/mdm-integration' },
             {
