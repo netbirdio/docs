@@ -45,7 +45,11 @@ Enabling CrowdSec creates a local `crowdsec` service, registers a `netbird-proxy
 If you already have a self-hosted NetBird deployment without NetBird Proxy, follow [Enable Reverse Proxy Feature](/selfhosted/migration/enable-reverse-proxy) first.
 
 <Warning>
-  This CrowdSec dashboard protection setup requires the [combined container setup](/selfhosted/migration/combined-container). If your deployment uses the separate-container architecture (`management`, `signal`, `relay`, and `coturn`), migrate to the combined container setup before enabling NetBird Proxy.
+  This CrowdSec dashboard protection setup requires the [combined container
+  setup](/selfhosted/migration/combined-container). If your deployment uses the
+  separate-container architecture (`management`, `signal`, `relay`, and
+  `coturn`), migrate to the combined container setup before enabling NetBird
+  Proxy.
 </Warning>
 
 ## Add a dashboard bouncer key
@@ -55,8 +59,12 @@ Create a dedicated bouncer key for the Traefik plugin and store it in the Compos
 ```bash
 cd "$NETBIRD_INSTALL_DIR"
 umask 077
-printf 'CROWDSEC_DASHBOARD_BOUNCER_KEY=%s\n' "$(openssl rand -hex 32)" >> .env
+if ! grep -q '^CROWDSEC_DASHBOARD_BOUNCER_KEY=' .env 2>/dev/null; then
+  printf 'CROWDSEC_DASHBOARD_BOUNCER_KEY=%s\n' "$(openssl rand -hex 32)" >> .env
+fi
 ```
+
+Rerunning this command preserves the existing key.
 
 ## Add CrowdSec AppSec acquisition
 
@@ -84,8 +92,8 @@ Under `services.traefik.command`, add the Traefik CrowdSec bouncer plugin static
 services:
   traefik:
     command:
-      - "--experimental.plugins.bouncer.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin"
-      - "--experimental.plugins.bouncer.version=v1.6.0"
+      - '--experimental.plugins.bouncer.modulename=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin'
+      - '--experimental.plugins.bouncer.version=v1.6.0'
 ```
 
 If your generated Compose project network is named `netbird_netbird`, make sure Traefik uses that Docker network:
@@ -94,7 +102,7 @@ If your generated Compose project network is named `netbird_netbird`, make sure 
 services:
   traefik:
     command:
-      - "--providers.docker.network=netbird_netbird"
+      - '--providers.docker.network=netbird_netbird'
 ```
 
 Under `services.traefik.depends_on`, make Traefik wait until CrowdSec is healthy:
@@ -151,7 +159,8 @@ services:
 Replace `netbird.example.com` with your NetBird domain. Traefik labels do not read the `NETBIRD_DOMAIN` shell variable used in the command examples.
 
 <Warning>
-  Leave the NetBird Proxy TCP passthrough labels unchanged. Do not attach this middleware to the `proxy-passthrough` TCP router.
+  Leave the NetBird Proxy TCP passthrough labels unchanged. Do not attach this
+  middleware to the `proxy-passthrough` TCP router.
 </Warning>
 
 Merge these fields into `services.crowdsec`. This adds the AppSec collections, registers the dashboard bouncer key, and updates the health check so CrowdSec reports healthy only after both LAPI and AppSec are available. Keep the generated fields that already exist in your Compose file, such as `image`, `container_name`, `restart`, `networks`, `labels`, `logging`, and `volumes`.
@@ -160,7 +169,7 @@ The installer-created health check only verifies the CrowdSec Local API:
 
 ```yaml
 healthcheck:
-  test: ["CMD", "cscli", "lapi", "status"]
+  test: ['CMD', 'cscli', 'lapi', 'status']
   interval: 10s
   timeout: 5s
   retries: 15
@@ -168,13 +177,13 @@ healthcheck:
 
 Dashboard protection also needs the AppSec listener on port `7422`, so replace the installer-created health check with the one below.
 
-| Field | Purpose |
-|---|---|
-| `crowdsecurity/linux` | Keeps the base Linux collection created by the installer. |
-| `crowdsecurity/appsec-virtual-patching` | Adds virtual patching rules for common web application attack patterns. |
-| `crowdsecurity/appsec-generic-rules` | Adds generic AppSec detection rules used by the AppSec engine. |
-| `BOUNCER_KEY_netbird_dashboard` | Registers a separate Traefik dashboard bouncer key without reusing the NetBird Proxy bouncer key. |
-| `healthcheck.test` | Replaces the installer LAPI-only check with a check for both LAPI and the AppSec listener on `7422`. |
+| Field                                   | Purpose                                                                                              |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `crowdsecurity/linux`                   | Keeps the base Linux collection created by the installer.                                            |
+| `crowdsecurity/appsec-virtual-patching` | Adds virtual patching rules for common web application attack patterns.                              |
+| `crowdsecurity/appsec-generic-rules`    | Adds generic AppSec detection rules used by the AppSec engine.                                       |
+| `BOUNCER_KEY_netbird_dashboard`         | Registers a separate Traefik dashboard bouncer key without reusing the NetBird Proxy bouncer key.    |
+| `healthcheck.test`                      | Replaces the installer LAPI-only check with a check for both LAPI and the AppSec listener on `7422`. |
 
 ```yaml
 services:
@@ -200,11 +209,11 @@ volumes:
 
 ## Apply the change
 
-Validate the Compose file. This command only checks and renders the merged Compose configuration; it does not need to write the output to a file:
+Validate the Compose file without printing the resolved configuration, which contains the dashboard bouncer key:
 
 ```bash
 cd "$NETBIRD_INSTALL_DIR"
-docker compose config
+docker compose config --quiet
 ```
 
 Start the updated stack:
@@ -244,11 +253,13 @@ A healthy deployment shows AppSec requests being processed, the `netbird-proxy` 
 
 You can test that the Traefik bouncer blocks dashboard access by adding a temporary CrowdSec decision for your own public IP.
 
-First, get the public IP address Traefik sees:
+First, get your public IPv4 address from the same client you will use to test dashboard access:
 
 ```bash
 curl -4s ifconfig.me
 ```
+
+Run this command through the same network path as the dashboard test. NAT or proxies can change the source IP that Traefik sees.
 
 On the NetBird host, add a short test ban:
 
