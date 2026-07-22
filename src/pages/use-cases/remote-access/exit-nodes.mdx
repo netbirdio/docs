@@ -103,23 +103,23 @@ See [Manage DNS in your network](/manage/dns) for details.
 
 Some compliance setups require a device's location to decide its tunnel mode. A common example: company devices must send all internet traffic through a corporate exit node while traveling abroad, but keep a normal split tunnel at home, where only internal resources go through NetBird.
 
-You can build this with a [Country and Region posture check](/manage/access-control/posture-checks#country-and-region) attached to the access policy of a `0.0.0.0/0` [Network resource](/manage/networks). In the Networks model, a posture check on the resource's access policy controls whether the routes are distributed to a peer at all: peers that pass the check receive the default route and become full tunnel, peers that fail it never receive the route and keep their split tunnel, with direct internet access and all other NetBird resources working as before. When a peer's location or the check changes, connected peers converge to the new state within about a minute, without reconnecting.
+You can build this with a [Country and Region posture check](/manage/access-control/posture-checks#country-and-region) attached to the access policy of a `0.0.0.0/0` [Network resource](/manage/networks). In the Networks model, a posture check on the access policy controls whether a peer receives the resource's routes at all. Peers that pass the check receive the default route and switch to a full tunnel. Peers that fail it never receive the route and keep their split tunnel, with direct internet access and all other NetBird resources working as before. When a peer's location or the check itself changes, connected peers converge to the new state within about a minute, without reconnecting.
 
 <Note>
     Build this in **Networks**. Adding a posture check to a Peers-page exit node does not work: the default route still installs on every peer in the distribution groups, and devices failing the check lose internet entirely.
 </Note>
 
-In the following example, devices of traveling employees are in the group `remote-workers`, the exit node peer is in the group `exit-nodes`, and devices must be full tunnel whenever they are outside the United States.
+In the following example, traveling employees' devices are in the group `remote-workers`, the exit node peer is in the group `exit-nodes`, and devices must use a full tunnel whenever they are outside the United States.
 
 ### 1. Create the Posture Check
 
 Navigate to **Access Control** → **Posture Checks**, click **Add Posture Check**, and select **Country and Region**. On the **Block** tab, add United States, then save the check as "Outside the US".
 
-Peers located in a blocked country fail the check, so the full-tunnel policy below stops applying to them and they stay split tunnel. Peers anywhere else pass and go full tunnel. The location comes from the public IP the peer connects to the management service with, shown as country and city on the peer in the dashboard.
+Peers located in a blocked country fail the check, so the full-tunnel policy below stops applying to them and they keep their split tunnel. Peers anywhere else pass the check and get the full tunnel. NetBird determines the location from the public IP the peer uses to reach the management service, shown as country and city on the peer in the dashboard.
 
 ### 2. Create the Network Resource
 
-Navigate to **Networks** and create a network named `internet-egress`. Add a resource with the address `0.0.0.0/0`, assign it to a new group `internet-egress`, and add your exit node peer as the routing peer. Keep **Masquerade** enabled: without it, forwarded traffic leaves the exit node with the device's overlay IP as source and never comes back.
+Navigate to **Networks** and create a network named `internet-egress`. Add a resource with the address `0.0.0.0/0`, assign it to a new group `internet-egress`, and add your exit node peer as the routing peer. Keep **Masquerade** enabled: without it, forwarded traffic leaves the exit node with the device's overlay IP as its source address, and replies never find their way back.
 
 <Note>
     If you create the resource through the [API](/ipa/resources/networks), set `"enabled": true` explicitly on the resource and `"masquerade": true` on the routing peer. Both default to disabled on API creation.
@@ -131,13 +131,13 @@ Navigate to **Access Control** → **Policies** and add a policy from `remote-wo
 
 This policy is all the exit node needs to forward internet traffic; no additional policy to the routing peer itself is required.
 
-Also set a DNS server with match domain `ALL`; see [Configure DNS](#5-configure-dns) above. Without it, devices keep sending DNS queries to their local resolver outside the tunnel, so a full-tunnel device still reveals its location through DNS even though all other traffic is tunneled. The nameserver applies to the whole group, and both tunnel modes handle it correctly: full-tunnel devices reach it through the exit node, split-tunnel devices reach the same nameserver over their normal direct path, and resolution keeps working on both.
+Also set a DNS server with match domain `ALL`; see [Configure DNS](#5-configure-dns) above. Without it, devices keep sending DNS queries to their local resolver outside the tunnel, so a full-tunnel device still reveals its location through DNS even though all other traffic is tunneled. The nameserver applies to the whole group, and both tunnel modes handle it correctly: full-tunnel devices reach it through the exit node, while split-tunnel devices reach the same nameserver over their normal direct path. Resolution keeps working on both.
 
 ### 4. Verify
 
-On a device outside the US, run `netbird networks ls` and confirm the `internet-egress` network is selected, then check the public IP the device egresses with (for example `curl ifconfig.me`): it should be the exit node's IP.
+On a device outside the US, run `netbird networks ls` and confirm the `internet-egress` network is selected. Then check the device's public IP (for example with `curl ifconfig.me`): it should be the exit node's IP.
 
-On a device inside the US, the same checks show no default route, the device's own public IP, and working internet. Internal NetBird resources remain reachable on both devices.
+On a device inside the US, the same checks show no `internet-egress` network, the device's own public IP, and working internet. Internal NetBird resources remain reachable on both devices.
 
 ## Performance Expectations
 
