@@ -568,6 +568,10 @@ export const docsNavigation = [
                         href: '/selfhosted/environment-variables',
                     },
                     {
+                        title: 'Admin CLI',
+                        href: '/selfhosted/maintenance/admin-cli',
+                    },
+                    {
                         title: 'Scaling Your Deployment',
                         href: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
                         isOpen: false,
