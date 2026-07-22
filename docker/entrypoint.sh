@@ -1,17 +1,47 @@
 #!/bin/sh
 
-# this script will check for the following NEXT_* environment variables passed via Docker environment (-e) and apply them
-# to the Nextjs.
-# The properties that will be replaced and have to start with APP_ prefix in the .env file
+# Substitutes the APP_NEXT_PUBLIC_DOCSEARCH_* placeholders baked into the
+# client bundle at build time (from the committed .env) with the real values
+# passed via the container environment, then starts the server.
+#
+# NEXT_PUBLIC_* values are compiled into the client bundle, so this rewrite is
+# what lets one image serve any environment's DocSearch credentials.
 
-set -ex
+set -eu
+
 NEXT_PUBLIC_DOCSEARCH_APP_ID=${NEXT_PUBLIC_DOCSEARCH_APP_ID:-"none"}
 NEXT_PUBLIC_DOCSEARCH_API_KEY=${NEXT_PUBLIC_DOCSEARCH_API_KEY:-"none"}
 NEXT_PUBLIC_DOCSEARCH_INDEX_NAME=${NEXT_PUBLIC_DOCSEARCH_INDEX_NAME:-"none"}
 
-find /usr/app/.next \( -type d -name .git -prune \) -o -type f -print0 | xargs -0 sed -i "s#APP_NEXT_PUBLIC_DOCSEARCH_APP_ID#${NEXT_PUBLIC_DOCSEARCH_APP_ID}#g"
-find /usr/app/.next \( -type d -name .git -prune \) -o -type f -print0 | xargs -0 sed -i "s#APP_NEXT_PUBLIC_DOCSEARCH_API_KEY#${NEXT_PUBLIC_DOCSEARCH_API_KEY}#g"
-find /usr/app/.next \( -type d -name .git -prune \) -o -type f -print0 | xargs -0 sed -i "s#APP_NEXT_PUBLIC_DOCSEARCH_INDEX_NAME#${NEXT_PUBLIC_DOCSEARCH_INDEX_NAME}#g"
+# Escape the characters that are special in a sed replacement (\ and &) and
+# our s### delimiter (#), so values containing them substitute literally.
+# CR/LF are stripped first: a one-line s### command cannot carry a raw
+# newline, and no legitimate DocSearch token contains one.
+escape() {
+  printf '%s' "$1" | tr -d '\r\n' | sed -e 's/[\\&#]/\\&/g'
+}
 
-echo "starting Nextjs"
+# Rewrite only the files that still contain the placeholder — after the first
+# boot substituted everything, restarts touch nothing. grep exiting 1 on zero
+# matches is fine: xargs -r then runs nothing and the pipeline succeeds.
+substitute() {
+  grep -rlZ "$1" /usr/app/.next | xargs -0 -r sed -i "s#$1#$2#g"
+}
+
+# Each substitution runs independently: one failing value must not stop the
+# remaining placeholders from being applied.
+ok=1
+substitute APP_NEXT_PUBLIC_DOCSEARCH_APP_ID "$(escape "$NEXT_PUBLIC_DOCSEARCH_APP_ID")" || ok=0
+substitute APP_NEXT_PUBLIC_DOCSEARCH_API_KEY "$(escape "$NEXT_PUBLIC_DOCSEARCH_API_KEY")" || ok=0
+substitute APP_NEXT_PUBLIC_DOCSEARCH_INDEX_NAME "$(escape "$NEXT_PUBLIC_DOCSEARCH_INDEX_NAME")" || ok=0
+
+if [ "$ok" = 1 ]; then
+  echo "DocSearch configuration applied"
+else
+  # Serve the docs even if search wiring failed — a docs site with broken
+  # search beats a crash-looping container. The warning makes it visible.
+  echo "WARNING: DocSearch placeholder substitution failed; search may be broken" >&2
+fi
+
+echo "starting Next.js"
 exec "$@"
