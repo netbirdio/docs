@@ -1,0 +1,109 @@
+import { Note } from '@/components/mdx'
+
+export const description =
+  'Connect Moonshot AI (Kimi) to NetBird Agent Network with a single API key, then point Kimi CLI or Claude Code at your keyless agent network endpoint.'
+
+# Kimi (Moonshot AI)
+
+[Moonshot AI](https://www.moonshot.ai/) serves the **Kimi** models from its cloud platform.
+Connecting it behind NetBird gives your agents keyless access over the tunnel: NetBird holds
+the Moonshot API key server-side, ties every request to a real identity from your IdP, and
+applies your policies, limits, and audit on the way to Moonshot.
+
+One Moonshot API key serves both API shapes, the native **Anthropic Messages API** and the
+**OpenAI-compatible API**, so a single Kimi provider covers every client. The path a client
+calls picks the shape, and NetBird forwards that path through to Moonshot unchanged:
+
+- Clients that speak the Anthropic Messages API (Claude Code, Kimi CLI's `anthropic` provider
+  type) call the `/anthropic` path.
+- OpenAI-shaped clients (the OpenAI SDK, cURL) call the `/v1` path.
+
+## Prerequisites
+
+- A **Moonshot AI** account on the [international platform](https://platform.moonshot.ai/)
+  with an API key. Accounts on the mainland-China platform
+  ([platform.moonshot.cn](https://platform.moonshot.cn/)) use a different host. See the note
+  under [Connect the Provider](#connect-the-provider).
+
+## Connect the Provider
+
+1. Go to **Agent Network → Providers** and click **Connect Provider**.
+2. Select **Kimi (Moonshot AI) API**. Keep the default **Upstream URL** `https://api.moonshot.ai`, the bare
+   international host. Don't add a path suffix: the client picks the API shape with the path
+   it calls (`/anthropic` or `/v1`), and NetBird rides that path through to Moonshot.
+3. Paste the **Moonshot API key**. NetBird stores it encrypted server-side, injects it as
+   `Authorization: Bearer …` on each request, and never returns it to callers.
+4. _(Optional)_ Restrict the **allowed models**, for example `kimi-k3`. Leaving the list
+   empty allows any catalog model.
+5. Save the provider. The key is now held server-side. The next step authorizes who can use
+   it.
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-connect-kimi.png" alt="Connect the Kimi (Moonshot AI) provider in NetBird Agent Network" className="imagewrapper" />
+</p>
+
+<Note>
+  Mainland-China accounts use the `https://api.moonshot.cn` host instead. Set that as the
+  **Upstream URL** if your API key was issued on `platform.moonshot.cn`.
+</Note>
+
+See [Providers](/agent-network/providers) for details.
+
+## Create a Policy
+
+By default nothing is allowed. A policy must connect a source group to the Kimi provider
+before anyone can route through it.
+
+1. Go to **Agent Network → Policies** and add a policy.
+2. Set the **Source** to the users or agents who should be able to reach Kimi (for example
+   your `Engineering` group from your IdP).
+3. Set the **Provider** to the Kimi provider you just connected.
+4. Optionally attach per-user or per-group [token and budget limits](/agent-network/policies/limits)
+   and [guardrails](/agent-network/policies/guardrails) such as a model allowlist.
+
+See [Policies](/agent-network/policies) for details.
+
+## Use with Kimi CLI
+
+[Kimi CLI](https://www.kimi.com/) reads providers from `~/.kimi/config.toml`. Point it at your
+agent network endpoint with the `anthropic` provider type and no `/anthropic` prefix in
+`base_url`; NetBird forwards the path Kimi CLI calls through to Moonshot. The `api_key` is a
+placeholder because NetBird injects the real key server-side.
+
+Add the following to `~/.kimi/config.toml`:
+
+```toml
+default_model = "kimi-k3"
+
+[providers.netbird]
+type = "anthropic"
+base_url = "https://<your-endpoint>"
+api_key = "-"
+
+[models.kimi-k3]
+provider = "netbird"
+model = "kimi-k3"
+max_context_size = 1000000
+```
+
+For the OpenAI shape instead, set `type = "openai_legacy"` and
+`base_url = "https://<your-endpoint>/v1"`.
+
+## Use with Claude Code
+
+Claude Code speaks the Anthropic Messages API, which Moonshot serves under the `/anthropic`
+path, so you can route Claude Code through this Kimi provider instead of the Anthropic API.
+See [Use Kimi (Moonshot AI)](/agent-network/integrations/claude-code#use-kimi-moonshot-ai)
+on the Claude Code integration page for the configuration.
+
+## Result
+
+Agents point at the NetBird endpoint with no key and call Kimi models by name. NetBird
+enforces your policies, limits, and guardrails, then forwards the request to Moonshot. Every
+call is recorded in [Usage & Logs](/agent-network/usage-and-logs) with the caller's identity,
+auth group, model, tokens, cost, and status.
+
+<Note>
+  Rotating the key is a single server-side change in NetBird: generate a new Moonshot API key,
+  update the provider's credential, then revoke the old key.
+</Note>
