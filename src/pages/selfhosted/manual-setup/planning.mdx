@@ -1,0 +1,140 @@
+import { Note, Warning } from '@/components/mdx'
+
+export const description =
+  'Plan a manual self-hosted NetBird deployment, start with the recommended combined server, and add external systems only when you need them.'
+
+# Plan a manual NetBird deployment
+
+A new self-hosted NetBird deployment does not need a separate identity provider, database server, or collection of control-plane containers. Start with the combined NetBird server, embedded identity provider, SQLite, and Traefik on one host. This gives you automatic TLS and the fewest systems to operate.
+
+Treat everything else—an external identity provider, PostgreSQL, another reverse proxy, external Signal or Relay services, and high availability—as an integration. Add one when it solves a requirement you actually have, not because it appears in the list of available components.
+
+## Recommended starting point
+
+For most new manual installations, use this layout:
+
+| Part                | Recommended choice          | Why                                                                                |
+| ------------------- | --------------------------- | ---------------------------------------------------------------------------------- |
+| NetBird services    | Combined `netbird-server`   | Runs Management, Signal, Relay, STUN, and the embedded identity provider together. |
+| User authentication | Embedded identity provider  | Provides local users without another service or client registration to maintain.   |
+| Data store          | SQLite                      | Keeps the initial deployment self-contained on one host.                           |
+| Public entry point  | Traefik                     | Obtains and renews a trusted TLS certificate automatically.                        |
+| Dashboard           | NetBird Dashboard container | Serves the administration interface behind Traefik.                                |
+| Host count          | One Linux server            | Keeps installation, backup, and troubleshooting straightforward.                   |
+
+The [manual combined-container guide](/selfhosted/manual-setup) builds this exact deployment. It is the normal path for a new installation.
+
+<Note>
+  The combined architecture is sometimes described as the “single-container”
+  setup because the NetBird server components share one `netbird-server`
+  container. The complete deployment still has separate Dashboard and reverse
+  proxy containers. “Combined” is the more precise name.
+</Note>
+
+## Combined and multi-container guides
+
+The manual documentation covers both server layouts:
+
+| Layout                                                                 | What runs                                                                                                                  | When to use it                                                                  |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [**Combined server**](/selfhosted/manual-setup)                        | One `netbird-server` for Management, Signal, Relay, STUN, and the embedded IdP; separate Dashboard and Traefik containers. | New deployments and installations already migrated to the current architecture. |
+| [**Legacy multi-container**](/selfhosted/manual-setup/multi-container) | Separate Management, Signal, Relay, and Dashboard containers.                                                              | Reproducing, repairing, or migrating an older installation.                     |
+
+<Warning>
+  Do not choose the legacy multi-container layout for a new long-lived
+  deployment. It remains documented so existing installations can be understood
+  and migrated safely.
+</Warning>
+
+If you have a legacy deployment, follow [Migrate to the combined container](/selfhosted/migration/combined-container) rather than rebuilding the same architecture unless you need it temporarily for recovery or troubleshooting.
+
+## Keep the core small
+
+The recommended deployment has a clear boundary:
+
+- Traefik accepts public TCP 80 and 443, manages the certificate, and routes HTTP, WebSocket, and gRPC traffic.
+- `netbird-server` provides the NetBird control-plane services, secure Relay, STUN, and local authentication.
+- The Dashboard provides the web interface.
+- SQLite stores NetBird state on the host-backed server volume.
+- UDP 3478 reaches the STUN listener directly instead of passing through Traefik.
+
+Only Traefik's HTTP ports and the NetBird STUN port need public ingress. Internal Dashboard and server HTTP ports stay on the private Docker network.
+
+This layout is intentionally modest. It is suitable when one host is an acceptable availability boundary and you can restore the deployment from a tested backup.
+
+## Add integrations when a requirement calls for them
+
+### External identity provider
+
+Keep the embedded identity provider when local users meet your needs. Add an [external identity provider](/selfhosted/identity-providers) when you need an existing SSO system, centralized account lifecycle, provider-enforced MFA, or identity claims from systems such as Microsoft Entra ID, Google Workspace, Okta, Keycloak, or Authentik.
+
+An external provider integrates with the combined server; it does not require switching back to separate Management and Signal containers. Verify external login before disabling local authentication, and retain a tested recovery path for an IdP outage or configuration error.
+
+### PostgreSQL
+
+Stay with SQLite when the deployment is on one host and its backup and restore model fits your requirements. Integrate [PostgreSQL](/selfhosted/maintenance/postgres-store) when you need a separately managed database or are preparing for multiple Management instances and high availability.
+
+Switching stores is a data migration. Do not point a running installation at an empty PostgreSQL database and assume its SQLite state will appear there. Follow [Migrate SQLite to PostgreSQL](/selfhosted/maintenance/scaling/migrate-sqlite-to-postgresql) and verify the migrated data before retiring the original store.
+
+### Existing reverse proxy
+
+Traefik is the recommended default because the combined manual guide includes it and automatic certificate handling. Replace it only when another proxy is already part of your infrastructure or your operating requirements favor a different tool.
+
+The manual guides support:
+
+- [Traefik](/selfhosted/manual-setup/reverse-proxies/traefik) for Docker-native routing and automatic ACME certificates.
+- [Caddy](/selfhosted/manual-setup/reverse-proxies/caddy) for a compact configuration and automatic HTTPS.
+- [Nginx](/selfhosted/manual-setup/reverse-proxies/nginx) for explicit host- or container-based routing, with Certbot or an existing certificate.
+- [Nginx Proxy Manager](/selfhosted/manual-setup/reverse-proxies/nginx-proxy-manager) when an existing NPM installation and UI-managed certificate lifecycle are operational requirements.
+
+Each proxy is an integration in front of the same combined NetBird server. Changing the proxy does not change the preferred NetBird architecture.
+
+### External Signal, Relay, and high availability
+
+A single combined server already includes Signal and Relay. Add [external Signal](/selfhosted/maintenance/scaling/set-up-external-signal) or [external Relay](/selfhosted/maintenance/scaling/set-up-external-relays) services only when your topology or scale requires them.
+
+For service redundancy, follow the [high-availability architecture](/selfhosted/maintenance/scaling/high-availability). Running a second copy of the one-host Compose project behind a load balancer is not a complete HA design; shared state and coordination services must be planned together.
+
+### Observability
+
+Metrics do not change the deployment architecture. Connect the combined server's private metrics and health endpoints to your monitoring system after the core deployment works. The [combined deployment metrics](/selfhosted/observability/combined) and [observability overview](/selfhosted/observability) document the endpoints and their exposure boundaries.
+
+Keep metrics private. They are operational interfaces, not public NetBird client endpoints.
+
+## Check the host and network before installation
+
+For the recommended deployment, prepare:
+
+- One public Linux server with Docker Engine and Docker Compose v2.
+- At least 1 CPU and 1 GB of memory with swap; 2 GB or more provides better headroom for upgrades and diagnostics.
+- A hostname whose A record points to the server. If you publish an AAAA record, IPv6 must reach the same deployment.
+- Public TCP 80 and 443 for Traefik.
+- Public UDP 3478 for STUN.
+- An off-host location for configuration and data backups.
+- A plan to create the first owner as soon as `/setup` becomes public.
+
+If another service already owns TCP 80 or 443, decide whether Traefik will replace it or whether NetBird will integrate with your existing reverse proxy before starting the Compose project.
+
+## Decide what failure you can tolerate
+
+The recommended one-host deployment prioritizes simplicity, not uninterrupted availability. Before using it for critical access, decide:
+
+- How long NetBird may be unavailable while you restore the host.
+- How much state you can afford to lose between backups.
+- Where the store encryption key and backups will be kept.
+- Who can recover access if the primary owner or external IdP is unavailable.
+- How you will monitor HTTPS, container health, disk space, and backup age.
+
+If a single-host outage is outside your acceptable recovery time, plan PostgreSQL and the full HA architecture before onboarding production users.
+
+## Follow the recommended path
+
+For the simplest manual installation with automatic TLS:
+
+1. Complete [Manual combined-container setup](/selfhosted/manual-setup).
+2. Create the first owner immediately after public endpoint verification.
+3. Enroll two clients and verify Management, Signal, Relay, STUN, and peer traffic.
+4. Follow the [backup procedure](/selfhosted/maintenance/backup) before changing the deployment.
+5. Add identity, storage, proxy, monitoring, or scaling integrations only after the base deployment is healthy.
+
+At that point you have a complete NetBird deployment, not a partial installation waiting for an external IdP or database. The integrations above are ways to adapt it to your environment as requirements grow.
