@@ -427,6 +427,10 @@ export const docsNavigation = [
                         isOpen: true,
                         links: [
                             {
+                                title: 'Deploy with Group Policy (GPO)',
+                                href: '/manage/integrations/mdm-deployment/windows-gpo-deployment',
+                            },
+                            {
                                 title: 'macOS CLI-Only .pkg',
                                 href: '/manage/integrations/mdm-deployment/macos-cli-pkg-deployment',
                             },
