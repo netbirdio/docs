@@ -363,6 +363,8 @@ Common requirements for every pool:
 | **Connection draining on rolling upgrade** | When you remove a backend, the LB should let in-flight gRPC streams and WebSocket connections finish before tearing them down. |
 | **Generous idle timeout** | Management gRPC streams and Relay WebSocket connections can be long-lived. Set the idle timeout above your peer-sync interval. Ten to 30 minutes is a comfortable range for both. |
 
+For the Relay frontend, configure the load balancer to send both `X-Real-Ip` and `X-Real-Port`. Each Relay instance must trust only the load balancer addresses that connect directly to it, using `NB_TRUSTED_PROXIES`. Without that trust, forwarded client addresses are intentionally ignored.
+
 For the full set of paths and protocols NetBird exposes to each load balancer, see [Configuration Files Reference](/selfhosted/maintenance/configuration-files).
 
 If you're using a managed cloud load balancer, configure the equivalent of each row above using your provider's UI or infrastructure as code. If you're using a self-hosted reverse proxy, create one backend pool per service, attach health checks, and enable HTTP/2 or WebSocket support as appropriate for each pool.
@@ -390,6 +392,7 @@ services:
       - NB_LISTEN_ADDRESS=:443
       - NB_EXPOSED_ADDRESS=rels://relay.example.com:443
       - NB_AUTH_SECRET=<shared secret, identical on every Relay instance and on the Management pool>
+      - NB_TRUSTED_PROXIES=<Relay LB IP or CIDR; comma-separated if needed>
       - NB_ENABLE_STUN=true
       - NB_STUN_PORTS=3478
 ```
@@ -400,6 +403,7 @@ services:
 | `NB_AUTH_SECRET` | Yes | Shared with `server.relays.secret` in every Management replica's `config.yaml`. Must be byte-identical on every Relay instance and on every Management replica. |
 | `NB_LISTEN_ADDRESS` | Yes | The address the relay binds inside the container. |
 | `NB_LOG_LEVEL` | No | `debug`, `info` (default), `warn`, `error`. |
+| `NB_TRUSTED_PROXIES` | When preserving client addresses behind the LB | Comma-separated immediate load-balancer IPs or CIDRs allowed to supply `X-Real-Ip` and `X-Real-Port`. Both headers are required. Never use broad, uncontrolled ranges. |
 | `NB_ENABLE_STUN` | No | Enables the embedded STUN server on UDP. |
 | `NB_STUN_PORTS` | No | STUN port (default `3478`). |
 

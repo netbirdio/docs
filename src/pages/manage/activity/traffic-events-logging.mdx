@@ -1,8 +1,8 @@
 # Traffic Events Logging
 
 <Note>
-This feature is available only in the NetBird cloud under the [Business plan](https://www.netbird.io/pricing?utm_source=docs&utm_content=traffic-events).
-This is feature is in Beta and may change over time — including how data is collected and reported.
+This feature is available in NetBird Cloud under the [Business plan](https://www.netbird.io/pricing?utm_source=docs&utm_content=traffic-events) and in licensed self-hosted Enterprise deployments with traffic flow enabled.
+This feature is in Beta and may change over time — including how data is collected and reported.
 To use this feature, make sure you're running NetBird client version 0.39 or higher.
 </Note>
 
@@ -37,7 +37,7 @@ NetBird would log the blocked event on the peer that refused the connection.
 
 #### Successful P2P Connection Events
 
-NetBird helps you better understand connection flows by correlating related events and presenting them in a clear, organized manner.
+NetBird helps you better understand connection flows by aggregating related events and presenting them in a clear, organized manner.
 
 For example, in a successful peer-to-peer connection scenario, a user initiates a connection from the peer `Alice` to the peer `server`.
 This is illustrated in the screenshot below.
@@ -46,12 +46,9 @@ This is illustrated in the screenshot below.
     <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-successful-connection.png" alt="traffic-events-p2p-successful-connection" className="imagewrapper-big"/>
 </p>
 
-You'll see two grouped sets of events, one from each peer (source and destination). The source peer `Alice` initiates the
-connection and then terminates it after a few seconds.
+You'll see two aggregated flow records, one reported by each peer (source and destination). The record from `Alice` counts the connection start and end from the initiator's perspective.
 
-On the other side, the destination peer `server` receives the connection request and also terminates it shortly afterward,
-following the disconnection from `Alice`. Since `server` allows the connection, the log includes the policy `IT Admins to Servers`
-that authorized the connection over the `ICMP` protocol.
+The record from `server` represents the receiver's perspective. Because `server` allows the connection, it includes the policy `IT Admins to Servers` that authorized the flow over `ICMP`.
 
 <Note>
      Use the `P2P` filter in the table to view only peer-to-peer connection events.
@@ -103,8 +100,7 @@ Note the `ROUTER` column in the table, which identifies the routing peer respons
 In the event of a blocked connection, the initiating peer logs the connection attempt, while the routing peer records the blocked event.
 The screenshot below demonstrates this behavior: the routing peer blocks a connection to the network resource `CRM` because
 the policy `IT Admins to AWS Servers` does not permit connections over the `HTTP` protocol on port `6432`.
-You can see multiple blocked events reported by the routing peer, which indicates that the initiating peer `Alice` attempted to connect multiple times
-in one TCP session, but the routing peer blocked all attempts.
+The routing peer's aggregate shows the number of dropped attempts, so repeated application retries increase the drop count instead of creating one top-level row for every attempt.
 
 <p>
     <img src="/docs-static/img/manage/activity/traffic-events-logging/network-resource-blocked-connection.png" alt="network-resource-succesful-connection" className="imagewrapper-big"/>
@@ -114,6 +110,17 @@ in one TCP session, but the routing peer blocked all attempts.
     For all the examples above, we used the `nc` command to initiate the connection to the CRM server from the peer `Alice`.
     E.g., `nc -v crm.netbird.cloud 443`.
 </Note>
+
+## Event Aggregation
+
+Starting with v0.75, clients aggregate related traffic events before reporting them. A group is identified by source address, destination address and port, direction, protocol, and ICMP type for ICMP traffic. During each reporting window, NetBird accumulates:
+
+* connection start, end, and drop counts;
+* transmitted and received packet totals;
+* transmitted and received byte totals;
+* the start and end of the aggregation window.
+
+The Dashboard and API therefore present one flow record with counters for activity in that window instead of a separate top-level record for every start, end, or blocked event. The `events` array can retain individual event timestamps where they are available.
 
 ## Enabling Traffic Events Logging
 
@@ -149,11 +156,11 @@ choose the groups you want to include, and click `Save Groups`.
 ## Log Retention
 
 While in experimental mode, logs are retained for **seven days**.
-Additionally, please note that the current API returns a maximum of **50,000 events**.
+Additionally, the current API returns a maximum of **50,000 flow records**.
 We are actively working on expanding this limit in the coming days to support larger datasets and increased usage.
 
 ## Report rate
-The events might take up to **ten minutes** to become available via API and Dashboard. For some TCP connections, the full event cycle might take longer, depending on OS settings and connection termination.
+Aggregated flows might take up to **ten minutes** to become available through the API and Dashboard. An end count for some TCP connections can appear in a later window, depending on OS settings and connection termination.
 
 ## Enable Traffic Events Streaming to SIEM Systems
 
@@ -167,16 +174,16 @@ For detailed instructions on supported integrations and how to set them up, refe
 
 When enabled, a NetBird peer will record metadata for each network flow that it participates in. The data collected by peers includes:
 
-* **Timestamp**: When the flow started and ended.
-* **Flow ID**: A unique identifier for the traffic event flow.
-* **Type**: The type of traffic event, such as Start, End, or Blocked.
+* **Window start and end**: The bounds of the aggregation window.
+* **Flow ID**: A unique identifier for the aggregated traffic flow.
+* **Event counts**: `num_of_starts`, `num_of_ends`, and `num_of_drops` for the group.
 * **Source and Destination IP Addresses**: The IP of the peer (source) and the IP of the remote endpoint (destination). For peer-to-peer traffic,
 these will be the NetBird network IPs (e.g. 100.x.x.x addresses of each peer). For traffic to an external resource (like a private server or subnet), the destination might be an IP in that remote network.
 * **Source and Destination Ports**: The network ports used by the connection (for TCP/UDP flows).
-* **ICMP Code and Type**: For ICMP traffic, the ICMP code and type.
+* **ICMP Code and Type**: For ICMP traffic, the ICMP code and type used to group the flow.
 * **Protocol**: The protocol of the traffic, such as TCP, UDP, or ICMP.
 * **Direction**: Whether the flow was inbound or outbound. This takes into consideration the perspective of the **peer reporting the traffic** and the NetBird interface.
-* **Volume of Data**: The amount of data transferred, measured in number of packets and bytes sent/received for the duration of the flow.
+* **Volume of Data**: Packet and byte totals sent and received during the aggregation window.
 * **Resource ID**: Network route or Networks resource ID that the flow is associated with. This is useful for identifying the routing configuration that allowed the flow. DNS route information is **available only** on the routing client.
 * **Rule ID**: The ID of the policy that allowed the flow. This is useful for identifying the access control policy that allowed the flow. This information is **available only** on the receiving side of the traffic.
 
@@ -229,10 +236,23 @@ In addition to the data collected by the peers, the NetBird API provides additio
       "os": "Darwin",
       "type": "PEER"
     },
-    "timestamp": "2025-03-22T20:26:16.937522Z",
+    "window_start": "2025-03-22T20:26:16.937522Z",
+    "window_end": "2025-03-22T20:30:17.257891Z",
+    "num_of_starts": 1,
+    "num_of_ends": 1,
+    "num_of_drops": 0,
     "tx_bytes": 64,
     "tx_packets": 1,
-    "type": "TYPE_START",
+    "events": [
+      {
+        "type": "TYPE_START",
+        "timestamp": "2025-03-22T20:26:16.937522Z"
+      },
+      {
+        "type": "TYPE_END",
+        "timestamp": "2025-03-22T20:30:17.257891Z"
+      }
+    ],
     "user_email": "john@example.com",
     "user_id": "google-oauth2|xyz0123",
     "user_name": "John Doe"
@@ -247,25 +267,16 @@ There are two places where you can see the traffic events on the NetBird dashboa
 
 ### Filters
 You can use various filters to search and filter received events. The filters include:
-- **Peer name**: Name of the peer that is the source or destination of the traffic event
-- **Resource name**: Name of the resource or network route
+- **Source**: Select a source peer, network resource, route, or user. The API equivalent is `source_id`.
+- **Destination**: Select a destination peer or network resource. The API equivalent is `destination_id`.
 - **IP address**: Source or destination IP addresses
 - **Ports**: Source or destination ports
-- **User**: User from the peer that initiated the connection
-- **Timestamp**: Time range of the event
-- **Protocol**: ICMP,  TCP, UDP
-- **Type of event**:
-    - **P2P connection started (inbound/outbound)**: Events with started status and initiated by peers to other peers
-    - **P2P connection stopped (inbound/outbound)**: Events with stopped status and initiated by peers to other peers
-    - **P2P connection blocked (inbound/outbound)**: Events with blocked status and initiated by peers to other peers
-    - **Routed connection started (inbound/outbound)**: Events with started status and with a remote resource destination
-    - **Routed connection stopped (inbound/outbound)**: Events with stopped status and with a remote resource destination
-    - **Routed connection blocked (inbound/outbound)**: Events with blocked status and with a remote resource destination
+- **Timestamp**: Aggregation-window time range
+- **Protocol**: ICMP, TCP, or UDP
+- **Flow type and direction**: P2P or routed traffic, inbound or outbound, including groups with start, end, or drop counts
 
 ## Correlating events
-Events can be correlated by observing the traffic from both peers involved in a traffic session. Let's say you have two peers, Peer A and Peer B, and Peer A initiates a connection to Peer B. In the traffic events,
-you will see up to 4 events from these peers. If the connection was successful, you will see a started and a stopped event from Peer A and Peer B. But, if one peer blocks the connection, then you will see a started and stopped events from the initiator and
-a blocked event from the responder.
+Correlate a session by comparing the aggregated flow records reported by both sides. If Peer A connects to Peer B, each reporter can contribute a record for the same source and destination tuple. A successful flow normally increases the start and end counters. If Peer B rejects it, the receiver's record increases the drop counter while the initiator may only know that it attempted the connection.
 <Note>
  Blocked events are only reported when the destination peer is in userspace mode. See [Limitations](#limitations).
 </Note>
@@ -273,16 +284,11 @@ a blocked event from the responder.
 ### Viewing TCP and UDP connections
 You can use source ports to correlate TCP and UDP. Below we will analyze a few examples for a connection between a user computer and a Web and FTP servers.
 
-The peer Maycons-MacBook-Pro.local initiates a connection to the Web server. The source port is `51997` and the destination port is TCP/80. The connection is successful, and the event is marked as started and stopped. See screenshot below:
+The peer Maycons-MacBook-Pro.local initiates a connection to the Web server. The source port is `51997` and the destination port is TCP/80. A successful aggregate has non-zero start and end counters and totals the packets and bytes transferred in the reporting window:
 <p>
     <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-tcp-allow.png" alt="P2P TCP Allowed" className="imagewrapper-big"/>
 </p>
-Besides the ports and protocol information, we can review the event description in the screenshot above to understand what happened. For all four events we have the following:
-- **Peer `Maycons-MacBook-Pro-2.local` requested P2P connection to Peer `webserver`**: This is the event from the perspective of the peer that initiated the connection. The sources and destination provide the IPs and ports used in the connection.
-- **Peer `webserver` received P2P connection from Peer `Maycons-MacBook-Pro-2.local`**: This is the event from the perspective of the peer that received the connection.
-- **Peer `Maycons-MacBook-Pro-2.local` stopped P2P connection to Peer `webserver`**: This is the event from the perspective of the peer that initiated the connection when the connection ended on its side.
-- **Peer `webserver` stopped P2P connection from Peer `Maycons-MacBook-Pro-2.local`**: This is the event from the perspective of the peer that received the connection when the connection has ended on its side.
-In case of the peer receiving the connection, the stopped status might arrive several minutes later, due to TCP sessions.
+Use the reporter, source, destination, direction, protocol, and ports to align the two perspectives. An end can be reported in a later window when the operating system keeps the TCP session open.
 
 
 The UDP connection is very similar:
@@ -290,7 +296,7 @@ The UDP connection is very similar:
     <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-udp-allow.png" alt="P2P UDP Allowed" className="imagewrapper-big"/>
 </p>
 <Note>
- The UDP connection is stateless, so the stopped event will be generated right after a certain period of inactivity.
+ UDP is stateless, so its end counter is updated after the client observes the configured inactivity period.
 </Note>
 
 When a connection is blocked, you may see similar entries to the following events but with a few differences:
@@ -304,9 +310,7 @@ When a connection is blocked, you may see similar entries to the following event
 <p>
     <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-udp-blocked.png" alt="P2P UDP Blocked" className="imagewrapper-big"/>
 </p>
-Key differences:
-- There are no events that have started or stopped on the refusing side. The connection is blocked right after the request.
-- Depending on the application making a request in the initiator, you may see multiple blocked events from the receiving side of the connection due to retries:
+On the refusing side, retries increase `num_of_drops`; the client does not record a successful start or end for traffic it rejected.
 <Note>
  Blocked events are only reported when the destination peer is in userspace mode. See [Limitations](#limitations).
 </Note>
@@ -317,7 +321,7 @@ ICMP events are similar to TCP and UDP events. The main difference is that ICMP 
     <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-icmp-allowed.png" alt="P2P ICMP Allowed" className="imagewrapper-big"/>
 </p>
 <Note>
- The ICMP connection is stateless, so the stopped event will be generated right after a certain period of inactivity.
+ ICMP is grouped by ICMP type and does not use ports. Its end counter is updated after inactivity.
 </Note>
 ### Routed events
 Routed events follow the same pattern as P2P events. The main difference is that the destination or source can be a resource or network route. Below, we have a few examples of a connection from a peer to a resource:
@@ -330,10 +334,7 @@ Routed events follow the same pattern as P2P events. The main difference is that
 <p>
     <img src="/docs-static/img/manage/activity/traffic-events-logging/routed-tcp-allowed.png" alt="Routed TCP Allowed" className="imagewrapper-big"/>
 </p>
-Key differences:
-- The source or destination is a resource or network route.
-- On the receiver side, we will have an indication of which routing peer reported the event.
-- The source or destination identifier will be unknown on the routing peer side if the route or resource is of a DNS type.
+For routed aggregates, the source or destination can be a resource or network route. The record identifies the routing peer that reported it. The source or destination identifier can be unknown on the routing-peer side for DNS resources.
 
 For site-2-site connections, the events will be similar to the above examples, but you will see a routing peer for each event:
 <p>
