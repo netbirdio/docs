@@ -5,21 +5,21 @@ export const description =
 
 # Deploying NetBird with Group Policy (GPO)
 
-Rolling NetBird out to a fleet of domain-joined Windows devices by hand means two problems: installing the client on every machine without touching each one, and making sure users cannot point it at the wrong server or loosen settings your security posture depends on. In an Active Directory environment, Group Policy solves both in one pass. A policy GPO writes managed values to the registry, which the NetBird client enforces as its highest-priority configuration layer, and a computer startup script performs the silent MSI install. Writing policy never starts a connection: users authenticate through your identity provider the first time they connect.
+Rolling NetBird out to a fleet of domain-joined Windows devices poses two problems: installing the client on every machine without touching each one, and making sure users cannot point it at the wrong server or loosen settings your security posture depends on. In an Active Directory environment, Group Policy solves both in one pass. A policy GPO writes managed values to the registry, which the NetBird client enforces as its highest-priority configuration layer, and a computer startup script performs the silent MSI install. Writing policy never starts a connection: users authenticate through your identity provider the first time they connect.
 
-This guide walks through one deployment end to end. How the client merges and locks MDM-managed settings is covered on the [MDM Integration](/client/mdm-integration) page; here we only apply it.
+This guide walks through one deployment end to end. How the client merges and locks MDM-managed settings is covered on the [MDM Integration](/client/mdm-integration) page; this guide focuses on delivering those settings with Group Policy.
 
 We use one running example throughout: the Active Directory domain `ad.example.com` and a self-hosted management server at `https://api.example.com:443`. If you use NetBird Cloud, skip the Management URL policy and keep everything else.
 
 ## Prerequisites
 
-- An Active Directory domain and permissions to create and link GPOs (Group Policy Management Console).
+- An Active Directory domain and access to the Group Policy Management Console (GPMC) with permissions to create and link GPOs.
 - NetBird client **v0.73.0 or later**. Earlier versions ignore managed policy entirely, so pin your installer source accordingly.
-- A [NetBird account](https://app.netbird.io) with the settings you plan to enforce already decided. Start from least privilege: enforce what your posture requires and leave the rest unmanaged.
+- A [NetBird account](https://app.netbird.io), and a decision on which settings to enforce. Start from least privilege: enforce what your posture requires and leave the rest unmanaged.
 
 ## 1. Import the ADMX templates
 
-NetBird ships Group Policy administrative templates in the client repository. Download [`netbird.admx`](https://github.com/netbirdio/netbird/blob/main/docs/netbird.admx) and [`netbird.adml`](https://github.com/netbirdio/netbird/blob/main/docs/netbird.adml), matching the client version you deploy, and copy them to the domain Central Store:
+NetBird ships Group Policy administrative templates in the client repository. Download the [`netbird.admx`](https://github.com/netbirdio/netbird/blob/main/docs/netbird.admx) and [`netbird.adml`](https://github.com/netbirdio/netbird/blob/main/docs/netbird.adml) pair that matches the client version you deploy, and copy the files to the domain Central Store:
 
 ```powershell
 Copy-Item netbird.admx '\\ad.example.com\SYSVOL\ad.example.com\Policies\PolicyDefinitions\'
@@ -44,7 +44,7 @@ Create a GPO named `NetBird Policy`, link it to the OU that holds the target com
 
 Always write the Management URL with its explicit port (`https://api.example.com:443`, not `https://api.example.com`).
 
-Every value lands in `HKLM\Software\Policies\NetBird`. If you prefer Group Policy Preferences Registry items or `reg import` over ADMX, write the same values there; the client does not care which tool wrote them. A commented sample with every supported key ships alongside the templates as [`netbird-policy.reg`](https://github.com/netbirdio/netbird/blob/main/docs/netbird-policy.reg).
+Every value lands in `HKLM\Software\Policies\NetBird`. If you prefer Group Policy Preferences Registry items or `reg import` over ADMX, write the same values with those tools instead; the client does not care which tool wrote them. A commented sample with every supported key ships alongside the templates as [`netbird-policy.reg`](https://github.com/netbirdio/netbird/blob/main/docs/netbird-policy.reg).
 
 <Note>
 Order matters once, at rollout: get the Management URL right **before** you enforce Disable Update Settings. That policy locks configuration changes from the GUI and the CLI alike, so after it applies, the policy channel you are building here is the only way to correct the URL. Corrections still propagate: managed values are re-read about once a minute.
@@ -84,13 +84,13 @@ Write-Log "Install finished with exit code $($p.ExitCode)."
 exit $p.ExitCode
 ```
 
-Devices without direct internet access: stage the MSI on an internal share once, and replace the download with `Copy-Item '\\fileserver.ad.example.com\software\netbird.msi' $msi`. Keep the signature check either way.
+For devices without direct internet access, stage the MSI on an internal share once and replace the download line with `Copy-Item '\\fileserver.ad.example.com\software\netbird.msi' $msi`. Keep the signature check either way.
 
 Create a second GPO named `NetBird Install` (or reuse the first), and add the script under **Computer Configuration > Policies > Windows Settings > Scripts (Startup/Shutdown) > Startup**, on the **PowerShell Scripts** tab. Link it to the same OU.
 
-By default the MSI registers the NetBird tray application to launch when users sign in. If you do not want that, append `AUTOSTART=0` to the `msiexec` argument list. Note this is a property of the installer; the Disable Autostart policy in the ADMX only governs the client's own launch-on-login setting and does not remove the installer's entry.
+By default, the MSI registers the NetBird tray application to launch when users sign in. If you do not want that, append `AUTOSTART=0` to the `msiexec` argument list. Note that this is an installer property; the Disable Autostart policy in the ADMX only governs the client's own launch-on-login setting and does not remove the installer's entry.
 
-## 4. Scope it
+## 4. Scope the GPOs
 
 - Link both GPOs to the OU containing the workstation computer objects rather than the domain root.
 - Different postures for different device classes (developer workstations that need server routes, kiosks that need a full lockdown) are just separate policy GPOs on separate OUs, or one GPO with a WMI filter.
@@ -98,17 +98,17 @@ By default the MSI registers the NetBird tray application to launch when users s
 
 ## 5. First sign-in
 
-After the next reboot the machine has NetBird installed and every managed value enforced, but no tunnel yet:
+After the next reboot, the machine has NetBird installed and every managed value enforced, but no tunnel yet:
 
 1. The user clicks **Connect** in the NetBird tray application.
 2. The daemon loads its configuration with the managed values on top and connects to `https://api.example.com:443`.
 3. A browser window opens for single sign-on; the user signs in with their identity provider account and the device becomes a peer.
 
-Settings you enforced are locked and marked as managed in the client UI from the first start, so there is no window in which a user can misconfigure the client. Unattended machines (servers, kiosks) can skip the interactive step by registering with a [setup key](/manage/peers/register-machines-using-setup-keys) instead; setup keys are an enrollment credential passed to `netbird up --setup-key`, not a policy value.
+Settings you enforced are locked and marked as managed in the client UI from the first start, so there is no window in which a user can misconfigure the client. Unattended machines (servers, kiosks) can skip the interactive step by registering with a [setup key](/manage/peers/register-machines-using-setup-keys) instead; a setup key is an enrollment credential passed to `netbird up --setup-key`, not a policy value.
 
 ## Verify
 
-On a deployed device, in an elevated PowerShell:
+On a deployed device, in an elevated PowerShell session:
 
 ```powershell
 reg query HKLM\Software\Policies\NetBird   # the values from step 2
