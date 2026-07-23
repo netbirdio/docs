@@ -99,6 +99,46 @@ Add a DNS server with the match domain set to `ALL`. Local DNS servers may not b
 
 See [Manage DNS in your network](/manage/dns) for details.
 
+## Geo-Based Exit Node Routing
+
+Some compliance setups require a device's location to decide its tunnel mode. A common example: company devices must send all internet traffic through a corporate exit node while traveling abroad, but keep a normal split tunnel at home, where only internal resources go through NetBird.
+
+You can build this with a [Country and Region posture check](/manage/access-control/posture-checks#country-and-region) attached to the access policy of a `0.0.0.0/0` [Network resource](/manage/networks). In the Networks model, a posture check on the access policy controls whether a peer receives the resource's routes at all. Peers that pass the check receive the default route and switch to a full tunnel. Peers that fail it never receive the route and keep their split tunnel, with direct internet access and all other NetBird resources working as before. When a peer's location or the check itself changes, connected peers converge to the new state within about a minute, without reconnecting.
+
+<Note>
+    Build this in **Networks**. Adding a posture check to an exit node created as a [Route](/manage/network-routes) does not work: the default route still installs on every peer in the distribution groups, and devices failing the check lose internet entirely.
+</Note>
+
+The following example builds this goal: any device outside the United States sends all its internet traffic through the exit node, while devices inside the US keep their split tunnel. Traveling employees' devices are in the group `remote-workers`, and the exit node peer is in the group `exit-nodes`.
+
+### 1. Create the Posture Check
+
+Navigate to **Access Control** → **Posture Checks**, click **Add Posture Check**, and select **Country and Region**. On the **Block** tab, add United States, then save the check as "Outside the US".
+
+Peers located in a blocked country fail the check, so the full-tunnel policy below stops applying to them and they keep their split tunnel. Peers anywhere else pass the check and get the full tunnel. NetBird determines the location from the public IP the peer uses to reach the management service, resolved with MaxMind's GeoLite2 City database, and shows it as country and city on the peer in the dashboard. On self-hosted deployments, the management server needs the database configured; see [Geolocation Database](/selfhosted/maintenance/geo-support).
+
+### 2. Create the Network Resource
+
+Navigate to **Networks** and create a network for the location that hosts your exit node, for example `us-datacenter`, or reuse an existing network if the exit node peer already routes one. Add a resource named `internet-egress` with the address `0.0.0.0/0`, optionally assign it to a new group `internet-egress`, and add your exit node peer as the routing peer. Keep **Masquerade** enabled: without it, forwarded traffic leaves the exit node with the device's overlay IP as its source address, and replies never find their way back.
+
+<Note>
+    If you create the resource through the [API](/ipa/resources/networks), set `"enabled": true` explicitly on the resource and `"masquerade": true` on the routing peer. The API reference marks both fields as required; when omitted, the API currently defaults them to disabled.
+</Note>
+
+### 3. Create the Access Policy
+
+Navigate to **Access Control** → **Policies** and add a policy from `remote-workers` to the `internet-egress` group (or the resource directly, if you skipped the group), protocol **ALL**. Before saving, open **Posture Checks**, browse for "Outside the US", and attach it.
+
+This policy is all the exit node needs to forward internet traffic; no additional policy to the routing peer itself is required.
+
+Also set a DNS server with match domain `ALL`; see [Configure DNS](#5-configure-dns) above. Without it, devices keep sending DNS queries to their local resolver outside the tunnel, so a full-tunnel device still reveals its location through DNS even though all other traffic is tunneled. The nameserver applies to the whole group, and both tunnel modes handle it correctly: full-tunnel devices reach it through the exit node, while split-tunnel devices reach the same nameserver over their normal direct path. Resolution keeps working on both.
+
+### 4. Verify
+
+On a device outside the US, run `netbird networks ls` and confirm the `internet-egress` network is selected. Then check the device's public IP (for example with `curl ifconfig.me`): it should be the exit node's IP.
+
+On a device inside the US, the same checks show no `internet-egress` network, the device's own public IP, and working internet. Internal NetBird resources remain reachable on both devices.
+
 ## Performance Expectations
 
 An exit node carries each device's entire internet traffic through a single WireGuard tunnel, and a single tunnel is processed largely on one CPU core of the exit node. This caps each device's throughput at single-tunnel speed: typically a few Gbps on a modern server CPU running Linux kernel WireGuard. The exact figure depends on the exit node's per-core speed, the tunnel MTU, and traffic direction (see the [benchmark assumptions](/manage/networks/sizing-routing-peers#per-peer-capacity-reference)), but it does not grow with parallel streams.
