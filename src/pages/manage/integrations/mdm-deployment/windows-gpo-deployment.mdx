@@ -26,6 +26,8 @@ Copy-Item netbird.admx '\\ad.example.com\SYSVOL\ad.example.com\Policies\PolicyDe
 Copy-Item netbird.adml '\\ad.example.com\SYSVOL\ad.example.com\Policies\PolicyDefinitions\en-US\'
 ```
 
+The links above track the latest development version; to pin the templates to the release you deploy, browse the same files under that release's tag (replace `main` in the URL with the tag, for example `v0.75.0`).
+
 Reopen the Group Policy Management Editor. The policies appear under **Computer Configuration > Policies > Administrative Templates > NetBird**.
 
 ## 2. Create the policy GPO
@@ -71,11 +73,17 @@ if ($installed) { Write-Log "NetBird $($installed.DisplayVersion) already instal
 # Download the MSI (or copy it from an internal share instead).
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $msi = "$env:TEMP\netbird.msi"
-Invoke-WebRequest 'https://pkgs.netbird.io/windows/msi/x64' -OutFile $msi -UseBasicParsing
+try {
+    Invoke-WebRequest 'https://pkgs.netbird.io/windows/msi/x64' -OutFile $msi -UseBasicParsing -TimeoutSec 300
+} catch {
+    Write-Log "MSI download failed: $($_.Exception.Message)"; exit 1
+}
 
-# Refuse to execute an installer that is not signed by NetBird.
+# Refuse to execute an installer that is not validly signed by NetBird.
 $sig = Get-AuthenticodeSignature $msi
-if ($sig.Status -ne 'Valid') { Write-Log "Invalid MSI signature: $($sig.Status)"; exit 1 }
+if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notlike 'CN=NetBird*') {
+    Write-Log "MSI signature rejected (status: $($sig.Status), signer: $($sig.SignerCertificate.Subject))"; exit 1
+}
 
 $p = Start-Process msiexec.exe -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart',
      '/l*v', "`"$env:ProgramData\NetBird\netbird-install.log`"") -Wait -PassThru
@@ -84,7 +92,9 @@ Write-Log "Install finished with exit code $($p.ExitCode)."
 exit $p.ExitCode
 ```
 
-For devices without direct internet access, stage the MSI on an internal share once and replace the download line with `Copy-Item '\\fileserver.ad.example.com\software\netbird.msi' $msi`. Keep the signature check either way.
+For devices without direct internet access, stage the MSI on an internal share once and replace the download block with `Copy-Item '\\fileserver.ad.example.com\software\netbird.msi' $msi`. Keep the signature check either way.
+
+The script deliberately never touches an existing installation, so machines that already run NetBird **older than v0.73.0** keep ignoring managed policy after this rollout. If your fleet may contain such installs, upgrade them to a current version first; the policy values themselves can safely be in place before, during, and after that upgrade.
 
 Create a second GPO named `NetBird Install` (or reuse the first), and add the script under **Computer Configuration > Policies > Windows Settings > Scripts (Startup/Shutdown) > Startup**, on the **PowerShell Scripts** tab. Link it to the same OU.
 
