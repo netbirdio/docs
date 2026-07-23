@@ -16,33 +16,29 @@ Moonshot serves **two API shapes with the same API key**:
 - the **OpenAI Chat Completions API** under `https://api.moonshot.ai/v1`
 - the **Anthropic Messages API** under `https://api.moonshot.ai/anthropic`
 
-The upstream URL you set on the NetBird provider decides which shape your agents speak
-through the endpoint, so pick it based on the tools you plan to connect (see below).
+Your agents pick the shape with the path they call on your NetBird endpoint — `/v1/...`
+for the OpenAI shape, `/anthropic/v1/...` for the Anthropic shape — and the path rides
+through to Moonshot. One Kimi provider serves both.
 
 ## Connect the Provider
 
 1. Go to **Agent Network → Providers** and click **Connect Provider**.
 2. Select **Kimi**. NetBird pre-fills the upstream URL `https://api.moonshot.ai` and the
-   bearer auth header.
-3. Set the **Upstream URL** for the API shape your agents use:
-   - Change it to `https://api.moonshot.ai/anthropic` for **Anthropic-shaped** agents —
-     Claude Code, or Kimi CLI's `anthropic` provider type. This is the common case.
-   - Keep `https://api.moonshot.ai` for **OpenAI-shaped** callers — the OpenAI SDK, or
-     anything else that calls `/v1/chat/completions`.
-4. Paste your Moonshot **API key**. The same key works for both API shapes; it is stored
+   bearer auth header. Keep the upstream URL as-is — the API shape is chosen per agent
+   via its base URL (see below), not on the provider.
+3. Paste your Moonshot **API key**. The same key works for both API shapes; it is stored
    encrypted server-side and never sent to callers.
-5. Save the provider.
+4. Save the provider.
 
 <p>
     <img src="/docs-static/img/agent-network/integrations/agent-network-connect-kimi.png" alt="connect Kimi (Moonshot AI) provider in NetBird Agent Network" className="imagewrapper" />
 </p>
 
 <Note>
-  A provider forwards to a single upstream URL, and NetBird routes requests to providers
-  by model name. Because Moonshot currently serves a single model (`kimi-k3`), two Kimi
-  providers would claim the same model and route ambiguously — so connect one Kimi
-  provider and pick the upstream URL for the API shape your agents use. Anthropic-shaped
-  agents (Claude Code, Kimi CLI) are the most common case.
+  Connect a single Kimi provider. NetBird routes requests to providers by model name, and
+  Moonshot currently serves a single model (`kimi-k3`) — a second Kimi provider would
+  claim the same model and route ambiguously, and it isn't needed: the agent's base URL
+  path selects the API shape through the one provider.
 </Note>
 
 <Note>
@@ -81,8 +77,9 @@ your tool and copy the pre-filled configuration. The sections below walk through
 
 ## Use with Claude Code
 
-Claude Code speaks the Anthropic Messages API, so it needs the Kimi provider whose upstream
-URL is `https://api.moonshot.ai/anthropic`.
+Claude Code speaks the Anthropic Messages API, so its base URL is your endpoint with the
+`/anthropic` suffix — the prefix rides through NetBird to Moonshot, which serves the
+Anthropic API under that path.
 
 Add the following to `~/.claude/settings.json`. The `apiKeyHelper` returns a dummy value so
 Claude Code doesn't prompt for a key — NetBird supplies the real one.
@@ -91,7 +88,7 @@ Claude Code doesn't prompt for a key — NetBird supplies the real one.
 {
   "apiKeyHelper": "echo '-'",
   "env": {
-    "ANTHROPIC_BASE_URL": "https://<your-endpoint>",
+    "ANTHROPIC_BASE_URL": "https://<your-endpoint>/anthropic",
     "ANTHROPIC_MODEL": "kimi-k3",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "kimi-k3",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "kimi-k3",
@@ -124,8 +121,8 @@ Kimi K3's 1M-token context — optional, but worth adding for long sessions.
 ## Use with Kimi CLI
 
 [Kimi CLI](https://github.com/MoonshotAI/kimi-cli) is Moonshot's own coding agent. Configure
-it with a custom provider of type `anthropic`, which means it needs the Kimi provider whose
-upstream URL is `https://api.moonshot.ai/anthropic`.
+it with a custom provider of type `anthropic`, which speaks the Anthropic Messages API —
+so, like Claude Code, its base URL is your endpoint with the `/anthropic` suffix.
 
 Add the following to `~/.kimi/config.toml`. The dummy `api_key` keeps the CLI from prompting
 for one — NetBird injects the real key server-side.
@@ -135,7 +132,7 @@ default_model = "kimi-k3"
 
 [providers.netbird]
 type = "anthropic"
-base_url = "https://<your-endpoint>"
+base_url = "https://<your-endpoint>/anthropic"
 api_key = "-"
 
 [models.kimi-k3]
