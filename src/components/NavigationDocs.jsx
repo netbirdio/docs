@@ -623,6 +623,10 @@ export const docsNavigation = [
                         title: 'CrowdSec IP Reputation',
                         href: '/selfhosted/maintenance/crowdsec',
                     },
+                    {
+                        title: 'CrowdSec Dashboard Protection',
+                        href: '/selfhosted/maintenance/crowdsec-dashboard',
+                    },
                 ],
             },
             {
