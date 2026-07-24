@@ -4,11 +4,13 @@ export const description = "Overview of the redesigned NetBird desktop app: Defa
 
 # NetBird Desktop App
 
-<Note>
-    The redesigned desktop app described on this page is currently available as a **release candidate**. Behavior and screenshots may change before the stable release. To try it, download the latest release candidate from [pkgs.netbird.io](https://pkgs.netbird.io/releases/rc).
-</Note>
+Starting with NetBird v0.75.0, the desktop app uses a [Wails](https://wails.io/) webview with a React frontend. The management server and wire protocol are unchanged, but the UI and agent need to be updated together. If their versions do not match, the app displays an update notification.
 
-The NetBird desktop app has been rebuilt from the ground up. It runs on a [Wails](https://wails.io/) webview with a React frontend, while the Go backend that talks to the daemon stays the same. The management server and wire protocol are unchanged. The redesigned app is not backward compatible with older agents, though, so the app and the agent need to be updated together. If their versions do not match, the app shows a notification prompting you to update.
+## First Launch
+
+On first launch, the welcome dialog points you to the NetBird icon in the Windows or Linux system tray, or the macOS menu bar. Choose whether to connect to **NetBird Cloud** or a **Self-hosted** deployment. For a self-hosted deployment, enter its management URL before connecting.
+
+Click **Connect** in the main window or tray menu. NetBird opens your browser to authenticate the device. Once authorization completes, the desktop app connects and displays the device's NetBird IP address.
 
 ## Default and Advanced Views
 
@@ -24,7 +26,7 @@ Switch to the **Advanced** view and the window expands with a peers and resource
     <img src="/docs-static/img/client/desktop-app/peers-view.png" alt="Advanced view showing the Peers tab" className="imagewrapper"/>
 </p>
 
-The **Resources** tab lists the network resources available to you.
+The **Resources** tab lists the network resources available to you. You can search resources, show only active or overlapping entries, toggle individual resources, or enable and disable all resources at once.
 
 <p>
     <img src="/docs-static/img/client/desktop-app/resources-view.png" alt="Advanced view showing the Resources tab" className="imagewrapper"/>
@@ -50,16 +52,22 @@ A colored status dot sits next to the tray icon so you can read the state of you
     <img src="/docs-static/img/client/desktop-app/tray-status.png" alt="NetBird system tray status indicator" className="imagewrapper"/>
 </p>
 
-The app also includes per-platform refinements: improved behavior on Linux X11 desktops, a macOS Dock icon that only appears when an app window is open, and improved status rendering on Windows.
+The tray menu also provides profile switching, session-renewal access, exit-node selection, Settings, Help & Support, and **Quit NetBird**. Closing the main window only hides it while the daemon and network connection continue running. Choosing **Quit NetBird** disconnects the daemon before the desktop app exits.
+
+## Exit Nodes
+
+The compact view shows the active exit node. Open the exit-node selector in the main window or tray menu to select another available exit node or return to a direct connection by deselecting it.
 
 ## Settings
 
 The settings page uses a tabbed layout that groups options by what they control. The tabs you see depend on your role and on any [MDM policy](#mdm-driven-ui) in effect. The full set is:
 
-* **General** for everyday toggles: auto-start, notifications, and display language.
-* **Network** and **Security** for connection-side options such as PSK, custom DNS port, lazy connections, and server SSH.
+* **General** for everyday toggles: Connect on Startup, Launch NetBird UI at Login, notifications, and display language.
+* **Network** for connectivity, DNS, routes, and IPv6 settings.
+* **Security** for inbound traffic, LAN access, and quantum-resistant encryption settings.
 * **Profiles** for managing the accounts the app knows about. See [Profiles](/client/profiles).
-* **SSH** and **Advanced** for options such as log level, network monitor, and native SSH.
+* **SSH** for the native SSH server and its optional features.
+* **Advanced** for log-level and custom configuration options.
 * **Troubleshoot** for [capturing a debug bundle](#capturing-a-debug-bundle).
 * **About** for version information, useful links, and updating the app.
 
@@ -67,12 +75,14 @@ The settings page uses a tabbed layout that groups options by what they control.
     <img src="/docs-static/img/client/desktop-app/settings-language.png" alt="Settings page with the General tab and Display Language picker" className="imagewrapper"/>
 </p>
 
+**Connect on Startup** controls whether the background service reconnects when it starts. **Launch NetBird UI at Login** controls only whether the graphical interface opens when you sign in to the operating system. On a fresh desktop installation, launch at login is enabled once by default. Upgrades preserve the user's existing preference. Administrators can manage this behavior with [`disableAutostart`](/client/mdm-integration#disableAutostart).
+
 ## MDM-Driven UI
 
 If you roll out NetBird through MDM, the app reads the policy in effect on the device and adjusts itself to match, so users only see the options they are allowed to use. For deploying NetBird through an MDM provider, see the [MDM deployment guides](/manage/integrations/mdm-deployment/intune-netbird-integration).
 
-* **Hide whole views.** `DisableAdvancedView` hides the Advanced view of the main window, so managed users only see the compact one.
-* **Gate specific capabilities.** Flags such as `AllowServerSSH` control whether the corresponding toggle is available in the app.
+* **Hide whole views.** `disableAdvancedView` hides the Advanced view of the main window, so managed users only see the compact one.
+* **Gate specific capabilities.** Keys such as `allowServerSSH` control whether the corresponding toggle is available in the app.
 * **Refresh in the background.** Restrictions are re-read when the window becomes visible or the connection status changes, so MDM-pushed policy updates apply without a restart.
 
 <Note>
@@ -81,7 +91,7 @@ If you roll out NetBird through MDM, the app reads the policy in effect on the d
 
 ## Session Expiration and Renewal
 
-When a session is about to expire, the app shows a dialog with a countdown and two clear actions: renew or log out. An operating system notification fires ahead of time, so the dialog is not the first signal you get.
+When a session is about to expire, the app shows a dialog with a countdown and two clear actions: renew or log out. An operating system notification fires ahead of time, and the session deadline remains visible across reconnects.
 
 <p>
     <img src="/docs-static/img/client/desktop-app/session-expiration.png" alt="Session expiry dialog with a countdown and renew or logout actions" className="imagewrapper"/>
@@ -91,10 +101,14 @@ The renewal flow follows one rule: re-authenticating never closes an active conn
 
 ## Localization
 
-You can switch languages from the **Display Language** picker in **Settings → General**, and the change applies instantly. The release candidate ships with initial translations for English, French, German, Hungarian, Italian, Portuguese, Russian, Simplified Chinese, and Spanish.
+You can switch languages from the **Display Language** picker in **Settings → General**, and the change applies instantly. NetBird v0.75 ships with English, French, German, Hungarian, Italian, Japanese, Portuguese, Russian, Simplified Chinese, and Spanish.
 
-These initial translations are still a work in progress. If your language is missing or a phrase reads incorrectly, please [open a pull request](https://github.com/netbirdio/netbird). Feedback from native speakers is exactly what helps here.
+Translations are a continuing community effort. If your language is missing or a phrase reads incorrectly, please [open a pull request](https://github.com/netbirdio/netbird).
 
 ## Capturing a Debug Bundle
 
-The **Troubleshoot** tab can capture a debug bundle that collects both the daemon logs and the UI logs at the current log level in one step. Attach the bundle when you report an issue so the team has the full picture.
+The **Troubleshoot** tab can capture a debug bundle that collects daemon and UI logs in one step. You can collect new trace logs for 1–30 minutes, cycle the connection, include a packet capture and system information, anonymize sensitive data, and either upload the result to NetBird or keep it locally. See [Troubleshooting the client](/help/troubleshooting-client#debug-bundle-uploads-with-gui) for the complete flow.
+
+<p>
+    <img src="/docs-static/img/help/troubleshooting-client/ui-bundle-local-success.png" alt="Completed debug bundle saved locally in the NetBird desktop app" className="imagewrapper"/>
+</p>

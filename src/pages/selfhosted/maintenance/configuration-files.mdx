@@ -277,6 +277,9 @@ Configures the built-in identity provider (embedded IdP) that handles user authe
   <Property name="server.auth.cliRedirectURIs" type="array">
     Redirect URIs for CLI-based authentication. Default: `["http://localhost:53000/"]`. Used when authenticating via the `netbird` CLI tool.
   </Property>
+  <Property name="server.auth.grantTypes" type="array">
+    Restricts the OAuth2 grant types exposed by the embedded IdP. Leaving it unset preserves the Dex defaults. Common values are `authorization_code`, `refresh_token`, and `device_code`. Omit `device_code` to disable the device authorization flow while retaining browser-based authorization and refresh tokens.
+  </Property>
   <Property name="server.auth.owner.email" type="string">
     Email address for the initial admin user. Optional. When set together with `owner.password`, the server creates this user on first startup with admin privileges.
   </Property>
@@ -292,12 +295,33 @@ Configures the built-in identity provider (embedded IdP) that handles user authe
   
 </Properties>
 
+For example, disable the OAuth device flow while retaining dashboard/browser login and refresh tokens:
+
+```yaml
+server:
+  auth:
+    grantTypes:
+      - authorization_code
+      - refresh_token
+```
+
+Restart `netbird-server` after changing the grant list. Verify that OIDC discovery still loads and that the device endpoint returns `404`:
+
+```bash
+curl -fsS https://your-domain/oauth2/.well-known/openid-configuration
+curl -i -X POST https://your-domain/oauth2/device/code
+```
+
+<Warning>
+Disabling `device_code` prevents NetBird clients and other applications that depend on OAuth device authorization from completing that login flow. Confirm that your deployed clients can use the remaining authorization flow before disabling it.
+</Warning>
+
 When the embedded IdP is active, the server automatically hosts these OIDC endpoints:
 
 - **Discovery**: `https://your-domain/oauth2/.well-known/openid-configuration`
 - **JWKS (signing keys)**: `https://your-domain/oauth2/keys`
 - **Token issuance**: `https://your-domain/oauth2/token`
-- **Device authorization**: `https://your-domain/oauth2/device/authorize`
+- **Device authorization**: `https://your-domain/oauth2/device/code` when `device_code` is allowed
 
 <Note>
 NetBird also supports integration with external OIDC-compatible identity providers for Single Sign-On (SSO), Multi-Factor Authentication (MFA), and centralized user management. See the [Authentication & IdPs page](/selfhosted/identity-providers) for configuration details.
