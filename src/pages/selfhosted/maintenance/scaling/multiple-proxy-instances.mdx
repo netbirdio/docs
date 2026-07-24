@@ -149,9 +149,12 @@ NB_PROXY_ADDRESS=:8443
 NB_PROXY_ACME_CERTIFICATES=true
 NB_PROXY_ACME_CHALLENGE_TYPE=tls-alpn-01
 NB_PROXY_CERTIFICATE_DIRECTORY=/certs
+NB_PROXY_FORWARDED_PROTO=https
+NB_PROXY_PROXY_PROTOCOL=true
+NB_PROXY_TRUSTED_PROXIES=172.30.0.10
 ```
 
-The `NB_PROXY_DOMAIN` value **must match** across all instances in the cluster. Use a unique `NB_PROXY_TOKEN` for each instance.
+The `NB_PROXY_DOMAIN` value **must match** across all instances in the cluster. Use a unique `NB_PROXY_TOKEN` for each instance. This example assigns Traefik the static address `172.30.0.10`, so the proxy can trust PROXY protocol headers from that address without trusting every container on the network.
 
 ### Step 2: Create the Docker Compose file
 
@@ -167,11 +170,15 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.filename=/etc/traefik/dynamic.yaml"
     ports:
       - "443:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks: [netbird]
+      - ./traefik-dynamic.yaml:/etc/traefik/dynamic.yaml:ro
+    networks:
+      netbird:
+        ipv4_address: 172.30.0.10
 
   proxy:
     image: netbirdio/reverse-proxy:latest
@@ -192,6 +199,7 @@ services:
       - traefik.tcp.routers.proxy-passthrough.service=proxy-tls
       - traefik.tcp.routers.proxy-passthrough.priority=1
       - traefik.tcp.services.proxy-tls.loadbalancer.server.port=8443
+      - traefik.tcp.services.proxy-tls.loadbalancer.serverstransport=pp-v2@file
     logging:
       driver: "json-file"
       options:
@@ -200,6 +208,11 @@ services:
 
 networks:
   netbird:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
 
 volumes:
   netbird_proxy_certs:
@@ -208,6 +221,18 @@ volumes:
 <Note>
 On additional servers that only run the proxy (not the full NetBird stack), the Traefik configuration is simpler because there are no competing HTTP routers. All traffic on port 443 is passed through to the proxy container.
 </Note>
+
+Create `traefik-dynamic.yaml` next to `docker-compose.yml` so Traefik passes the original client address to the proxy:
+
+```yaml
+tcp:
+  serversTransports:
+    pp-v2:
+      proxyProtocol:
+        version: 2
+```
+
+If `172.30.0.0/24` conflicts with an existing network on the host, choose an unused private subnet and update the subnet, gateway, Traefik address, and `NB_PROXY_TRUSTED_PROXIES` together.
 
 ### Step 3: Start the instance
 
