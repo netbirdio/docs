@@ -139,7 +139,7 @@ If deploying multiple relays (e.g., for different regions), repeat the steps abo
 
 ## Update Main Server Configuration
 
-Now update your main NetBird server to use the external relays instead of the embedded one.
+Now configure your main NetBird server to use the external relays alongside (or instead of) the embedded one.
 
 ### Edit config.yaml
 
@@ -150,7 +150,49 @@ cd ~/netbird  # or wherever your deployment is
 nano config.yaml
 ```
 
-Remove the `authSecret` from the `server` section and add `relays` and `stuns` sections pointing to your external servers. The presence of the `relays` section disables both the embedded relay and the embedded STUN server, so the `stuns` section is required to provide external STUN addresses:
+Add `relays` and `stuns` sections pointing to your external servers.
+
+#### Option A: Keep the embedded relay running (recommended)
+
+When `server.authSecret` is set and `relays.secret` matches it, the embedded relay stays active. Its address is automatically prepended to the peer relay list and used first when available. Local STUN also stays on as long as `server.stunPorts` has values (default: `[3478]`):
+
+```yaml
+server:
+  listenAddress: ":80"
+  exposedAddress: "https://netbird.example.com:443"
+  # Keep authSecret to keep the embedded relay active
+  authSecret: "your-auth-secret"
+  stunPorts:
+    - 3478
+  metricsPort: 9090
+  healthcheckAddress: ":9000"
+  logLevel: "info"
+  logFile: "console"
+  dataDir: "/var/lib/netbird"
+
+  # External STUN servers (your relay servers)
+  stuns:
+    - uri: "stun:relay-us.example.com:3478"
+      proto: "udp"
+    - uri: "stun:relay-eu.example.com:3478"
+      proto: "udp"
+
+  # External relay servers
+  relays:
+    addresses:
+      - "rels://relay-us.example.com:443"
+      - "rels://relay-eu.example.com:443"
+    secret: "your-auth-secret"      # Must match server.authSecret
+    credentialsTTL: "24h"
+
+  auth:
+    issuer: "https://netbird.example.com/oauth2"
+    # ... rest of auth config
+```
+
+#### Option B: Disable the embedded relay
+
+If you prefer to use only external relays, remove `authSecret` from the `server` section. The presence of `relays.addresses` without a matching `authSecret` disables both the embedded relay and the local STUN server, so the `stuns` section is required for STUN:
 
 ```yaml
 server:
@@ -158,7 +200,7 @@ server:
   exposedAddress: "https://netbird.example.com:443"
   # Remove authSecret to disable the embedded relay
   # authSecret: ...
-  # Remove or comment out stunPorts since we're using external STUN
+  # Remove or comment out stunPorts since STUN is handled externally
   # stunPorts:
   #   - 3478
   metricsPort: 9090
@@ -188,12 +230,12 @@ server:
 ```
 
 <Warning>
-The `secret` under `relays` and the `NB_AUTH_SECRET` on all relay servers **must be identical**. Mismatched secrets will cause relay connections to fail silently.
+When `authSecret` is set and `relays.secret` does not match it, the embedded relay is disabled and a warning is logged. The external relays continue working normally.
 </Warning>
 
 ### Update docker-compose.yml (Optional)
 
-If your main server was exposing STUN port 3478, you can remove it since STUN is now handled by external relays:
+If your main server was exposing STUN port 3478 and you chose Option B, you can remove it since STUN is now handled by external relays:
 
 ```yaml
   netbird-server:
@@ -225,7 +267,19 @@ docker compose up -d
 docker compose logs netbird-server
 ```
 
-Verify that the embedded relay is disabled and your external relay addresses are listed:
+With **Option A** (embedded relay kept), you should see the embedded relay is active and your external relay addresses are also listed:
+
+```
+INFO combined/cmd/root.go:   Management: true (log level: info)
+INFO combined/cmd/root.go:   Signal: true (log level: info)
+INFO combined/cmd/root.go:   Relay: true (log level: info)
+```
+
+```
+Relay addresses: [rels://<embedded>, rels://relay-us.example.com:443 rels://relay-eu.example.com:443]
+```
+
+With **Option B** (embedded relay disabled), you should see the embedded relay is disabled:
 
 ```
 INFO combined/cmd/root.go:   Management: true (log level: info)
@@ -245,7 +299,7 @@ Connect a NetBird client and verify that both STUN and relay services are availa
 netbird status -d
 ```
 
-The output should list your external STUN and relay servers. All configured STUN servers will appear, but only one randomly chosen relay is used per client:
+With **Option A**, the embedded relay address appears first in the relay list and is tried first, and the local STUN also appears alongside external STUN servers. With **Option B**, only external servers are listed. All configured STUN servers and relay addresses will appear. Relays are tried in list order — the first available relay is used:
 
 ```
 Relays:
