@@ -548,7 +548,21 @@ export const docsNavigation = [
         links: [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
             { title: 'Automated Setup', href: '/selfhosted/automated-setup' },
-            { title: 'Commercial License', href: '/selfhosted/enterprise' },
+            {
+                title: 'Commercial License',
+                href: '/selfhosted/enterprise',
+                isOpen: false,
+                links: [
+                    {
+                        title: 'Getting Started',
+                        href: '/selfhosted/enterprise/getting-started',
+                    },
+                    {
+                        title: 'High Availability',
+                        href: '/selfhosted/maintenance/scaling/high-availability',
+                    },
+                ],
+            },
             {
                 title: 'Infrastructure as Code',
                 isOpen: false,
