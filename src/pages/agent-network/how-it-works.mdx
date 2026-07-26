@@ -18,7 +18,7 @@ calling:
 - **Internal resources** such as databases, internal APIs, and self-hosted models, are
   reached directly over **peer-to-peer WireGuard tunnels**, the same way any NetBird peer
   reaches another. This traffic is governed by the same identities and access policies
-  but does not pass through the proxy, so there is no endpoint or key injection — the
+  but does not pass through the proxy, so there is no endpoint or key injection. The
   agent connects straight to the resource over the overlay.
 
 ## Architecture
@@ -30,7 +30,7 @@ service adds an identity-aware control plane for AI traffic.
 
 ### LLM APIs and AI Gateways
 
-The diagram below illustrates the **first path** — an LLM request: the agent reaches the
+The diagram below illustrates the **first path**, an LLM request: the agent reaches the
 endpoint over the WireGuard overlay, the proxy enforces identity, policies, limits, and guardrails
 against the management control plane, injects the provider key, and forwards to the
 upstream API or gateway. The proxy can also inject the calling agent's identity into the
@@ -43,17 +43,17 @@ can apply tag budgets and per-user attribution.
     <img src="/docs-static/img/agent-network/how-it-works/agent-network-diagram-llm-apis.png" alt="agent network LLM request path through the NetBird proxy" className="imagewrapper-big" />
 </p>
 
-- **NetBird client** — the agent's device joins the overlay as a peer. Its requests to
+- **NetBird client**: the agent's device joins the overlay as a peer. Its requests to
   the endpoint are routed through the WireGuard tunnel, not the public internet.
-- **Proxy peer** — handles LLM traffic only. It terminates the request, establishes
+- **Proxy peer**: handles LLM traffic only. It terminates the request, establishes
   the caller's identity, runs the routing and policy pipeline, injects the provider key,
   and forwards to the upstream API or gateway.
-- **Management service** — the control plane. It holds providers, policies, guardrails,
+- **Management service**: the control plane. It holds providers, policies, guardrails,
   and limits; resolves identities against your IdP; answers the proxy's per-request
   policy checks; and records usage and access logs.
-- **Identity provider** — your existing IdP (Okta, Microsoft Entra ID, Google, …)
+- **Identity provider**: your existing IdP (Okta, Microsoft Entra ID, Google, …)
   supplies the identities and group memberships that policies are written against.
-- **Upstreams** — for LLM traffic, the proxy forwards to LLM APIs and AI gateways.
+- **Upstreams**: for LLM traffic, the proxy forwards to LLM APIs and AI gateways.
 
 The endpoint hostname itself (for example `https://sailcloth.netbird.ai`) is generated
 when you connect your first provider and is only reachable from inside your overlay.
@@ -62,14 +62,14 @@ overlay.
 
 ### Internal Resources
 
-The **second path** covers everything that isn't an LLM API — internal databases,
+The **second path** covers everything that isn't an LLM API: internal databases,
 internal APIs, and self-hosted models on a GPU host. Here the proxy is not involved at
 all. The agent connects to the target's overlay address **directly over a peer-to-peer
 WireGuard tunnel**, exactly the way any NetBird peer reaches another. Access is still
 identity-based: the agent's peer identity and group membership are matched against your
 access policies, so it can reach only the resources it is authorized for. Because the
 traffic never passes through the proxy, this path has no agent network endpoint, no
-provider-key injection, and no token, budget, or per-request LLM logging — it is governed
+provider-key injection, and no token, budget, or per-request LLM logging. It is governed
 like standard NetBird peer-to-peer access. This keeps internal traffic fast and private,
 flowing straight between the two peers. Because NetBird is a peer-to-peer network, this
 also works in reverse, so a resource can reach back to an agent when needed, such as to
@@ -82,7 +82,7 @@ deliver a callback or webhook.
 
 ## The Lifecycle of an LLM Request
 
-This pipeline applies to LLM traffic — requests to the agent network endpoint.
+This pipeline applies to LLM traffic: requests to the agent network endpoint.
 Access to internal resources skips it entirely and flows peer-to-peer (see [Internal
 Resources](#internal-resources)).
 
@@ -90,24 +90,24 @@ The proxy runs each request through an ordered chain of middleware. On the way t
 upstream:
 
 1. **Establish identity.** The request arrives over the WireGuard tunnel, so the proxy
-   maps it to the calling NetBird peer and its identity — tied to your IdP for a human
-   user, or the peer's own NetBird identity for an autonomous agent — together with its
+   maps it to the calling NetBird peer and its identity, tied to your IdP for a human
+   user, or the peer's own NetBird identity for an autonomous agent, together with its
    group membership. See [Identity and Authentication](#identity-and-authentication).
 2. **Parse the request.** Read the target model and stream flag from the body, and
    capture the prompt if prompt collection is enabled.
 3. **Route and inject the key.** Match the model to a provider the caller's groups are
    authorized to use, rewrite the upstream target, strip any client-supplied auth headers,
-   and inject the provider's key from server-side storage — see
+   and inject the provider's key from server-side storage. See
    [Routing](#routing-matching-a-request-to-a-provider) and [Keyless Access](#keyless-access).
 4. **Check policy and limits.** Ask management to select the matching policy and evaluate
    account- and policy-level token and budget caps. If unauthorized or a cap is exhausted,
-   the request is denied here — see [Policies, Limits, and
+   the request is denied here. See [Policies, Limits, and
    Guardrails](#policies-limits-and-guardrails).
 5. **Stamp identity for the gateway.** Add the caller's identity to the upstream request
    (for example into `metadata.tags` and `x-litellm-end-user-id`) for gateways that key
    their own budgets and attribution off it, or into a provider's own cost-allocation
    metadata such as AWS Bedrock's `X-Amzn-Bedrock-Request-Metadata`. This is on by default
-   and can be turned off per provider — see [Identity
+   and can be turned off per provider. See [Identity
    Metadata](/agent-network/providers#identity-metadata).
 6. **Apply guardrails.** Enforce the model allowlist and the prompt-capture rules.
 
@@ -116,7 +116,7 @@ reverse:
 
 7. **Meter.** Extract token counts from the response and convert them to cost.
 8. **Record.** Post the usage back to management to update the limit counters. Usage is
-   always recorded; a full access-log entry is written when log collection is on — see
+   always recorded; a full access-log entry is written when log collection is on. See
    [Usage and Access Logs](#usage-and-access-logs).
 
 A denial at any gate returns `403` to the client with a machine-readable reason, and the
@@ -129,14 +129,14 @@ comes from the **NetBird tunnel**. Because the request arrives over WireGuard, t
 maps its source to the enrolled peer and resolves the peer's NetBird identity and group
 membership:
 
-- For a **human user** — for example someone running Claude Code — the NetBird identity is
+- For a **human user**: for example someone running Claude Code, the NetBird identity is
   tied to your identity provider (Okta, Microsoft Entra ID, Google, …), so the request
   carries that user and the groups they belong to.
 - For an **autonomous agent**, the identity is the agent's own NetBird peer identity and
   the groups assigned to that peer.
 
 Either way the request carries a real identity and its **group membership**, captured at
-request time. There is no API key or separate login on the client — the tunnel is the
+request time. There is no API key or separate login on the client. The tunnel is the
 credential. Policies are written against those groups, so access to AI follows the same
 identities your organization already manages.
 
@@ -161,7 +161,7 @@ was selected and which groups authorized it.
 ## Policies, Limits, and Guardrails
 
 Routing decides *where* a request can go; policies decide *whether it may* and *under what
-budget*. By default nothing is allowed — a policy must connect a **source group** to one
+budget*. By default nothing is allowed: a policy must connect a **source group** to one
 or more **providers**.
 
 At request time, management evaluates, in order:
@@ -206,11 +206,11 @@ rotating a provider key is a single server-side change.
 
 Agent Network separates lightweight accounting from full audit detail:
 
-- **Usage** is recorded for **every** served request — identity, provider, model, tokens,
-  and cost — regardless of any logging setting. This always-on stream powers the usage
+- **Usage** is recorded for **every** served request: identity, provider, model, tokens,
+  and cost, regardless of any logging setting. This always-on stream powers the usage
   dashboards and the limit counters, and is retained indefinitely.
-- **Access logs** add the full per-request detail (method, path, status, duration, and —
-  when prompt capture is on — the prompt and completion). Full access-log entries are
+- **Access logs** add the full per-request detail (method, path, status, duration, and,
+  when prompt capture is on, the prompt and completion). Full access-log entries are
   written only when **log collection** is enabled for the account, and are swept after a
   configurable **retention period**. Prompts can be redacted for PII.
 
@@ -227,7 +227,7 @@ This is also where the two paths differ:
 
 - **LLM traffic** rides the overlay to reach the **proxy** peer, which then applies the
   pipeline above and forwards to the upstream API or gateway.
-- **Internal resources** — databases, APIs, and self-hosted models — are reached over a
+- **Internal resources**: databases, APIs, and self-hosted models, are reached over a
   **direct peer-to-peer tunnel** between the agent and the target peer, with no proxy in
   between. Access is governed by the same identities and access policies as any other
   NetBird peer, so an agent reaches only the resources its identity is allowed to.
