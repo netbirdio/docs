@@ -4,6 +4,43 @@ import {Note} from "@/components/mdx";
 
 The NetBird client (agent) allows a peer to join a pre-existing NetBird deployment. If a NetBird deployment is not yet available, there are both managed and [self-hosted](https://docs.netbird.io/selfhosted/selfhosted-quickstart) options available.
 
+## Desktop App Dependencies
+
+The desktop app introduced in NetBird v0.75.0 renders its interface in a GTK 4 WebKit webview. The `netbird-ui` package does not declare these libraries as dependencies, so install them alongside it.
+
+<Warning>
+The desktop app requires **GTK 4.10 or newer** and **WebKitGTK 6.0**. On older GTK 4 releases the app starts but crashes as soon as it opens a file dialog, so install the `netbird` CLI only on those systems.
+</Warning>
+
+Minimum releases that satisfy both requirements:
+
+| Distribution | Desktop app | CLI |
+| --- | --- | --- |
+| Ubuntu | 24.04 LTS and newer | any supported release |
+| Debian | 13 (trixie) and newer | any supported release |
+| Fedora | 43 and newer | any supported release |
+| RHEL / AlmaLinux / Rocky | 10 and newer, with [EPEL](https://docs.fedoraproject.org/en-US/epel/getting-started/) | any supported release |
+| Amazon Linux | not available | 2 and 2023 |
+
+Ubuntu 22.04 (GTK 4.6) and Debian 12 (GTK 4.8) ship WebKitGTK 6.0 but their GTK 4 is below 4.10, so the desktop app is not supported there. RHEL 9 provides neither GTK 4.10 nor WebKitGTK 6.0.
+
+**Debian 13+ / Ubuntu 24.04+**
+
+```bash
+sudo apt-get install libgtk-4-1 libwebkitgtk-6.0-4 xdg-utils
+```
+
+**Fedora 43+ / RHEL 10+**
+
+```bash
+sudo dnf install gtk4 webkitgtk6.0 xdg-utils
+```
+
+On other distributions, install the equivalent **GTK 4** (4.10+), **WebKitGTK 6.0**, and **xdg-utils** packages from your package manager. Many desktop systems already include some or all of them.
+
+<Note>
+Linux `netbird-ui` packages are built for **x86_64** only. On arm64 and other architectures, use the `netbird` CLI.
+</Note>
 
 ## Linux Install Script
 
@@ -30,11 +67,15 @@ curl -fsSL https://pkgs.netbird.io/install.sh | sh
 ```bash
  # for CLI only
  sudo apt-get install netbird
- # for GUI package
- sudo apt-get install netbird-ui
+ # for the desktop app (Ubuntu 24.04+ / Debian 13+)
+ sudo apt-get install netbird-ui libgtk-4-1 libwebkitgtk-6.0-4 xdg-utils
 ```
 
-### RHEL 7 / Amazon Linux 2 (YUM)
+### RHEL 9 / Amazon Linux 2 (YUM)
+
+<Note>
+These releases do not provide GTK 4.10 or WebKitGTK 6.0, so the desktop app is not available. Install the CLI and manage NetBird with `netbird` commands.
+</Note>
 
 1. Add the repository:
 ```bash
@@ -50,10 +91,7 @@ EOF
 ```
 2. Install the package
 ```bash
- # for CLI only
  sudo yum install netbird
- # for GUI package
- sudo yum install libappindicator-gtk3 libappindicator netbird-ui
 ```
 
 ### RHEL 8+ / Fedora / Amazon Linux 2023 (DNF)
@@ -81,10 +119,18 @@ EOF
 ```bash
  # for CLI only
  sudo dnf install netbird
- # for GUI package
- sudo dnf install libappindicator-gtk3 libappindicator netbird-ui
+ # for the desktop app (Fedora 43+ / RHEL 10+)
+ sudo dnf install netbird-ui gtk4 webkitgtk6.0 xdg-utils
 ```
-On some recent releases, the default behaviour for `libappindicator` was changed, so we need to install `gnome-shell-extension-appindicator` and enable it:
+
+On RHEL, AlmaLinux and Rocky Linux 10, `webkitgtk6.0` comes from EPEL, so enable it before installing the desktop app:
+```bash
+ sudo dnf install epel-release -y
+```
+
+Amazon Linux 2023 does not provide GTK 4 or WebKitGTK 6.0, so install the CLI only there.
+
+The tray icon uses the D-Bus StatusNotifierItem protocol. GNOME does not support it natively, so on GNOME desktops install `gnome-shell-extension-appindicator` and enable it:
 ```
 sudo dnf install gnome-shell-extension-appindicator
 sudo gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com
@@ -111,8 +157,8 @@ EOF
 ```bash
  # for CLI only
  rpm-ostree install netbird
- # for GUI package
- rpm-ostree install netbird-ui
+ # for the desktop app
+ rpm-ostree install netbird-ui gtk4 webkitgtk6.0 xdg-utils
  # Don't forget to reboot to apply
 ```
 4. Start the service
@@ -246,6 +292,10 @@ After rebooting, enable and start the service:
 sudo systemctl enable --now netbird
 ```
 
+<Note>
+These commands install the CLI. To use the desktop app, install `netbird-ui` together with your distribution's GTK 4.10+ and WebKitGTK 6.0 packages; openSUSE names them differently from Debian and Fedora, so check with `zypper search webkitgtk`.
+</Note>
+
 ### NixOS 22.11+/unstable
 
 1. Edit your [`configuration.nix`](https://nixos.org/manual/nixos/stable/index.html#sec-changing-config)
@@ -315,12 +365,7 @@ netbird up
 
 ## Running NetBird with SSO Login
 ### Desktop UI Application
-If you installed the Desktop UI client, you can launch it and click on Connect.
-> It will open your browser, and you will be prompt for email and password. Follow the instructions.
-
-<p>
-    <img src="/docs-static/img/get-started/netbird-sso-login-ui.gif" alt="high-level-dia" className="imagewrapper-big"/>
-</p>
+Launch the desktop app and click **Connect** in the main window or system-tray menu. On first launch, choose NetBird Cloud or enter the URL of your self-hosted deployment. NetBird opens your browser to authenticate the device. See the [desktop app guide](/client/desktop-app) for the complete interface.
 
 ### CLI
 Alternatively, you could use command line. Simply run
@@ -341,6 +386,8 @@ Check connection status:
 ## Running NetBird with a Setup Key
 In case you are activating a server peer, you can use a [setup key](/manage/peers/register-machines-using-setup-keys) as described in the steps below.
 > This is especially helpful when you are running multiple server instances with infrastructure-as-code tools like ansible and terraform.
+
+For unattended deployments across many machines, pre-populate the client config so each peer registers on first start. See [Bootstrap peers via config file](/manage/peers/bootstrap-via-config-file).
 
 1. Login to the Management Service. You need to have a `setup key` in hand (see [setup keys](/manage/peers/register-machines-using-setup-keys)).
 

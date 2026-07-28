@@ -10,7 +10,7 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { getGitLastModified } from './git-dates.mjs'
+import { buildGitDateMap } from './git-dates.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
@@ -56,10 +56,11 @@ function escapeXml(s) {
     .replace(/'/g, '&apos;')
 }
 
+const gitDates = buildGitDateMap()
 const entries = findMdxFiles(PAGES_DIR)
   .map(({ route, filePath }) => ({
     url: toPublicUrl(route),
-    lastmod: getGitLastModified(filePath),
+    lastmod: gitDates.get(path.relative(ROOT, filePath)) ?? null,
   }))
   .sort((a, b) => a.url.localeCompare(b.url))
 

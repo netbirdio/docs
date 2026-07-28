@@ -1,0 +1,213 @@
+import {Note, Warning} from "@/components/mdx";
+
+export const description =
+  "Use the NetBird self-hosted admin CLI to manage local users, local MFA, proxy access tokens, and reverse proxy state.";
+
+# Self-hosted admin CLI
+
+The self-hosted admin CLI provides maintenance commands that run directly against the NetBird Management data store and, for local user operations, the embedded IdP store. Use it when you need to repair or administer a self-hosted control plane from the server rather than through the Dashboard or public API.
+
+You can use the admin CLI to:
+
+- Change passwords for local embedded IdP users
+- Reset a local user's MFA enrollment
+- Enable, disable, or check local MFA
+- Create, list, and revoke reverse proxy access tokens
+- Force-mark reverse proxy instances as disconnected after an unclean shutdown
+
+<Warning>
+Back up your NetBird configuration and data stores before running commands that change state. Run the command from the same NetBird version as the server. After an upgrade, start the server once before using the admin CLI so database migrations and embedded IdP clients are initialized.
+</Warning>
+
+## Prerequisites
+
+- Access to the host or container that runs the Management service
+- The Management configuration file path
+- For local user and MFA commands, a self-hosted deployment using the [embedded IdP](/selfhosted/identity-providers/local)
+- For local MFA commands, a single-account embedded IdP deployment
+
+<Note>
+The admin CLI is for self-hosted deployments. It does not manage users in external identity providers such as Google Workspace, Microsoft Entra ID, Okta, or Keycloak.
+</Note>
+
+## Choose the command prefix
+
+Use the prefix that matches your deployment type, then append one of the admin subcommands shown below.
+
+### Combined container
+
+New installations created with `getting-started.sh` use the combined `netbird-server` container and `config.yaml`.
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin <command>
+```
+
+If you run the binary directly on the host, use the host path to `config.yaml` instead:
+
+```bash
+netbird-server --config ./config.yaml admin <command>
+```
+
+### Older multi-container setup
+
+Older deployments use a separate `netbird-mgmt` binary and `management.json`.
+
+```bash
+docker exec -it netbird-management \
+  /go/bin/netbird-mgmt admin --config /etc/netbird/management.json <command>
+```
+
+If your SQLite `store.db` or default `idp.db` is in a non-default data directory, add `--datadir`:
+
+```bash
+docker exec -it netbird-management \
+  /go/bin/netbird-mgmt admin --config /etc/netbird/management.json --datadir /var/lib/netbird <command>
+```
+
+## Change a local user's password
+
+Use `admin user change-password` with either `--email` or `--user-id`.
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin user change-password \
+  --email user@example.com \
+  --password-file /run/secrets/new-netbird-password
+```
+
+To avoid storing the password in shell history, read it from standard input:
+
+```bash
+printf '%s\n' 'NewPass1!' | docker exec -i netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin user change-password \
+  --email user@example.com \
+  --password-file -
+```
+
+The new password must be at least eight characters and include at least one digit, one uppercase letter, and one special character.
+
+<Note>
+The command also removes the user's active local authentication session, so the user must sign in again with the new password.
+</Note>
+
+## Reset a local user's MFA enrollment
+
+Use `admin user reset-mfa` when a local user loses access to their authenticator app or needs to enroll again.
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin user reset-mfa \
+  --email user@example.com
+```
+
+You can also select the user by ID:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin user reset-mfa \
+  --user-id <user-id>
+```
+
+The command clears the user's stored TOTP and WebAuthn enrollment for the local connector and removes the active local authentication session. If local MFA remains enabled, the user is prompted to enroll again at the next login.
+
+## Manage local MFA
+
+Local MFA applies to all users who authenticate with the embedded IdP local username/password connector. It does not affect users who sign in through external IdPs.
+
+Check the current state:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin mfa status
+```
+
+Enable local MFA:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin mfa enable
+```
+
+Disable local MFA:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin mfa disable
+```
+
+<Warning>
+Disabling local MFA removes the login requirement but does not delete users' stored MFA enrollments. If you enable MFA again, previously enrolled users are asked for the same authenticator unless you reset their enrollment with `admin user reset-mfa`.
+</Warning>
+
+## Manage proxy access tokens
+
+Reverse proxy instances authenticate to Management with proxy access tokens. The plain token is shown only once when created.
+
+Create a token:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin token create \
+  --name "proxy-server-1" \
+  --expires-in 365d
+```
+
+`--expires-in` accepts Go duration values such as `24h` or `1h30m`, plus day values such as `30d` or `365d`. Leave it empty for no expiration.
+
+List tokens:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin token list
+```
+
+Revoke a token by ID:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin token revoke <token-id>
+```
+
+<Note>
+Older `netbird-server token ...` and `netbird-mgmt token ...` commands are deprecated. Use `admin token ...` for new automation.
+</Note>
+
+## Repair reverse proxy connection state
+
+Use `admin proxy disconnect-all` to force-mark every registered reverse proxy instance as disconnected. This is useful after an unclean Management server shutdown when stale proxy sessions remain stored as connected.
+
+Preview the change first:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin proxy disconnect-all --dry-run
+```
+
+Apply the repair with an interactive confirmation prompt:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin proxy disconnect-all
+```
+
+For non-interactive maintenance automation, use `--force`:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin proxy disconnect-all --force
+```
+
+<Warning>
+Run this command during a maintenance window. It changes stored reverse proxy state for every non-disconnected proxy instance. Live proxies may stay hidden until their next heartbeat or reconnect.
+</Warning>
+
+## Troubleshooting
+
+| Error or warning | What to do |
+|------------------|------------|
+| `admin commands require the embedded IdP to be enabled` | Local user and MFA commands only work with the embedded IdP. Manage external IdP users in that provider. |
+| `no local users exist in the embedded IdP storage` | Check that the server has started at least once and that `--config` or `--datadir` points to the correct data directory. |
+| `embedded IdP client not found` | Start the Management server once with this configuration, then run the command again. |
+| `expected exactly one account` | The local MFA CLI supports only single-account embedded IdP deployments. |
+| `Warning: audit events will not be recorded` | The command can still run, but the activity event store could not be opened. Check the data store encryption key and activity store configuration. |

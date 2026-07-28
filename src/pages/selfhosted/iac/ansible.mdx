@@ -1,0 +1,160 @@
+export const description = 'Manage NetBird users, groups, peers, setup keys, policies, networks, DNS, and posture checks declaratively with the community.ansible_netbird collection.'
+
+# Configure NetBird with Ansible
+
+The [`community.ansible_netbird`](https://github.com/netbirdio/ansible-netbird) collection manages NetBird resources — users, groups, peers, setup keys, policies, networks, DNS, posture checks, and identity providers — declaratively against the [NetBird REST API](/api/introduction). Use it to define your tenant configuration in version control and reapply it from CI.
+
+The collection talks to the API of an existing NetBird instance. It does not install the NetBird client on machines and does not deploy the self-hosted server. It works against any NetBird tenant — cloud or self-hosted — that you can reach with a Personal Access Token.
+
+## Requirements
+
+- Ansible 2.15 or newer.
+- Python 3.9 or newer on the Ansible control node.
+- The Management API URL for your NetBird instance, for example `https://netbird.example.com`.
+- A Personal Access Token (PAT) for a NetBird admin or service user.
+
+For a brand-new self-hosted instance with no users yet, see [Automated setup with a Personal Access Token](/selfhosted/automated-setup) to obtain the first PAT.
+
+## Install the collection
+
+The collection is not yet published to Ansible Galaxy. Build and install it from source:
+
+```bash
+git clone https://github.com/netbirdio/ansible-netbird.git
+cd ansible-netbird
+ansible-galaxy collection build
+ansible-galaxy collection install community-ansible_netbird-*.tar.gz
+```
+
+## Authenticate
+
+Modules accept credentials as parameters, environment variables, or role variables. Environment variables are the simplest for local runs and CI:
+
+```bash
+export NETBIRD_API_URL="https://netbird.example.com"
+export NETBIRD_API_TOKEN="nbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+
+<Warning>
+Set `api_url` to the base URL of your NetBird instance — do not include `/api`. The collection appends API paths automatically.
+</Warning>
+
+<Note>
+Store the PAT in Ansible Vault, your CI's secret store, or an environment variable — never commit it to source control.
+</Note>
+
+When your credentials come from Ansible Vault or group variables rather than the environment, set them once for every NetBird module with `module_defaults` instead of repeating them on each task:
+
+```yaml
+module_defaults:
+  group/community.ansible_netbird.netbird:
+    api_url: "{{ netbird_api_url }}"
+    api_token: "{{ netbird_api_token }}"
+```
+
+The collection defines the `community.ansible_netbird.netbird` action group, so these defaults apply to every module. On ansible-core 2.15, place `module_defaults` at the block level rather than the play level to avoid a variable-resolution timing issue when the values come from group variables.
+
+## First playbook
+
+This playbook creates a group and a reusable setup key bound to that group. Save it as `netbird.yml`:
+
+```yaml {{ title: 'netbird.yml' }}
+- name: Configure NetBird tenant
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Create a group for servers
+      community.ansible_netbird.netbird_group:
+        name: servers
+        state: present
+      register: servers_group
+
+    - name: Create a reusable setup key for servers
+      community.ansible_netbird.netbird_setup_key:
+        name: server-enrollment
+        key_type: reusable
+        expires_in: 604800
+        auto_groups:
+          - "{{ servers_group.group.id }}"
+        state: present
+      register: setup_key
+
+    - name: Save the setup key (its secret is returned only on creation)
+      ansible.builtin.copy:
+        content: "{{ setup_key.setup_key.key }}"
+        dest: ./server-enrollment.key
+        mode: "0600"
+      no_log: true
+      when: setup_key.setup_key.key is defined
+```
+
+`auto_groups` takes group IDs, not names, so the setup-key task references the group created in the first task through `servers_group.group.id`.
+
+Run it against your tenant:
+
+```bash
+ansible-playbook netbird.yml
+```
+
+The setup key's secret is returned only the first time the key is created, so the playbook captures it then and writes it out with `0600` permissions. `no_log: true` keeps it out of the job log. Never print a setup key with `debug`, and store it in a secret manager for anything beyond a local test.
+
+Re-running the playbook is safe — every module is idempotent and reports `changed` only when the API state differs from the playbook.
+
+The [`examples/`](https://github.com/netbirdio/ansible-netbird/tree/main/examples) directory in the collection repository has fuller playbooks, from dynamic policies to a complete tenant setup.
+
+## What you can manage
+
+The collection ships a module for every resource type:
+
+- **Users and service users** — `netbird_user`
+- **User invites** — `netbird_invite` (onboard new users; create, delete, or regenerate)
+- **Groups** — `netbird_group`
+- **Setup keys** — `netbird_setup_key` (one-off or reusable, with auto-group assignment)
+- **Peers** — `netbird_peer` (SSH, login and inactivity expiration, approval, name)
+- **Policies** — `netbird_policy`
+- **Posture checks** — `netbird_posture_check`
+- **Networks with routers and resources** — `netbird_network` (the current routing model; replaces the deprecated routes API)
+- **Routes** — `netbird_route` (the deprecated routes API; use `netbird_network` for new setups)
+- **Reverse-proxy services** — `netbird_service` (publish a domain and forward it to one or more targets)
+- **DNS settings and nameserver groups** — `netbird_dns`
+- **DNS zones with records** — `netbird_dns_zone`
+- **Identity providers** — `netbird_idp`
+- **Personal access tokens** — `netbird_token`
+- **Account settings** — `netbird_account`
+- **Read any resource** — `netbird_info`
+
+See these modules used together in the [`examples/`](https://github.com/netbirdio/ansible-netbird/tree/main/examples) directory of the collection repository.
+
+## Troubleshooting
+
+### Authentication fails with 401 or 403
+
+- Confirm the PAT belongs to a user with admin permissions in the tenant.
+- Confirm `NETBIRD_API_URL` points at the base URL without a trailing `/api` segment.
+- Confirm the PAT has not expired or been revoked in the Dashboard.
+
+### TLS verification fails
+
+If your self-hosted instance uses a private or self-signed certificate authority, add the CA to the control node's system trust store, or point the `REQUESTS_CA_BUNDLE` or `SSL_CERT_FILE` environment variable at it. That is what the module's SSL error message tells you to do. Setting `validate_certs: false` also works, but it removes protection against on-path attacks, so keep it as a last resort.
+
+### A warning says the API token is sent in cleartext
+
+Your `api_url` uses `http://` instead of `https://`. The module still runs but warns, because the token travels unencrypted and is exposed to anyone on the network path. Switch to an `https://` URL, or put a TLS-terminating proxy in front of the Management API. This is a warning, not an error.
+
+### A request is refused as a redirect
+
+If a call fails saying the request was redirected and the module refused to follow it, your `api_url` is pointing somewhere that redirects, usually an `http://` URL that bounces to `https://`, or a base URL with an extra path. The module never follows redirects, so the API token is never forwarded to another host. Set `api_url` to the exact HTTPS base URL, for example `https://netbird.example.com` with no trailing path.
+
+### Requests time out
+
+Each API request times out after 30 seconds by default. On a slow link or a very large tenant, raise it with the `timeout` parameter (in seconds) on the module call, or set it once for every module through `module_defaults`.
+
+### A setup key's secret is missing from the result
+
+The key secret is returned by the API **only when the key is first created**. On an idempotent re-run, or for a key that already exists, there is no secret to return and `setup_key.setup_key.key` is undefined. Capture it the first time the key is created and store it in a secret manager. Ansible cannot mask an individual return field, so set `no_log: true` on any task that registers or handles the key rather than relying on it being hidden.
+
+### Resources are not updated as expected
+
+For modules like `netbird_user`, `netbird_group`, and `netbird_setup_key`, omitting a list field (for example `auto_groups` or `peers`) preserves the existing value rather than clearing it. To remove all members, pass an explicit empty list (`[]`).
+
+A setup key is mostly fixed once created: only its `revoked` state and `auto_groups` change on later runs, so re-running with a different `key_type` or `expires_in` is silently ignored. Rotate the key to change those.

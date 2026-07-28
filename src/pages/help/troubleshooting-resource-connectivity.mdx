@@ -1,0 +1,221 @@
+import {Note, Warning, Success} from "@/components/mdx";
+import {Tiles} from "@/components/Tiles";
+
+export const description = "Your peer is Connected but a service behind a routing peer is unreachable. Find out whether NetBird failed to deliver the traffic, or the resource itself rejected it."
+
+# Troubleshooting resource connectivity
+
+Your peer shows `Connected` and the tunnel is healthy, yet a service behind a routing peer is out of reach: RDP won't open, a web app times out, a database refuses the connection. This page teaches you to find out *where* the traffic stops, and in particular to tell apart the two cases that look identical from the client. Either NetBird isn't delivering the packets, or NetBird delivers them and the resource itself rejects the session.
+
+If the connection is *relayed* or slow rather than unreachable, that is a transport-layer question, not a resource one. Start from [Troubleshooting relayed connections](/help/troubleshooting-relayed-connections) instead.
+
+<Note>
+NetBird's job ends at the resource's `IP:port`. Once the TCP handshake there completes, NetBird has delivered the traffic. A reset, an empty reply, or a TLS or auth error after that point lives in the application or the host, not in NetBird.
+</Note>
+
+## First, confirm where it stops
+
+On the client, check the routing peer and the route in detail:
+
+```bash
+netbird status -d
+```
+
+Find the routing peer, confirm the tunnel is healthy, and check that the resource address falls inside a range the peer actually routes:
+
+```
+ routing-peer-1.netbird.cloud:
+  NetBird IP: 100.92.0.12
+  Status: Connected
+  -- detail --
+  Connection type: P2P
+  Last WireGuard handshake: 12 seconds ago
+  Networks: 10.0.50.0/24
+```
+
+| Field | What it tells you |
+|---|---|
+| `Status: Connected` | The tunnel to the routing peer is up, so the problem is past the peer |
+| `Connection type` | If `Relayed`, fix transport first (see the relayed-connections page) |
+| `Networks` | The ranges this peer routes; your resource's address must fall inside one |
+| `Last WireGuard handshake` | A recent handshake means the tunnel itself is healthy |
+
+If the peer is not `Connected`, stop here. That is a transport problem, not a resource one, so start from the [general client troubleshooting page](/help/troubleshooting-client#net-bird-client-status).
+
+## The mental model
+
+If you remember one thing, remember this: **NetBird carries traffic through the tunnel to the resource's `IP:port`, and nothing past it.** Your job is to find out which of two worlds you are in:
+
+```
+            Can the client reach the resource?
+                          │
+      ┌───────────────────┴───────────────────┐
+      │                                        │
+  NetBird isn't delivering            NetBird delivered fine
+  (peer, DNS, route, ACL, or          (the handshake to IP:port
+  forwarding on the peer; find        completed; a reset or error
+  it and fix it)                      after that is the app or host)
+```
+
+The dividing line is the **TCP handshake to the resource's `IP:port`**. Before it completes, the problem is somewhere in NetBird's path. Once it completes, NetBird has done its job, and a reset, an immediate close, an empty response, a TLS or cert error, an auth failure, or a wrong upstream target lives in the application or the host. You work this by **elimination**, top to bottom: confirm the peer is connected, that the name resolves, that a route and policy exist, that the peer forwards the traffic, and finally where the handshake succeeds or dies.
+
+## The five layers
+
+Five things sit between the client and the resource. Each one maps to exactly one check in the flow below.
+
+**Peer connectivity.** The client needs a healthy tunnel to the routing peer. If it doesn't, nothing downstream matters, and if the link is merely *relayed*, that belongs on a separate page.
+
+**DNS.** For a domain resource, the name resolves **on the routing peer**, using the peer's own resolver. The peer has to be able to resolve it. See [DNS Troubleshooting](/manage/dns/troubleshooting).
+
+**Route and ACL.** The resolved address has to be installed as a route on the client, and a policy has to permit the exact **protocol and port**. Policies are per-protocol, so a TCP-only policy silently drops the UDP half of a protocol that uses both. See [Access Control](/manage/access-control) and the forward-chain vs input-chain note in [Networks](/manage/networks).
+
+**Forwarding on the peer.** The routing peer has to put the packet onto its LAN toward the resource. One subtlety causes most of these cases. If the resource resolves to the **routing peer's own IP** (a service running on the peer itself), that is the *input chain*, not the *forward chain*. It needs a peer-to-peer policy, and for userspace peers it also needs `NB_ENABLE_LOCAL_FORWARDING=true` (see [Environment Variables](/client/environment-variables)). A subnet or host resource on a *different* LAN machine uses the forward chain and masquerade instead.
+
+**The handoff.** Once a TCP handshake to `IP:port` completes, NetBird is done.
+
+## Reading where the handshake dies
+
+The fastest way to assign ownership is to capture the attempt and read the result:
+
+| What you see | Owner |
+|---|---|
+| Peer not `Connected`, stale WireGuard handshake | NetBird transport (see relayed-connections page) |
+| Resource resolves to the wrong or empty IP | NetBird DNS, or the peer's upstream resolver |
+| Route or allowed-IP missing for the resolved address | NetBird route |
+| Right port blocked, or the UDP half dropped | NetBird ACL (protocol and port) |
+| `SYN` leaves the peer's LAN NIC, no `SYN-ACK`, fails on-LAN too | Resource host, service, or its firewall |
+| Handshake completes, then `RST`, `FIN`, empty, auth, or cert error | Application or gateway config |
+| Works from the resource's own LAN, fails only via the tunnel | NetBird forwarding (escalate) |
+
+## The decision flow
+
+Work through these steps in order. Each one tells you when to continue and when to stop.
+
+```
+Peer Connected?  ── no ──▶ fix transport (relayed-connections page)
+   │ yes
+   ▼
+1. Does the name resolve to the expected IP? (on the peer, for domain resources)
+2. Is a route installed, and does a policy allow this protocol and port?
+3. Does the peer forward it? (forward chain vs self-targeted local forwarding)
+4. Does the handshake to the resource IP:port complete?
+       ├─ yes ──▶ NetBird is done; investigate the application or host
+       └─ no  ──▶ run the LAN bypass test:
+              ├─ fails on-LAN too ──▶ not NetBird (service, host, or firewall)
+              └─ works on-LAN     ──▶ NetBird forwarding; escalate with captures
+```
+
+<Note>
+For a hands-on, command-by-command version of these checks, with a worked example tracing a client to an internal server, see [Debugging access to network resources](/help/troubleshooting-client#debugging-access-to-network-resources).
+</Note>
+
+### Step 1: Does the name resolve?
+
+For a domain resource, the name has to resolve to the expected address **on the routing peer**, because the peer is what resolves and forwards it. A name that resolves on your client but not on the peer, or that resolves to a stale or empty address, sends the traffic nowhere. Confirm the resolved address, then check it against the `Networks` ranges from the status output above. For resolver and routing problems, see [DNS Troubleshooting](/manage/dns/troubleshooting).
+
+### Step 2: Is there a route and a matching policy?
+
+The resolved address has to be installed as a route on the client, and a policy has to allow the **exact protocol and port**. A policy that allows TCP but not UDP silently drops the UDP half of a protocol that needs both, which looks like a partial outage.
+
+<Note>
+`netbird debug trace` simulates a packet through the firewall rules without sending real traffic, so you can confirm an ACL verdict directly. For example: `netbird debug trace in 100.64.1.1 self -p tcp --dport 3389`. It is most useful on macOS and Windows. See [tracing firewall rules](/help/troubleshooting-client#tracing-firewall-rules).
+</Note>
+
+### Step 3: Does the peer forward it?
+
+The routing peer has to put the packet onto its LAN. The common trap is a resource that resolves to the routing peer's own IP: that path is the *input chain*, not the *forward chain*. It needs a peer-to-peer policy, and on userspace peers it also needs `NB_ENABLE_LOCAL_FORWARDING=true` ([Environment Variables](/client/environment-variables)). A resource on a different LAN machine uses the forward chain and masquerade, and is covered by the forward-chain vs input-chain note in [Networks](/manage/networks).
+
+### Step 4: Where does the handshake die?
+
+This is the dividing line. Capture the connection attempt and watch the TCP handshake to the resource's `IP:port`.
+
+- If the handshake **completes**, NetBird delivered the traffic. A reset, an empty reply, or a TLS or auth error after that belongs to the application or host.
+- If there is **no `SYN-ACK`**, run the LAN bypass test below to decide whether NetBird or the resource owns it.
+
+<Note>
+The LAN bypass test: connect to the resource's `IP:port` from another host on its own subnet, outside NetBird entirely. If it fails there too, it was never NetBird. If it works there but not through the tunnel, the problem is NetBird forwarding, so escalate.
+</Note>
+
+### Step 5: Conclude, or escalate
+
+If the handshake completes, or the resource fails on its own LAN too, the answer is in the application or host, not in NetBird. If the resource is reachable on its own LAN but never through the tunnel, you have a NetBird forwarding problem worth escalating. Collect evidence before you do:
+
+- A [debug bundle](/help/troubleshooting-client#debug-bundle) from the client and, where possible, the routing peer: `netbird debug bundle --system-info`
+- The `netbird status -d` output showing the peer and its `Networks`
+- A packet capture from the routing peer's LAN NIC showing the `SYN` leaving and no `SYN-ACK` returning
+
+## Walkthrough: a gateway that closes the connection
+
+A client reaches a Windows routing peer running a remote-desktop gateway, but the RDP session never opens. The mirror setup on an adjacent gateway works with an identical policy. Working the flow:
+
+1. **Peer and DNS.** The peer is `Connected`, and the resource resolves to the peer's own LAN IP, so the gateway runs *on* the routing peer.
+2. **Route and ACL.** The resolved `/32` is installed on the client and the policy permits the gateway's ports. `netbird debug trace` confirms ACCEPT.
+3. **Forwarding.** `NB_ENABLE_LOCAL_FORWARDING=true` is set, matching the working mirror, so local delivery is enabled.
+4. **The handshake.** A client-side capture shows the TCP handshake to the gateway `IP:port` completing, the client sending its first message, and the gateway immediately closing the connection with zero bytes returned.
+
+The handshake completed, so NetBird delivered the traffic correctly. The gateway itself rejected the session.
+
+<Success>
+Root cause: an incorrect upstream destination was registered on the gateway. Nothing in the NetBird path was at fault, which is why an identical policy on the mirror behaved differently.
+</Success>
+
+## When it's not NetBird
+
+Stop looking at NetBird and investigate the resource side when:
+
+- **The handshake to `IP:port` completes** but the application resets, closes, returns nothing, or errors on TLS or auth. That is the service.
+- **The LAN bypass test fails too.** The service, its bind address, or the host firewall is the problem, independent of NetBird.
+- **A proxy or gateway on the routing peer points at a wrong or dead upstream.** That is its own configuration, not the tunnel.
+
+NetBird supports the overlay: transport, routing, ACLs, and DNS. The proxies, firewalls, and applications behind your resources sit outside it, and are almost always verifiable locally on the resource side. The [Reverse Proxy troubleshooting](/manage/reverse-proxy/troubleshooting) page states the same boundary for proxy targets.
+
+## Checklist
+
+To resolve these quickly and avoid surprises across a fleet:
+
+- **Confirm the peer is `Connected` and not `Relayed`** before looking any further downstream.
+- **Resolve the name on the routing peer**, not only on the client, for domain resources.
+- **Match the policy to the exact protocol and port**, and remember that TCP-only policies drop the UDP half.
+- **Know whether the resource is self-targeted** (input chain, local forwarding) or on a separate LAN machine (forward chain, masquerade).
+- **Use the handshake as the verdict.** If it completes, hand the issue to the application or host owner with the capture attached.
+
+## Recap
+
+In one breath: **NetBird carries traffic to the resource's `IP:port`, and the handshake there is the dividing line.** Work top to bottom: peer connected, then name resolves, then route and policy exist, then the peer forwards it, then the handshake. If the handshake never completes and the resource is reachable on its own LAN, it is a NetBird delivery problem worth escalating. If the handshake completes, or the resource fails on its own LAN too, the answer is in the application or host, and that is where to look.
+
+<Tiles
+    title="Go deeper"
+    description="The layers underneath this page"
+    items={[
+        {
+            href: '/help/troubleshooting-relayed-connections',
+            name: 'Troubleshooting relayed connections',
+            description: 'The transport-layer sibling: why a connection is relayed instead of direct.',
+        },
+        {
+            href: '/manage/dns/troubleshooting',
+            name: 'DNS Troubleshooting',
+            description: 'Name resolution on the routing peer and management DNS configuration.',
+        },
+        {
+            href: '/manage/networks',
+            name: 'Networks',
+            description: 'Routing peers, and the forward chain vs input chain distinction.',
+        },
+        {
+            href: '/manage/reverse-proxy/troubleshooting',
+            name: 'Reverse Proxy troubleshooting',
+            description: 'The demarcation line for proxy and gateway targets behind a peer.',
+        },
+        {
+            href: '/client/environment-variables',
+            name: 'Environment Variables',
+            description: 'NB_ENABLE_LOCAL_FORWARDING and other client daemon settings.',
+        },
+        {
+            href: '/help/troubleshooting-client',
+            name: 'Troubleshooting client issues',
+            description: 'Debug trace, debug bundles, and log levels on the client.',
+        },
+    ]}
+/>

@@ -7,7 +7,7 @@
 set -ex
 NEXT_PUBLIC_DOCSEARCH_APP_ID=${NEXT_PUBLIC_DOCSEARCH_APP_ID:-"none"}
 NEXT_PUBLIC_DOCSEARCH_API_KEY=${NEXT_PUBLIC_DOCSEARCH_API_KEY:-"none"}
-NEXT_PUBLIC_DOCSEARCH_INDEX_NAME=${NEXT_PUBLIC_DOCSEARCH_INDEX_NAME:"none"}
+NEXT_PUBLIC_DOCSEARCH_INDEX_NAME=${NEXT_PUBLIC_DOCSEARCH_INDEX_NAME:-"none"}
 
 find /usr/app/.next \( -type d -name .git -prune \) -o -type f -print0 | xargs -0 sed -i "s#APP_NEXT_PUBLIC_DOCSEARCH_APP_ID#${NEXT_PUBLIC_DOCSEARCH_APP_ID}#g"
 find /usr/app/.next \( -type d -name .git -prune \) -o -type f -print0 | xargs -0 sed -i "s#APP_NEXT_PUBLIC_DOCSEARCH_API_KEY#${NEXT_PUBLIC_DOCSEARCH_API_KEY}#g"

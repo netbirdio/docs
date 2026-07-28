@@ -1,0 +1,235 @@
+import { Note, Warning } from '@/components/mdx'
+
+export const description =
+  'Connect applications and development tools to the local NetBird daemon through its gRPC socket.'
+
+# gRPC Daemon Socket
+
+The NetBird daemon exposes a local gRPC API that the NetBird CLI and desktop app use. Your integration can use the same socket to check status, manage the connection, inspect configuration, work with profiles and networks, and call other local daemon operations.
+
+The gRPC socket is the primary local daemon API. If your integration cannot use gRPC or generated Protocol Buffer bindings, use the [HTTP/JSON daemon socket](/client/json-socket) instead.
+
+<Note>
+  The gRPC socket controls the **local NetBird daemon**. It is separate from the
+  NetBird Management API and does not replace it.
+</Note>
+
+## Default Addresses
+
+The HTTP/JSON gateway is optional. The gRPC socket is available whenever the NetBird daemon is running.
+
+| Platform        | Default address                |
+| --------------- | ------------------------------ |
+| Linux and macOS | `unix:///var/run/netbird.sock` |
+| Windows         | `tcp://127.0.0.1:41731`        |
+
+<Warning>
+  **Security warning:** On supported Linux installations, the default Unix
+  socket allows read and write access for local users. The API exposes control
+  operations as well as status. If you require local-user isolation, place a
+  custom socket inside a restricted directory and ensure that the directory is
+  recreated securely at boot.
+</Warning>
+
+On Linux installations that use an instance-specific systemd service, the socket can instead be under `/var/run/netbird/<instance>.sock`. The NetBird CLI automatically uses the only socket in that directory when the default socket does not exist. If multiple instance sockets exist, pass the intended address explicitly with `--daemon-addr`.
+
+You can see the address option in the CLI help:
+
+```shell
+netbird --help
+```
+
+## Configure the Address
+
+Use the global `--daemon-addr` option when installing or reconfiguring the service. The address must use one of these formats:
+
+```text
+unix:///path/to/netbird.sock
+tcp://host:port
+```
+
+<Warning>
+  **Connectivity warning:** Reconfiguring the service restarts NetBird and can
+  briefly interrupt tunnel connectivity, routes, and DNS.
+</Warning>
+
+### Use a Custom Unix Socket
+
+```shell
+sudo netbird service reconfigure \
+  --daemon-addr unix:///var/run/netbird-integration-grpc.sock
+```
+
+The parent directory must already exist and be writable by the NetBird service. If you use a dedicated directory to restrict access, configure systemd or tmpfiles to recreate it securely because directories under `/run` do not persist across reboots.
+
+After changing the socket, pass the same address to NetBird CLI commands that need to contact the daemon:
+
+```shell
+netbird --daemon-addr unix:///var/run/netbird-integration-grpc.sock status
+```
+
+<Note>
+  This `--daemon-addr` command only works after configuring the custom gRPC
+  listener above. If the daemon uses its default listener, run `netbird status`
+  instead. Do not pass an HTTP/JSON socket to `--daemon-addr`.
+</Note>
+
+### Use a TCP Socket
+
+```shell
+sudo netbird service reconfigure \
+  --daemon-addr tcp://127.0.0.1:41731
+```
+
+Then specify that address when using the CLI on platforms where it is not the default:
+
+```shell
+netbird --daemon-addr tcp://127.0.0.1:41731 status
+```
+
+<Warning>
+  **Security warning:** The daemon gRPC server does not add authentication or
+  TLS. Keep TCP listeners bound to a trusted interface such as `127.0.0.1` and
+  do not expose them to an untrusted network. The API includes operations that
+  can read or change the local NetBird daemon's state.
+</Warning>
+
+## Service Definition
+
+The socket provides `daemon.DaemonService`. NetBird's
+[`client/proto/daemon.proto`](https://github.com/netbirdio/netbird/blob/main/client/proto/daemon.proto)
+file lists the available methods, streaming types, and request and response schemas.
+
+Here are a few common methods. Check `daemon.proto` for the full list.
+
+| Method            | Type             | Purpose                                                   |
+| ----------------- | ---------------- | --------------------------------------------------------- |
+| `Status`          | Unary            | Read connection status and peer information.              |
+| `SubscribeStatus` | Server streaming | Receive the current status and subsequent status changes. |
+| `GetConfig`       | Unary            | Read the active daemon configuration.                     |
+| `ListNetworks`    | Unary            | List networks available to the client.                    |
+| `Up`              | Unary            | Start the NetBird connection.                             |
+| `Down`            | Unary            | Stop the NetBird connection.                              |
+| `ListProfiles`    | Unary            | List configured client profiles.                          |
+| `SubscribeEvents` | Server streaming | Receive daemon system events.                             |
+
+The service also includes methods that change configuration, profiles, network selection, logging, and other daemon state. Only give socket access to processes that you trust to control the local NetBird client.
+
+<Note>
+  The daemon does not enable gRPC server reflection. Tools and integrations must
+  use `daemon.proto`, generated client bindings, or a compiled descriptor set to
+  learn the service schema.
+</Note>
+
+## Test the Socket with grpcurl
+
+[`grpcurl`](https://github.com/fullstorydev/grpcurl) is a command-line tool for invoking gRPC methods. Because it needs access to the `.proto` files to perform requests, we need to download the repository at the same version that the daemon to not have a mismatch on the Protocol Buffer definition. 
+
+```shell
+export NETBIRD_VERSION=v$(netbird version)
+git clone --depth 1 \
+  --branch "$NETBIRD_VERSION" \
+  https://github.com/netbirdio/netbird.git
+cd netbird
+```
+
+Run the following examples from the root of the cloned `netbird` repository.
+
+### Query Status Through the Unix Socket
+
+```shell
+grpcurl \
+  -plaintext \
+  -unix \
+  -import-path ./client/proto \
+  -proto daemon.proto \
+  -d '{}' \
+  unix:///var/run/netbird.sock \
+  daemon.DaemonService/Status
+```
+
+To request full peer status, set fields from `StatusRequest` in the JSON request body:
+
+**Sensitive output:** Full peer status may contain network topology, endpoint, route, and peer information. Review or redact it before sharing the output.
+
+```shell
+grpcurl \
+  -plaintext \
+  -unix \
+  -import-path ./client/proto \
+  -proto daemon.proto \
+  -d '{"getFullPeerStatus": true}' \
+  unix:///var/run/netbird.sock \
+  daemon.DaemonService/Status
+```
+
+### Query Status Through a TCP Socket
+
+For the default Windows listener or a custom loopback TCP listener:
+
+```shell
+grpcurl \
+  -plaintext \
+  -import-path ./client/proto \
+  -proto daemon.proto \
+  -d '{}' \
+  127.0.0.1:41731 \
+  daemon.DaemonService/Status
+```
+
+`-plaintext` is required because the local daemon socket does not use TLS. For a Unix socket, pass the full `unix:///...` URI and include `-unix`. The URI form also avoids a Unix-socket regression in some `grpcurl` 1.9.x builds.
+
+### Subscribe to Status Changes
+
+Server-streaming methods remain connected and print each response as it arrives. For example:
+
+```shell
+grpcurl \
+  -plaintext \
+  -unix \
+  -import-path ./client/proto \
+  -proto daemon.proto \
+  -d '{}' \
+  unix:///var/run/netbird.sock \
+  daemon.DaemonService/SubscribeStatus
+```
+
+Press `Ctrl+C` to end the stream.
+
+## Build an Integration
+
+For a long-running integration, generate a gRPC client from the same `daemon.proto` revision as the installed NetBird client:
+
+1. Download or vendor `client/proto/daemon.proto` from the NetBird repository.
+2. Generate client bindings with the Protocol Buffer and gRPC tools for your language.
+3. Create a local gRPC channel to the configured Unix or TCP address without TLS. That does not make the socket safe to expose remotely.
+4. Create a `daemon.DaemonService` client from that channel.
+5. Call unary methods or consume server streams using the generated request and response types.
+
+Use a protobuf definition and generated bindings that match your deployed NetBird version. A newer client may call methods or use fields that an older daemon does not support.
+
+The HTTP/JSON gateway exposes this service for environments where generated gRPC clients are unavailable. See [HTTP/JSON Daemon Socket](/client/json-socket) for setup and HTTP examples.
+
+## Troubleshooting
+
+### The Unix Socket Does Not Exist
+
+Check that the service is running:
+
+```shell
+sudo netbird service status
+```
+
+If you use an instance-specific service, inspect `/var/run/netbird/` for its socket or pass the configured address with `--daemon-addr`.
+
+### A Tool Reports That Reflection Is Unsupported
+
+This is expected. Supply `daemon.proto` with your tool's equivalent of the `grpcurl -proto` and `-import-path` options, or use a descriptor set generated from that file.
+
+### A Client Receives an Unavailable or Connection-Refused Error
+
+Confirm that the daemon is running and that the integration uses the same socket address as the service. For a Unix socket, also verify access to the socket and each parent directory. For TCP, verify the host and port and ensure the listener remains bound to a trusted interface.
+
+### A Method or Field Is Unimplemented
+
+The integration's generated bindings may be newer than the installed NetBird daemon. Compare the installed client version with the revision of `daemon.proto` used to generate the bindings, then use a compatible schema or upgrade NetBird.
