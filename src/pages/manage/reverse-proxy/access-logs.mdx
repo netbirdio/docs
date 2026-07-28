@@ -70,10 +70,26 @@ The following deny reasons can appear for both HTTP and L4 services:
 | `crowdsec_captcha` | The client IP has a CrowdSec captcha decision |
 | `crowdsec_throttle` | The client IP has a CrowdSec throttle decision |
 | `crowdsec_unavailable` | CrowdSec enforce mode is active but the bouncer has not completed its initial sync (fail-closed) |
+| `appsec_ban` | The AppSec engine flagged the request and returned a ban remediation |
+| `appsec_captcha` | The AppSec engine flagged the request and returned a captcha remediation, which the proxy treats as a denial |
+| `appsec_unavailable` | AppSec enforce mode is active but the engine could not produce a verdict: unreachable, timed out, it rejected the call, or it answered with something that is not a remediation (fail-closed). The last case usually means the configured URL is not the AppSec endpoint. |
 
 All CrowdSec decision types (ban, captcha, throttle) result in a connection denial in enforce mode. The proxy does not serve captcha challenges or apply rate limiting: the decision type is recorded for informational purposes only.
 
-When CrowdSec is in **observe** mode, the verdict appears in the log metadata but the deny reason field is empty (the connection is allowed). In the dashboard, these entries render with an observe-mode badge on the reason cell and show the underlying decision type (ban, captcha, throttle, unavailable) on hover. This lets you audit what CrowdSec would block without affecting traffic. For a self-test workflow, see [Testing the integration](/selfhosted/maintenance/crowdsec#testing-the-integration).
+When a request was inspected on headers and URI but not on its body, the `appsec_body_bypass` metadata key records why:
+
+| Value | Meaning |
+|---|---|
+| `oversize` | The body exceeded the configured cap. Never inspected on a truncated prefix, since a partial body changes the verdict in both directions. |
+| `budget_exhausted` | The proxy-wide body-buffering allowance was fully committed to other in-flight requests. |
+| `upgrade` | A protocol-upgrade handshake, which carries no body. |
+| `disabled` | Body forwarding is turned off for this proxy (`NB_PROXY_CROWDSEC_APPSEC_MAX_BODY_BYTES=-1`). |
+
+A clean verdict on a request carrying one of these is not evidence that the payload was examined.
+
+AppSec verdicts follow the same pattern as CrowdSec ones, under the `appsec_verdict` metadata key. Because AppSec inspects the request rather than the client address, an `appsec_*` entry tells you which request was flagged, not which IP is known bad.
+
+When CrowdSec or AppSec is in **observe** mode, the verdict appears in the log metadata but the deny reason field is empty (the connection is allowed). In the dashboard, these entries render with an observe-mode badge on the reason cell and show the underlying decision type (ban, captcha, throttle, unavailable) on hover. This lets you audit what CrowdSec would block without affecting traffic. For a self-test workflow, see [Testing the integration](/selfhosted/maintenance/crowdsec#testing-the-integration).
 
 ## Use cases
 

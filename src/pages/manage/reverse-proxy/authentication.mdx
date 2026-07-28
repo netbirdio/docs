@@ -255,14 +255,43 @@ CrowdSec decisions include different remediation types (ban, captcha, throttle).
 CrowdSec is only available when the proxy cluster has CrowdSec configured. If the cluster does not support CrowdSec, the option will not appear in the Access Control tab. For self-hosted deployments, see the [CrowdSec setup guide](/selfhosted/maintenance/crowdsec) to enable it.
 </Note>
 
+### CrowdSec AppSec (WAF)
+
+Where IP reputation asks whether the *client* is known bad, [AppSec](https://docs.crowdsec.net/docs/appsec/intro) asks whether the *request* is an attack. It is a separate component of the CrowdSec Security Engine: the proxy mirrors each HTTP request to it, and the engine answers with a verdict based on its rule set (virtual patching for known CVEs, generic exploit detection, and optionally the OWASP Core Rule Set).
+
+AppSec applies to HTTP services only. TCP, UDP, and TLS services forward opaque byte streams with no requests to inspect, so the setting is rejected for those modes.
+
+AppSec operates in one of three modes per service:
+
+| Mode | Behavior |
+|------|----------|
+| **Off** | Requests are not inspected (default). |
+| **Enforce** | Flagged requests are rejected with `403`. If the AppSec endpoint is unreachable, times out, or rejects the call, requests are denied (fail-closed). |
+| **Observe** | Flagged requests are recorded in [access logs](/manage/reverse-proxy/access-logs) with an observe-mode badge and still forwarded. Use this to evaluate the rules against real traffic before enforcing. |
+
+Inspection is synchronous: every request to an inspected service waits for the engine's verdict, with a 200 ms timeout by default. Requests arriving over the WireGuard overlay are inspected too, unlike the country and IP-reputation checks, because request content is just as meaningful there.
+
+What gets mirrored is the request envelope, the client's headers, and the request body up to 64 KB. Bodies larger than the cap are inspected on headers and URI only, never on a truncated prefix, since a partial body changes the verdict in both directions. Body buffering also draws on a proxy-wide allowance shared with the agent-network request capture, so a burst of large bodies cannot become an out-of-memory lever; requests that arrive once it is committed are inspected on headers and URI only. Whenever the body is skipped, for that reason or any other, the access log records [`appsec_body_bypass`](/manage/reverse-proxy/access-logs) so a clean verdict is never mistaken for "the payload was examined". WebSocket upgrade requests are inspected on headers only.
+
+Credentials are withheld from the engine the same way they are withheld from backends. The proxy's session cookie, the values of any header-auth headers, the OIDC `session_token`, and the `password` / `pin` fields of the proxy's own login form are replaced with a placeholder before mirroring, whether they arrive in the body, the query string, a cookie, or a header. Only the credential value is replaced, so the surrounding form, query, and cookie jar stay fully inspectable. Everything else the client sent is mirrored as-is, since that is what the rules match on.
+
+<Note>
+AppSec is only available when the proxy cluster has an AppSec endpoint configured, which is independent of IP reputation: a cluster can have one, both, or neither. If the cluster does not support AppSec, the option will not appear in the Access Control tab. It is currently available for self-hosted and bring-your-own-proxy deployments; support on NetBird Cloud clusters is coming. For setup, see the [CrowdSec setup guide](/selfhosted/maintenance/crowdsec#appsec-waf-request-inspection).
+</Note>
+
+<Note>
+    **Recommended rollout.** Start with **Observe** on AppSec while IP reputation runs in **Enforce**. Out-of-band rules such as the OWASP CRS never block, but their alerts feed a CrowdSec scenario that produces ordinary IP ban decisions, which the IP-reputation check already enforces. That combination protects the service while you check the access logs for false positives, before switching AppSec to **Enforce**.
+</Note>
+
 ### Combining restrictions with authentication
 
 Access restrictions and authentication methods are independent layers:
 
 1. **Connection arrives** at the proxy.
 2. **Access restrictions** are evaluated first: IP CIDRs, then country, then CrowdSec. If the connection is blocked at any layer, it is rejected with no further processing.
-3. **Authentication** is evaluated next (for HTTP services): SSO, password, PIN, or header auth.
-4. If both layers pass, the request is forwarded to the backend.
+3. **AppSec inspection** runs next when enabled (HTTP services only). A flagged request is rejected with `403` in enforce mode, or logged and allowed through in observe mode.
+4. **Authentication** is evaluated next (for HTTP services): SSO, password, PIN, or header auth.
+5. If every layer passes, the request is forwarded to the backend.
 
 This layered approach lets you, for example, restrict a service to your corporate IP ranges while still requiring SSO for identity verification. Or you can use access restrictions as the sole protection for an L4 service that cannot use browser-based auth.
 
@@ -346,6 +375,8 @@ To remove NetBird-Only Access, reopen the modal and click **Remove**. The servic
    - Select countries in the **Blocked Countries** field to create a country blocklist.
 5. To enable CrowdSec IP reputation (when available):
    - Set the **CrowdSec IP Reputation** dropdown to **Enforce** or **Observe**.
+6. To enable CrowdSec AppSec request inspection (when available, HTTP services only):
+   - Set the **CrowdSec AppSec (WAF)** dropdown to **Enforce** or **Observe**.
 6. Click **Save** (or **Save Changes** when editing).
 
 <Note>
@@ -361,6 +392,7 @@ Access restrictions are evaluated as a pipeline. Each layer can only further res
 | 1. CIDR | Allowlist/blocklist by IP range | Stops here, country and CrowdSec are skipped |
 | 2. Country | Allowlist/blocklist by geolocation | Stops here, CrowdSec is skipped |
 | 3. CrowdSec | IP reputation against decision cache | Blocks (enforce) or logs (observe) |
+| 4. AppSec | Request inspection by the WAF rule set | Blocks (enforce) or logs (observe) |
 
 **Examples:**
 
