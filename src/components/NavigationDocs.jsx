@@ -550,9 +550,12 @@ export const docsNavigation = [
             { title: 'Automated Setup', href: '/selfhosted/automated-setup' },
             {
                 title: 'Commercial License',
-                href: '/selfhosted/enterprise',
                 isOpen: false,
                 links: [
+                    {
+                        title: 'Overview',
+                        href: '/selfhosted/enterprise',
+                    },
                     {
                         title: 'Getting Started',
                         href: '/selfhosted/enterprise/getting-started',
