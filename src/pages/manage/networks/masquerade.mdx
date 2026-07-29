@@ -10,8 +10,8 @@ Masquerade is on by default. The routing peer SNATs forwarded traffic to its own
 ## What changes when masquerade is off
 
 - The original NetBird overlay IP is preserved end-to-end.
-- The destination host (or, if it sits in a different subnet, its gateway) must have a return route for the NetBird CIDR (default `100.64.0.0/10`) pointing at the routing peer's LAN IP.
-- High availability stops working — return traffic must flow back through one specific routing peer, so the destination network has no way to follow a failover. See [How Routing Peers Work — Masquerade](/manage/networks/how-routing-peers-work#masquerade).
+- A return route for the NetBird CIDR (default `100.64.0.0/10`) must point at the routing peer's LAN IP. Put it on the destination host, or on that subnet's default gateway when the host is not yours to change.
+- High availability takes extra work, because the return route has to follow a failover. See [High availability with masquerade off](#high-availability-with-masquerade-off).
 
 <Note>
 Masquerade can only be turned off on Linux routing peers.
@@ -31,6 +31,10 @@ curl -X PUT https://api.netbird.io/api/networks/<NETWORK_ID>/routers/<ROUTER_ID>
 ```
 
 The rest of this page covers the return-route prerequisite the destination network needs once masquerade is off.
+
+<Note>
+The steps below add the route on the destination host itself. If that host is not yours to configure, put the same route on the subnet's default gateway instead. This works even when the gateway and the routing peer sit on the same subnet: replies leave the host, reach the gateway, and are sent back out of the interface they arrived on.
+</Note>
 
 ## Inputs to substitute
 
@@ -163,6 +167,23 @@ sudo tcpdump -ni <IFACE> "src net 100.64.0.0/10 and port <port>"
 ```
 
 The source IP should fall inside your account's `/16` (e.g. `100.121.x.x`), not the routing peer's LAN IP.
+
+## High availability with masquerade off
+
+The return route points at one peer, so it has to follow whichever routing peer is currently active. NetBird moves clients to the standby on its own, but it cannot change a route inside your network: left alone, the route keeps pointing at the peer that failed and replies are dropped.
+
+Two steps:
+
+1. **Give the routing peers different metrics**, so the active peer is the same one for every client. With equal metrics each client picks its own by latency, and then no single next hop is correct for all of them. See [High availability](/manage/networks/how-routing-peers-work#high-availability).
+2. **Make the route's next hop follow the active peer.** Give the peers a shared virtual IP with VRRP (`keepalived` on Linux, which needs them on the same subnet) and point the route at it, or have your router move the route on a failed health check. Tie that health check to the tunnel, not to the host answering pings.
+
+<Warning>
+Do not point the return route at both peers at once, as two static routes or an equal-cost pair. Replies reaching the peer a client is not using are silently discarded, so both ends look healthy while traffic fails.
+</Warning>
+
+Established connections reset on failover, as they do with masquerade on. Recovery causes a second brief interruption, because clients return to the primary faster than the route does, and you cannot avoid it by pinning the virtual IP to the standby: the client's switch back is automatic.
+
+If you do not need source IP visibility, leaving masquerade on gives you high availability with none of this to operate, which is why it is the default.
 
 ## Security considerations
 
