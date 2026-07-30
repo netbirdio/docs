@@ -35,12 +35,19 @@ unix:///var/run/netbird-http.sock
 ```
 
 <Warning>
-  **Security warning:** On supported Linux installations, the default Unix
-  socket allows read and write access for local users. The API exposes control
-  operations as well as status. If you require local-user isolation, place a
-  custom socket inside a restricted directory and ensure that the directory is
-  recreated securely at boot.
+  **Security warning:** The default Unix socket allows read and write access for
+  local users. The API exposes control operations as well as status. If you
+  require local-user isolation, place a custom socket inside a restricted
+  directory and ensure that the directory is recreated securely at boot.
 </Warning>
+
+The gateway runs inside the daemon and re-dials it locally, so it reads the identity
+of its own HTTP client and forwards it, which is what lets the daemon authorize the
+request as that user rather than as the daemon itself. The
+[privileged operations](/client/grpc-socket#privileged-operations) therefore behave
+the same over HTTP as over gRPC, and a refusal comes back as HTTP 403 with the same
+`PRIVILEGE_REQUIRED` detail. Metadata headers reserved for that forwarding are
+dropped when a client supplies them.
 
 To enable it on an existing installation, reconfigure the service:
 
@@ -95,6 +102,11 @@ sudo netbird service reconfigure \
   listeners bound to a trusted interface such as `127.0.0.1` and do not expose
   them to an untrusted network. The API includes operations that can read or
   change the local NetBird daemon's state.
+
+  A TCP connection carries no caller identity, so the gateway cannot tell who is
+  calling and every
+  [privileged operation](/client/grpc-socket#privileged-operations) is refused on
+  such a socket, whoever runs the client.
 </Warning>
 
 To disable the gateway again, run:
@@ -240,6 +252,15 @@ If you supplied `--json-socket` without `--enable-json-socket`, NetBird rejects 
 ### Curl Reports Permission Denied
 
 Verify that the process running the integration can access the socket and every parent directory in its path. A custom restricted directory can prevent access even when the socket itself allows it.
+
+### A Request Is Refused With 403
+
+The operation is one of the
+[privileged operations](/client/grpc-socket#privileged-operations) and the HTTP
+client is not root, or not an administrator on Windows. The response body carries a
+`PRIVILEGE_REQUIRED` detail in domain `daemon.netbird.io`, with a summary and the
+command that performs the same operation with the privileges it needs. On a TCP
+gateway socket these operations are always refused.
 
 ### A TCP Request Cannot Connect
 
