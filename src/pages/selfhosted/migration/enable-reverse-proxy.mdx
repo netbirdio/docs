@@ -359,7 +359,62 @@ CrowdSec must be enabled individually on each service through the dashboard unde
 In **enforce** mode, if the bouncer has not completed its initial sync with the LAPI, all connections to that service will be denied. This is by design (fail-closed). If you want to avoid this during initial rollout, start with **observe** mode.
 </Warning>
 
-#### 7e. Enroll in CrowdSec Console (optional)
+#### 7e. Enable AppSec request inspection (optional)
+
+The same Security Engine can also inspect HTTP requests for exploits (SQL injection, path traversal, known CVE probes). This is a second listener on the CrowdSec container with its own rule set, reusing the bouncer key from step 7b. It applies to HTTP services only.
+
+Create the acquisition file that defines the listener:
+
+```bash
+mkdir -p crowdsec/acquis.d
+cat > crowdsec/acquis.d/appsec.yaml <<'EOF'
+source: appsec
+listen_addr: 0.0.0.0:7422
+appsec_configs:
+  - crowdsecurity/appsec-default
+labels:
+  type: appsec
+EOF
+```
+
+Add the rule collections to the CrowdSec service in `docker-compose.yml`, so they are reinstalled if the container is recreated:
+
+```yaml
+    environment:
+      COLLECTIONS: crowdsecurity/linux crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules
+```
+
+<Warning>
+Both AppSec collections are required. The `appsec-default` config references `crowdsecurity/generic-*` and `crowdsecurity/experimental-*` rules, which only `appsec-generic-rules` provides, and the engine exits at startup if they are missing.
+</Warning>
+
+Recreate CrowdSec so it picks up the new environment and acquisition file, then confirm the listener is up:
+
+```bash
+docker compose up -d --force-recreate crowdsec
+docker compose logs crowdsec | grep -i "appsec listening"
+```
+
+Point the proxy at the endpoint by adding one line to `proxy.env` (the API key from step 7b is reused, since the AppSec component validates it against the LAPI):
+
+```bash
+NB_PROXY_CROWDSEC_APPSEC_URL=http://crowdsec:7422/
+```
+
+Restart the proxy and verify:
+
+```bash
+docker compose up -d proxy
+docker compose logs proxy | grep -i appsec
+```
+
+You should see `CrowdSec AppSec inspection available at http://crowdsec:7422/`. AppSec then appears as a per-service option under **Access Control** alongside IP reputation, off by default. For custom rules, tuning, and testing, see [AppSec (WAF) request inspection](/selfhosted/maintenance/crowdsec#app-sec-waf-request-inspection).
+
+<Note>
+Start with **observe** rather than **enforce**. Inspection is synchronous and enforce mode fails closed, so a misconfigured or unreachable engine would deny requests to every service that enforces it.
+</Note>
+
+#### 7f. Enroll in CrowdSec Console (optional)
 
 The CrowdSec Console gives you a web dashboard to monitor decisions, manage alerts, and subscribe to premium blocklists. Enrollment is optional: the community blocklists work without it.
 
@@ -634,7 +689,7 @@ The proxy is configured entirely through environment variables (each one maps to
 
 ### IP reputation (CrowdSec)
 
-See [Step 7: Enable CrowdSec IP reputation](#step-7-optional-enable-crowdsec-ip-reputation) for the full setup.
+See [Step 7: Enable CrowdSec IP reputation](#step-7-optional-enable-crowd-sec-ip-reputation) for the full setup.
 
 | Variable | Required | Description | Default |
 |----------|----------|-------------|---------|
