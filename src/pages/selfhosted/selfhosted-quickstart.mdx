@@ -198,7 +198,7 @@ On a host that is dual-stack and whose NetBird domain also has an `AAAA` record,
 
 This happens because the getting-started script creates an IPv4-only Docker network. IPv4 traffic reaches the containers through iptables NAT, which preserves the client's source IP, but IPv6 traffic has no path into the bridge and is handled by Docker's userland proxy. That proxy re-originates the connection over IPv4 from the bridge gateway, so management records the gateway address. It happens before any reverse proxy sees the request, so `X-Forwarded-For`, `X-Real-IP`, and `trustedHTTPProxies` settings cannot correct it.
 
-To fix it, give the Docker network a real IPv6 path. Apply both steps together:
+To fix it, give the Docker network a real IPv6 path. Apply these steps together:
 
 1. Enable IPv6 on the `netbird` network in `docker-compose.yml`, with a private (ULA) subnet:
 
@@ -211,14 +211,23 @@ networks:
         - subnet: fd00:b14d::/64
 ```
 
-2. Make sure Docker's `ip6tables` is active. It is enabled by default on Docker Engine 27 and later. On older engines, enable it in `/etc/docker/daemon.json` and restart Docker:
+2. Make sure Docker's `ip6tables` support is active, so Docker installs the IPv6 NAT and filter rules for the network. On **Docker Engine 27 and later** it is enabled by default, so no change is needed. On **older engines** it was experimental, so enable it in `/etc/docker/daemon.json` and restart Docker:
 
 ```json
 {
-  "ipv6": true,
+  "experimental": true,
   "ip6tables": true
 }
 ```
+
+3. Recreate the `netbird` network so Docker applies the new options. Docker reads a network's settings only when it first creates the network, so an already-running deployment keeps its old IPv4-only network until you recreate it. From your NetBird directory:
+
+```shell
+docker compose down
+docker compose up -d
+```
+
+`docker compose down` removes the containers and networks but keeps your named volumes, so no data is lost. Do not add the `-v` flag, which would delete the data volumes.
 
 <Warning>
 Enabling `enable_ipv6` without `ip6tables` can expose containers directly over IPv6, with no NAT and no Docker-managed filtering. Always apply the two together.
