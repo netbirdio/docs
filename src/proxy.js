@@ -18,10 +18,14 @@ function rewriteApiDataRequest(req) {
     const url = req.nextUrl.clone();
     if (url.pathname.startsWith('/_next/data/')) {
         // Raw data-request path, in case the runtime matches it un-normalized.
-        url.pathname = url.pathname.replace(
-            /^(\/_next\/data\/[^/]+)\/api(\/|\.json$)/,
-            '$1/ipa$2',
-        );
+        // Bare api.json maps to ipa/introduction.json to mirror the /api ->
+        // /ipa/introduction rewrite; there is no /ipa index page.
+        url.pathname = url.pathname
+            .replace(
+                /^(\/_next\/data\/[^/]+)\/api\.json$/,
+                '$1/ipa/introduction.json',
+            )
+            .replace(/^(\/_next\/data\/[^/]+)\/api\//, '$1/ipa/');
     } else if (url.pathname === '/api') {
         url.pathname = '/ipa/introduction';
     } else if (url.pathname.startsWith('/api/')) {
