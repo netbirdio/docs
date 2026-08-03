@@ -103,7 +103,16 @@ const nextConfig = {
             {
                 source: '/ipa/:path*',
                 destination: '/api/:path*',
-                permanent: true
+                permanent: true,
+                // Client-side navigations fetch page props from
+                // /_next/data/<buildId>/ipa/... — redirecting those requests
+                // strips pageProps (title, sections), so skip data requests.
+                missing: [
+                    {
+                        type: 'header',
+                        key: 'x-nextjs-data',
+                    },
+                ],
             },
             // documentation redirects for about
             {
