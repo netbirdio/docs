@@ -11,7 +11,7 @@ This is the quickest way to try self-hosted NetBird. It should take around 5 min
 ## Infrastructure requirements
 - A Linux VM with at least **1CPU** and **2GB** of memory.
 - The VM must be publicly accessible on **TCP ports 80 and 443**, and **UDP port 3478**.
-- A **public domain** name that resolves to the VM's public IP address (e.g. `netbird.example.com`).
+- A **public domain** name that resolves to the VM's public IP address (e.g. `netbird.example.com`). On a dual-stack host, see [IPv6 and dual-stack hosts](#i-pv6-and-dual-stack-hosts) below.
 
 ## Software requirements
 
@@ -191,6 +191,48 @@ Once your NetBird instance is running, refer to these guides for ongoing mainten
 - **SSO provider not appearing on login page**
 
   Check that the connector is properly configured in **Settings** → **Identity Providers**. Ensure the redirect URL is correctly configured in your IdP.
+
+### IPv6 and dual-stack hosts
+
+On a host that is dual-stack and whose NetBird domain also has an `AAAA` record, peers that connect over IPv6 can be recorded with the Docker bridge gateway address (for example `172.30.0.1`) as their **Public IP** in the dashboard, shown with Region **Unknown**. The same peer shows its real public IP when it connects over IPv4, so the value appears to flip between logins.
+
+This happens because the getting-started script creates an IPv4-only Docker network. IPv4 traffic reaches the containers through iptables NAT, which preserves the client's source IP, but IPv6 traffic has no path into the bridge and is handled by Docker's userland proxy. That proxy re-originates the connection over IPv4 from the bridge gateway, so management records the gateway address. It happens before any reverse proxy sees the request, so `X-Forwarded-For`, `X-Real-IP`, and `trustedHTTPProxies` settings cannot correct it.
+
+To fix it, give the Docker network a real IPv6 path. Apply both steps together:
+
+1. Enable IPv6 on the `netbird` network in `docker-compose.yml`, with a private (ULA) subnet:
+
+```yaml
+networks:
+  netbird:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:b14d::/64
+```
+
+2. Make sure Docker's `ip6tables` is active. It is enabled by default on Docker Engine 27 and later. On older engines, enable it in `/etc/docker/daemon.json` and restart Docker:
+
+```json
+{
+  "ipv6": true,
+  "ip6tables": true
+}
+```
+
+<Warning>
+Enabling `enable_ipv6` without `ip6tables` can expose containers directly over IPv6, with no NAT and no Docker-managed filtering. Always apply the two together.
+</Warning>
+
+If you do not need IPv6 reachability, there is a simpler alternative: remove the `AAAA` record for your NetBird domain so every peer connects over IPv4.
+
+<Note>
+On hosts where IPv6 is disabled in the kernel (the `ipv6.disable=1` boot parameter), creating an IPv6-enabled network fails at `docker compose up`. Use the `AAAA`-removal alternative on those hosts.
+</Note>
+
+<Note>
+This section is about the Docker network the NetBird server runs on, not the IPv6 addresses peers receive inside the NetBird network. For the latter, see [IPv6 Overlay Addressing](/manage/settings/ipv6).
+</Note>
 
 For more troubleshooting help, see the [Troubleshooting guide](/selfhosted/troubleshooting).
 
