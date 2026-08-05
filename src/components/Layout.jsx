@@ -12,12 +12,12 @@ import {NavigationAPI} from "@/components/NavigationAPI";
 import {motion} from "framer-motion";
 import {Footer} from "@/components/Footer";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import { faPaperclip } from '@fortawesome/free-solid-svg-icons';
+import { faPaperclip, faClockRotateLeft } from '@fortawesome/free-solid-svg-icons';
 import { faGithub } from '@fortawesome/free-brands-svg-icons';
 import {toast} from "react-toastify";
 import {AnnouncementBanner} from "@/components/announcement-banner/AnnouncementBanner";
 import {useAnnouncements} from "@/components/announcement-banner/AnnouncementBannerProvider";
-import { EDIT_ON_GITHUB_INDEX_ROUTES } from '@/lib/edit-on-github-routes'
+import { EDIT_ON_GITHUB_INDEX_ROUTES, MDX_PAGE_ROUTES } from '@/lib/edit-on-github-routes'
 
 const navigation = [
   {
@@ -227,16 +227,30 @@ export function Layout({ children, title, tableOfContents }) {
                 <span>Copy link</span>
               </button>
             </li>
-            <li key="edit-on-github">
-              <Link
-                  href={"https://github.com/netbirdio/docs/tree/main/src/pages" + (EDIT_ON_GITHUB_INDEX_ROUTES.has(router.pathname) ? router.pathname + "/index.mdx" : router.pathname + ".mdx")}
-                  className="dark:hover:text-slate-300 dark:text-slate-400 text-slate-500 hover:text-slate-700 font-normal'"
-                  style={{display: "flex", alignItems: 'center'}}
-              >
-                <FontAwesomeIcon icon={faGithub} style={iconStyle} className="icon pr-1" />
-                <span>Edit on Github</span>
-              </Link>
-            </li>
+            {MDX_PAGE_ROUTES.has(router.pathname) && (
+              <>
+                <li key="edit-on-github">
+                  <Link
+                      href={"https://github.com/netbirdio/docs/tree/main/src/pages" + (EDIT_ON_GITHUB_INDEX_ROUTES.has(router.pathname) ? router.pathname + "/index.mdx" : router.pathname + ".mdx")}
+                      className="dark:hover:text-slate-300 dark:text-slate-400 text-slate-500 hover:text-slate-700 font-normal'"
+                      style={{display: "flex", alignItems: 'center'}}
+                  >
+                    <FontAwesomeIcon icon={faGithub} style={iconStyle} className="icon pr-1" />
+                    <span>Edit on GitHub</span>
+                  </Link>
+                </li>
+                <li key="view-history">
+                  <Link
+                      href={"https://github.com/netbirdio/docs/commits/main/src/pages" + (EDIT_ON_GITHUB_INDEX_ROUTES.has(router.pathname) ? router.pathname + "/index.mdx" : router.pathname + ".mdx")}
+                      className="dark:hover:text-slate-300 dark:text-slate-400 text-slate-500 hover:text-slate-700 font-normal"
+                      style={{display: "flex", alignItems: 'center'}}
+                  >
+                    <FontAwesomeIcon icon={faClockRotateLeft} style={iconStyle} className="icon pr-1" />
+                    <span>View history</span>
+                  </Link>
+                </li>
+              </>
+            )}
           </ol>
           <nav aria-labelledby="on-this-page-title" className="w-80">
             {tableOfContents.length > 0 && (

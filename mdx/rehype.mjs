@@ -36,6 +36,20 @@ function rehypeInsertLastUpdated() {
     const formatted = formatLastUpdated(iso)
     if (!formatted) return
 
+    // Exposed to pageProps via recma-nextjs-static-props so _app.jsx can emit
+    // per-page SEO metadata without shipping the full route→date map client-side.
+    const exportStr = `export const lastUpdated = ${JSON.stringify(iso)}`
+    tree.children.push({
+      type: 'mdxjsEsm',
+      value: exportStr,
+      data: {
+        estree: acorn.parse(exportStr, {
+          sourceType: 'module',
+          ecmaVersion: 'latest',
+        }),
+      },
+    })
+
     const node = {
       type: 'element',
       tagName: 'p',
