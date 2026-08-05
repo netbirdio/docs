@@ -1,30 +1,28 @@
-import {Note, Warning} from "@/components/mdx"
+import {Note} from "@/components/mdx"
 
 export const description =
-  "Choose and configure Traefik, Nginx, Caddy, or Nginx Proxy Manager for combined or legacy multi-container self-hosted NetBird."
+  "Choose and configure Traefik, Nginx, Caddy, or Nginx Proxy Manager for combined-container or multi-container self-hosted NetBird."
 
 # Reverse proxies for self-hosted NetBird
 
 NetBird supports Traefik, Nginx, Caddy, and Nginx Proxy Manager in front of a manual self-hosted deployment. Each proxy must route Dashboard HTTP, REST/OIDC, WebSockets, and native gRPC on one public TLS hostname while leaving STUN on UDP 3478 directly reachable.
 
-For a new installation, the recommended manual path is the [combined server with its embedded identity provider and Traefik](/selfhosted/manual-setup). Traefik handles automatic certificate issuance and renewal, so you do not need to choose another proxy before NetBird can run.
+For most installations, the recommended manual path is the [combined server with its embedded identity provider and Traefik](/selfhosted/manual-setup). Traefik handles automatic certificate issuance and renewal, so you do not need to choose another proxy before NetBird can run.
 
-Use this page when a reverse proxy is an integration choice: you already operate another proxy, need a specific certificate workflow, or maintain a legacy deployment. For the broader architecture decision, start with [Plan a manual NetBird deployment](/selfhosted/manual-setup/planning).
+Use this page when a reverse proxy is an integration choice: you already operate another proxy, need a specific certificate workflow, or use the multi-container layout. For the broader architecture decision, start with [Plan a manual NetBird deployment](/selfhosted/manual-setup/planning).
 
 ## Choose the NetBird layout
 
 | Layout | Services | Use it when |
 |---|---|---|
-| **Combined container** | `dashboard` and `netbird-server` | New deployments and migrated installations. This is the current architecture. |
-| **Legacy multi-container** | `dashboard`, `management`, `signal`, and `relay` | Maintaining or troubleshooting an older installation before migration. |
+| **Combined container** | `dashboard` and `netbird-server` | Recommended for most setups because it keeps the core services together. |
+| **Multi-container** | `dashboard`, `management`, `signal`, and `relay` | Separate service lifecycles, per-service resource controls, or infrastructure that benefits from distinct backends. |
 
 - [Manual combined-container setup](/selfhosted/manual-setup)
-- [Manual legacy multi-container setup](/selfhosted/manual-setup/multi-container)
-- [Migrate a legacy deployment to the combined container](/selfhosted/migration/combined-container)
+- [Manual multi-container setup](/selfhosted/manual-setup/multi-container)
+- [Migrate a multi-container deployment to the combined container](/selfhosted/migration/combined-container)
 
-<Warning>
-Do not start a new long-lived production deployment on the legacy layout. The legacy proxy sections exist so older installations can be reproduced, repaired, and migrated safely.
-</Warning>
+The combined layout is recommended for most setups because it has fewer moving parts. The multi-container layout remains a valid option when separating Management, Signal, and Relay better fits your operational requirements.
 
 ## Choose the reverse proxy
 
@@ -37,7 +35,7 @@ Do not start a new long-lived production deployment on the legacy layout. The le
 
 Every guide includes:
 
-- Combined and legacy routing.
+- Combined-container and multi-container routing.
 - Host or Docker placement where the proxy supports it.
 - Trusted proxy configuration.
 - TLS and long-lived connection settings.
@@ -50,7 +48,7 @@ Every guide includes:
 |---|---|---|---|
 | `80` | TCP | Reverse proxy | HTTP-to-HTTPS redirect and ACME HTTP validation, when used. |
 | `443` | TCP | Reverse proxy | Dashboard, API, embedded IdP, Management, Signal, and secure Relay. |
-| `3478` | UDP | `netbird-server` or legacy `relay` | STUN for NAT discovery. It bypasses the HTTP reverse proxy. |
+| `3478` | UDP | `netbird-server` or multi-container `relay` | STUN for NAT discovery. It bypasses the HTTP reverse proxy. |
 
 Do not publish Dashboard, Management, Signal HTTP/gRPC, or Relay HTTP backend ports on all interfaces. A host-installed proxy should reach them through `127.0.0.1` bindings; a Docker proxy should reach container names on a private network.
 
@@ -76,7 +74,7 @@ All backend routes go to `netbird-server:80`; only the Dashboard catch-all uses 
 
 `/management.ProxyService/*` is used by the optional [NetBird Reverse Proxy feature](/manage/reverse-proxy). Routing it now avoids another proxy change if that feature is enabled later.
 
-## Legacy multi-container route map
+## Multi-container route map
 
 | Public path | Protocol | Upstream |
 |---|---|---|
@@ -108,7 +106,7 @@ server:
       - "172.30.0.10/32"
 ```
 
-For legacy JSON:
+For multi-container `management.json`:
 
 ```json
 {
@@ -202,7 +200,7 @@ netbird status --detail
 
 ### Dashboard works but clients cannot connect
 
-The Dashboard catch-all is hiding a missing or lower-priority gRPC route. Run the gRPC probe and inspect the proxy access log. Native gRPC must reach NetBird Server or the correct legacy Signal/Management service over h2c.
+The Dashboard catch-all is hiding a missing or lower-priority gRPC route. Run the gRPC probe and inspect the proxy access log. Native gRPC must reach NetBird Server or the correct multi-container Signal or Management service over h2c.
 
 ### `400 Bad Request` on Relay or fallback paths
 
@@ -214,7 +212,7 @@ Increase proxy and upstream load-balancer idle/read timeouts. A correct route ca
 
 ### NetBird ignores forwarded client addresses
 
-Inspect the source address seen by the container and configure that exact `/32` in both trust lists. Restart NetBird Server or legacy Management after changing the configuration.
+Inspect the source address seen by the container and configure that exact `/32` in both trust lists. Restart NetBird Server or the multi-container Management service after changing the configuration.
 
 ### STUN is unavailable
 

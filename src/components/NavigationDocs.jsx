@@ -550,7 +550,7 @@ export const docsNavigation = [
                     },
                     { title: 'Combined Container', href: '/selfhosted/manual-setup' },
                     {
-                        title: 'Legacy Multi-Container',
+                        title: 'Multi-Container',
                         href: '/selfhosted/manual-setup/multi-container',
                     },
                     {
