@@ -27,7 +27,7 @@ const nextConfig = {
         return [
             {
                 source: '/slack-url',
-                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-3wwkb0b9y-opbG_pFSoOgP41KUV00MtA',
+                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-43j76787p-otf3d0nMcJHAQYx46H3jsg',
                 permanent: false,
             },
             {
@@ -103,7 +103,16 @@ const nextConfig = {
             {
                 source: '/ipa/:path*',
                 destination: '/api/:path*',
-                permanent: true
+                permanent: true,
+                // Client-side navigations fetch page props from
+                // /_next/data/<buildId>/ipa/... — redirecting those requests
+                // strips pageProps (title, sections), so skip data requests.
+                missing: [
+                    {
+                        type: 'header',
+                        key: 'x-nextjs-data',
+                    },
+                ],
             },
             // documentation redirects for about
             {

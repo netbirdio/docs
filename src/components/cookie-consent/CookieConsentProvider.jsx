@@ -2,14 +2,28 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { useRouter } from 'next/router'
 
 const STORAGE_KEY = 'cookie-consent'
-const ACCEPT_EXPIRY_DAYS = 90
-const DECLINE_EXPIRY_DAYS = 1
+const CONSENT_EXPIRY_DAYS = 180
+
+const TRACKING_COOKIE_PREFIXES = [
+  '_ga',
+  '_gid',
+  '_hj',
+  '_clck',
+  '_clsk',
+  '_gcl_',
+  '_pk_',
+  '__hst',
+  'hubspotutk',
+  'messagesUtk',
+]
 
 const CookieConsentContext = createContext({
   isAccepted: false,
+  isDeclined: false,
   showConsent: false,
   acceptCookies: () => {},
   declineCookies: () => {},
+  openCookieSettings: () => {},
 })
 
 function getStoredConsent() {
@@ -40,9 +54,34 @@ function storeConsent(value, days) {
   } catch {}
 }
 
+function removeTrackingCookies() {
+  const cookieNames = document.cookie
+    .split(';')
+    .map((cookie) => cookie.split('=')[0].trim())
+    .filter(Boolean)
+
+  for (const name of cookieNames) {
+    if (!TRACKING_COOKIE_PREFIXES.some((prefix) => name.startsWith(prefix))) {
+      continue
+    }
+
+    const expiredCookie = `${name}=; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`
+    document.cookie = expiredCookie
+    document.cookie = `${expiredCookie}; domain=${window.location.hostname}`
+    if (
+      window.location.hostname === 'netbird.io' ||
+      window.location.hostname.endsWith('.netbird.io')
+    ) {
+      document.cookie = `${expiredCookie}; domain=.netbird.io`
+    }
+  }
+}
+
 export function CookieConsentProvider({ children }) {
   const router = useRouter()
-  const [consent, setConsent] = useState(() => getStoredConsent())
+  // Resolve browser storage after hydration so the server and the first client
+  // render agree. Analytics remains disabled while the choice is loading.
+  const [consent, setConsent] = useState(null)
   const [showConsent, setShowConsent] = useState(false)
 
   useEffect(() => {
@@ -59,32 +98,44 @@ export function CookieConsentProvider({ children }) {
   }, [router.pathname])
 
   const acceptCookies = useCallback(() => {
-    storeConsent('accepted', ACCEPT_EXPIRY_DAYS)
+    storeConsent('accepted', CONSENT_EXPIRY_DAYS)
     setConsent('accepted')
     setShowConsent(false)
-
-    // Enable Matomo cookies
-    window._paq = window._paq || []
-    window._paq.push(['setCookieConsentGiven'])
   }, [])
 
   const declineCookies = useCallback(() => {
-    storeConsent('declined', DECLINE_EXPIRY_DAYS)
+    const trackersWereActive = consent === 'accepted'
+
+    storeConsent('declined', CONSENT_EXPIRY_DAYS)
     setConsent('declined')
     setShowConsent(false)
 
-    // Tell Matomo to forget consent and delete its cookies
-    window._paq = window._paq || []
-    window._paq.push(['forgetCookieConsentGiven'])
+    removeTrackingCookies()
+
+    // Scripts already loaded by an accepted visitor cannot be reliably
+    // unloaded. Reload into the persisted declined state so no optional
+    // analytics script is mounted again.
+    if (trackersWereActive) {
+      window._paq = window._paq || []
+      window._paq.push(['forgetConsentGiven'])
+      window._paq.push(['deleteCookies'])
+      window.location.reload()
+    }
+  }, [consent])
+
+  const openCookieSettings = useCallback(() => {
+    setShowConsent(true)
   }, [])
 
   return (
     <CookieConsentContext.Provider
       value={{
         isAccepted: consent === 'accepted',
+        isDeclined: consent === 'declined',
         showConsent,
         acceptCookies,
         declineCookies,
+        openCookieSettings,
       }}
     >
       {children}

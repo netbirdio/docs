@@ -427,6 +427,10 @@ export const docsNavigation = [
                         isOpen: true,
                         links: [
                             {
+                                title: 'Deploy with Group Policy (GPO)',
+                                href: '/manage/integrations/mdm-deployment/windows-gpo-deployment',
+                            },
+                            {
                                 title: 'macOS CLI-Only .pkg',
                                 href: '/manage/integrations/mdm-deployment/macos-cli-pkg-deployment',
                             },
@@ -483,6 +487,7 @@ export const docsNavigation = [
                     { title: 'How It Works', href: '/agent-network/how-it-works' },
                     { title: 'Quickstart', href: '/agent-network/quickstart' },
                     { title: 'Providers', href: '/agent-network/providers' },
+                    { title: 'Clusters', href: '/agent-network/clusters' },
                 ],
             },
             {
@@ -531,6 +536,10 @@ export const docsNavigation = [
                         href: '/agent-network/integrations/vertex-ai',
                     },
                     { title: 'AWS Bedrock', href: '/agent-network/integrations/bedrock' },
+                    {
+                        title: 'Kimi (Moonshot AI)',
+                        href: '/agent-network/integrations/kimi',
+                    },
                 ],
             },
         ],
@@ -540,6 +549,31 @@ export const docsNavigation = [
         links: [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
             { title: 'Automated Setup', href: '/selfhosted/automated-setup' },
+            {
+                title: 'Commercial License',
+                isOpen: false,
+                links: [
+                    {
+                        title: 'Overview',
+                        href: '/selfhosted/enterprise',
+                    },
+                    {
+                        title: 'Getting Started',
+                        href: '/selfhosted/enterprise/getting-started',
+                    },
+                    {
+                        title: 'High Availability',
+                        href: '/selfhosted/maintenance/scaling/high-availability',
+                    },
+                ],
+            },
+            {
+                title: 'Infrastructure as Code',
+                isOpen: false,
+                links: [
+                    { title: 'Ansible', href: '/selfhosted/iac/ansible' },
+                ],
+            },
             {
                 title: 'Cloud Marketplaces',
                 isOpen: false,
@@ -559,6 +593,10 @@ export const docsNavigation = [
                     {
                         title: 'Environment Variables',
                         href: '/selfhosted/environment-variables',
+                    },
+                    {
+                        title: 'Admin CLI',
+                        href: '/selfhosted/maintenance/admin-cli',
                     },
                     {
                         title: 'Scaling Your Deployment',
@@ -606,6 +644,10 @@ export const docsNavigation = [
                     {
                         title: 'CrowdSec IP Reputation',
                         href: '/selfhosted/maintenance/crowdsec',
+                    },
+                    {
+                        title: 'CrowdSec Dashboard Protection',
+                        href: '/selfhosted/maintenance/crowdsec-dashboard',
                     },
                 ],
             },
@@ -797,6 +839,8 @@ export const docsNavigation = [
         links: [
             { title: 'Desktop App', href: '/client/desktop-app' },
             { title: 'Profiles', href: '/client/profiles' },
+            { title: 'gRPC Daemon Socket', href: '/client/grpc-socket' },
+            { title: 'HTTP/JSON Daemon Socket', href: '/client/json-socket' },
             { title: 'Environment Variables', href: '/client/environment-variables' },
             { title: 'MDM Integration', href: '/client/mdm-integration' },
             {
@@ -1024,6 +1068,10 @@ export const docsNavigation = [
                                 href: '/help/troubleshooting-resource-connectivity',
                             },
                             {
+                                title: 'Reverse Proxy',
+                                href: '/manage/reverse-proxy/troubleshooting',
+                            },
+                            {
                                 title: 'NAT & Connectivity',
                                 href: '/about-netbird/understanding-nat-and-connectivity',
                             },
@@ -1052,9 +1100,22 @@ export const docsNavigation = [
                         title: 'Report a bug',
                         isOpen: false,
                         links: [
-                            { title: 'Overview', href: '/help/report-bug-issues' },
-                            { title: 'Community Support', href: '/help/community-support' },
-                            { title: 'NetBird Support', href: '/help/netbird-support' },
+                            {
+                                title: 'Overview',
+                                href: '/help/report-bug-issues',
+                                isOpen: false,
+                                links: [
+                                    {
+                                        title: 'Community Support',
+                                        href: '/help/community-support',
+                                    },
+                                    {
+                                        title: 'NetBird Support',
+                                        href: '/help/netbird-support',
+                                    },
+                                ],
+                            },
+                            { title: 'Record a HAR file', href: '/help/recording-a-har-file' },
                         ],
                     },
                 ],

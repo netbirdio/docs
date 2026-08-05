@@ -11,7 +11,7 @@ agents keyless access over the tunnel: NetBird holds the Bedrock API key server-
 every request to a real identity from your IdP, and applies your policies, limits, and audit
 on the way to Bedrock.
 
-Bedrock authenticates with a **Bedrock API key** — a long-term key you generate in AWS that
+Bedrock authenticates with a **Bedrock API key**, a long-term key you generate in AWS that
 NetBird injects as a bearer token on every request. You create the key once, hand it to
 NetBird, and it stays server-side.
 
@@ -29,7 +29,7 @@ See [Bedrock API keys](https://docs.aws.amazon.com/bedrock/latest/userguide/api-
 for details.
 
 <Warning>
-  The Bedrock API key grants access to models in your AWS account. Treat it as a secret —
+  The Bedrock API key grants access to models in your AWS account. Treat it as a secret:
   store it securely, never commit it to source control, and delete the local copy once it's
   stored in NetBird.
 </Warning>
@@ -37,22 +37,39 @@ for details.
 ## Connect the Provider
 
 1. Go to **Agent Network → Providers** and click **Connect Provider**.
-2. Select **AWS Bedrock**. Set the **Upstream URL** to your region's Bedrock runtime host —
+2. Select **AWS Bedrock**. Set the **Upstream URL** to your region's Bedrock runtime host,
    for example `https://bedrock-runtime.us-east-1.amazonaws.com`. Bedrock is region-specific,
    so the host must include the region you enabled model access in.
 3. Paste the **Bedrock API key**. NetBird stores it encrypted server-side, injects it as
    `Authorization: Bearer …` on each request, and never returns it to callers.
-4. _(Optional)_ Restrict the **allowed models** — for example `anthropic.claude-opus-4-8`,
+4. _(Optional)_ Restrict the **allowed models**, for example `anthropic.claude-opus-4-8`,
    `anthropic.claude-sonnet-4-6`, `meta.llama3-3-70b-instruct`, or `amazon.nova-pro`. Leaving
    the list empty allows any catalog model.
-5. Save the provider. The key is now held server-side — the next step authorizes who can use
+5. Save the provider. The key is now held server-side, the next step authorizes who can use
    it.
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-bedrock-connect.png" alt="Connect the AWS Bedrock provider in NetBird Agent Network" className="imagewrapper" />
+</p>
 
 See [Providers](/agent-network/providers) for details.
 
+### Cross-Region Inference Profiles
+
+Bedrock also exposes cross-region inference profiles, model IDs prefixed with a geography
+code such as `eu.` or `us.`, that route a request across a set of regions instead of pinning
+it to one. If the profile you need isn't in the picker, add it the same way as any
+[model not in the catalog](/agent-network/providers#adding-a-model-not-in-the-catalog): type
+the full profile ID into the **Model** field on the **Models** tab, for example
+`eu.anthropic.claude-sonnet-5`, and set its input/output pricing yourself.
+
+<p>
+    <img src="/docs-static/img/agent-network/providers/agent-network-custom-model.png" alt="Models tab with a geo-specific Bedrock inference profile ID and manually entered input/output pricing" className="imagewrapper" />
+</p>
+
 ## Create a Policy
 
-By default nothing is allowed — a policy must connect a source group to the Bedrock provider
+By default nothing is allowed: a policy must connect a source group to the Bedrock provider
 before anyone can route through it.
 
 1. Go to **Agent Network → Policies** and add a policy.
@@ -64,10 +81,33 @@ before anyone can route through it.
 
 See [Policies](/agent-network/policies) for details.
 
+## Cost Allocation
+
+NetBird forwards the caller's identity to every provider by default. See
+[Identity Metadata](/agent-network/providers#identity-metadata) for the general behavior and
+how to turn it off. For Bedrock that identity lands in the
+[`X-Amzn-Bedrock-Request-Metadata`](https://docs.aws.amazon.com/bedrock/latest/userguide/cost-mgmt-request-metadata.html)
+header, the one AWS reads for cost-allocation tags, carrying the caller's **user** and the
+**group that authorized the request**:
+
+```
+X-Amzn-Bedrock-Request-Metadata: {"user": "user@example.com", "group": "engineering"}
+```
+
+Activate the matching **cost-allocation tags** in **AWS Billing and Cost Management → Cost
+allocation tags**; Bedrock spend in AWS Cost Explorer can then be broken down by NetBird user
+and group. Values are sanitized to Bedrock's accepted character set before they are sent.
+
+The provider's **Mappings** tab shows exactly what NetBird sends:
+
+<p>
+    <img src="/docs-static/img/agent-network/integrations/agent-network-bedrock-mappings.png" alt="Bedrock identity metadata mapping: user to user email and group to groups in the X-Amzn-Bedrock-Request-Metadata header" className="imagewrapper" />
+</p>
+
 ## Use with Claude Code
 
 To route [Claude Code](/agent-network/integrations/claude-code) through this Bedrock provider
-instead of the Anthropic API, see [Use Claude on AWS Bedrock](/agent-network/integrations/claude-code#use-claude-on-aws-bedrock)
+instead of the Anthropic API. See [Use Claude on AWS Bedrock](/agent-network/integrations/claude-code#use-claude-on-aws-bedrock)
 on the Claude Code integration page.
 
 <Note>
