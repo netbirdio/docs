@@ -1,0 +1,403 @@
+import {Note, Warning} from "@/components/mdx"
+
+export const description =
+  "Configure Nginx and Certbot for manual NetBird combined-container and multi-container deployments with gRPC, WebSockets, and trusted proxies."
+
+# Use Nginx with a manual NetBird deployment
+
+This guide installs Nginx on the NetBird host, obtains a Let's Encrypt certificate with Certbot, and routes either NetBird layout. It also lists the upstream changes for Nginx running in Docker.
+
+Start with [Manual setup](/selfhosted/manual-setup) for the combined layout or [Manual multi-container setup](/selfhosted/manual-setup/multi-container) for the multi-container layout.
+
+## How Nginx routes NetBird
+
+Nginx terminates TLS and accepts HTTP/2 from NetBird clients. It sends native gRPC to an h2c backend with `grpc_pass`, sends Relay and fallback paths with WebSocket upgrade headers, and sends the Dashboard to a catch-all HTTP upstream.
+
+UDP 3478 bypasses Nginx and must remain published directly from `netbird-server` or `relay`.
+
+<Warning>
+Do not replace `grpc_pass` with `proxy_pass` for native gRPC paths. Do not send gRPC paths through the Dashboard catch-all. Either mistake can leave the Dashboard working while every client fails to connect.
+</Warning>
+
+## 1. Configure trusted proxy addresses
+
+When Nginx is installed on the host and connects through Docker-published loopback ports, NetBird sees the source as the private bridge gateway used by these manual guides: `172.30.0.1`.
+
+Combined `config.yaml`:
+
+```yaml
+server:
+  reverseProxy:
+    trustedHTTPProxies:
+      - "172.30.0.1/32"
+    trustedPeers:
+      - "172.30.0.1/32"
+```
+
+Multi-container `management.json`:
+
+```json
+{
+  "ReverseProxy": {
+    "TrustedHTTPProxies": ["172.30.0.1/32"],
+    "TrustedHTTPProxiesCount": 0,
+    "TrustedPeers": ["172.30.0.1/32"]
+  }
+}
+```
+
+If Nginx runs in Docker at the fixed address `172.30.0.10`, trust `172.30.0.10/32` instead. Never trust `0.0.0.0/0`.
+
+## 2. Install Nginx and Certbot
+
+On Ubuntu or Debian:
+
+```bash
+sudo apt update
+sudo apt install nginx certbot python3-certbot-nginx
+sudo systemctl enable --now nginx
+```
+
+Ensure no other process owns TCP 80 or 443:
+
+```bash
+sudo ss -lntp | grep -E ':(80|443)\b' || true
+```
+
+## 3. Bootstrap the certificate
+
+Create a temporary HTTP-only server. Replace the hostname first:
+
+```bash
+NETBIRD_DOMAIN="netbird.example.com"
+
+sudo tee /etc/nginx/sites-available/netbird >/dev/null <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${NETBIRD_DOMAIN};
+
+    location / {
+        return 200 'NetBird TLS bootstrap';
+        add_header Content-Type text/plain;
+    }
+}
+EOF
+
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo ln -sfn /etc/nginx/sites-available/netbird /etc/nginx/sites-enabled/netbird
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Request the certificate:
+
+```bash
+sudo certbot certonly --nginx -d "$NETBIRD_DOMAIN"
+```
+
+Certbot installs a renewal timer. Test the complete renewal path after the final Nginx configuration is active:
+
+```bash
+sudo certbot renew --dry-run
+```
+
+<Note>
+The examples below use Nginx's current `http2 on;` syntax. On Nginx older than 1.25.1, put `http2` on each `listen 443 ssl http2;` directive and omit `http2 on;`.
+</Note>
+
+## Combined container layout
+
+The combined layout expects these loopback mappings in the NetBird Compose file:
+
+```yaml
+services:
+  dashboard:
+    ports:
+      - "127.0.0.1:8080:80"
+
+  netbird-server:
+    ports:
+      - "127.0.0.1:8081:80"
+      - "3478:3478/udp"
+```
+
+Replace `/etc/nginx/sites-available/netbird` with:
+
+```nginx
+upstream netbird_dashboard {
+    server 127.0.0.1:8080;
+    keepalive 10;
+}
+
+upstream netbird_server {
+    server 127.0.0.1:8081;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name netbird.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name netbird.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/netbird.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/netbird.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_header_timeout 1d;
+    client_body_timeout 1d;
+
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    # Relay and gRPC-over-WebSocket fallback paths.
+    location ~ ^/(relay|ws-proxy/) {
+        proxy_pass http://netbird_server;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 1d;
+    }
+
+    # Native Signal, Management, and optional NetBird Proxy gRPC.
+    location ~ ^/(signalexchange\.SignalExchange|management\.(ManagementService|ProxyService))/ {
+        grpc_pass grpc://netbird_server;
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+        grpc_socket_keepalive on;
+    }
+
+    # REST API and embedded identity provider.
+    location ~ ^/(api|oauth2)/ {
+        proxy_pass http://netbird_server;
+        proxy_set_header Host $host;
+    }
+
+    # Dashboard catch-all must remain last and least specific.
+    location / {
+        proxy_pass http://netbird_dashboard;
+    }
+}
+```
+
+Replace every `netbird.example.com` occurrence, then validate and reload:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot renew --dry-run
+```
+
+## Multi-container layout
+
+The Compose file from [Manual multi-container setup](/selfhosted/manual-setup/multi-container) publishes all private backends on loopback. Use this Nginx configuration:
+
+```nginx
+upstream netbird_dashboard {
+    server 127.0.0.1:8080;
+    keepalive 10;
+}
+
+upstream netbird_signal_grpc {
+    server 127.0.0.1:10000;
+}
+
+upstream netbird_signal_http {
+    server 127.0.0.1:8083;
+}
+
+upstream netbird_management {
+    server 127.0.0.1:8081;
+}
+
+upstream netbird_relay {
+    server 127.0.0.1:8084;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name netbird.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name netbird.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/netbird.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/netbird.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_header_timeout 1d;
+    client_body_timeout 1d;
+
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    location /relay {
+        proxy_pass http://netbird_relay;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 1d;
+    }
+
+    location /ws-proxy/signal {
+        proxy_pass http://netbird_signal_http;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 1d;
+    }
+
+    location /signalexchange.SignalExchange/ {
+        grpc_pass grpc://netbird_signal_grpc;
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+        grpc_socket_keepalive on;
+    }
+
+    location ~ ^/(api|oauth2)/ {
+        proxy_pass http://netbird_management;
+        proxy_set_header Host $host;
+    }
+
+    location /ws-proxy/management {
+        proxy_pass http://netbird_management;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 1d;
+    }
+
+    location ~ ^/management\.(ManagementService|ProxyService)/ {
+        grpc_pass grpc://netbird_management;
+        grpc_read_timeout 1d;
+        grpc_send_timeout 1d;
+        grpc_socket_keepalive on;
+    }
+
+    location / {
+        proxy_pass http://netbird_dashboard;
+    }
+}
+```
+
+Replace the hostname, then run:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot renew --dry-run
+```
+
+The `relay` service must still publish UDP 3478 directly.
+
+## Nginx running in Docker
+
+When Nginx is a container, join it and all NetBird services to `netbird-proxy`, assign Nginx `172.30.0.10`, and use these upstreams instead of loopback:
+
+| Layout | Logical upstream | Docker upstream |
+|---|---|---|
+| Combined | Dashboard | `netbird-dashboard:80` |
+| Combined | Server | `netbird-server:80` |
+| Multi-container | Dashboard | `netbird-dashboard:80` |
+| Multi-container | Signal gRPC | `netbird-signal:10000` |
+| Multi-container | Signal WebSocket | `netbird-signal:80` |
+| Multi-container | Management | `netbird-management:80` |
+| Multi-container | Relay | `netbird-relay:80` |
+
+Mount the certificate and configuration paths into Nginx, or run ACME from a companion container. Change NetBird's trusted proxy address to `172.30.0.10/32`. Do not publish the NetBird HTTP backend ports when Nginx can reach them by container name.
+
+## Verify Nginx and NetBird
+
+Check listeners and Nginx state:
+
+```bash
+sudo systemctl --no-pager --full status nginx
+sudo ss -lntp | grep -E ':(80|443)\b'
+```
+
+From another network, verify HTTPS and OIDC:
+
+```bash
+NETBIRD_DOMAIN="netbird.example.com"
+
+curl -fsSI "http://${NETBIRD_DOMAIN}/"
+curl -fsSI "https://${NETBIRD_DOMAIN}/setup"
+curl -fsS "https://${NETBIRD_DOMAIN}/oauth2/.well-known/openid-configuration"
+```
+
+Then run the gRPC and WebSocket probes from [Manual multi-container setup](/selfhosted/manual-setup/multi-container#9-verify-the-complete-deployment). Create the first owner and enroll two clients to prove Management, Signal, and Relay—not only the Dashboard.
+
+## Troubleshooting Nginx
+
+### `nginx -t` reports that `http2` is invalid
+
+Your Nginx is older than 1.25.1. Change:
+
+```nginx
+listen 443 ssl;
+http2 on;
+```
+
+to:
+
+```nginx
+listen 443 ssl http2;
+```
+
+### The gRPC probe returns HTML
+
+The request reached the Dashboard. Check the exact `location` expression, keep it above the catch-all, and make sure it uses `grpc_pass grpc://...`.
+
+### WebSocket requests return `400` or disconnect
+
+Confirm HTTP/1.1, `Upgrade`, `Connection`, and the one-day read timeout are present. Check both Nginx's error log and the target service log:
+
+```bash
+sudo tail -n 100 /var/log/nginx/error.log
+docker compose logs --tail=100 netbird-server
+```
+
+For the multi-container layout, inspect `signal`, `relay`, or `management` according to the failing path.
+
+### Certificate issuance or renewal fails
+
+Confirm DNS points directly to this host and TCP 80 is reachable. Validate Nginx before retrying Certbot:
+
+```bash
+sudo nginx -t
+sudo certbot renew --dry-run
+```
+
+### Forwarded addresses are ignored
+
+Check the actual bridge gateway:
+
+```bash
+docker network inspect netbird-proxy \
+  --format '{{(index .IPAM.Config 0).Gateway}}'
+```
+
+Use that single address with `/32` in both `trustedHTTPProxies` and `trustedPeers`, then restart the NetBird server or Management container.
