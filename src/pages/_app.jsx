@@ -18,6 +18,7 @@ import {MatomoTagManager} from "@/components/Matomo";
 import {GoogleTagManager} from "@/components/GoogleTagManager";
 import {CookieConsentProvider, useCookieConsent} from "@/components/cookie-consent/CookieConsentProvider";
 import {CookieConsent} from "@/components/cookie-consent/CookieConsent";
+import {LAST_UPDATED_BY_ROUTE} from "@/lib/last-updated-routes.mjs";
 
 function onRouteChange() {
   useMobileNavigationStore.getState().close()
@@ -30,6 +31,7 @@ function AppInner({ Component, pageProps }) {
   let router = useRouter()
   let tableOfContents = collectHeadings(pageProps.sections)
   const { isAccepted } = useCookieConsent()
+  const lastUpdated = LAST_UPDATED_BY_ROUTE[router.pathname]
 
   return (
     <>
@@ -41,6 +43,21 @@ function AppInner({ Component, pageProps }) {
             <title>{`${pageProps.title} - NetBird API`}</title> : <title>{`${pageProps.title} - NetBird Docs`}</title>
         }
         <meta name="description" content={pageProps.description} />
+        {lastUpdated && <meta property="article:modified_time" content={lastUpdated} />}
+        {lastUpdated && (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify({
+                '@context': 'https://schema.org',
+                '@type': 'TechArticle',
+                headline: pageProps.title,
+                description: pageProps.description,
+                dateModified: lastUpdated,
+              }),
+            }}
+          />
+        )}
       </Head>
       <AnnouncementBannerProvider>
           <MDXProvider components={mdxComponents}>
