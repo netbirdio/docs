@@ -1,0 +1,509 @@
+export const description = 'Run the NetBird Enterprise active-active HA architecture on Docker Swarm: Traefik for health-aware routing, Patroni and Sentinel behind HAProxy for PostgreSQL and Redis, and the Swarm defaults that work against an HA deployment.'
+
+# Running NetBird HA on Docker Swarm
+
+import {Note, Warning} from "@/components/mdx";
+
+<Note>
+    Active-active HA for Management and Signal requires a NetBird Enterprise commercial license. Pricing and license details are on the
+    [on-prem pricing page](https://netbird.io/pricing#on-prem).
+</Note>
+
+[Running a Highly Available Self-Hosted Deployment](/selfhosted/maintenance/scaling/high-availability) describes NetBird's HA architecture assuming plain VMs and an external load balancer. If you already run Docker Swarm (because your team standardized on it, or because it's what you have), you can run that same architecture on it. NetBird has no built-in Swarm support, and Swarm's own tooling doesn't map cleanly onto the architecture: `deploy: replicas:` isn't enough on its own, and several defaults actively work against an HA deployment. This guide covers exactly what's different.
+
+**Use this guide alongside the main HA guide**, not instead of it. It assumes you've read that page and understand the three pools (Management, Signal, Relay) and the three shared-state dependencies (PostgreSQL, Redis, NATS). This page only covers what changes when Swarm is the thing running the containers, and follows the same three example FQDNs the main guide uses: `app.example.com`, `signal.example.com`, and `relay.example.com`.
+
+## When not to use this
+
+If you're choosing infrastructure fresh, rather than fitting HA onto Swarm you already run, follow the [main HA guide](/selfhosted/maintenance/scaling/high-availability) directly: plain VMs or managed services behind a real load balancer more closely match what NetBird's HA design assumes, and you'll hit fewer of the rough edges this page exists to document. If you need Kubernetes instead, that's a separate deployment path not covered here.
+
+If you do run HA on Swarm, it buys you one-unit deploys and updates, Docker secrets distributing the byte-identical keys every Management replica must share, declarative spread across failure domains, and crashed instances replaced in seconds. Its own routing mesh and service load balancing go unused here (Traefik and HAProxy do that work, below), and the PostgreSQL and Redis HA a managed database gives you for free becomes three clusters you operate yourself (Steps 2-4). If that last trade reads as a burden, stay on the main guide's path.
+
+## The problem with Swarm's own tooling
+
+Two of Swarm's defaults get in the way of this architecture:
+
+- **Swarm's routing mesh can't do the health-aware routing this architecture needs.** The [main guide's load balancer requirements](/selfhosted/maintenance/scaling/high-availability#step-4-configure-the-three-load-balancers) call for active health checks that pull an unhealthy Management, Signal, or Relay instance out of rotation within seconds. Swarm's built-in mesh is plain L4 round robin with no active health checking of that kind. [Traefik](https://doc.traefik.io/traefik/) fills this gap for the three application pools (Step 7), discovering Swarm services directly and routing only to instances that pass a real health check.
+- **Swarm's default service networking (`endpoint_mode: vip`) breaks any protocol that trusts the source address of a connection.** Swarm routes service-to-service traffic through a per-node proxy that rewrites the connection's source address. Most of what runs in this stack doesn't care, but Redis Sentinel does: it identifies replicas by the address a connection appears to come from, and Swarm's rewritten address doesn't match any real instance. The fix (`endpoint_mode: dnsrr`, Step 3) is small, but skipping it produces a failure that looks like a Redis or Sentinel bug and isn't.
+
+## Architecture
+
+Run one Swarm manager node per failure domain: three nodes across three availability zones is the working example this guide uses throughout, and matches the minimum the main guide asks for (NATS alone needs 3 instances on separate failure domains). Use an odd number of managers: Swarm's own cluster consensus needs a majority to keep working, and 4 managers tolerate the same single failure as 3 while costing more.
+
+Each node runs one replica of everything: Traefik, one instance from each of the Management/Signal/Relay/Dashboard pools, one PostgreSQL/Patroni member, one Redis/Sentinel member, and one member each of the NATS and etcd clusters.
+
+<img src="/docs-static/img/selfhosted/enterprise/docker-swarm-ha-topology.png" alt="Three-node NetBird HA topology on Docker Swarm: a load balancer health-checks each node's Traefik ping endpoint and fronts all three nodes; each node runs Traefik in front of Management, Signal, Relay, and Dashboard; Management reaches HAProxy (fronting PostgreSQL/Redis) and NATS directly; Signal reaches NATS directly; etcd (Patroni's coordination store) is never reached by the app tier; Relay and Dashboard stay on the application network only" className="imagewrapper-big"/>
+*Three nodes, one per availability zone, behind a load balancer that health-checks each node's Traefik. Only Management and Signal touch the data-tier network — Relay and Dashboard never need to and don't get a network that lets them.*
+
+The one load balancer this guide adds that the main guide doesn't need is HAProxy, in front of PostgreSQL and Redis specifically. On plain VMs you'd point those at your database/cache HA tooling (a managed PostgreSQL, ElastiCache with a primary endpoint, and so on). Running that tooling *inside* Swarm means something must watch for the current primary and route only to it, and Traefik [can't do that for plain TCP](https://github.com/traefik/traefik/issues/1657). HAProxy does. NATS and etcd are never behind HAProxy: Management and Signal dial NATS members directly, and only Patroni talks to etcd.
+
+## Prerequisites
+
+Everything the [main guide's prerequisites](/selfhosted/maintenance/scaling/high-availability#prerequisites) lists, plus:
+
+- 3 or more Docker Swarm manager nodes (an odd number), one per failure domain, each reachable from the others on `2377/tcp`, `7946/tcp+udp`, and `4789/udp` (Swarm's own cluster-management and overlay-networking ports).
+- A load balancer (or at minimum a DNS setup) in front of the nodes for the three public FQDNs. Prefer a real load balancer with active health checks — Step 7 gives it a per-node health endpoint to target, and it's what removes a dead node from client rotation automatically. Plain round-robin DNS works for a lab but keeps resolving to a dead node's address until someone edits the records. No static IP (such as an AWS Elastic IP) is required on the nodes themselves, but whatever you choose needs to keep tracking the nodes' current addresses.
+- The split-component images, not the combined self-hosted image: `ghcr.io/netbirdio/management-cloud`, `ghcr.io/netbirdio/signal-cloud`, `netbirdio/relay`, `ghcr.io/netbirdio/dashboard-cloud`. The combined `netbird-server-cloud` image used by the single-file installer does not support HA mode. `management-cloud`, `signal-cloud`, and `dashboard-cloud` are GHCR-authenticated images; `netbirdio/relay` is public.
+- `docker login ghcr.io` on every manager node, or `--with-registry-auth` on every `docker service create`/`docker stack deploy` so credentials propagate to whichever node pulls the image. Without one of these, services scheduled on other nodes fail to pull.
+
+<Warning>
+    The commands below pass real secrets (database passwords, encryption keys) inline as `-e VAR=value` flags for readability. On a real deployment, use [Docker secrets](https://docs.docker.com/engine/swarm/secrets/) instead: a value passed as `-e` on the command line lands in shell history and is readable by anyone who can run `docker service inspect`.
+</Warning>
+
+## Step 1: Label the nodes and create the overlay networks
+
+```sh
+docker node update --label-add az=a <node-1>
+docker node update --label-add az=b <node-2>
+docker node update --label-add az=c <node-3>
+
+docker network create -d overlay --attachable=false netbird-app
+docker network create -d overlay --attachable=false netbird-data
+```
+
+The labels are what every `--constraint 'node.labels.az==...'` below actually matches against — without them, every data-tier service you create in the next few steps sits at `0/1` replicas, `Pending`, with no error, since Swarm doesn't fail loudly on an unsatisfiable constraint.
+
+Two networks, not one: Traefik and all four application pools sit on `netbird-app`; PostgreSQL, Redis, NATS, etcd, and HAProxy sit on `netbird-data`. Management and Signal are the only application-pool services that also attach to `netbird-data` — Relay and Dashboard never need to reach the data tier, so they don't get a network that can.
+
+## Step 2: Deploy PostgreSQL as a Swarm-native HA cluster
+
+You can point NetBird at any HA PostgreSQL the [main guide describes](/selfhosted/maintenance/scaling/high-availability#step-1-make-postgre-sql-highly-available): a managed database works exactly as well from inside Swarm as from a plain VM, and is the simpler choice if it's available to you. If you want PostgreSQL running as Swarm services alongside everything else, [Patroni](https://patroni.readthedocs.io/) is the tool for it, using [Zalando's Spilo image](https://github.com/zalando/spilo) (Patroni and PostgreSQL bundled).
+
+Run a small [etcd](https://etcd.io/) cluster first: Patroni needs a distributed consensus store for leader election, and etcd is the most common choice. Create three separate single-replica services, one per node. A replicated service would get a single Swarm-managed virtual address shared across replicas, and etcd members need to dial each other's specific address to form a cluster, something a shared address can't provide. The same one-service-per-member pattern applies to every clustered component in this guide.
+
+```sh
+docker service create --name etcd-1 --network netbird-data \
+  --constraint 'node.labels.az==a' \
+  --mount type=volume,source=etcd-1-data,target=/etcd-data \
+  -e ETCD_NAME=etcd-1 \
+  -e ETCD_DATA_DIR=/etcd-data \
+  -e ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd-1:2380 \
+  -e ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380 \
+  -e ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379 \
+  -e ETCD_ADVERTISE_CLIENT_URLS=http://etcd-1:2379 \
+  -e ETCD_INITIAL_CLUSTER_TOKEN=netbird-pg-etcd \
+  -e ETCD_INITIAL_CLUSTER=etcd-1=http://etcd-1:2380,etcd-2=http://etcd-2:2380,etcd-3=http://etcd-3:2380 \
+  -e ETCD_INITIAL_CLUSTER_STATE=new \
+  quay.io/coreos/etcd:v3.5.17
+```
+
+Repeat for `etcd-2`/`etcd-3` on the other two nodes: change the `--constraint`, the volume source, `ETCD_NAME`, and both `*_ADVERTISE_*` URLs to match (`etcd-2`/`etcd-3` throughout); `ETCD_INITIAL_CLUSTER` stays identical on all three, since it lists the whole cluster. Use `quay.io/coreos/etcd`, the image the etcd project itself publishes (some third-party etcd images use tags that don't exist). Mount a volume at `ETCD_DATA_DIR`: without persistent storage for its Raft state, a restarted etcd member can fail to rejoin cleanly. No authentication is configured between components here — the non-attachable `netbird-data` network is the only security boundary; evaluate etcd's client/peer TLS for anything beyond a lab.
+
+Then one Patroni/Spilo service per node:
+
+```sh
+docker service create --name pg-1 --network netbird-data \
+  --constraint 'node.labels.az==a' \
+  --hostname pg-1 \
+  --limit-memory 2GiB \
+  --mount type=volume,source=pg-1-data,target=/home/postgres/pgdata \
+  -e SCOPE=netbird-pg \
+  -e SPILO_PROVIDER=local \
+  -e ETCD3_HOSTS=etcd-1:2379,etcd-2:2379,etcd-3:2379 \
+  -e PGPASSWORD_SUPERUSER=<generate> \
+  -e PGPASSWORD_ADMIN=<generate> \
+  -e PGPASSWORD_STANDBY=<generate> \
+  ghcr.io/zalando/spilo-18:4.1-p1
+```
+
+Repeat for `pg-2`/`pg-3`: change the `--constraint`, `--hostname`, and volume source to match. The three passwords stay the same across all three replicas — they're cluster-wide credentials, not per-instance ones.
+
+A few things about Patroni/Spilo that aren't obvious from its own documentation:
+
+- **Set `SPILO_PROVIDER=local`, even on real cloud VMs.** Spilo auto-detects its cloud provider by querying the instance metadata service, and on AWS specifically, the follow-up metadata call it makes doesn't attach the token its own detection step just fetched — the call fails silently, and Patroni comes up with no node identity and can't elect a leader. Since HAProxy (Step 4) is doing the failover routing job that the cloud-specific auto-detection exists to support, forcing `local` costs you nothing.
+- **`ETCD3_HOSTS`, not `ETCD_HOSTS`.** The latter selects Patroni's older etcd v2 client, which can't talk to etcd 3.x at all.
+- **Give each replica a real `--hostname`.** Don't rely on a `PATRONI_NAME` environment variable to set Patroni's node identity — Spilo doesn't read it; node identity comes from the container's hostname.
+- **Set a memory limit on every PostgreSQL service.** Spilo sizes `shared_buffers` and `max_connections` from the container's memory limit, not from a value you set directly. With no limit, Spilo sees the full host's memory and sets `shared_buffers` to roughly a quarter of it, which is a lot of memory to reserve when several other services share the same node. `2GiB` produces a sane 512MB.
+
+## Step 3: Deploy Redis as a Swarm-native HA cluster
+
+Same choice as PostgreSQL: a managed Redis (non-cluster mode — see the [main guide's warning on this](/selfhosted/maintenance/scaling/high-availability#recommended-path)) is simpler if it's available to you. To run it on Swarm, use [Redis Sentinel](https://redis.io/docs/latest/operate/oss_and_stack/management/sentinel/): one primary, two replicas, three Sentinel processes monitoring them, one of each per node.
+
+```sh
+docker service create --name redis-1 --network netbird-data \
+  --constraint 'node.labels.az==a' \
+  --endpoint-mode dnsrr \
+  redis:8 redis-server --min-replicas-to-write 1 --replica-announce-ip redis-1
+
+docker service create --name redis-2 --network netbird-data \
+  --constraint 'node.labels.az==b' \
+  --endpoint-mode dnsrr \
+  redis:8 redis-server --replicaof redis-1 6379 --replica-announce-ip redis-2
+
+docker service create --name redis-3 --network netbird-data \
+  --constraint 'node.labels.az==c' \
+  --endpoint-mode dnsrr \
+  redis:8 redis-server --replicaof redis-1 6379 --replica-announce-ip redis-3
+```
+
+<Warning>
+    `--endpoint-mode dnsrr` here isn't optional. Swarm's default networking routes service-to-service traffic through a per-node proxy that rewrites the connection's source address, and Redis replication identifies a replica by exactly that address. The result: the primary reports replica addresses that belong to nothing real, so Sentinel detects the failed primary, reaches quorum, then aborts every failover with "no good slave to promote." `dnsrr` makes each service name resolve to the container's real address, bypassing the proxy. `--replica-announce-ip` reinforces the fix at the application layer (Redis 6.2 and later lets a replica assert its own identity by name); this guide applies the two together, with `dnsrr` as the confirmed root-cause fix.
+</Warning>
+
+Each Sentinel needs a config file, since Sentinel rewrites its own configuration at runtime to persist which instance is currently primary — a plain read-only file mount fails immediately with "Sentinel config file ... is not writable." Give it a writable path instead, seeded from a template on first start:
+
+```
+# sentinel.conf.tmpl
+port 26379
+sentinel resolve-hostnames yes
+sentinel announce-hostnames yes
+sentinel monitor mymaster redis-1 6379 2
+sentinel down-after-milliseconds mymaster 5000
+sentinel failover-timeout mymaster 10000
+sentinel parallel-syncs mymaster 1
+```
+
+<Warning>
+    `resolve-hostnames` and `announce-hostnames` must each be prefixed with `sentinel` on their own line, exactly as above. Without the prefix, Sentinel silently ignores both lines rather than erroring on them, and then fails at startup on the very next line with "Can't resolve instance hostname": a config file that looks almost right produces the exact symptom this section exists to prevent.
+</Warning>
+
+```sh
+docker config create sentinel-conf sentinel.conf.tmpl
+
+docker service create --name sentinel-1 --network netbird-data \
+  --constraint 'node.labels.az==a' \
+  --endpoint-mode dnsrr \
+  --mount type=volume,source=sentinel-1-data,target=/data \
+  --config source=sentinel-conf,target=/etc/redis/sentinel.conf.tmpl \
+  redis:8 sh -c 'test -f /data/sentinel.conf || cp /etc/redis/sentinel.conf.tmpl /data/sentinel.conf; exec redis-sentinel /data/sentinel.conf'
+```
+
+Repeat for `sentinel-2`/`sentinel-3`, changing the `--constraint` and volume source. `sentinel monitor mymaster redis-1 6379 2` in the shared config only names the *starting* primary — Sentinel tracks whoever actually holds that role from there on, and all three Sentinels use the same file.
+
+### How Management points at Redis
+
+```
+NB_CACHE_REDIS_ADDRESS=redis://haproxy:6379
+```
+
+The scheme prefix is required, not cosmetic: the Redis client library Management uses parses a bare `host:port` as an entire URL with the host portion read as the scheme and an empty host, and silently falls back to connecting to `localhost` instead of erroring. If Management logs `dial tcp [::1]:6379: connect: connection refused` on boot, this is almost always why.
+
+## Step 4: Deploy HAProxy in front of PostgreSQL and Redis
+
+```
+# haproxy.cfg
+global
+    maxconn 200
+
+defaults
+    mode tcp
+    retries 2
+    timeout connect 3s
+    timeout client 30s
+    timeout server 30s
+
+resolvers docker_dns
+    nameserver dns1 127.0.0.11:53
+    resolve_retries 3
+    timeout resolve 1s
+    timeout retry 1s
+    hold valid 10s
+
+listen postgres
+    bind *:5432
+    option httpchk GET /primary
+    http-check expect status 200
+    default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions init-addr none resolvers docker_dns resolve-prefer ipv4
+    server pg-1 pg-1:5432 check port 8008
+    server pg-2 pg-2:5432 check port 8008
+    server pg-3 pg-3:5432 check port 8008
+
+listen redis
+    bind *:6379
+    option tcp-check
+    tcp-check send PING\r\n
+    tcp-check expect string +PONG
+    tcp-check send info\ replication\r\n
+    tcp-check expect string role:master
+    default-server inter 3s fall 3 rise 2 on-marked-down shutdown-sessions init-addr none resolvers docker_dns resolve-prefer ipv4
+    server redis-1 redis-1:6379 check
+    server redis-2 redis-2:6379 check
+    server redis-3 redis-3:6379 check
+```
+
+Patroni exposes a REST endpoint on every instance (`/primary` answers `200` only on the current leader), built for exactly this kind of health check. Redis has no equivalent endpoint, so the Redis check logs into each instance directly and asks it whether it currently considers itself the master.
+
+`on-marked-down shutdown-sessions` matters for correctness, not just cleanliness: without it, a connection HAProxy already opened to the old primary stays open across a failover, and whatever's using it keeps talking to a node that's no longer current.
+
+The `resolvers` block and `init-addr none` appear on **both** backends, for different reasons. The Redis servers need them because dnsrr names (Step 3) resolve to container addresses that change on restart. The PostgreSQL servers keep Swarm's default networking (Patroni's health check doesn't care about source addresses) and stable addresses — but without runtime re-resolution, HAProxy resolves them exactly once at startup, and an instance starting on a rebooting node can come up with every PostgreSQL backend marked down and *never recover*, even long after the database is healthy. It's nasty to diagnose because it's per-HAProxy-instance: connections reach a healthy or a wedged instance at random, so Management replicas on one node fail against a database that other nodes use fine.
+
+Deploy HAProxy itself as a global service, one per node, so it isn't a new single point of failure:
+
+```sh
+docker config create haproxy-conf haproxy.cfg
+
+docker service create --name haproxy --network netbird-data --mode global \
+  --config source=haproxy-conf,target=/usr/local/etc/haproxy/haproxy.cfg \
+  haproxy:2.9
+```
+
+## Step 5: Create the NetBird database and role
+
+With PostgreSQL, Redis, and HAProxy all up, create the database Management will use. [Patroni's own `bootstrap.users` config option doesn't create it for you on current Patroni versions](https://patroni.readthedocs.io/en/latest/releases.html): it logs an error and moves on rather than failing loudly, so the omission is easy to miss. Create the role and database directly instead, connecting as the `postgres` superuser through HAProxy so the connection lands on whichever instance is currently primary:
+
+```sh
+docker exec -it $(docker ps -q -f name=pg- | head -1) \
+  psql -h haproxy -p 5432 -U postgres
+```
+
+Run this on any node (the `name=pg-` filter matches whichever of `pg-1`/`pg-2`/`pg-3` is local): the command execs into the node's own Patroni container to reuse its `psql` client, then connects out through HAProxy, since `netbird-data` is non-attachable and doesn't accept a fresh throwaway container joining it directly. Enter the `PGPASSWORD_SUPERUSER` value from Step 2 when prompted, then:
+
+```sql
+CREATE ROLE netbird WITH LOGIN PASSWORD '<netbird-role-password>';
+CREATE DATABASE netbird OWNER netbird;
+```
+
+Use this same `<netbird-role-password>` in the DSN below — it's a different credential from the three `PGPASSWORD_*` values in Step 2, which belong to Patroni's own bootstrap users, not to NetBird's application role.
+
+### How Management points at PostgreSQL
+
+Unlike the main guide, where the store DSN lives in `config.yaml` as `server.store.dsn`, the split `management-cloud` image used here reads its store configuration from environment variables — its `--config` file loader is JSON-only and rejects the main guide's YAML schema outright, so the settings below can't go in a config file at all for this image:
+
+```
+NB_STORE_ENGINE_POSTGRES_DSN=host=haproxy port=5432 user=netbird password=<netbird-role-password> dbname=netbird sslmode=require
+NB_ACTIVITY_EVENT_STORE_ENGINE=postgres
+NB_ACTIVITY_EVENT_POSTGRES_DSN=host=haproxy port=5432 user=netbird password=<netbird-role-password> dbname=netbird sslmode=require
+```
+
+Spilo's default `pg_hba.conf` requires an encrypted connection for non-local traffic — `sslmode=disable` is rejected outright. `sslmode=require` encrypts the connection without needing a certificate you manage yourself.
+
+## Step 6: Deploy the NATS cluster
+
+Follow the [main guide's NATS requirements](/selfhosted/maintenance/scaling/high-availability#step-3-set-up-a-nats-ha-cluster): 3 instances, JetStream enabled, on separate failure domains. On Swarm, deploy it the same way as etcd: three separate single-replica services, one per node, each with a config file listing all three peers' cluster addresses. The main guide's instructions for verifying the cluster apply unchanged; `NB_NATS_ENDPOINTS` (Management) and `NATS_ENDPOINTS` (Signal) both take the same comma-separated `nats://nats-N:4222` list either way.
+
+## Step 7: Deploy Traefik
+
+Terminate TLS with a certificate loaded as a Docker secret rather than Traefik's built-in Let's Encrypt resolver: with 3 simultaneous Traefik replicas, each one's ACME state is local to its own node, so all three would independently race to request a certificate for the same names on every reschedule. Get a certificate covering all three FQDNs (a SAN cert, or three separate certs behind whatever you use) however you normally would, then load it as two secrets and point Traefik's static-file provider at them:
+
+```
+# dynamic.yml
+tls:
+  certificates:
+    - certFile: /run/secrets/traefik_cert
+      keyFile: /run/secrets/traefik_key
+```
+
+```sh
+docker secret create traefik_cert fullchain.pem
+docker secret create traefik_key privkey.pem
+docker config create traefik-dynamic dynamic.yml
+
+docker service create --name traefik --network netbird-app --mode global \
+  --publish mode=host,target=80,published=80 \
+  --publish mode=host,target=443,published=443 \
+  --publish mode=host,target=8082,published=8082 \
+  --mount type=bind,source=/var/run/docker.sock,destination=/var/run/docker.sock,readonly \
+  --config source=traefik-dynamic,target=/etc/traefik/dynamic.yml \
+  --secret source=traefik_cert,target=traefik_cert \
+  --secret source=traefik_key,target=traefik_key \
+  traefik:v3.6 \
+  --providers.swarm.endpoint=unix:///var/run/docker.sock \
+  --providers.swarm.exposedByDefault=false \
+  --providers.swarm.network=netbird-app \
+  --providers.file.filename=/etc/traefik/dynamic.yml \
+  --entrypoints.web.address=:80 \
+  --entrypoints.websecure.address=:443 \
+  --entrypoints.ping.address=:8082 \
+  --ping=true \
+  --ping.entrypoint=ping
+```
+
+The `:8082` port and the `--ping` flags exist for whatever sits in front of the cluster: `GET /ping` on that port answers `200` whenever this node's Traefik is up, which is exactly what your load balancer's health check should target. Point it there (rather than at port 443) and a dead or drained node drops out of rotation on its own — restrict the port to your load balancer's address range in your firewall, since there's no reason for it to be publicly reachable.
+
+A bare `target` name mounts under `/run/secrets/<name>`, matching the paths in `dynamic.yml`; an absolute-path `target` (as Step 8 uses for `management.json`) mounts at that exact path instead.
+
+<Warning>
+    Traefik v3 removed `--providers.docker.swarmMode` — the Swarm-aware provider is now a separate provider entirely (`--providers.swarm.*`, as above), not an option flag on the Docker provider. Every older example you'll find online uses the removed v2 flag; it fails at startup with `Docker provider "swarmMode" option has been removed in v3, please use the Swarm Provider instead`.
+</Warning>
+
+Deploy as a global service (one per node) so ingress survives a node dying, published in host mode so each node's Traefik binds the port directly rather than going through Swarm's own routing mesh — the same mesh the introduction called out for having no active health checking.
+
+## Step 8: Deploy the Relay, Signal, Management, and Dashboard pools
+
+Deploy these as ordinary replicated Swarm services with `--replicas-max-per-node 1` so a single node loss can't take out more than one instance of a pool. Management and Signal attach to both networks — Management needs `netbird-data` for PostgreSQL/Redis, Signal needs it for NATS; Relay and Dashboard only need `netbird-app`. Label every service so Traefik discovers it automatically.
+
+### Management's config file
+
+The env vars above cover Redis, NATS, and PostgreSQL, but Management still needs a config file for everything else: the Relay shared secret, the Signal address it hands to clients, and — if you're using NetBird's embedded identity provider rather than an external one — the embedded IdP's own settings. On the split `management-cloud` image, that file is JSON, not the main guide's `config.yaml`, and it loads from a fixed path rather than a flag you pass:
+
+```json
+{
+    "Stuns": [
+        { "Proto": "udp", "URI": "stun:relay.example.com:3478" }
+    ],
+    "Relay": {
+        "Addresses": ["rels://relay.example.com:443"],
+        "CredentialsTTL": "24h",
+        "Secret": "<relay-auth-secret>"
+    },
+    "Signal": {
+        "Proto": "https",
+        "URI": "signal.example.com:443"
+    },
+    "Datadir": "/var/lib/netbird",
+    "DataStoreEncryptionKey": "<encryption-key>",
+    "EmbeddedIdP": {
+        "Enabled": true,
+        "Issuer": "https://app.example.com/oauth2",
+        "Storage": {
+            "Type": "postgres",
+            "Config": { "DSN": "host=haproxy port=5432 user=netbird password=<netbird-role-password> dbname=netbird sslmode=require" }
+        },
+        "DashboardRedirectURIs": [
+            "https://app.example.com/nb-auth",
+            "https://app.example.com/nb-silent-auth",
+            "http://localhost:53000"
+        ]
+    },
+    "StoreConfig": { "Engine": "postgres" },
+    "ReverseProxy": {
+        "TrustedHTTPProxies": null,
+        "TrustedHTTPProxiesCount": 1,
+        "TrustedPeers": null
+    }
+}
+```
+
+`Relay.Secret` must match the Relay pool's own `NB_AUTH_SECRET` from the [main guide's Relay configuration](/selfhosted/maintenance/scaling/high-availability#step-5-deploy-the-relay-pool) — it's the shared secret Management and Relay use to authenticate to each other, not a NetBird-Swarm-specific value. `ReverseProxy.TrustedHTTPProxiesCount: 1` tells Management to trust one hop of `X-Forwarded-For`, which is what makes it see real client IPs instead of Traefik's — leave it at `0` (the field's default) and every request looks like it came from your ingress.
+
+<Note>
+    `EmbeddedIdP.Storage.Config.DSN` is live (the embedded IdP stores its user/session tables there). `StoreConfig`'s own `DSN` field, not shown above, is silently ignored on this image: the main store's PostgreSQL connection comes exclusively from the `NB_STORE_ENGINE_POSTGRES_DSN` environment variable, whatever the config file says. Using an external IdP instead? Replace the `EmbeddedIdP` block with your IdP's settings per the main guide — only `Relay`, `Signal`, `DataStoreEncryptionKey`, and `StoreConfig` are specific to this page.
+</Note>
+
+Load it as a Docker secret rather than a bind-mounted file, so it survives a replica rescheduling to a different node without you having to copy it there first:
+
+```sh
+docker secret create management_config management.json
+```
+
+```sh
+docker service create --name management --network netbird-app --network netbird-data \
+  --replicas 3 --constraint 'node.role==manager' --replicas-max-per-node 1 \
+  --label traefik.enable=true \
+  --label traefik.docker.network=netbird-app \
+  --label 'traefik.http.routers.mgmt-grpc.rule=Host(`app.example.com`) && PathPrefix(`/management.ManagementService/`)' \
+  --label traefik.http.routers.mgmt-grpc.entrypoints=websecure \
+  --label traefik.http.routers.mgmt-grpc.tls=true \
+  --label traefik.http.routers.mgmt-grpc.priority=100 \
+  --label traefik.http.routers.mgmt-grpc.service=mgmt-grpc-svc \
+  --label traefik.http.services.mgmt-grpc-svc.loadbalancer.server.port=80 \
+  --label traefik.http.services.mgmt-grpc-svc.loadbalancer.server.scheme=h2c \
+  --label 'traefik.http.routers.mgmt-http.rule=Host(`app.example.com`) && (PathPrefix(`/api`) || PathPrefix(`/oauth2`) || PathPrefix(`/ws-proxy`))' \
+  --label traefik.http.routers.mgmt-http.entrypoints=websecure \
+  --label traefik.http.routers.mgmt-http.tls=true \
+  --label traefik.http.routers.mgmt-http.priority=90 \
+  --label traefik.http.routers.mgmt-http.service=mgmt-http-svc \
+  --label traefik.http.services.mgmt-http-svc.loadbalancer.server.port=80 \
+  -e NB_LICENSE_KEY=<your-license-key> \
+  -e NB_CACHE_REDIS_ADDRESS=redis://haproxy:6379 \
+  -e NB_NATS_ENDPOINTS=nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222 \
+  -e NB_STORE_ENGINE_POSTGRES_DSN="host=haproxy port=5432 user=netbird password=<netbird-role-password> dbname=netbird sslmode=require" \
+  -e NB_ACTIVITY_EVENT_STORE_ENGINE=postgres \
+  -e NB_ACTIVITY_EVENT_POSTGRES_DSN="host=haproxy port=5432 user=netbird password=<netbird-role-password> dbname=netbird sslmode=require" \
+  -e NETBIRD_ENCRYPTION_KEY=<generate-once-and-never-rotate> \
+  --secret source=management_config,target=/etc/netbird/management.json \
+  --health-cmd 'bash -c "echo > /dev/tcp/127.0.0.1/9090"' \
+  --health-interval 10s --health-timeout 5s --health-retries 5 --health-start-period 60s \
+  ghcr.io/netbirdio/management-cloud:latest management --port=80
+```
+
+Management needs two routers because two client protocols share one port: gRPC (the peer protocol, matched by `PathPrefix` on the proto package name) needs `scheme=h2c` for cleartext HTTP/2, while the HTTP API and OAuth callbacks need Traefik's default `http` scheme. Both point at the same backend port, split by path, with `priority` letting the more specific gRPC rule win where both could match.
+
+<Warning>
+    Traefik's Swarm provider reads *service* labels: `docker service create --label`, or `deploy.labels:` in a stack file. Container labels and Compose's top-level `labels:` are silently invisible — the service comes up healthy and Traefik never sees it. `traefik.docker.network=netbird-app` is also required because Management sits on two networks; without it Traefik may route through the wrong one.
+</Warning>
+
+`NETBIRD_ENCRYPTION_KEY` is not the environment-variable form of `management.json`'s `DataStoreEncryptionKey` field above; they're two separate settings that happen to need the same value. `DataStoreEncryptionKey` encrypts NetBird's main object store; `NETBIRD_ENCRYPTION_KEY` gates a distinct subsystem NetBird calls the integrations store, and omitting it produces a different, specific error: `could not initialize integrations store: encryption key must be 32 bytes, got 0`. Generate one key with `openssl rand -base64 32`, use the same output for both settings, store it in your secret manager, and never let the two drift apart or rotate independently: each one encrypts data already written under it, and a mismatched key can't decrypt data written under the other.
+
+Signal follows the same shape, on both networks, with `SINGLE_NODE_MODE=false` and its own `NATS_ENDPOINTS`:
+
+```sh
+docker service create --name signal --network netbird-app --network netbird-data \
+  --replicas 3 --constraint 'node.role==manager' --replicas-max-per-node 1 \
+  --label traefik.enable=true \
+  --label traefik.docker.network=netbird-app \
+  --label 'traefik.http.routers.signal.rule=Host(`signal.example.com`)' \
+  --label traefik.http.routers.signal.entrypoints=websecure \
+  --label traefik.http.routers.signal.tls=true \
+  --label traefik.http.services.signal-svc.loadbalancer.server.port=80 \
+  --label traefik.http.services.signal-svc.loadbalancer.server.scheme=h2c \
+  -e NB_LICENSE_KEY=<your-license-key> \
+  -e SINGLE_NODE_MODE=false \
+  -e NATS_ENDPOINTS=nats://nats-1:4222,nats://nats-2:4222,nats://nats-3:4222 \
+  ghcr.io/netbirdio/signal-cloud:latest run
+```
+
+Signal only speaks gRPC, so it needs just the one router, but still needs `scheme=h2c` for the same reason Management's gRPC router does, and `traefik.docker.network=netbird-app` for the same dual-network reason.
+
+Relay and Dashboard only need `netbird-app`, and their environment variables follow the [main guide's Relay and Dashboard configuration](/selfhosted/maintenance/scaling/high-availability#step-5-deploy-the-relay-pool) unchanged — Relay in particular uses the same public `netbirdio/relay` image either way, since there's no Enterprise-specific Relay image to begin with. Their Traefik labels still need spelling out; they follow the same pattern as Management's and Signal's above:
+
+```sh
+docker service create --name relay --network netbird-app \
+  --replicas 3 --constraint 'node.role==manager' --replicas-max-per-node 1 \
+  --label traefik.enable=true \
+  --label traefik.docker.network=netbird-app \
+  --label 'traefik.http.routers.relay.rule=Host(`relay.example.com`)' \
+  --label traefik.http.routers.relay.entrypoints=websecure \
+  --label traefik.http.routers.relay.tls=true \
+  --label traefik.http.services.relay-svc.loadbalancer.server.port=80 \
+  --publish mode=host,target=3478,published=3478,protocol=udp \
+  -e NB_LISTEN_ADDRESS=:80 \
+  -e NB_EXPOSED_ADDRESS=rels://relay.example.com:443 \
+  -e NB_AUTH_SECRET=<relay-auth-secret> \
+  -e NB_ENABLE_STUN=true \
+  -e NB_STUN_PORTS=3478 \
+  netbirdio/relay:latest
+```
+
+<Warning>
+    Don't gate Traefik's routing on Relay's own health status — that's why Relay's command above has no `--health-cmd`. The `netbirdio/relay` image's health endpoint tests its own reachability *through* your public ingress, so an unhealthy Relay excluded from Traefik's rotation can never pass the very test that would mark it healthy again: it crash-loops forever with nothing actually wrong. Let Swarm's restart policy handle genuinely crashed Relay containers.
+</Warning>
+
+Dashboard shares Management's FQDN (`app.example.com`) rather than getting one of its own — Management serves the API and OAuth endpoints there, and Dashboard serves everything else on that same host:
+
+```sh
+docker service create --name dashboard --network netbird-app \
+  --replicas 3 --constraint 'node.role==manager' --replicas-max-per-node 1 \
+  --label traefik.enable=true \
+  --label traefik.docker.network=netbird-app \
+  --label 'traefik.http.routers.dashboard.rule=Host(`app.example.com`)' \
+  --label traefik.http.routers.dashboard.entrypoints=websecure \
+  --label traefik.http.routers.dashboard.tls=true \
+  --label traefik.http.routers.dashboard.priority=1 \
+  --label traefik.http.services.dashboard-svc.loadbalancer.server.port=80 \
+  --health-cmd 'nc -z 127.0.0.1 80' \
+  --health-interval 10s --health-timeout 5s --health-retries 5 --health-start-period 15s \
+  -e NETBIRD_MGMT_API_ENDPOINT=https://app.example.com \
+  -e NETBIRD_MGMT_GRPC_API_ENDPOINT=https://app.example.com \
+  -e AUTH_AUDIENCE=netbird-dashboard \
+  -e AUTH_CLIENT_ID=netbird-dashboard \
+  -e AUTH_AUTHORITY=https://app.example.com/oauth2 \
+  -e USE_AUTH0=false \
+  -e AUTH_SUPPORTED_SCOPES="openid profile email groups" \
+  -e AUTH_REDIRECT_URI=/nb-auth \
+  -e AUTH_SILENT_REDIRECT_URI=/nb-silent-auth \
+  -e NETBIRD_TOKEN_SOURCE=accessToken \
+  ghcr.io/netbirdio/dashboard-cloud:latest
+```
+
+`traefik.http.routers.dashboard.priority=1` is load-bearing: Dashboard's bare `Host` rule and Management's `mgmt-http` rule can match the same request, and Traefik's tie-breaking isn't guaranteed to prefer the more specific one. Priority `1` makes Dashboard the explicit fallback — Management's paths win, Dashboard catches everything else on the host.
+
+The `--health-*` flags on Management and Dashboard set container-level health checks as plain TCP connects, since neither image exposes the `/health`-style endpoint the main guide's plain-VM examples assume. Dashboard's image has `nc`; Management's doesn't, hence the bash-and-`/dev/tcp` form. Signal needs the same treatment; check what shell its image ships before assuming `bash` or `nc` is present.
+
+<Warning>
+    Don't add `--restart-max-attempts` to Management. On a node reboot, Management and the node-local HAProxy start simultaneously, and Management exits until HAProxy has confirmed the PostgreSQL primary. A capped restart budget can burn out inside that window, and Swarm then gives up on the replica *permanently and silently* — it sits one replica short until someone runs `docker service update --force`. Leave the attempt count unlimited (the default).
+</Warning>
+
+## Step 9: Verify HA end to end
+
+Run through the [main guide's verification steps](/selfhosted/maintenance/scaling/high-availability#step-8-verify-ha-end-to-end), then add the Swarm-specific ones. The timings quoted below are what a full run of these tests measured in the three-node environment this guide is based on; treat them as expectations to compare against, not guarantees.
+
+- Drain a node with `docker node update --availability drain <node>` and confirm every service reschedules its lost replicas onto the remaining nodes (a service pinned to that exact node, like a PostgreSQL or NATS member, will not reschedule — that's expected; it comes back when the node returns).
+- Force a real primary failure with `docker service scale pg-1=0`, not `docker rm -f`: a plain container kill can let Swarm restart the same instance before Patroni finishes electing a new leader, which looks like success without testing cross-node failover. Confirm via `docker exec <a-surviving-pg-container> patronictl list` that a different instance becomes leader (measured: under 10 seconds, with API reads and writes succeeding aside from a request or two at the promotion moment), then scale back up and confirm the old leader rejoins as a replica on its own.
+- Do the same for Redis (`docker service scale redis-1=0`), confirming via `docker exec <a-surviving-sentinel-container> redis-cli -p 26379 sentinel master mymaster` that Sentinel elects a new master (measured: about 12 seconds).
+- Kill an entire node — the one holding the Patroni leader, the worst case. A hard failure waits out Patroni's failure-detection TTL rather than reacting to a clean shutdown, so expect a longer but bounded window (measured: about 40 seconds of partial API errors, then full reads and writes with the node still gone). When the node returns, confirm *every* service returns to full replicas and the rejoined PostgreSQL member is streaming in `patronictl list`: a replica count that never recovers, or a Management replica crash-looping against a healthy database, is how the Step 8 restart-policy trap and the Step 4 stale-DNS wedge surface.
+- With a peer-to-peer connection established between two test peers, stop a majority of nodes at once (2 of 3 here). Expect the control plane to go down: Swarm loses quorum and Patroni deliberately demotes the PostgreSQL leader rather than risk a split brain, so the API errors until a second node returns. That's correct behavior — three nodes tolerate the loss of one node with full function, not two. The established peer-to-peer connection should keep passing traffic regardless; it no longer depends on any of these services (measured: zero dropped pings at a 200ms cadence across the entire test set, this scenario included).
+
+## In one breath
+
+Three Swarm manager nodes, one per zone, behind a load balancer that health-checks each node's Traefik and drops a dead node from rotation on its own. Traefik load-balances the three application pools the main guide describes — it's the piece Swarm's own routing mesh can't be, because that mesh has no active health checking. PostgreSQL and Redis run as Patroni and Sentinel clusters made of one-service-per-instance (never a single replicated service), fronted by HAProxy — the piece neither Swarm nor Traefik can be, because routing to "whichever instance is currently primary" needs an active check Traefik can't perform for raw TCP. Redis specifically needs `endpoint_mode: dnsrr`, because Swarm's default networking rewrites connection source addresses in a way Sentinel's replica discovery can't tolerate. Everything else is the architecture from the main guide, unchanged.
