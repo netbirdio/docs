@@ -32,7 +32,7 @@ NetBird offers two ways to configure routing peers. Both are actively maintained
 **[Routes](/manage/network-routes) (legacy, deprecated)**
 - Distribution Groups and ACL Groups are configured separately.
 - ACL Groups are optional, which means a route without them grants unrestricted access to the destination CIDR for every peer in the Distribution Group.
-- Only needed today for [exit node](/manage/network-routes/use-cases/exit-nodes) setups. Use Networks for everything else, including [site-to-site](/manage/networks/use-cases/site-to-site).
+- Only needed today for [exit node](/use-cases/remote-access/exit-nodes) setups. Use Networks for everything else, including [site-to-site](/use-cases/remote-access/site-to-site).
 
 ## Mental model: how traffic flows
 
@@ -102,9 +102,9 @@ Multiple routing peers can serve the same network or route. Behavior depends on 
 
 ### Primary / failover (different metrics)
 
-The lower-metric peer carries all traffic. The higher-metric peer is held in reserve and only takes over when the primary becomes unreachable. Failover is automatic and immediate — clients begin sending traffic through the standby as soon as the primary stops responding. When the primary comes back online, clients switch back to it immediately. Established TCP connections through the previous peer reset and applications must reconnect.
+The lower-metric peer carries all traffic. The higher-metric peer is held in reserve and only takes over when the primary becomes unreachable. Failover is automatic: clients start sending traffic through the standby once the primary is seen as unreachable, normally within seconds. When the primary comes back online, clients switch back to it. With masquerade on, the default, established TCP connections through the previous peer reset and applications must reconnect, because the standby translates them to a different source address. With masquerade off they are not translated, and behave differently: see [High availability with masquerade off](/manage/networks/masquerade#high-availability-with-masquerade-off).
 
-**Example.** Routing Peer A has a lower metric than Routing Peer B. When Peer A goes down, all traffic fails over to Peer B. When Peer A comes back online, all traffic switches back to Peer A immediately.
+**Example.** Routing Peer A has a lower metric than Routing Peer B. When Peer A goes down, all traffic fails over to Peer B. When Peer A comes back online, all traffic switches back to Peer A.
 
 ### Latency switching (equal metrics)
 
@@ -115,6 +115,10 @@ Useful when routing peers are geographically distributed and you want each clien
 ### Failure domains
 
 Place highly available peers in different failure domains within the same network: separate AZs in cloud, separate hypervisors or hosts on-prem.
+
+<Note>
+High availability is failover and nearest-peer selection, not load balancing — it does not spread one network's traffic across its peers. To carry sustained high throughput, see [Sizing Routing Peers](/manage/networks/sizing-routing-peers) for how to size each peer and split load across multiple Networks.
+</Note>
 
 ## Masquerade
 
@@ -127,8 +131,10 @@ Turn masquerade off when:
 
 With masquerade off, you must add a return route on the destination network pointing the NetBird CIDR (default `100.64.0.0/10`) at the routing peer.
 
+High availability then needs one more thing from you. Clients still move to the standby peer on their own, but that return route keeps pointing at the peer that just failed, so replies are dropped even though the outbound direction has recovered. The destination network has to be able to follow the failover too. See [High availability with masquerade off](/manage/networks/masquerade#high-availability-with-masquerade-off).
+
 <Note>
-Masquerade can only be turned off on Linux routing peers. High availability also stops working with masquerade off, because return traffic must flow back through one specific routing peer's LAN address — the destination network has no way to follow a failover.
+Masquerade can only be turned off on Linux routing peers.
 </Note>
 
 ## Access control behavior
@@ -157,7 +163,7 @@ Every peer has two addresses — its **NetBird IP** (its `100.x` overlay address
   - a **peer-to-peer policy** (the input-chain accept), and
   - on userspace peers (Windows, macOS, Linux netstack), [`NB_ENABLE_LOCAL_FORWARDING`](#local-forwarding).
 
-For the full setup — the file-server scenario, the commands, the Active Directory tie-in, and a fallback for when you can't set the flag — see [Reach Services on the Routing Peer](/manage/networks/use-cases/reach-services-on-the-routing-peer).
+For the full setup — the file-server scenario, the commands, the Active Directory tie-in, and a fallback for when you can't set the flag — see [Reach Services on the Routing Peer](/use-cases/remote-access/reach-services-on-the-routing-peer).
 
 ### Directionality is forced for routed traffic
 
@@ -243,6 +249,11 @@ When a peer is `Connected` but a resource behind it is still unreachable, [Troub
             description: 'The newer, recommended way to configure routing peers and resources',
         },
         {
+            href: '/manage/networks/sizing-routing-peers',
+            name: 'Sizing Routing Peers',
+            description: 'Choose the size and number of routing peers from measured throughput',
+        },
+        {
             href: '/manage/network-routes',
             name: 'Routes',
             description: 'Legacy routing peer feature, now deprecated — use Networks except for exit nodes',
@@ -258,7 +269,7 @@ When a peer is `Connected` but a resource behind it is still unreachable, [Troub
             description: 'When to enable or disable source IP rewriting on a route',
         },
         {
-            href: '/manage/network-routes/use-cases/exit-nodes',
+            href: '/use-cases/remote-access/exit-nodes',
             name: 'Exit Nodes',
             description: 'Route all internet-bound traffic through a controlled location',
         },

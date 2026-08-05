@@ -38,6 +38,7 @@ export const apiNavigation = [
       { title: 'DNS', href: '/api/resources/dns' },
       { title: 'DNS Zones', href: '/api/resources/dns-zones' },
       { title: 'Services', href: '/api/resources/services' },
+      { title: 'Agent Network', href: '/api/resources/agent-network' },
       { title: 'Events', href: '/api/resources/events' },
       {
         title: 'Event Streaming',

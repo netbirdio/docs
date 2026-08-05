@@ -237,6 +237,33 @@ The evaluation logic mirrors CIDR restrictions: if an allowed list is present, t
     GeoIP accuracy depends on the database quality and the client's IP address. VPN and proxy users may appear from a different country than their physical location.
 </Note>
 
+### Combining allowlists (match all or any)
+
+Allowlist matching happens at two levels: within a single list, and across the different lists.
+
+**Within a single list**, entries are OR-ed. A connection matches the allowed CIDRs if its IP falls in *any* one of them, and it matches the allowed countries if its country is *any* one of them. Adding more entries to a list widens what that list accepts.
+
+**Across lists** (allowed CIDRs versus allowed countries), the **Allow match** setting controls how the two combine when both are configured:
+
+- **All**: a connection must match every configured list. With an allowed CIDR and an allowed country, the client must be in the CIDR *and* in the country. This is the behavior when the setting is unset, so existing services and services created through the API keep matching all lists.
+- **Any**: a connection is allowed if it matches at least one configured list, for example an allowed country *or* an allowed CIDR. New services created in the dashboard default to **Any**.
+
+Allow match only affects allowlists. Blocklists are independent and always take priority: a connection matching any blocked CIDR or blocked country is rejected even in **Any** mode.
+
+**Example**: allow all traffic from the US, plus a specific office network abroad:
+
+| Field | Value |
+|-------|-------|
+| Allowed countries | `US` |
+| Allowed CIDRs | `203.0.113.0/24` |
+| Allow match | `Any` |
+
+With **Any**, a US client is allowed even if it is not in the CIDR, and a client in `203.0.113.0/24` is allowed even though it is located abroad. Under **All**, only clients that are both in the US and in the CIDR would pass.
+
+<Note>
+    **Any** is also the right choice when an allowed CIDR covers a private or LAN range. Private addresses have no country, so pairing such a CIDR with a country allowlist under **All** would deny those clients (their country cannot be resolved). With **Any**, the CIDR match alone admits them.
+</Note>
+
 ### CrowdSec IP reputation
 
 [CrowdSec](https://www.crowdsec.net) is an open-source security engine that maintains a community-curated database of known malicious IP addresses. When enabled, the proxy checks every incoming client IP against a local cache of CrowdSec decisions and blocks connections from flagged addresses.
@@ -260,7 +287,7 @@ CrowdSec is only available when the proxy cluster has CrowdSec configured. If th
 Access restrictions and authentication methods are independent layers:
 
 1. **Connection arrives** at the proxy.
-2. **Access restrictions** are evaluated first: IP CIDRs, then country, then CrowdSec. If the connection is blocked at any layer, it is rejected with no further processing.
+2. **Access restrictions** are evaluated first. Allowlists combine according to the [Allow match](#combining-allowlists-match-all-or-any) setting; blocklists and CrowdSec always reject on match. If the connection is blocked, it is rejected with no further processing.
 3. **Authentication** is evaluated next (for HTTP services): SSO, password, PIN, or header auth.
 4. If both layers pass, the request is forwarded to the backend.
 

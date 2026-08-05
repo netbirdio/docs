@@ -15,6 +15,7 @@ import {dom} from "@fortawesome/fontawesome-svg-core";
 import {AnnouncementBannerProvider} from "@/components/announcement-banner/AnnouncementBannerProvider";
 import {ImageZoom} from "@/components/ImageZoom";
 import {MatomoTagManager} from "@/components/Matomo";
+import {GoogleTagManager} from "@/components/GoogleTagManager";
 import {CookieConsentProvider, useCookieConsent} from "@/components/cookie-consent/CookieConsentProvider";
 import {CookieConsent} from "@/components/cookie-consent/CookieConsent";
 
@@ -33,6 +34,7 @@ function AppInner({ Component, pageProps }) {
   return (
     <>
       <MatomoTagManager consentGiven={isAccepted} />
+      <GoogleTagManager consentGiven={isAccepted} />
       <Head>
         <style>{dom.css()}</style>
         {router.route.startsWith('/ipa') ?

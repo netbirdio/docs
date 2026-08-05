@@ -13,7 +13,7 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { getGitLastModified } from './git-dates.mjs'
+import { buildGitDateMap } from './git-dates.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
@@ -45,9 +45,10 @@ const entries = findMdxRoutes(PAGES_DIR)
   .filter((r) => r.route !== '/' && r.route !== '')
   .sort((a, b) => a.route.localeCompare(b.route))
 
+const gitDates = buildGitDateMap()
 const map = {}
 for (const { route, filePath } of entries) {
-  const date = getGitLastModified(filePath)
+  const date = gitDates.get(path.relative(ROOT, filePath))
   if (date) map[route] = date
 }
 

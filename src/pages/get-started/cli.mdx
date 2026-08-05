@@ -42,7 +42,7 @@ Below is the list of global flags:
       --admin-url string        Admin Panel URL [http|https]://[host]:[port] (default "https://app.netbird.io:443")
   -A, --anonymize               anonymize IP addresses and non-netbird.io domains in logs and status output
   -c, --config string           Overrides the default profile file location. Deprecated on `up` and `login`; use `--service-env NB_CONFIG=<path>` instead.
-      --daemon-addr string      Daemon service address to serve CLI requests [unix|tcp]://[path|host:port] (default "unix:///var/run/netbird.sock")
+      --daemon-addr string      Daemon service address to serve CLI requests [unix|tcp|npipe]://[path|host:port|name] (default "unix:///var/run/netbird.sock", "npipe://netbird" on Windows)
   -n, --hostname string         Sets a custom hostname for the device
       --log-file console        Sets NetBird log paths written to simultaneously. If "console" is specified the log will be output to stdout. If "syslog" is specified the log will be sent to the syslog daemon. You can pass the flag multiple times or separate entries by comma (default [/var/log/netbird/client.log])
   -l, --log-level string        Sets NetBird log level (default "info")
@@ -102,7 +102,7 @@ The command will check if the peer is logged in and connect to the management se
       --disable-ssh-auth                    Disable SSH JWT authentication. If enabled, any peer with network access can connect without user authentication.
       --dns-resolver-address string         Sets a custom address for NetBird's local DNS resolver. If set, the agent won't attempt to discover the best IP and port to listen on. An empty string "" clears the previous configuration. E.g. --dns-resolver-address 127.0.0.1:5053 or --dns-resolver-address ""
       --dns-router-interval duration        DNS route update interval (default 1m0s)
-      --enable-lazy-connection              [Experimental] Enable the lazy connection feature. If enabled, the client will establish connections on-demand. Note: this setting may be overridden by management configuration.
+      --enable-lazy-connection              Deprecated and no longer used. Lazy connections are controlled by Management and the NB_LAZY_CONN environment variable.
       --enable-rosenpass                    [Experimental] Enable Rosenpass feature. If enabled, the connection will be post-quantum secured via Rosenpass.
       --enable-ssh-local-port-forwarding    Enable local port forwarding for SSH server
       --enable-ssh-remote-port-forwarding   Enable remote port forwarding for SSH server
@@ -427,6 +427,26 @@ Peers count: 2/3 Connected
     The peer with IP `100.119.85.4` wasn't returned because it was not connected
 </Note>
 
+#### Health checks
+
+Use `netbird status --check` to run a health probe from a script or container orchestrator. These probes do not display the normal status report. A successful probe produces no output and exits with code `0`; a failed probe exits with code `1`.
+
+- `live`: succeeds when the daemon responds to the status request.
+- `ready`: succeeds when the daemon status is `Idle`, `Connecting`, or `Connected`. Authentication-required states (`NeedsLogin`, `LoginFailed`, and `SessionExpired`) and unexpected states fail the check.
+- `startup`: succeeds when management and signal are connected and, if any NetBird relays are configured, at least one relay is available.
+
+For example, the following loop makes each probe result visible:
+
+```shell
+for check in live ready startup; do
+  if netbird status --check "$check"; then
+    echo "$check: PASS"
+  else
+    echo "$check: FAIL ($?)"
+  fi
+done
+```
+
 ### ssh
 Command to connect via SSH to a remote peer in your NetBird network. The `ssh` command has several subcommands for different operations.
 
@@ -489,9 +509,11 @@ For SFTP and SCP, use native clients (`sftp` and `scp` commands) which work with
 
 **Connection fails:**
 
-- Ensure SSH is enabled on the target peer:
+- Ensure SSH is enabled on the target peer, which requires root or an administrator.
+  The commands below use `sudo` for Linux and macOS; on Windows run the same ones
+  without it, from an elevated prompt:
   ```shell
-  netbird up --allow-server-ssh
+  sudo netbird down; sudo netbird up --allow-server-ssh
   ```
 - Verify SSH Access is enabled in the dashboard (Peers > your_peer > SSH Access)
 - Check that an ACL policy allows TCP port 22022
@@ -500,13 +522,16 @@ For SFTP and SCP, use native clients (`sftp` and `scp` commands) which work with
 
 - Complete the OIDC flow when prompted (browser window will open)
 - Verify your IdP is properly configured
-- To disable JWT authentication: `netbird up --allow-server-ssh --disable-ssh-auth`
+- To disable JWT authentication, as root or an administrator: `sudo netbird down; sudo netbird up --allow-server-ssh --disable-ssh-auth`.
+  This drops per-user authentication for SSH on that peer, leaving any peer the ACL
+  policy allows able to connect, so use it to isolate a problem and re-enable it with
+  `sudo netbird down; sudo netbird up --allow-server-ssh` afterwards.
 
 **Port forwarding not working:**
 
 - Ensure the server has the appropriate flags:
   ```shell
-  netbird up --allow-server-ssh \
+  sudo netbird down; sudo netbird up --allow-server-ssh \
     --enable-ssh-local-port-forwarding \
     --enable-ssh-remote-port-forwarding
   ```
@@ -779,8 +804,15 @@ netbird debug [command]
 
 ### debug bundle
 Generates a compressed archive containing diagnostic information, which can be used for troubleshooting.
-The file will be generated in a temporary directory and the path will be printed to the console.
-The file is only accessible as root/Administrator.
+The file will be generated in the daemon's temporary directory and the path will be printed to the console. With a
+standard service installation, the location is `/tmp/netbird.debug.<number>.zip` on Linux and macOS, and
+`C:\Windows\Temp\netbird.debug.<number>.zip` on Windows. A custom operating-system temporary directory can change this
+path.
+
+The local ZIP is created whether or not `--upload-bundle` is used. With `--upload-bundle`, the command also prints an
+upload key that you can share with the NetBird team.
+The file belongs to the daemon service account (`root` on standard Linux and macOS installations and `LocalSystem` on
+Windows), so elevated permissions may be required to access it directly.
 
 #### Usage
 To create a debug bundle:
@@ -806,6 +838,7 @@ This will output:
   -S, --system-info                Adds system information to the debug bundle (default true)
   -U, --upload-bundle              Uploads the debug bundle to a server
       --upload-bundle-url string   Service URL to get an upload URL for the debug bundle (default "https://upload.debug.netbird.io/upload-url")
+      --upload-bundle-insecure     Allow uploading to an http or untrusted-TLS upload server (self-hosted); requires root on Linux and macOS, or an administrator on Windows
 ```
 
 ### debug for
@@ -845,6 +878,7 @@ Log level restored to INFO
   -S, --system-info                Adds system information to the debug bundle (default true)
   -U, --upload-bundle              Uploads the debug bundle to a server
       --upload-bundle-url string   Service URL to get an upload URL for the debug bundle (default "https://upload.debug.netbird.io/upload-url")
+      --upload-bundle-insecure     Allow uploading to an http or untrusted-TLS upload server (self-hosted); requires root on Linux and macOS, or an administrator on Windows
 ```
 
 ### debug log

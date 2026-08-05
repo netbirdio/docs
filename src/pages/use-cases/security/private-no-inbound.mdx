@@ -1,0 +1,83 @@
+import { Note } from "@/components/mdx"
+
+export const description =
+    'Run a Bring Your Own Proxy instance in private mode with no public inbound ports by issuing TLS certificates externally over DNS-01 and serving them as static certificates.'
+
+# Private Proxy Without Public Inbound Ports
+
+This use case shows how to run a [Bring Your Own Proxy](/manage/reverse-proxy/bring-your-own-proxy) (BYOP) instance that is reachable **only over the NetBird tunnel**, with **no public inbound ports**, while still serving a valid, publicly trusted TLS certificate.
+
+It applies when you run BYOP as a private cluster with [NetBird-Only Access](/manage/reverse-proxy/authentication#net-bird-only-access-private-services) services and want a fully private deployment, such as a proxy on a locked-down VM whose services are exposed exclusively to peers in your NetBird network.
+
+## What you'll achieve
+
+- Services reachable only by peers in your NetBird network, over the WireGuard tunnel.
+- A valid wildcard TLS certificate served by the proxy, with no certificate warnings.
+- No public inbound web ports: certificate issuance never requires exposing port 80 or 443 to the internet.
+
+## Why the built-in ACME doesn't fit
+
+By default the proxy obtains its own certificates with ACME (Let's Encrypt). Both challenge types it supports validate over an inbound port:
+
+- `tls-alpn-01` validates on port **443**
+- `http-01` validates on port **80**
+
+In either case the certificate authority must reach the proxy from the public internet, which conflicts with a fully private deployment.
+
+The **DNS-01** challenge avoids this: it proves domain ownership by publishing a TXT record in your DNS zone, so no inbound port is required. The proxy does not perform DNS-01 itself. Instead you **issue the certificate out of band** with any ACME client that supports DNS-01, and run the proxy in **static certificate mode** pointed at the resulting files.
+
+## Step 1: Configure the proxy for static certificates
+
+Set these environment variables on the proxy container, alongside the `NB_PROXY_TOKEN` from your [BYOP setup](/manage/reverse-proxy/bring-your-own-proxy#set-up-a-byop-proxy-from-the-api):
+
+| Variable | Value | Purpose |
+|---|---|---|
+| `NB_PROXY_ACME_CERTIFICATES` | `false` | Disable the proxy's own ACME; serve a certificate from disk instead. |
+| `NB_PROXY_CERTIFICATE_DIRECTORY` | e.g. `/certs` | Directory the proxy reads the certificate and key from. |
+| `NB_PROXY_PRIVATE` | `true` | Advertise the **Private** capability so the cluster can publish NetBird-Only Access services. |
+
+The proxy reads the certificate and key as `tls.crt` and `tls.key` in that directory (override with `NB_PROXY_CERTIFICATE_FILE` / `NB_PROXY_CERTIFICATE_KEY_FILE` only if you use different names).
+
+<Note>
+This is the standard **static certificate mode** described in [TLS certificate configuration](/manage/reverse-proxy#tls-certificate-configuration); the only BYOP-specific settings are the account-scoped token and the `Private` capability. Configure each service for [NetBird-Only Access](/manage/reverse-proxy/authentication#net-bird-only-access-private-services) on its Authentication tab so it is reachable only from your NetBird network.
+</Note>
+
+## Step 2: Issue the certificate over DNS-01
+
+Use any DNS-01-capable ACME client to issue a wildcard certificate for your proxy domain, then place the result in the certificate directory as `tls.crt` / `tls.key`. A wildcard (`*.proxy.example.com`) works as a single static certificate and covers every service hostname under that domain.
+
+For example, with [lego](https://go-acme.github.io/lego/):
+
+```bash
+# Your DNS provider's API credentials are supplied via environment variables;
+# see your provider's page in the lego documentation.
+lego --email you@example.com --dns <provider> \
+     -d '*.proxy.example.com' \
+     --path /certs run
+```
+
+Copy or symlink the issued certificate and key to `tls.crt` and `tls.key` in `NB_PROXY_CERTIFICATE_DIRECTORY`.
+
+Issuance happens entirely through DNS, so the machine running the ACME client needs **outbound** access to your DNS provider's API and to the certificate authority, and no inbound ports.
+
+## Step 3: Automate renewal
+
+Run the ACME client on a recurring timer; the common recommendation is twice a day at a randomized time. It re-issues the certificate only when it nears expiry, so frequent runs are cheap and give a renewal plenty of retries before the certificate expires. Each run writes the updated files into the certificate directory.
+
+The proxy watches the certificate files and **hot-reloads** them when they change, picking up the renewed certificate automatically with no restart and no dropped connections.
+
+## Verify
+
+From a NetBird peer whose user is in the service's access group, request the service over the tunnel:
+
+```bash
+curl -v https://app.proxy.example.com/
+```
+
+`curl` validates the certificate by default, so a successful `200` confirms the served certificate is publicly trusted and matches the hostname (an untrusted certificate makes `curl` fail; don't pass `-k`). The `-v` output shows `SSL certificate verify ok` and the issuer. The same request from outside your NetBird network never reaches the service, since there are no public inbound web ports.
+
+## Related
+
+- [Bring Your Own Proxy](/manage/reverse-proxy/bring-your-own-proxy) — full BYOP setup and the account-scoped proxy token.
+- [TLS certificate configuration](/manage/reverse-proxy#tls-certificate-configuration) — all certificate modes (ACME, static, wildcard).
+- [NetBird-Only Access](/manage/reverse-proxy/authentication#net-bird-only-access-private-services) — restrict services to your NetBird network.
