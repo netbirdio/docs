@@ -18,7 +18,6 @@ import {MatomoTagManager} from "@/components/Matomo";
 import {GoogleTagManager} from "@/components/GoogleTagManager";
 import {CookieConsentProvider, useCookieConsent} from "@/components/cookie-consent/CookieConsentProvider";
 import {CookieConsent} from "@/components/cookie-consent/CookieConsent";
-import {LAST_UPDATED_BY_ROUTE} from "@/lib/last-updated-routes.mjs";
 
 function onRouteChange() {
   useMobileNavigationStore.getState().close()
@@ -31,7 +30,7 @@ function AppInner({ Component, pageProps }) {
   let router = useRouter()
   let tableOfContents = collectHeadings(pageProps.sections)
   const { isAccepted } = useCookieConsent()
-  const lastUpdated = LAST_UPDATED_BY_ROUTE[router.pathname]
+  const lastUpdated = pageProps.lastUpdated
 
   return (
     <>
