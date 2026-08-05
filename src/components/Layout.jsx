@@ -236,7 +236,7 @@ export function Layout({ children, title, tableOfContents }) {
                       style={{display: "flex", alignItems: 'center'}}
                   >
                     <FontAwesomeIcon icon={faGithub} style={iconStyle} className="icon pr-1" />
-                    <span>Edit on Github</span>
+                    <span>Edit on GitHub</span>
                   </Link>
                 </li>
                 <li key="view-history">
