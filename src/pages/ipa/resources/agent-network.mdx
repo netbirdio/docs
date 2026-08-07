@@ -1224,7 +1224,7 @@ echo $response;
 
 <Row>
   <Col>
-    Returns the per-account Agent Network gateway settings (cluster, subdomain, endpoint). Returns 404 when no provider has been created yet — settings are lazily bootstrapped on first provider create.
+    Returns the per-account Agent Network gateway settings (cluster, subdomain, endpoint). Before the account is bootstrapped — on first provider create (`bootstrap_cluster`) or via PUT with `cluster` — the response carries the default values with empty cluster, subdomain and endpoint.
               </Col>
 
   <Col sticky>
@@ -1417,11 +1417,16 @@ echo $response;
 
 <Row>
   <Col>
-    Updates the mutable account-level Agent Network settings (collection toggles). Cluster and subdomain are immutable and ignored if sent. Returns 404 when settings have not been bootstrapped (no provider created yet).
+    Updates the account-level Agent Network settings; the request replaces every mutable field (collection toggles and retention). When the account has no settings row yet, providing `cluster` bootstraps it (assigning the subdomain that forms the agent endpoint); without `cluster` the request returns 404. Sending a `cluster` different from the assigned one is rejected (the cluster is immutable once assigned). The subdomain is always server-assigned and immutable.
             
     ### Request-Body Parameters
     
-    <Properties><Property name="enable_log_collection" type="boolean" required={true}>
+    <Properties><Property name="cluster" type="string" required={false}>
+        
+            Address of the NetBird proxy cluster fronting this account's agent-network endpoint. When the account has no settings row yet, providing it bootstraps the row (assigning the subdomain that forms the agent endpoint). The cluster is immutable once assigned — later updates must omit it or send the assigned value; any other value is rejected.
+        
+        </Property>
+    <Property name="enable_log_collection" type="boolean" required={true}>
         
             Whether per-request access-log entries are collected for this account's agent-network traffic.
         
@@ -1454,6 +1459,7 @@ curl -X PUT https://api.netbird.io/api/agent-network/settings \
 -H 'Content-Type: application/json' \
 -H 'Authorization: Token <TOKEN>' \
 --data-raw '{
+  "cluster": "eu.proxy.netbird.io",
   "enable_log_collection": true,
   "enable_prompt_collection": true,
   "redact_pii": true,
@@ -1464,6 +1470,7 @@ curl -X PUT https://api.netbird.io/api/agent-network/settings \
 ```js
 const axios = require('axios');
 let data = JSON.stringify({
+  "cluster": "eu.proxy.netbird.io",
   "enable_log_collection": true,
   "enable_prompt_collection": true,
   "redact_pii": true,
@@ -1496,6 +1503,7 @@ import json
 
 url = "https://api.netbird.io/api/agent-network/settings"
 payload = json.dumps({
+  "cluster": "eu.proxy.netbird.io",
   "enable_log_collection": true,
   "enable_prompt_collection": true,
   "redact_pii": true,
@@ -1528,6 +1536,7 @@ func main() {
   method := "PUT"
   
   payload := strings.NewReader(`{
+  "cluster": "eu.proxy.netbird.io",
   "enable_log_collection": true,
   "enable_prompt_collection": true,
   "redact_pii": true,
@@ -1579,6 +1588,7 @@ request["Accept"] = "application/json"
 request["Authorization"] = "Token <TOKEN>"
 
 request.body = JSON.dump({
+  "cluster": "eu.proxy.netbird.io",
   "enable_log_collection": true,
   "enable_prompt_collection": true,
   "redact_pii": true,
@@ -1593,6 +1603,7 @@ OkHttpClient client = new OkHttpClient().newBuilder()
   .build();
 MediaType mediaType = MediaType.parse("application/json");
 RequestBody body = RequestBody.create(mediaType, '{
+  "cluster": "eu.proxy.netbird.io",
   "enable_log_collection": true,
   "enable_prompt_collection": true,
   "redact_pii": true,
@@ -1623,6 +1634,7 @@ curl_setopt_array($curl, array(
   CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
   CURLOPT_CUSTOMREQUEST => 'PUT',  
   CURLOPT_POSTFIELDS => '{
+  "cluster": "eu.proxy.netbird.io",
   "enable_log_collection": true,
   "enable_prompt_collection": true,
   "redact_pii": true,
@@ -3871,19 +3883,19 @@ echo $response;
         </Property>
     <Property name="extra_values" type="object" required={false}>
         
-            Operator-typed values for catalog-declared extra headers (see AgentNetworkProvider.extra_values). When present on a request, the whole map replaces the stored values. Empty strings drop the corresponding key.
+            Operator-typed values for catalog-declared extra headers (see AgentNetworkProvider.extra_values). The request's map replaces the stored values; empty strings drop the corresponding key.
 
         
         </Property>
     <Property name="identity_header_user_id" type="string" required={false}>
         
-            Wire header name for the caller's display identity. See AgentNetworkProvider.identity_header_user_id. When omitted on a request, the stored value is left unchanged; pass an empty string explicitly to clear it (which disables stamping for this dimension).
+            Wire header name for the caller's display identity. See AgentNetworkProvider.identity_header_user_id. Empty or omitted disables stamping for this dimension.
 
         
         </Property>
     <Property name="identity_header_groups" type="string" required={false}>
         
-            Wire header name for the caller's groups CSV. See AgentNetworkProvider.identity_header_groups. Same omit / empty semantics as `identity_header_user_id`.
+            Wire header name for the caller's groups CSV. See AgentNetworkProvider.identity_header_groups. Same semantics as `identity_header_user_id`.
 
         
         </Property>
@@ -3894,12 +3906,12 @@ echo $response;
         </Property>
     <Property name="skip_tls_verification" type="boolean" required={false}>
         
-            Skip upstream TLS certificate verification when the proxy dials this provider's URL. For self-hosted / internal gateways behind a private or self-signed certificate. Defaults to false. When omitted on update, the stored value is left unchanged.
+            Skip upstream TLS certificate verification when the proxy dials this provider's URL. For self-hosted / internal gateways behind a private or self-signed certificate. Defaults to false.
         
         </Property>
     <Property name="metadata_disabled" type="boolean" required={false}>
         
-            Disable identity metadata injection (the caller's user + authorizing group) for this provider. Defaults to false (metadata is injected). When omitted on update, the stored value is left unchanged.
+            Disable identity metadata injection (the caller's user + authorizing group) for this provider. Defaults to false (metadata is injected).
         
         </Property>
     </Properties>
@@ -4630,19 +4642,19 @@ echo $response;
         </Property>
     <Property name="extra_values" type="object" required={false}>
         
-            Operator-typed values for catalog-declared extra headers (see AgentNetworkProvider.extra_values). When present on a request, the whole map replaces the stored values. Empty strings drop the corresponding key.
+            Operator-typed values for catalog-declared extra headers (see AgentNetworkProvider.extra_values). The request's map replaces the stored values; empty strings drop the corresponding key.
 
         
         </Property>
     <Property name="identity_header_user_id" type="string" required={false}>
         
-            Wire header name for the caller's display identity. See AgentNetworkProvider.identity_header_user_id. When omitted on a request, the stored value is left unchanged; pass an empty string explicitly to clear it (which disables stamping for this dimension).
+            Wire header name for the caller's display identity. See AgentNetworkProvider.identity_header_user_id. Empty or omitted disables stamping for this dimension.
 
         
         </Property>
     <Property name="identity_header_groups" type="string" required={false}>
         
-            Wire header name for the caller's groups CSV. See AgentNetworkProvider.identity_header_groups. Same omit / empty semantics as `identity_header_user_id`.
+            Wire header name for the caller's groups CSV. See AgentNetworkProvider.identity_header_groups. Same semantics as `identity_header_user_id`.
 
         
         </Property>
@@ -4653,12 +4665,12 @@ echo $response;
         </Property>
     <Property name="skip_tls_verification" type="boolean" required={false}>
         
-            Skip upstream TLS certificate verification when the proxy dials this provider's URL. For self-hosted / internal gateways behind a private or self-signed certificate. Defaults to false. When omitted on update, the stored value is left unchanged.
+            Skip upstream TLS certificate verification when the proxy dials this provider's URL. For self-hosted / internal gateways behind a private or self-signed certificate. Defaults to false.
         
         </Property>
     <Property name="metadata_disabled" type="boolean" required={false}>
         
-            Disable identity metadata injection (the caller's user + authorizing group) for this provider. Defaults to false (metadata is injected). When omitted on update, the stored value is left unchanged.
+            Disable identity metadata injection (the caller's user + authorizing group) for this provider. Defaults to false (metadata is injected).
         
         </Property>
     </Properties>
