@@ -260,22 +260,22 @@ const nextConfig = {
             },
             {
                 source: '/how-to/secure-remote-webserver-access',
-                destination: '/manage/peers/access-infrastructure/secure-remote-webserver-access',
+                destination: '/manage/peers/ssh',
                 permanent: true,
             },
             {
                 source: '/how-to/setup-keys-add-servers-to-network',
-                destination: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network',
+                destination: '/manage/peers/register-machines-using-setup-keys',
                 permanent: true,
             },
             {
                 source: '/how-to/access-internal-resources-from-autoscaled-environments',
-                destination: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments',
+                destination: '/use-cases/kubernetes',
                 permanent: true,
             },
             {
                 source: '/how-to/peer-approval-for-remote-worker-access',
-                destination: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access',
+                destination: '/manage/peers/approve-peers',
                 permanent: true,
             },
             {
@@ -496,18 +496,43 @@ const nextConfig = {
                 permanent: true,
             },
             {
+                source: '/manage/peers/access-infrastructure/secure-remote-webserver-access',
+                destination: '/manage/peers/ssh',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network',
+                destination: '/manage/peers/register-machines-using-setup-keys',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments',
+                destination: '/use-cases/kubernetes',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access',
+                destination: '/manage/peers/approve-peers',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/mdm-deployment/:path*',
+                destination: '/manage/peers/mdm-deployment/:path*',
+                permanent: true,
+            },
+            {
                 source: '/how-to/jamf-pro-netbird-integration',
-                destination: '/manage/integrations/mdm-deployment/jamf-pro-netbird-integration',
+                destination: '/manage/peers/mdm-deployment/jamf-pro-netbird-integration',
                 permanent: true,
             },
             {
                 source: '/how-to/kandji-netbird-integration',
-                destination: '/manage/integrations/mdm-deployment/kandji-netbird-integration',
+                destination: '/manage/peers/mdm-deployment/kandji-netbird-integration',
                 permanent: true,
             },
             {
                 source: '/how-to/intune-netbird-integration',
-                destination: '/manage/integrations/mdm-deployment/intune-netbird-integration',
+                destination: '/manage/peers/mdm-deployment/intune-netbird-integration',
                 permanent: true,
             },
             {

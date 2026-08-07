@@ -90,7 +90,6 @@ export const docsNavigation = [
                         title: 'Add Peers',
                         href: '/manage/peers/add-machines-to-your-network',
                     },
-                    { title: 'Approve Peers', href: '/manage/peers/approve-peers' },
                     {
                         title: 'Setup Keys',
                         href: '/manage/peers/register-machines-using-setup-keys',
@@ -98,6 +97,32 @@ export const docsNavigation = [
                     {
                         title: 'Bootstrap via Config File',
                         href: '/manage/peers/bootstrap-via-config-file',
+                    },
+                    {
+                        title: 'MDM Deployment',
+                        isOpen: false,
+                        links: [
+                            {
+                                title: 'Deploy with Group Policy (GPO)',
+                                href: '/manage/peers/mdm-deployment/windows-gpo-deployment',
+                            },
+                            {
+                                title: 'macOS CLI-Only .pkg',
+                                href: '/manage/peers/mdm-deployment/macos-cli-pkg-deployment',
+                            },
+                            {
+                                title: 'Deploy with Jamf Pro',
+                                href: '/manage/peers/mdm-deployment/jamf-pro-netbird-integration',
+                            },
+                            {
+                                title: 'Deploy with Kandji',
+                                href: '/manage/peers/mdm-deployment/kandji-netbird-integration',
+                            },
+                            {
+                                title: 'Deploy with Intune',
+                                href: '/manage/peers/mdm-deployment/intune-netbird-integration',
+                            },
+                        ],
                     },
                     {
                         title: 'Browser Client',
@@ -110,31 +135,10 @@ export const docsNavigation = [
                             },
                         ],
                     },
+                    { title: 'Approve Peers', href: '/manage/peers/approve-peers' },
                     { title: 'SSH', href: '/manage/peers/ssh' },
                     { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                     { title: 'Remote Jobs', href: '/manage/peers/remote-jobs' },
-                    {
-                        title: 'Access Infrastructure',
-                        isOpen: true,
-                        links: [
-                            {
-                                title: 'Access Remote Webserver',
-                                href: '/manage/peers/access-infrastructure/secure-remote-webserver-access',
-                            },
-                            {
-                                title: 'Add Servers to the Network',
-                                href: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network',
-                            },
-                            {
-                                title: 'Access from Kubernetes',
-                                href: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments',
-                            },
-                            {
-                                title: 'Peer Approval for Remote Access',
-                                href: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access',
-                            },
-                        ],
-                    },
                     { title: 'Auto Update', href: '/manage/peers/auto-update' },
                 ],
             },
@@ -419,39 +423,6 @@ export const docsNavigation = [
                 ],
             },
             {
-                title: 'Integrations',
-                isOpen: false,
-                links: [
-                    {
-                        title: 'MDM for Deployment',
-                        isOpen: true,
-                        links: [
-                            {
-                                title: 'Deploy with Group Policy (GPO)',
-                                href: '/manage/integrations/mdm-deployment/windows-gpo-deployment',
-                            },
-                            {
-                                title: 'macOS CLI-Only .pkg',
-                                href: '/manage/integrations/mdm-deployment/macos-cli-pkg-deployment',
-                            },
-                            {
-                                title: 'Deploy with Jamf Pro',
-                                href: '/manage/integrations/mdm-deployment/jamf-pro-netbird-integration',
-                            },
-                            {
-                                title: 'Deploy with Kandji',
-                                href: '/manage/integrations/mdm-deployment/kandji-netbird-integration',
-                            },
-                            {
-                                title: 'Deploy with Intune',
-                                href: '/manage/integrations/mdm-deployment/intune-netbird-integration',
-                            },
-                        ],
-                    },
-                ],
-            },
-
-            {
                 title: 'Public API',
                 isOpen: false,
                 links: [{ title: 'Access Public API', href: '/manage/public-api' }],
@@ -461,15 +432,15 @@ export const docsNavigation = [
                 isOpen: false,
                 links: [
                     {
-                        title: 'Managed Service Providers',
+                        title: 'MSP Portal',
                         href: '/manage/for-partners/msp-portal',
                     },
                     {
-                        title: 'Distributors',
+                        title: 'Distributor Portal',
                         href: '/manage/for-partners/distributor-portal',
                     },
                     {
-                        title: 'Acronis NetBird integration',
+                        title: 'Deploy with Acronis',
                         href: '/manage/for-partners/acronis-integration',
                     },
                 ],

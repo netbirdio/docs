@@ -18,7 +18,8 @@ npm run dev              # Start dev server (also runs gen:edit-routes, gen:last
 npm run build            # Production build (also runs gen:edit-routes, gen:last-updated, gen:sitemap)
 npm run start            # Serve the production build (warns under `output: 'standalone'` — safe to ignore locally; prod runs `node server.js` from `.next/standalone`)
 npm run lint             # ESLint (next/core-web-vitals) on src/
-npm run gen              # Regenerate API docs from NetBird OpenAPI spec
+npm run lint:mdx         # Check MDX heading structure (scripts/lint-mdx-headings.mjs)
+npm run gen              # Regenerate API docs from NetBird OpenAPI spec (requires a Go toolchain: runs `go run .` in generator/ to expand the spec)
 npm run gen:edit-routes  # Regenerate edit-on-GitHub routes (auto-runs with dev/build)
 npm run gen:last-updated # Regenerate per-page git last-modified dates (auto-runs with dev/build)
 npm run gen:sitemap      # Regenerate public/sitemap.xml (auto-runs with dev/build)
@@ -42,6 +43,7 @@ Documentation pages are MDX files in `src/pages/` using the Next.js Pages Router
 - `ipa/` - API documentation (served at `/api` via rewrite)
 - `use-cases/` - Tutorials and examples
 - `client/` - Client configuration
+- `agent-network/` - Agent Network product docs (AI/LLM gateway: quickstart, policies, usage & logs, integrations)
 - `help/` - Troubleshooting
 
 ### MDX Page Conventions
@@ -64,6 +66,7 @@ Custom components available in MDX files (see `README.md` for full usage example
 - Media: `<YouTube videoId="...">` (from `@/components/YouTube`)
 - UI: `<Button>` (from `@/components/Button`), `<Badge>`
 - API docs: `<Properties>`, `<Property>`
+- Diagrams: fenced ```mermaid code blocks render as Mermaid diagrams (via `src/components/Mermaid.jsx`)
 
 ### API Documentation Generator
 - `generator/` - TypeScript generator that creates MDX pages from the NetBird OpenAPI spec
@@ -86,4 +89,5 @@ They are imported at build time (e.g. by `mdx/rehype.mjs`). On a fresh clone, ru
 
 - Root `/` rewrites to `/introduction`
 - `/api/*` rewrites to `/ipa/*` (API docs live in `src/pages/ipa/` but are served under `/api`)
+- `src/proxy.js` additionally rewrites `/api` **data requests** (`x-nextjs-data` header / `/_next/data/...` paths) to `/ipa`. The config rewrite loses data-request context on client-side navigation (Next.js issue #39669), which strips pageProps — don't remove or bypass the proxy when touching `/api` routing, and test client-side nav to `/api` pages after any change here.
 - Extensive legacy redirects from `/docs/*` and `/how-to/*` paths in `next.config.mjs`
