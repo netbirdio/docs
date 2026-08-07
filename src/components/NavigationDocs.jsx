@@ -90,7 +90,6 @@ export const docsNavigation = [
                         title: 'Add Peers',
                         href: '/manage/peers/add-machines-to-your-network',
                     },
-                    { title: 'Approve Peers', href: '/manage/peers/approve-peers' },
                     {
                         title: 'Setup Keys',
                         href: '/manage/peers/register-machines-using-setup-keys',
@@ -136,6 +135,7 @@ export const docsNavigation = [
                             },
                         ],
                     },
+                    { title: 'Approve Peers', href: '/manage/peers/approve-peers' },
                     { title: 'SSH', href: '/manage/peers/ssh' },
                     { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                     { title: 'Remote Jobs', href: '/manage/peers/remote-jobs' },
