@@ -67,6 +67,35 @@ NetBird usually won't need open ports, but sometimes you or your IT team needs t
     Download the full list of NetBird Cloud STUN/TURN/Relay endpoints and port requirements in <a href="/docs-static/files/netbird-cloud-endpoints.json" download>JSON format.</a>
 </Note>
 
+## Corporate firewalls
+
+NetBird is designed to work through corporate firewalls with no inbound rules. Peers always dial out, so the firewall sees ordinary outbound HTTPS and UDP sessions. When a firewall does get in the way, it is almost always one of two things: it blocks the outbound UDP that direct peer-to-peer connections rely on, or it inspects the encrypted traffic to NetBird's control plane (TLS/SSL interception or deep packet inspection).
+
+The two have different outcomes. Blocking outbound UDP is the milder case: NetBird falls back to its relay over TCP/443, so peers stay connected, just relayed instead of direct. Inspecting the control-plane traffic is the disruptive one: if a firewall intercepts the TLS to the management, signal, or relay endpoints, the client can fail to connect at all. Two settings cover most products:
+
+1. **Allowlist the NetBird endpoints** from [Outgoing ports](#outgoing-ports) above, by domain where the firewall supports it (`*.netbird.io`, plus `relay.netbird.io` and `*.relay.netbird.io` for the relay servers). Allowing the outbound **P2P (STUN)** endpoints enables direct, low-latency connections. The **Relay (TURN)** and **Relay service** endpoints provide the fallback when a direct path is not possible.
+2. **Exclude those same domains from TLS/SSL inspection and deep packet inspection.** Intercepting NetBird's control-plane or relay traffic can break the session or push it onto the slower relay path. Scope the exclusion to the NetBird domains rather than disabling inspection broadly. A `*.netbird.io` wildcard usually does not match the deeper `*.relay.netbird.io` relay hostnames, so exclude `relay.netbird.io` and `*.relay.netbird.io` explicitly.
+
+The table below maps this to common enterprise firewall and SASE products. "Expected behavior" assumes only the outbound endpoints are allowed, with no other tuning.
+
+| Firewall / SASE product | Expected behavior | What to allow |
+|---|---|---|
+| Palo Alto Networks | Connects, relayed if the security policy blocks outbound UDP | Permit the STUN/TURN endpoints, and exclude the NetBird domains from the SSL Decryption policy |
+| Fortinet FortiGate | Connects, relayed under UDP limits or SSL inspection | Allow outbound UDP to STUN/TURN, and exempt the NetBird domains from the SSL/SSH Inspection profile |
+| Cisco Secure Firewall | Connects, relayed if UDP is filtered | Permit the STUN/TURN endpoints, and skip the Decryption policy for the NetBird domains |
+| Cisco Umbrella | Connects | Allow the NetBird domains in the DNS and web policy (no UDP change needed) |
+| Check Point | Connects, relayed with HTTPS Inspection enabled | Allow the endpoints, and add the NetBird domains to the HTTPS Inspection bypass |
+| Zscaler Internet Access | Connects, usually relayed | Allow the domains with an SSL Inspection exemption, and add a firewall bypass for the UDP endpoints to keep connections direct |
+| Netskope | Connects | Add the NetBird domains to the SSL decryption and steering bypass |
+| Cloudflare Gateway | Connects | Allow the domains, and add a Do Not Inspect rule for the NetBird domains |
+| Sophos Firewall | Connects | Allow the endpoints, and exclude the NetBird domains from SSL/TLS Inspection |
+| SonicWall | Connects, relayed with DPI-SSL enabled | Allow outbound UDP to STUN/TURN, and exclude the NetBird domains from DPI-SSL |
+| Barracuda CloudGen | Connects | Allow the endpoints, and relax UDP session limits to keep connections direct |
+
+<Note>
+    The endpoints to allow are exact (see [Network firewall ports](#network-firewall-ports)). Per-product behavior and menu names vary by firmware version and policy, so treat each row as a starting point and confirm against your firewall vendor's current documentation.
+</Note>
+
 ## Host-based firewalls
 
 NetBird automatically manages host-based firewall rules to allow traffic on the NetBird interface (`wt0`). This is separate from your network/perimeter firewall, which requires no inbound port configuration. Conflicts can occur with other firewall management tools or security software — this section covers how to detect and resolve them.
