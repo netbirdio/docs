@@ -565,6 +565,10 @@ export const docsNavigation = [
                         title: 'High Availability',
                         href: '/selfhosted/maintenance/scaling/high-availability',
                     },
+                    {
+                        title: 'Grafana Dashboard',
+                        href: '/selfhosted/enterprise/grafana-dashboard',
+                    },
                 ],
             },
             {
