@@ -139,28 +139,6 @@ export const docsNavigation = [
                     { title: 'SSH', href: '/manage/peers/ssh' },
                     { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                     { title: 'Remote Jobs', href: '/manage/peers/remote-jobs' },
-                    {
-                        title: 'Access Infrastructure',
-                        isOpen: true,
-                        links: [
-                            {
-                                title: 'Access Remote Webserver',
-                                href: '/manage/peers/access-infrastructure/secure-remote-webserver-access',
-                            },
-                            {
-                                title: 'Add Servers to the Network',
-                                href: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network',
-                            },
-                            {
-                                title: 'Access from Kubernetes',
-                                href: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments',
-                            },
-                            {
-                                title: 'Peer Approval for Remote Access',
-                                href: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access',
-                            },
-                        ],
-                    },
                     { title: 'Auto Update', href: '/manage/peers/auto-update' },
                 ],
             },

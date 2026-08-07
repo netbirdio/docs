@@ -260,22 +260,22 @@ const nextConfig = {
             },
             {
                 source: '/how-to/secure-remote-webserver-access',
-                destination: '/manage/peers/access-infrastructure/secure-remote-webserver-access',
+                destination: '/manage/peers/ssh',
                 permanent: true,
             },
             {
                 source: '/how-to/setup-keys-add-servers-to-network',
-                destination: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network',
+                destination: '/manage/peers/register-machines-using-setup-keys',
                 permanent: true,
             },
             {
                 source: '/how-to/access-internal-resources-from-autoscaled-environments',
-                destination: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments',
+                destination: '/use-cases/kubernetes',
                 permanent: true,
             },
             {
                 source: '/how-to/peer-approval-for-remote-worker-access',
-                destination: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access',
+                destination: '/manage/peers/approve-peers',
                 permanent: true,
             },
             {
@@ -493,6 +493,26 @@ const nextConfig = {
             {
                 source: '/client/enable-post-quantum-cryptography',
                 destination: '/client/post-quantum-cryptography',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/access-infrastructure/secure-remote-webserver-access',
+                destination: '/manage/peers/ssh',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network',
+                destination: '/manage/peers/register-machines-using-setup-keys',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments',
+                destination: '/use-cases/kubernetes',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access',
+                destination: '/manage/peers/approve-peers',
                 permanent: true,
             },
             {
