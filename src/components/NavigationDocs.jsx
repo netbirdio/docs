@@ -100,6 +100,32 @@ export const docsNavigation = [
                         href: '/manage/peers/bootstrap-via-config-file',
                     },
                     {
+                        title: 'MDM Deployment',
+                        isOpen: false,
+                        links: [
+                            {
+                                title: 'Deploy with Group Policy (GPO)',
+                                href: '/manage/peers/mdm-deployment/windows-gpo-deployment',
+                            },
+                            {
+                                title: 'macOS CLI-Only .pkg',
+                                href: '/manage/peers/mdm-deployment/macos-cli-pkg-deployment',
+                            },
+                            {
+                                title: 'Deploy with Jamf Pro',
+                                href: '/manage/peers/mdm-deployment/jamf-pro-netbird-integration',
+                            },
+                            {
+                                title: 'Deploy with Kandji',
+                                href: '/manage/peers/mdm-deployment/kandji-netbird-integration',
+                            },
+                            {
+                                title: 'Deploy with Intune',
+                                href: '/manage/peers/mdm-deployment/intune-netbird-integration',
+                            },
+                        ],
+                    },
+                    {
                         title: 'Browser Client',
                         isOpen: false,
                         links: [
@@ -418,39 +444,6 @@ export const docsNavigation = [
                     { title: 'Delete Account', href: '/manage/settings/delete-account' },
                 ],
             },
-            {
-                title: 'Integrations',
-                isOpen: false,
-                links: [
-                    {
-                        title: 'MDM for Deployment',
-                        isOpen: true,
-                        links: [
-                            {
-                                title: 'Deploy with Group Policy (GPO)',
-                                href: '/manage/integrations/mdm-deployment/windows-gpo-deployment',
-                            },
-                            {
-                                title: 'macOS CLI-Only .pkg',
-                                href: '/manage/integrations/mdm-deployment/macos-cli-pkg-deployment',
-                            },
-                            {
-                                title: 'Deploy with Jamf Pro',
-                                href: '/manage/integrations/mdm-deployment/jamf-pro-netbird-integration',
-                            },
-                            {
-                                title: 'Deploy with Kandji',
-                                href: '/manage/integrations/mdm-deployment/kandji-netbird-integration',
-                            },
-                            {
-                                title: 'Deploy with Intune',
-                                href: '/manage/integrations/mdm-deployment/intune-netbird-integration',
-                            },
-                        ],
-                    },
-                ],
-            },
-
             {
                 title: 'Public API',
                 isOpen: false,

@@ -496,18 +496,23 @@ const nextConfig = {
                 permanent: true,
             },
             {
+                source: '/manage/integrations/mdm-deployment/:path*',
+                destination: '/manage/peers/mdm-deployment/:path*',
+                permanent: true,
+            },
+            {
                 source: '/how-to/jamf-pro-netbird-integration',
-                destination: '/manage/integrations/mdm-deployment/jamf-pro-netbird-integration',
+                destination: '/manage/peers/mdm-deployment/jamf-pro-netbird-integration',
                 permanent: true,
             },
             {
                 source: '/how-to/kandji-netbird-integration',
-                destination: '/manage/integrations/mdm-deployment/kandji-netbird-integration',
+                destination: '/manage/peers/mdm-deployment/kandji-netbird-integration',
                 permanent: true,
             },
             {
                 source: '/how-to/intune-netbird-integration',
-                destination: '/manage/integrations/mdm-deployment/intune-netbird-integration',
+                destination: '/manage/peers/mdm-deployment/intune-netbird-integration',
                 permanent: true,
             },
             {
