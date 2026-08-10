@@ -275,7 +275,7 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
 
 ## Appendix: Using a custom TLS certificate
 
-By default, Traefik obtains a certificate from Let's Encrypt and renews it automatically. Stay on that path unless you need your own certificate, because everything below makes renewal your responsibility. Operators using an internal PKI, a corporate CA, or a pre-issued wildcard certificate can serve their own certificate through Traefik's **file provider**, which the generated stack does not enable.
+By default, Traefik obtains a certificate from Let's Encrypt and renews it automatically. Stay on that path unless you need your own certificate, because everything below makes renewal your responsibility. Operators using an internal PKI, a corporate CA, or a pre-issued wildcard certificate serve their own certificate through Traefik's **file provider**, which you enable below.
 
 <Note>
 Leave `config.yaml` alone. `netbird-server` listens on plain HTTP behind Traefik, so its empty `server.tls` block has no effect on what clients see.
@@ -332,16 +332,19 @@ Mount the directory, not the file. A bind-mounted single file is pinned to one i
       - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
 ```
 
-Then delete the four router labels that reference the resolver, one on `dashboard`, two on `netbird-server`, and one on `receiver` if you enabled traffic flow:
+Then delete every router label that references the resolver. A default install has four, but list them rather than counting, so you also catch `docker-compose.override.yml` on a migrated deployment:
+
+```bash
+grep -n 'tls.certresolver' docker-compose*.yml
+```
+
+Each match looks like this, and all of them go:
 
 ```yaml
       - traefik.http.routers.netbird-dashboard.tls.certresolver=letsencrypt
-      - traefik.http.routers.netbird-grpc.tls.certresolver=letsencrypt
-      - traefik.http.routers.netbird-backend.tls.certresolver=letsencrypt
-      - traefik.http.routers.netbird-flow.tls.certresolver=letsencrypt
 ```
 
-Leave the corresponding `traefik.http.routers.*.tls=true` labels in place. On a deployment migrated with `migrate-to-enterprise.sh` the router names are the same, but the `netbird-flow` label sits on the `flow-receiver` service in `docker-compose.override.yml`.
+Leave the corresponding `traefik.http.routers.*.tls=true` labels in place.
 
 <Warning>
 Deleting the labels alone is not enough. While the `certificatesresolvers` lines remain, Traefik keeps serving the certificate the installer already stored in `acme.json` in preference to the one you supplied, so the stack appears to ignore your certificate. Remove both.
