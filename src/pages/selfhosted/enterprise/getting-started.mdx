@@ -15,7 +15,7 @@ NetBird issues `getting-started-enterprise.sh` and the license key with your [En
 
 ## 1. Fresh Installation
 
-`getting-started-enterprise.sh` deploys a single-node self-hosted NetBird stack with the embedded IdP. Management, signal, relay, and STUN run in one `netbird-server` container alongside Caddy, the dashboard, and Postgres.
+`getting-started-enterprise.sh` deploys a single-node self-hosted NetBird stack with the embedded IdP. Management, signal, relay, and STUN run in one `netbird-server` container alongside Traefik, the dashboard, and Postgres.
 
 ### 1.1 Prerequisites
 
@@ -23,7 +23,7 @@ NetBird issues `getting-started-enterprise.sh` and the license key with your [En
 - At least 5 GB of free disk space (the enterprise images and Postgres total ~2.2 GB, plus container and volume overhead).
 - `bash`, `curl`, `jq`, and `openssl` available on the host.
 - A real DNS-resolvable FQDN with an A record pointing at the host. Bare IP addresses are not supported.
-- Open inbound ports: `80/tcp`, `443/tcp`, and `3478/udp`.
+- Open inbound ports: `80/tcp` (HTTP→HTTPS redirect), `443/tcp` (dashboard, API, gRPC, relay, and Let's Encrypt validation), and `3478/udp` (STUN).
 - An enterprise license key authorized for the products you want to enable.
 
 ### 1.2 Run the script
@@ -56,8 +56,9 @@ The script writes the generated files into the current directory:
 | --- | --- | --- |
 | `.env` | Runtime configuration, license key, and generated secrets | `600` |
 | `docker-compose.yml` | Compose stack for the NetBird server and optional traffic-flow services | `644` |
-| `Caddyfile` | Reverse proxy and automatic HTTPS configuration | `644` |
 | `config.yaml` | NetBird server configuration (YAML) | `600` |
+
+Reverse proxy and automatic HTTPS are configured through Traefik labels and command flags inside `docker-compose.yml`, so there is no separate proxy configuration file.
 
 The script aborts if generated files already exist in the directory. This avoids overwriting secrets or replacing an existing deployment by accident.
 
@@ -70,7 +71,7 @@ Open `https://<your-domain>` in a browser. The dashboard detects that setup is r
 After the stack starts:
 
 - Run `docker compose ps` and confirm the expected services are running.
-- Check `docker compose logs -f netbird-server caddy`.
+- Check `docker compose logs -f netbird-server traefik`.
 - Open the dashboard and complete owner setup.
 - Add a test peer and confirm it connects.
 
@@ -80,7 +81,7 @@ The combined stack:
 
 | Service | Image | Notes |
 | --- | --- | --- |
-| `caddy` | `caddy:2` | TLS termination, reverse proxy |
+| `traefik` | `traefik:v3.6` | TLS termination, reverse proxy, HTTP→HTTPS redirect |
 | `dashboard` | `ghcr.io/netbirdio/dashboard-cloud:latest` | UI |
 | `postgres` | `postgres:17` | Datastore for management, embedded IdP, traffic events |
 | `netbird-server` | `ghcr.io/netbirdio/netbird-server-cloud:latest` | Management + signal + relay + embedded STUN on UDP/3478 |
@@ -253,12 +254,12 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
 - **Resolution:** Run `docker compose ps`; if `postgres` isn't `healthy`, check `docker compose logs postgres`, then confirm the DSN uses host `postgres` with a matching user, database, and password.
 - **Verification:** `docker compose ps` shows `postgres` as `healthy`; the server connects once on startup with no connection-refused loop.
 
-### Caddy cannot issue a TLS certificate
+### Traefik cannot issue a TLS certificate
 
-- **Symptom:** HTTPS to the dashboard is unreachable or shows a TLS error; `docker compose logs caddy` shows ACME challenge failures.
-- **Cause:** The FQDN does not resolve to the host, or TCP/80 + TCP/443 are not reachable from Let's Encrypt's validation servers. Caddy tries HTTP-01 (port 80) first and falls back to TLS-ALPN-01 (port 443); at least one must be reachable from the public internet for cert issuance to succeed.
-- **Resolution:** Confirm the DNS A record for `NETBIRD_DOMAIN` points at the host, and that the firewall / cloud security group allows inbound TCP/80 and TCP/443.
-- **Verification:** `docker compose logs caddy` shows "certificate obtained successfully"; `curl -sI https://<your-domain>/` returns a valid response with a trusted certificate.
+- **Symptom:** HTTPS to the dashboard is unreachable or shows a TLS error; `docker compose logs traefik` shows ACME challenge failures.
+- **Cause:** The FQDN does not resolve to the host, or **TCP/443** is not reachable from Let's Encrypt's validation servers. The generated stack validates with the TLS-ALPN-01 challenge only (`--certificatesresolvers.letsencrypt.acme.tlschallenge=true`), which always runs over port 443. Port 80 is used for the HTTP→HTTPS redirect and is never used for certificate validation, so opening it does not help issuance.
+- **Resolution:** Confirm the DNS A record for `NETBIRD_DOMAIN` points at the host, and that the firewall / cloud security group allows inbound TCP/443.
+- **Verification:** `docker compose logs traefik` shows `Validations succeeded; requesting certificates` followed by `Server responded with a certificate`; `curl -sI https://<your-domain>/` returns a valid response with a trusted certificate.
 
 ### First-login owner-setup page is not shown
 
@@ -267,49 +268,97 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
 - **Resolution:** Sign in with the existing owner credentials if available. To start over from scratch:
   ```bash
   docker compose down --volumes   # removes containers and the postgres/embedded-IdP data
-  rm -f .env docker-compose.yml Caddyfile config.yaml
+  rm -f .env docker-compose.yml config.yaml
   curl -fsSL https://pkgs.netbird.io/getting-started-enterprise.sh | bash
   ```
 - **Verification:** `curl -s https://<your-domain>/api/instance | jq .` returns `setupRequired: true`; the dashboard now shows the owner-setup flow on first visit.
 
 ## Appendix: Using a custom TLS certificate
 
-By default the generated `Caddyfile` uses Caddy's automatic TLS via Let's Encrypt. Operators using an internal PKI, a corporate CA, or a pre-issued wildcard certificate can swap to their own cert with three manual edits after the script runs. Caddy stays in front of the stack either way — all reverse-proxy routes (signal, management, OAuth2, relay, dashboard) flow through it.
+By default, Traefik obtains a certificate from Let's Encrypt. Operators using an internal PKI, a corporate CA, or a pre-issued wildcard certificate can serve their own instead. Traefik stays in front of the stack either way — all routes (dashboard, management and signal gRPC, OAuth2, relay, and traffic flow) pass through it.
 
-1. **Place the cert and key on the host.** PEM-encoded, full chain in the cert file:
-   ```bash
-   sudo mkdir -p /etc/netbird/certs
-   sudo cp /path/to/fullchain.pem /etc/netbird/certs/cert.pem
-   sudo cp /path/to/privkey.pem   /etc/netbird/certs/key.pem
-   sudo chmod 600 /etc/netbird/certs/key.pem
-   ```
+Traefik accepts a static certificate only through its **file provider**, which the generated stack does not enable.
 
-2. **Edit `Caddyfile`** and add a `tls` directive inside the `:443` block:
-   ```
-   {$CADDY_SECURE_DOMAIN}:443 {
-       tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
-       import security_headers
-       # … existing reverse_proxy lines unchanged …
-   }
-   ```
+<Note>
+Leave `config.yaml` alone. `netbird-server` listens on plain HTTP behind Traefik, so its empty `server.tls` block has no effect on what clients see.
+</Note>
 
-3. **Edit `docker-compose.yml`** and add a read-only volume mount on the `caddy` service:
-   ```yaml
-   caddy:
-     volumes:
-       - netbird_caddy_data:/data
-       - ./Caddyfile:/etc/caddy/Caddyfile
-       - /etc/netbird/certs:/etc/caddy/certs:ro
-   ```
+### Place the certificate and key on the host
 
-4. **Apply the change:**
-   ```bash
-   docker compose up -d caddy
-   ```
+PEM-encoded, with the full chain in the certificate file:
 
-Notes:
+```bash
+sudo mkdir -p /etc/netbird/certs
+sudo cp /path/to/fullchain.pem /etc/netbird/certs/cert.pem
+sudo cp /path/to/privkey.pem   /etc/netbird/certs/key.pem
+sudo chmod 600 /etc/netbird/certs/key.pem
+```
+
+### Create the dynamic configuration file
+
+Create `traefik-dynamic.yaml` next to `docker-compose.yml`:
+
+```yaml
+tls:
+  stores:
+    default:
+      defaultCertificate:
+        certFile: /certs/cert.pem
+        keyFile: /certs/key.pem
+```
+
+This serves the certificate on every connection, including from clients that send no SNI.
+
+### Update `docker-compose.yml`
+
+**Enable the file provider** — add to the `traefik` service's `command:` list:
+
+```yaml
+      - "--providers.file.filename=/etc/traefik/dynamic.yaml"
+```
+
+**Mount the configuration and the certificates** — add to its `volumes:` list:
+
+```yaml
+      - ./traefik-dynamic.yaml:/etc/traefik/dynamic.yaml:ro
+      - /etc/netbird/certs:/certs:ro
+```
+
+**Remove ACME** — delete these three lines from the same `command:` list:
+
+```yaml
+      - "--certificatesresolvers.letsencrypt.acme.email=${NETBIRD_LETSENCRYPT_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+```
+
+…and the four router labels that reference the resolver — one on `dashboard`, two on `netbird-server`, and one on `receiver` if you enabled traffic flow:
+
+```yaml
+      - traefik.http.routers.netbird-dashboard.tls.certresolver=letsencrypt
+      - traefik.http.routers.netbird-grpc.tls.certresolver=letsencrypt
+      - traefik.http.routers.netbird-backend.tls.certresolver=letsencrypt
+      - traefik.http.routers.netbird-flow.tls.certresolver=letsencrypt
+```
+
+Leave the corresponding `traefik.http.routers.*.tls=true` labels in place.
+
+<Warning>
+Deleting the labels alone is not enough. While the `certificatesresolvers` lines remain, Traefik keeps serving the certificate the installer already stored in `acme.json` in preference to the one you supplied, so the stack appears to ignore your certificate. Remove both.
+</Warning>
+
+### Apply and verify
+
+```bash
+docker compose up -d
+echo | openssl s_client -connect <your-domain>:443 -servername <your-domain> 2>/dev/null \
+  | openssl x509 -noout -subject -issuer -enddate
+```
+
+### Operational notes
 
 - The certificate must cover `NETBIRD_DOMAIN` from `.env`. A wildcard like `*.example.com` works for `netbird.example.com`.
-- If the cert is signed by a private CA, every peer and CLI client must trust the issuing CA — install the CA bundle in their trust stores.
-- Renewals are the operator's responsibility. Replace the files at the same paths and run `docker compose restart caddy`. Caddy will pick up the new cert without a full restart of the rest of the stack.
-- Port 80 in the generated `Caddyfile` only does an HTTP→HTTPS redirect; it is not used for ACME challenges in this mode. You can drop the `:80` mapping from the `caddy` service if HTTP isn't needed.
+- **If the certificate is signed by a private CA, every peer must trust the issuing CA** — install the CA bundle in each peer's system trust store. A peer that does not trust it fails to connect at all, logging `x509: certificate signed by unknown authority`.
+- **Renewals.** Replace both files at the same paths, then `touch traefik-dynamic.yaml`. Traefik watches that file rather than the certificates it references, so replacing the certificates alone has no effect; touching it reloads them without restarting any container.
+- You can leave the `netbird_traefik_letsencrypt` volume in place. With no resolver configured, the certificate stored in `acme.json` is inert.
+- Dropping the `80:80` mapping does not affect certificates — this deployment validates over TLS-ALPN-01 on port 443 and never uses port 80 for ACME. You do lose the HTTP→HTTPS redirect, so `http://<your-domain>` stops responding instead of redirecting.
