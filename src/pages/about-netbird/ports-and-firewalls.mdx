@@ -23,7 +23,7 @@ The NetBird client doesn't require any incoming port to be open; it negotiates t
 NetBird usually won't need open ports, but sometimes you or your IT team needs to secure and verify all outgoing traffic, and that may affect how NetBird clients connect to the [control plane](/about-netbird/how-netbird-works) and negotiate the peer-to-peer connections.
 
 <Note>
-    In more restricted networks, allowing the outbound **P2P (STUN)** and **Relay (TURN)** services below is **recommended** for reliable peer connections. This also improves the reliability of your [routing peers](/manage/networks/how-routing-peers-work).
+    In more restricted networks, allowing the outbound **P2P (STUN)** and **Relay** services below is **recommended** for reliable peer connections. This also improves the reliability of your [routing peers](/manage/networks/how-routing-peers-work).
 </Note>
 <Note>
     If using `fail2ban` or similar, you should whitelist each netbird.io endpoint below.
@@ -50,21 +50,56 @@ NetBird usually won't need open ports, but sometimes you or your IT team needs t
     * In more restricted environments, `netbird status` will show `keepalive ping failed` errors without a firewall rule for STUN
         * Example `nftables` outbound firewall rule: `ip daddr stun.netbird.io udp dport { 80, 443, 3478, 5555 } accept`
         * Note that `nftables` resolves hostnames only when the ruleset is loaded, pinning the rule to the IPs resolved at that moment. Since the pool is dynamic and geo-distributed, reload the ruleset periodically or keep the allowlist updated by other means.
-* Relay (TURN) service:
+* Relay service (UDP/TCP):
   * **Endpoint**: turn.netbird.io
     * **Port range**: UDP/80,443 and TCP/443-65535
     * **IPv4**: The list is dynamic and geo-distributed; we advise you to check the nearest cluster with the following command:
         * `nslookup turn.netbird.io`
-    * In more restricted environments, `netbird status` will show `keepalive ping failed` errors without a firewall rule for TURN
+    * In more restricted environments, `netbird status` will show `keepalive ping failed` errors without a firewall rule for the relay
         * Example `nftables` outbound firewall rule: `ip daddr turn.netbird.io tcp dport 443-65535 accept`
-* Relay service:
+* Relay service (TCP):
   * **Endpoints**: *.relay.netbird.io and relay.netbird.io
   * **Port**: TCP/443
   * **IPv4**: The list is dynamic and geo-distributed; When looking at the `netbird status -d` output, you can see which relay you are connecting to.
   * It is advised to wildcard `*.relay.netbird.io` when possible, to avoid interrupts.
 
 <Note>
-    Download the full list of NetBird Cloud STUN/TURN/Relay endpoints and port requirements in <a href="/docs-static/files/netbird-cloud-endpoints.json" download>JSON format.</a>
+    Download the full list of NetBird Cloud STUN and Relay endpoints and port requirements in <a href="/docs-static/files/netbird-cloud-endpoints.json" download>JSON format.</a>
+</Note>
+
+## Corporate firewalls
+
+NetBird is designed to work through corporate firewalls with no inbound rules. Peers always dial out, so the firewall sees ordinary outbound HTTPS and UDP sessions. When a firewall does get in the way, the usual causes are: it blocks the outbound UDP that direct peer-to-peer connections rely on, it restricts the outbound TCP/443 the control plane needs (a blocked port, a forced proxy, or strict destination egress), or it inspects that encrypted traffic (TLS/SSL interception or deep packet inspection).
+
+These have different outcomes. Blocking outbound UDP is the milder case: NetBird falls back to its relay over TCP/443, so peers stay connected, just relayed instead of direct. Losing the control plane is the disruptive case: if the client cannot reach the management, signal, or relay endpoints over TCP/443, or a firewall intercepts that TLS, it can fail to connect at all. Two settings cover most products:
+
+1. **Allowlist the NetBird endpoints** from [Outgoing ports](#outgoing-ports) above, by domain where the firewall supports it (`*.netbird.io`, plus `relay.netbird.io` and `*.relay.netbird.io` for the relay servers). Allowing the outbound **P2P (STUN)** endpoints enables direct, low-latency connections. Direct connections also need outbound UDP to the peers' own discovered addresses, so a firewall that permits UDP only to the NetBird endpoints still falls back to the relay. The relay endpoints provide that fallback.
+2. **Exclude those same domains from TLS/SSL inspection and deep packet inspection.** Intercepting NetBird's control-plane or relay traffic can break the session or push it onto the slower relay path. Scope the exclusion to the NetBird domains rather than disabling inspection broadly. A `*.netbird.io` wildcard usually does not match the deeper `*.relay.netbird.io` relay hostnames, so exclude `relay.netbird.io` and `*.relay.netbird.io` explicitly.
+
+The table below maps this to common firewall and SASE products. "Expected behavior" assumes only the outbound endpoints are allowed, with no other tuning.
+
+| Firewall / SASE product | Expected behavior | What to allow |
+|---|---|---|
+| Barracuda CloudGen | Connects | Allow the endpoints, and relax UDP session limits to keep connections direct |
+| Check Point | Connects, relayed with HTTPS Inspection enabled | Allow the endpoints, and add the NetBird domains to the HTTPS Inspection bypass |
+| Cisco Secure Firewall | Connects, relayed if UDP is filtered | Permit the STUN and relay endpoints, and skip the Decryption policy for the NetBird domains |
+| Cisco Umbrella | Connects | Allow the NetBird domains in the DNS and web policy (no UDP change needed) |
+| Cloudflare Gateway | Connects | Allow the domains, and add a Do Not Inspect rule for the NetBird domains |
+| Fortinet FortiGate | Connects, relayed under UDP limits or SSL inspection | Allow outbound UDP to the STUN and relay endpoints, and exempt the NetBird domains from the SSL/SSH Inspection profile |
+| Netskope | Connects | Add the NetBird domains to the SSL decryption and steering bypass |
+| OPNsense | Connects, relayed under the default port-randomizing outbound NAT | Allow outbound UDP to the STUN and relay endpoints, and add a Static Port outbound NAT rule for the NetBird host. See the [OPNsense setup steps](/get-started/install/opnsense#config-for-troubleshooting-relayed-connections). |
+| Palo Alto Networks | Connects, relayed if the policy blocks outbound UDP or applies per-destination NAT | Permit the STUN and relay endpoints, exclude the NetBird domains from the SSL Decryption policy, and set source NAT to Persistent Dynamic IP And Port to keep connections direct |
+| pfSense | Connects, relayed under the default port-randomizing outbound NAT | Allow outbound UDP to the STUN and relay endpoints, and add a Static Port outbound NAT rule, or enable Endpoint-Independent NAT (EIM-NAT, beta). See the [pfSense setup steps](/get-started/install/pfsense#config-for-troubleshooting-relayed-connections). |
+| SonicWall | Connects, relayed with DPI-SSL enabled | Allow outbound UDP to the STUN and relay endpoints, and exclude the NetBird domains from DPI-SSL |
+| Sophos Firewall | Connects | Allow the endpoints, and exclude the NetBird domains from SSL/TLS Inspection |
+| Zscaler Internet Access | Connects, usually relayed | Allow the domains with an SSL Inspection exemption, and add a firewall bypass for the UDP endpoints to keep connections direct |
+
+<Note>
+    If peers connect but stay relayed, the firewall may be applying per-destination (symmetric) source NAT, which defeats hole punching. Where the device lets you choose, pick a source NAT mode that preserves the port, and raise the UDP session timeout for the NetBird flows so long-lived tunnels are not torn down. [Troubleshooting relayed connections](/help/troubleshooting-relayed-connections) walks through confirming this.
+</Note>
+
+<Note>
+    The endpoints to allow are exact (see [Network firewall ports](#network-firewall-ports)). Per-product behavior and menu names vary by firmware version and policy, so treat each row as a starting point and confirm against your firewall vendor's current documentation.
 </Note>
 
 ## Host-based firewalls
