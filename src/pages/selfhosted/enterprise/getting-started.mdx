@@ -296,7 +296,7 @@ sudo chmod 600 /etc/netbird/certs/key.pem
 
 ### Create the dynamic configuration file
 
-Create `traefik-dynamic.yaml` next to `docker-compose.yml`:
+Create `traefik/dynamic.yaml` next to `docker-compose.yml`:
 
 ```yaml
 tls:
@@ -314,15 +314,19 @@ This serves the certificate on every connection, including from clients that sen
 **Enable the file provider** — add to the `traefik` service's `command:` list:
 
 ```yaml
-      - "--providers.file.filename=/etc/traefik/dynamic.yaml"
+      - "--providers.file.directory=/etc/traefik/dynamic"
 ```
 
-**Mount the configuration and the certificates** — add to its `volumes:` list:
+**Mount the configuration directory and the certificates** — add to its `volumes:` list:
 
 ```yaml
-      - ./traefik-dynamic.yaml:/etc/traefik/dynamic.yaml:ro
+      - ./traefik:/etc/traefik/dynamic:ro
       - /etc/netbird/certs:/certs:ro
 ```
+
+<Note>
+Mount the directory, not the file. A bind-mounted single file is pinned to one inode, so any tool that replaces the file rather than editing it in place — most editors, `sed -i`, and many configuration-management tools — leaves the container reading the old file indefinitely, with no error. Traefik's own documentation recommends `directory` over `filename` for the same reason.
+</Note>
 
 **Remove ACME** — delete these three lines from the same `command:` list:
 
@@ -359,6 +363,6 @@ echo | openssl s_client -connect <your-domain>:443 -servername <your-domain> 2>/
 
 - The certificate must cover `NETBIRD_DOMAIN` from `.env`. A wildcard like `*.example.com` works for `netbird.example.com`.
 - **If the certificate is signed by a private CA, every peer must trust the issuing CA** — install the CA bundle in each peer's system trust store. A peer that does not trust it fails to connect at all, logging `x509: certificate signed by unknown authority`.
-- **Renewals.** Replace both files at the same paths, then `touch traefik-dynamic.yaml`. Traefik watches that file rather than the certificates it references, so replacing the certificates alone has no effect; touching it reloads them without restarting any container.
+- **Renewals.** Replace both files at the same paths, then `touch traefik/dynamic.yaml`. Traefik watches the dynamic configuration rather than the certificates it references, so replacing the certificates alone has no effect; touching it reloads them without restarting any container.
 - You can leave the `netbird_traefik_letsencrypt` volume in place. With no resolver configured, the certificate stored in `acme.json` is inert.
 - Dropping the `80:80` mapping does not affect certificates — this deployment validates over TLS-ALPN-01 on port 443 and never uses port 80 for ACME. You do lose the HTTP→HTTPS redirect, so `http://<your-domain>` stops responding instead of redirecting.
