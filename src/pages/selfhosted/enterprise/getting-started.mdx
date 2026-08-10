@@ -275,16 +275,7 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
 
 ## Appendix: Using a custom TLS certificate
 
-By default, Traefik obtains a certificate from Let's Encrypt and renews it automatically. Stay on that path unless you need your own certificate, because everything below makes renewal your responsibility. Operators using an internal PKI, a corporate CA, or a pre-issued wildcard certificate can serve their own certificate instead. Traefik stays in front of the stack either way: all routes (dashboard, management and signal gRPC, OAuth2, relay, and traffic flow) pass through it.
-
-Traefik accepts a static certificate only through its **file provider**, which the stack from `getting-started-enterprise.sh` does not enable.
-
-<Note>
-These steps describe the stack rendered by `getting-started-enterprise.sh`. Two adjustments apply elsewhere:
-
-- **A deployment migrated with `migrate-to-enterprise.sh`.** The four router names are the same, but the labels are split across two files. `netbird-dashboard`, `netbird-grpc` and `netbird-backend` are in `docker-compose.yml`, while `netbird-flow` is on the `flow-receiver` service in `docker-compose.override.yml`. The `traefik` service and the ACME flags are in `docker-compose.yml`, so both additions go there.
-- **A Traefik that already has a file provider**, such as a community install with the reverse proxy enabled. Add the `tls` block to that provider's existing dynamic configuration instead of declaring a second one, because `providers.file.directory` and `providers.file.filename` are mutually exclusive.
-</Note>
+By default, Traefik obtains a certificate from Let's Encrypt and renews it automatically. Stay on that path unless you need your own certificate, because everything below makes renewal your responsibility. Operators using an internal PKI, a corporate CA, or a pre-issued wildcard certificate can serve their own certificate through Traefik's **file provider**, which the generated stack does not enable.
 
 <Note>
 Leave `config.yaml` alone. `netbird-server` listens on plain HTTP behind Traefik, so its empty `server.tls` block has no effect on what clients see.
@@ -314,7 +305,7 @@ tls:
         keyFile: /certs/key.pem
 ```
 
-This serves the certificate on every connection, including from clients that send no Server Name Indication (SNI), the TLS field that tells the proxy which hostname is being requested.
+This serves the certificate on every connection, including clients that send no SNI (Server Name Indication). If your Traefik already has a file provider, add this `tls` block to its existing dynamic configuration and skip the next step's first edit: `providers.file.directory` and `providers.file.filename` are mutually exclusive.
 
 ### Update `docker-compose.yml`
 
@@ -331,9 +322,7 @@ This serves the certificate on every connection, including from clients that sen
       - /etc/netbird/certs:/certs:ro
 ```
 
-<Note>
-Mount the directory, not the file. A bind-mounted single file is pinned to one inode, so any tool that replaces the file rather than editing it in place (most editors, `sed -i`, and many configuration-management tools) leaves the container reading the old file indefinitely, with no error. Traefik's own documentation recommends `directory` over `filename` for the same reason.
-</Note>
+Mount the directory, not the file. A bind-mounted single file is pinned to one inode, so anything that replaces the file instead of editing it in place leaves the container reading the old one, silently.
 
 **Remove ACME.** Delete these three lines from the same `command:` list:
 
@@ -352,7 +341,7 @@ Then delete the four router labels that reference the resolver, one on `dashboar
       - traefik.http.routers.netbird-flow.tls.certresolver=letsencrypt
 ```
 
-Leave the corresponding `traefik.http.routers.*.tls=true` labels in place.
+Leave the corresponding `traefik.http.routers.*.tls=true` labels in place. On a deployment migrated with `migrate-to-enterprise.sh` the router names are the same, but the `netbird-flow` label sits on the `flow-receiver` service in `docker-compose.override.yml`.
 
 <Warning>
 Deleting the labels alone is not enough. While the `certificatesresolvers` lines remain, Traefik keeps serving the certificate the installer already stored in `acme.json` in preference to the one you supplied, so the stack appears to ignore your certificate. Remove both.
@@ -370,6 +359,6 @@ echo | openssl s_client -connect <your-domain>:443 -servername <your-domain> 2>/
 
 - The certificate must cover `NETBIRD_DOMAIN` from `.env`. A wildcard like `*.example.com` works for `netbird.example.com`.
 - **If the certificate is signed by a private CA, every peer must trust the issuing CA.** Install the CA bundle in each peer's system trust store. A peer that does not trust it fails to connect at all, logging `x509: certificate signed by unknown authority`.
-- **Renewals.** Replace both files at the same paths, then `touch traefik/dynamic.yaml`. Traefik watches the dynamic configuration rather than the certificates it references, so replacing the certificates alone has no effect; touching it reloads them without restarting any container.
-- You can leave the `netbird_traefik_letsencrypt` volume in place. With no resolver configured, the certificate stored in `acme.json` is inert.
-- Dropping the `80:80` mapping does not affect certificates: this deployment validates over TLS-ALPN-01 on port 443 and never uses port 80 for ACME. You do lose the HTTP→HTTPS redirect, so `http://<your-domain>` stops responding instead of redirecting.
+- **Renewals.** Replace both files at the same paths, then `touch traefik/dynamic.yaml`. Traefik watches the dynamic configuration, not the certificates it references, so replacing them alone has no effect. Touching it reloads them with no container restart.
+- You can leave the `netbird_traefik_letsencrypt` volume in place. With no resolver configured, the stored certificate is inert.
+- Dropping the `80:80` mapping does not affect certificates: this deployment validates over TLS-ALPN-01 on port 443 and never uses port 80 for ACME. You do lose the HTTP→HTTPS redirect.
