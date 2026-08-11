@@ -98,11 +98,17 @@ For details, see [Manage Network Access](/manage/access-control/manage-network-a
 Each peer should have exactly **one** primary nameserver. If you don't configure a primary, peers use their original DNS settings for non-matched queries.
 </Note>
 
+A primary nameserver does more than catch unmatched queries. On macOS, a match-domain-only configuration registers a *scoped* resolver through system APIs and leaves the nameservers in `/etc/resolv.conf` untouched. Applications that use the system resolver follow the scoped entry, but tools that read `resolv.conf` directly (`dig`, `host`, and some language runtimes) keep querying your LAN or public nameservers and get `NXDOMAIN` for internal names. Adding a primary group puts NetBird's resolver into `resolv.conf`, so both kinds of tools query the same server. If your users report that browsers resolve internal names but `dig` does not, see [dig and host fail, but browsers and curl work](/manage/dns/troubleshooting#issue-5-dig-and-host-fail-but-browsers-and-curl-work-mac-os).
+
 ### Search Domains
 
 Toggle **Mark match domains as search domains** to enable domain suffix searching. When enabled, typing `server` expands to `server.company.internal`. Only applies to match domain nameservers.
 
-### Example: Split-Horizon DNS
+<Note>
+**Don't convert a match-domain group to primary by emptying its domains.** Removing the match domains also removes the search domains, so short names like `server` stop expanding. Domain-joined Windows machines hide the regression because Active Directory supplies its own suffix, so it surfaces as "short names broke for some users." To add a primary, create a **second** nameserver group with the same servers and leave the existing match-domain group in place.
+</Note>
+
+### Split-Horizon DNS
 
 A common setup with two nameservers:
 
@@ -114,6 +120,27 @@ Result:
 - `google.com` → Cloudflare
 - `app.company.internal` → Internal DNS (10.0.0.1)
 - `server` → Expanded to `server.company.internal` → Internal DNS
+
+### Route All Queries to Internal DNS
+
+If you are migrating from a VPN that pushed your internal DNS servers for everything (a common OpenVPN setup), the equivalent is the same two groups as in the split-horizon example, but both pointing at your **internal servers**:
+
+<Note>
+This setup requires internal DNS servers that resolve public domains too, by recursing or forwarding upstream. Active Directory DNS servers do this by default. If your servers are authoritative-only for the internal zone, making them primary cuts off public resolution; use the split-horizon setup above instead.
+</Note>
+
+**Primary (internal)**: Custom DNS with your internal DNS server IPs (e.g., 10.0.0.1, 10.0.0.2). Assign to your target group. Leave match domains empty.
+
+**Match domain (internal)**: Same servers. Add match domain `company.internal`. Enable search domains.
+
+<img src="/docs-static/img/manage/dns/nameservers-route-all-internal.png" alt="Two nameserver groups pointing at the same internal DNS servers: one primary with no match domains, one with match domain company.internal and search domains enabled" className="imagewrapper-big"/>
+
+Result:
+- All queries, public and internal, go to your internal DNS
+- `server` still expands to `server.company.internal`
+- Tools that read `/etc/resolv.conf` directly and tools that use the system resolver query the same server
+
+Two groups look redundant when they hold the same servers, but they do different jobs: the primary receives every query, while the match-domain group provides the search-domain expansion. A VPN "pushing DNS servers" maps to the **primary** group, not to a match-domain group.
 
 ### DNS Failover and Overlapping Domains
 
