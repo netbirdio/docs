@@ -48,7 +48,7 @@ CrowdSec decisions include several remediation types (ban, captcha, throttle). T
 
 ### Reviewing observe-mode verdicts
 
-Observe-mode verdicts are recorded in the NetBird proxy access logs, not in the CrowdSec Console. When a service is in observe mode and CrowdSec flags an IP, the connection is allowed but the verdict is attached to the log entry as metadata, while the `deny_reason` field stays empty. In the dashboard's reverse proxy event log, these entries render with an observe-mode badge on the reason cell and show the decision type (ban, captcha, throttle, unavailable) so you can audit what would have been blocked before switching the service to enforce. The CrowdSec Console shows the aggregate view of community decisions and scenarios but does not know which of your proxy requests the bouncer was consulted on.
+Observe-mode verdicts are recorded in the NetBird proxy access logs, not in the CrowdSec Console. When a service is in observe mode and CrowdSec flags an IP, the connection is allowed and the verdict is attached to the log entry as metadata (`crowdsec_mode` and `crowdsec_verdict`), with no deny reason contributed by CrowdSec. In the dashboard's reverse proxy event log, these entries render with an observe-mode badge on the reason cell and show the decision type (ban, captcha, throttle, unavailable) so you can audit what would have been blocked before switching the service to enforce. The CrowdSec Console shows the aggregate view of community decisions and scenarios but does not know which of your proxy requests the bouncer was consulted on.
 
 ![CrowdSec observe-mode badge in proxy event logs](/docs-static/img/selfhosted/maintenance/crowdsec-observe-badge.png)
 
@@ -56,7 +56,7 @@ Access restrictions are evaluated in a fixed order: CIDR, then country, then Cro
 
 ## Enroll with the CrowdSec Console (optional)
 
-Enrolling your LAPI with the [CrowdSec Console](https://app.crowdsec.net) lets you view blocked IPs, manage scenarios, and opt into premium blocklists from a web UI. The quickstart script prompts for an enrollment key and registers it automatically. To enroll an existing deployment:
+Enrolling your LAPI with the [CrowdSec Console](https://app.crowdsec.net) lets you view blocked IPs, manage scenarios, and opt into premium blocklists from a web UI. Enrollment is always a manual step: the quickstart script prints the command to run once setup finishes, but does not perform the enrollment for you. To enroll any deployment:
 
 ```bash
 docker compose exec crowdsec cscli console enroll <your-enrollment-key>
@@ -71,13 +71,13 @@ Once CrowdSec is enabled on the proxy, the **CrowdSec IP Reputation** dropdown a
 
 ## Testing the integration
 
-After enabling CrowdSec, confirm that the proxy bouncer connected to the LAPI and completed its initial decision sync:
+After enabling CrowdSec on at least one service, confirm that the proxy bouncer connected to the LAPI and completed its initial decision sync:
 
 ```bash
 docker compose logs proxy | grep -i crowdsec
 ```
 
-A healthy startup looks like this:
+A healthy bouncer looks like this:
 
 ```text
 netbird-proxy  | INFO proxy/internal/crowdsec/bouncer.go:70: connecting to CrowdSec LAPI at http://crowdsec:8080
@@ -85,10 +85,94 @@ netbird-proxy  | INFO proxy/internal/crowdsec/registry.go:94: CrowdSec bouncer s
 netbird-proxy  | INFO proxy/internal/crowdsec/bouncer.go:187: CrowdSec bouncer synced initial decisions
 ```
 
+<Note>
+These lines only appear once a service has CrowdSec set to `enforce` or `observe`. The bouncer starts lazily, so configuring `NB_PROXY_CROWDSEC_API_URL` and restarting the proxy produces no CrowdSec log output on its own. Empty output before the first service is enabled is expected and is not a failure.
+</Note>
+
+### What the engine holds
+
+A newly registered CrowdSec instance receives an **empty** community blocklist and fetches the full list on its next scheduled pull, up to two hours later:
+
+```text
+capi/community-blocklist : received 0 new entries (expected if you just installed crowdsec)
+Start pull from CrowdSec Central API (interval: 1h59m7s once, then 2h0m0s)
+```
+
+Until that completes, a service in enforce mode has nothing to enforce. Use the manual decision test below to verify enforcement immediately.
+
+Once the blocklist has synced, note that `cscli decisions list` hides CAPI-sourced decisions by default, so it can show a handful of entries while the engine holds thousands. To inspect them, request the CAPI origin explicitly:
+
+```bash
+docker compose exec crowdsec cscli decisions list --origin CAPI | head -20
+```
+
+`--limit` bounds the number of *alerts* returned, not decisions. The community blocklist arrives as a single alert containing every address, so `--limit` does not meaningfully shorten this output; pipe it through `head` instead.
+
+To size the blocklist, read the `cs_active_decisions` gauge. It is reported per `origin`/`reason`/`action` combination rather than as a single total, so sum the series you care about:
+
+```bash
+docker compose exec crowdsec sh -c "wget -qO- http://127.0.0.1:6060/metrics" | grep '^cs_active_decisions'
+```
+
+```text
+cs_active_decisions{action="ban",origin="CAPI",reason="generic:scan"} 6547
+cs_active_decisions{action="ban",origin="CAPI",reason="ssh:bruteforce"} 8452
+cs_active_decisions{action="ban",origin="crowdsec",reason="crowdsecurity/ssh-slow-bf"} 1
+```
+
+The `crowdsecurity/linux` collection installed by default provides syslog and SSH parsers. It only produces decisions if CrowdSec can read those logs, which requires mounting them into the container (for example `/var/log:/var/log:ro` plus an acquisition file in `crowdsec/acquis.d/`). Without a log source, the collection is inert and the community blocklist is the only source of decisions.
+
 To verify end-to-end enforcement without waiting for a real malicious IP to hit the cache, add a short-lived decision for your own IP and then attempt a connection:
 
 ```bash
 docker compose exec crowdsec cscli decisions add --ip <your-public-ip> --duration 5m --reason "netbird test"
 ```
 
-With a service set to **enforce**, the connection from `<your-ip>` should be rejected and the event log should show a `crowdsec_ban` deny reason. With a service set to **observe**, the connection succeeds but the verdict appears on the event entry with an observe-mode badge. The decision expires automatically after 5 minutes, or you can remove it earlier with `cscli decisions delete --ip <your-ip>`.
+With a service set to **enforce**, the connection from `<your-ip>` is rejected with a `403` within roughly 10 seconds (the bouncer poll interval), and the access log entry carries `crowdsec_ban` in its `auth_method_used` and `metadata.crowdsec_verdict` fields. With a service set to **observe**, the connection succeeds and the verdict appears on the event entry with an observe-mode badge. The decision expires automatically after 5 minutes, or you can remove it earlier with `cscli decisions delete --ip <your-ip>`.
+
+<Note>
+If the dashboard is also protected by [CrowdSec AppSec](/selfhosted/maintenance/crowdsec-dashboard), banning the address you are browsing from blocks the NetBird dashboard and the `/api` path as well, and the block cannot be lifted from the UI. Run this test from an address you are not administering from, or be prepared to remove the decision over SSH.
+</Note>
+
+`cscli decisions add` also accepts `--type captcha` and `--type throttle`. NetBird Proxy denies all three types identically with a `403`; only the recorded verdict string differs.
+
+## Allowlisting addresses
+
+To exempt an address or range from all decisions, including the community blocklist, use CrowdSec allowlists (available from CrowdSec 1.6.8):
+
+```bash
+docker compose exec crowdsec cscli allowlists create netbird-admins -d "Addresses that should never be blocked"
+docker compose exec crowdsec cscli allowlists add netbird-admins <your-ip> -d "admin"
+docker compose exec crowdsec cscli allowlists check <your-ip>
+```
+
+The `-d` description flag is required on `create`. Changes apply immediately with no restart.
+
+Allowlisting applies to existing decisions as well as future ones. Adding an address that is already blocked expires the matching decisions immediately:
+
+```text
+1 decisions deleted by allowlists
+```
+
+CrowdSec also refuses to create new decisions against an allowlisted address, which affects the manual test above:
+
+```text
+Error: cscli decisions add: <ip> is allowlisted by item <ip> from netbird-admins (admin),
+use --bypass-allowlist to add the decision anyway
+```
+
+The older `capi_whitelists_path` setting in `config.yaml` is deprecated upstream in favour of allowlists.
+
+## Recovering from an unwanted block
+
+If a legitimate address is blocked, remove the decision and, if it should never be blocked again, add it to an allowlist:
+
+```bash
+docker compose exec crowdsec cscli decisions list
+docker compose exec crowdsec cscli alerts list
+docker compose exec crowdsec cscli decisions delete --ip <the-ip>
+```
+
+`cscli alerts list` includes a `kind` column that identifies which component generated the alert: `crowdsec` for local log detection, `waf` for an AppSec match, and `cscli` for a manually added decision. AppSec matches block the individual request but do not create an IP decision, so they never appear in `cscli decisions list`; use `cscli metrics show appsec` to inspect those instead.
+
+For dashboard lockouts specifically, see [Recovering from a dashboard lockout](/selfhosted/maintenance/crowdsec-dashboard#recovering-from-a-dashboard-lockout).

@@ -96,14 +96,15 @@ services:
       - '--experimental.plugins.bouncer.version=v1.6.0'
 ```
 
-If your generated Compose project network is named `netbird_netbird`, make sure Traefik uses that Docker network:
+The generated Compose file already sets `--providers.docker.network` in the Traefik command block, normally to `netbird`, matching the network key in the Compose file. Leave it as generated and do not add a second copy of the flag.
 
-```yaml
-services:
-  traefik:
-    command:
-      - '--providers.docker.network=netbird_netbird'
+Only change it if Traefik logs warnings about a missing Docker network. Compose prefixes the network name with the project name, which defaults to the install directory name, so the actual name varies by deployment. Check it before editing:
+
+```bash
+docker network ls | grep netbird
 ```
+
+An install in `/root` produces `root_netbird`; one in `/opt/netbird` produces `netbird_netbird`.
 
 Under `services.traefik.depends_on`, make Traefik wait until CrowdSec is healthy:
 
@@ -299,9 +300,103 @@ curl -ks -A 'Mozilla/5.0 NetBirdDashboardCheck' -o /dev/null -w '%{http_code}\n'
 
 The response should be `200`.
 
+## Verifying the middleware stays attached
+
+This protection fails open. If the middleware is detached for any reason, most commonly a label edit applied with `docker compose restart` instead of `docker compose up -d`, which does not recreate the container, requests stop being inspected and nothing reports an error. The dashboard loads, authentication works, and all containers report healthy. The only symptom is that a known malicious probe returns `404` instead of `403`.
+
+After any change to the labels, recreate the affected containers and re-run the probe:
+
+```bash
+docker compose up -d dashboard netbird-server
+curl -ks -o /dev/null -w '%{http_code}\n' "https://$NETBIRD_DOMAIN/.env"
+```
+
+A `403` confirms the middleware is in the request path. A `404` means it is not.
+
+To surface this automatically, enable the Traefik API on the container's internal port and add a health check that asserts both protected routers still reference the middleware:
+
+```yaml
+services:
+  traefik:
+    command:
+      - '--api=true'
+      - '--api.insecure=true'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/http/routers/netbird-dashboard@docker | grep -q netbird-dashboard-crowdsec && wget -qO- http://127.0.0.1:8080/api/http/routers/netbird-dashboard-api@docker | grep -q netbird-dashboard-crowdsec"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+```
+
+Do not publish port `8080`. With the port unpublished the API is reachable only from inside the container and from other containers on the same Docker network. If exposing the API to the Docker network is unacceptable in your environment, omit it and monitor the `/.env` probe externally instead, treating `403` as the healthy response.
+
+<Warning>
+  Traefik reporting `unhealthy` does not stop it serving traffic. The health
+  check makes the loss of protection visible in `docker compose ps` and to
+  external monitoring; it does not restore enforcement.
+</Warning>
+
+## Recovering from a dashboard lockout
+
+If AppSec or an IP decision blocks you from the dashboard, the block also covers `/api` and `/oauth2`, so it cannot be lifted from the UI. All recovery is performed over SSH on the host.
+
+First identify which of the two mechanisms is blocking you, because they are handled differently:
+
+```bash
+docker compose exec crowdsec cscli decisions list
+```
+
+If your address is listed, an **IP decision** is blocking you. If it is not, the block is an **AppSec** match on the request itself: AppSec inspects requests and does not create decisions, so `cscli decisions delete` has no effect in that case. Confirm with `cscli metrics show appsec` and `cscli alerts list`, where AppSec matches appear with `kind` set to `waf`.
+
+Allowlisting the address resolves both cases. `cscli allowlists add` fails with `allowlist '<name>' not found` if the list does not already exist, so create it first if you have not set one up:
+
+```bash
+docker compose exec crowdsec cscli allowlists create netbird-admins -d "Addresses that should never be blocked"
+docker compose exec crowdsec cscli allowlists add netbird-admins <your-ip> -d "admin"
+```
+
+Adding an address that currently carries a decision expires that decision immediately. Allowlisted addresses are also exempted from AppSec blocking, though that takes effect on the Traefik bouncer's next stream refresh rather than instantly, so allow up to a minute. See [Allowlisting addresses](/selfhosted/maintenance/crowdsec#allowlisting-addresses) for details.
+
+If an IP decision is present and you want it gone without allowlisting the address permanently, delete it directly:
+
+```bash
+docker compose exec crowdsec cscli decisions delete --ip <your-ip>
+```
+
+The Traefik bouncer runs in `stream` mode and refreshes periodically, so allow up to a minute for access to return.
+
+If the dashboard is still unreachable and you need immediate access, detach the middleware. It is attached to **two** routers and both must be commented out:
+
+```yaml
+services:
+  dashboard:
+    labels:
+      # - traefik.http.routers.netbird-dashboard.middlewares=netbird-dashboard-crowdsec@docker
+
+  netbird-server:
+    labels:
+      # - traefik.http.routers.netbird-dashboard-api.middlewares=netbird-dashboard-crowdsec@docker
+```
+
+```bash
+docker compose up -d dashboard netbird-server
+```
+
+<Warning>
+  Commenting out only the `dashboard` label leaves the dashboard reachable while
+  `/api` and `/oauth2` continue to return `403`. The interface loads but cannot
+  authenticate or fetch data, which is easily mistaken for a different fault.
+  Detach both labels, or neither.
+</Warning>
+
+Restore both labels once the underlying issue is resolved, recreate the containers, and confirm with the `/.env` probe above.
+
 ## Troubleshooting
 
 If all dashboard requests return `403` immediately after startup, Traefik may have started before CrowdSec LAPI and AppSec were ready. Confirm that the CrowdSec health check is present and that Traefik uses `depends_on.condition: service_healthy`.
+
+If CrowdSec is stopped or unreachable while `crowdsecAppsecUnreachableBlock=true` is set, all dashboard requests are denied by design. The same applies to reverse proxy services in `enforce` mode, which fail closed when the LAPI is unavailable.
 
 If Traefik logs warnings about a missing Docker network, check the actual network name:
 

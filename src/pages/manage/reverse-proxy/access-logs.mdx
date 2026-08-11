@@ -9,7 +9,7 @@ NetBird logs every request and connection that passes through your reverse proxy
 
 ## Viewing access logs
 
-Access logs are available in the NetBird dashboard under **Activity** > **Proxy Events**. This view displays a table of all HTTP requests and L4 connections that have passed through your reverse proxy services, with filters to narrow down results by time range, status, or other fields.
+Access logs are available in the NetBird dashboard under **Reverse Proxy** > **Access Logs**. This view displays a table of all HTTP requests and L4 connections that have passed through your reverse proxy services, with filters to narrow down results by time range, status, or other fields.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/access-logs/access-logs-table.png" alt="Proxy Events table showing reverse proxy access log entries" className="imagewrapper"/>
@@ -59,7 +59,7 @@ Denied L4 connections (blocked by access restrictions) are logged immediately wi
 
 ### Deny reasons
 
-The following deny reasons can appear for both HTTP and L4 services:
+The following deny reasons identify why a connection was rejected. Note that for HTTP services these values are not carried in the entry's `reason` field: see the note below the table.
 
 | Reason | Description |
 |--------|-------------|
@@ -73,7 +73,21 @@ The following deny reasons can appear for both HTTP and L4 services:
 
 All CrowdSec decision types (ban, captcha, throttle) result in a connection denial in enforce mode. The proxy does not serve captcha challenges or apply rate limiting: the decision type is recorded for informational purposes only.
 
-When CrowdSec is in **observe** mode, the verdict appears in the log metadata but the deny reason field is empty (the connection is allowed). In the dashboard, these entries render with an observe-mode badge on the reason cell and show the underlying decision type (ban, captcha, throttle, unavailable) on hover. This lets you audit what CrowdSec would block without affecting traffic. For a self-test workflow, see [Testing the integration](/selfhosted/maintenance/crowdsec#testing-the-integration).
+<Note>
+For HTTP services, the deny code from the table above is recorded in the `auth_method_used` field, and the entry's `reason` field carries a synthesized generic value rather than the specific code. This applies to every access restriction, not only CrowdSec:
+
+```json
+{ "status_code": 403, "reason": "Authentication failed", "auth_method_used": "ip_restricted" }
+{ "status_code": 403, "reason": "Authentication failed", "auth_method_used": "crowdsec_ban",
+  "metadata": { "crowdsec_verdict": "crowdsec_ban" } }
+```
+
+When reading entries through `GET /api/events/proxy`, match on `auth_method_used` (and `metadata.crowdsec_verdict` for CrowdSec specifically) rather than `reason`.
+
+Observe-mode entries carry the normal status code and record both `crowdsec_mode` and `crowdsec_verdict` in `metadata`. Because the connection is allowed, CrowdSec itself contributes no `reason`, but the field can still be populated by a later stage of the request such as an authentication or backend failure. Treat `metadata.crowdsec_mode` as the signal that an entry is an observe-mode verdict, not the absence of `reason`.
+</Note>
+
+When CrowdSec is in **observe** mode, the verdict appears in the log metadata and CrowdSec adds no deny reason of its own (the connection is allowed). In the dashboard, these entries render with an observe-mode badge on the reason cell and show the underlying decision type (ban, captcha, throttle, unavailable) on hover. This lets you audit what CrowdSec would block without affecting traffic. For a self-test workflow, see [Testing the integration](/selfhosted/maintenance/crowdsec#testing-the-integration).
 
 ## Use cases
 
