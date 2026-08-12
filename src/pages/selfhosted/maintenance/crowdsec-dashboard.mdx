@@ -313,28 +313,26 @@ curl -ks -o /dev/null -w '%{http_code}\n' "https://$NETBIRD_DOMAIN/.env"
 
 A `403` confirms the middleware is in the request path. A `404` means it is not.
 
-To surface this automatically, enable the Traefik API on the container's internal port and add a health check that asserts both protected routers still reference the middleware:
+To surface this automatically, monitor the same probe from outside the deployment and treat `403` as the healthy response. Point an uptime monitor or a cron job at:
 
-```yaml
-services:
-  traefik:
-    command:
-      - '--api=true'
-      - '--api.insecure=true'
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/http/routers/netbird-dashboard@docker | grep -q netbird-dashboard-crowdsec && wget -qO- http://127.0.0.1:8080/api/http/routers/netbird-dashboard-api@docker | grep -q netbird-dashboard-crowdsec"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+```text
+https://<your-domain>/.env
 ```
 
-Do not publish port `8080`. With the port unpublished the API is reachable only from inside the container and from other containers on the same Docker network. If exposing the API to the Docker network is unacceptable in your environment, omit it and monitor the `/.env` probe externally instead, treating `403` as the healthy response.
+Alert when the response is anything other than `403`. This is an inverted check, alerting on the absence of a block rather than on an outage, but it is the only signal that confirms the protection layer is still in the request path.
 
 <Warning>
-  Traefik reporting `unhealthy` does not stop it serving traffic. The health
-  check makes the loss of protection visible in `docker compose ps` and to
-  external monitoring; it does not restore enforcement.
+  Do not enable the Traefik API (`--api.insecure=true`) for this purpose. The
+  API serves the full dynamic configuration without authentication, including
+  middleware plugin settings such as `crowdsecLapiKey`. Even with port `8080`
+  unpublished, every container on the Docker network could then read the
+  CrowdSec bouncer key.
+</Warning>
+
+<Warning>
+  This is detection only. Nothing here restores enforcement automatically: the
+  probe tells you protection has stopped, and reattaching the middleware
+  remains a manual step.
 </Warning>
 
 ## Recovering from a dashboard lockout
@@ -396,7 +394,9 @@ Restore both labels once the underlying issue is resolved, recreate the containe
 
 If all dashboard requests return `403` immediately after startup, Traefik may have started before CrowdSec LAPI and AppSec were ready. Confirm that the CrowdSec health check is present and that Traefik uses `depends_on.condition: service_healthy`.
 
-If CrowdSec is stopped or unreachable while `crowdsecAppsecUnreachableBlock=true` is set, all dashboard requests are denied by design. The same applies to reverse proxy services in `enforce` mode, which fail closed when the LAPI is unavailable.
+If CrowdSec is stopped or unreachable while `crowdsecAppsecUnreachableBlock=true` is set, all dashboard requests are denied by design.
+
+Separately, a reverse proxy service in `enforce` mode denies all connections while its bouncer has not completed its initial sync, for example when the proxy starts with the LAPI unavailable. See [Enforcement modes](/selfhosted/maintenance/crowdsec#enforcement-modes).
 
 If Traefik logs warnings about a missing Docker network, check the actual network name:
 
