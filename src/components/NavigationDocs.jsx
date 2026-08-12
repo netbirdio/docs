@@ -1312,8 +1312,11 @@ function NavigationGroup({ group, className, hasChildren }) {
                         </span>
                     )}
                     {showChevron && (
-                        <span
-                            className="-m-1 flex items-center justify-center p-1"
+                        <button
+                            type="button"
+                            aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${group.title}`}
+                            aria-expanded={isOpen}
+                            className="-m-1 flex cursor-pointer items-center justify-center p-1"
                             onClick={(e) => {
                                 e.preventDefault()
                                 e.stopPropagation()
@@ -1335,7 +1338,7 @@ function NavigationGroup({ group, className, hasChildren }) {
                                 )}
                                 size={12}
                             />
-                        </span>
+                        </button>
                     )}
                 </span>
             </motion.h2>
