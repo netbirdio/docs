@@ -478,6 +478,12 @@ export const docsNavigation = [
     },
     {
         title: 'AGENT NETWORK',
+        // Featured highlight: any group with `featured: true` renders as the
+        // card at the top of the sidebar, with an optional `badge` label. To
+        // spotlight a different product later, move these two lines to its group
+        // (and adjust the badge text). Remove them to drop the card entirely.
+        featured: true,
+        badge: 'New',
         links: [
             {
                 title: 'Getting Started',
@@ -1191,15 +1197,30 @@ export function NavigationDocs({ className }) {
                     Github
                 </TopLevelNavItem>
                 <TopLevelNavItem href="/slack-url">Support</TopLevelNavItem>
-                {docsNavigation.map((group, groupIndex) => (
-                    <NavigationStateProvider key={group.title} index={groupIndex}>
-                        <NavigationGroup
-                            group={group}
-                            index={groupIndex}
-                            className={groupIndex === 0 && 'md:mt-0'}
-                        />
-                    </NavigationStateProvider>
-                ))}
+                {docsNavigation.map((group, groupIndex) =>
+                    group.featured ? (
+                        <NavigationStateProvider key={group.title} index={groupIndex}>
+                            <NavigationGroup group={group} index={groupIndex} className="md:mt-0" />
+                        </NavigationStateProvider>
+                    ) : null
+                )}
+                {docsNavigation.some((group) => group.featured) && (
+                    <li
+                        aria-hidden="true"
+                        className="my-4 border-t border-zinc-900/10 dark:border-white/10"
+                    />
+                )}
+                {docsNavigation.map((group, groupIndex) =>
+                    group.featured ? null : (
+                        <NavigationStateProvider key={group.title} index={groupIndex}>
+                            <NavigationGroup
+                                group={group}
+                                index={groupIndex}
+                                className={groupIndex === 0 && 'md:mt-0'}
+                            />
+                        </NavigationStateProvider>
+                    )
+                )}
                 <li className="sticky bottom-0 z-10 mt-6 min-[416px]:hidden">
                     <Button
                         href="https://app.netbird.io/"
@@ -1235,13 +1256,17 @@ function NavigationGroup({ group, className, hasChildren }) {
         group.href === router.pathname ||
         findActiveGroupIndex(group, router.pathname) !== -1
     const [isOpen, setIsOpen] = useState(
-        (group.isOpen ?? !hasChildren) || isActiveGroup
+        (group.isOpen ?? false) || isActiveGroup
     )
     useEffect(() => {
         if (isActiveGroup) setIsOpen(true)
     }, [router.pathname, isActiveGroup])
     const [, setActiveHighlight] = useNavigationState()
     const isInsideMobileNavigation = useIsInsideMobileNavigation()
+    const isFeatured = !!group.featured
+    // Show a dropdown chevron on every collapsible menu (top-level sections,
+    // nested groups, and the featured card), so it is obvious they expand.
+    const showChevron = (group.links?.length ?? 0) > 0
 
     return (
         <li className={clsx('relative', className, hasChildren ? '' : 'mt-6')}>
@@ -1249,9 +1274,11 @@ function NavigationGroup({ group, className, hasChildren }) {
                 // layout={"size"}
                 className={clsx(
                     'group flex items-center justify-between gap-2',
-                    hasChildren
+                    isFeatured
+                        ? 'cursor-pointer select-none rounded-lg border border-netbird/30 bg-netbird/5 px-3 py-2 text-xs font-bold uppercase tracking-wide text-netbird transition hover:bg-netbird/10'
+                        : hasChildren
                         ? 'cursor-pointer select-none py-1 pr-3 text-sm font-medium text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white'
-                        : 'text-xs font-semibold text-zinc-900 dark:text-white',
+                        : 'cursor-pointer select-none text-xs font-semibold text-zinc-900 dark:text-white',
                     group.href === router.pathname && 'text-zinc-900 dark:text-white'
                 )}
                 onClick={() => {
@@ -1278,33 +1305,42 @@ function NavigationGroup({ group, className, hasChildren }) {
                 data-nb-active={hasChildren && isActiveGroup ? '1' : '0'}
             >
                 {group.title}
-                {hasChildren && (
-                    <span
-                        className="-m-1 flex items-center justify-center p-1"
-                        onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            setIsOpen(!isOpen)
-                            if (isOpen) {
-                                setActiveHighlight(group.title)
-                            } else {
-                                setActiveHighlight()
-                            }
-                        }}
-                    >
-            <ChevronDownIcon
-                className={clsx(
-                    'fill-zinc-700 group-hover:fill-zinc-900 dark:fill-zinc-300 dark:group-hover:fill-white',
-                    'transition',
-                    isOpen ? 'rotate-180 transform' : ''
-                )}
-                size={10}
-            />
-          </span>
-                )}
+                <span className="flex items-center gap-2">
+                    {isFeatured && group.badge && (
+                        <span className="rounded-full bg-netbird px-2 py-0.5 text-[10px] font-bold uppercase leading-none text-white">
+                            {group.badge}
+                        </span>
+                    )}
+                    {showChevron && (
+                        <span
+                            className="-m-1 flex items-center justify-center p-1"
+                            onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                setIsOpen(!isOpen)
+                                if (isOpen) {
+                                    setActiveHighlight(group.title)
+                                } else {
+                                    setActiveHighlight()
+                                }
+                            }}
+                        >
+                            <ChevronDownIcon
+                                className={clsx(
+                                    isFeatured
+                                        ? 'fill-netbird'
+                                        : 'fill-zinc-500 group-hover:fill-zinc-900 dark:fill-zinc-400 dark:group-hover:fill-white',
+                                    'transition-transform duration-200',
+                                    isOpen ? 'rotate-180 transform' : ''
+                                )}
+                                size={12}
+                            />
+                        </span>
+                    )}
+                </span>
             </motion.h2>
             <div className={clsx('relative', hasChildren ? '' : 'mt-3 pl-2')}>
-                {!hasChildren && (
+                {!hasChildren && isOpen && (
                     <>
                         <AnimatePresence>
                             {isActiveGroup && (
