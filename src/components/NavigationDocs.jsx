@@ -479,11 +479,13 @@ export const docsNavigation = [
     {
         title: 'AGENT NETWORK',
         // Featured highlight: any group with `featured: true` renders as the
-        // card at the top of the sidebar, with an optional `badge` label. To
-        // spotlight a different product later, move these two lines to its group
-        // (and adjust the badge text). Remove them to drop the card entirely.
+        // card at the top of the sidebar, with an optional `badge`. isOpen:false
+        // keeps this card collapsed by default, while the other top-level
+        // sections start expanded. To spotlight a different product later, move
+        // these lines to its group; remove them to drop the card entirely.
         featured: true,
         badge: 'New',
+        isOpen: false,
         links: [
             {
                 title: 'Getting Started',
@@ -1256,7 +1258,7 @@ function NavigationGroup({ group, className, hasChildren }) {
         group.href === router.pathname ||
         findActiveGroupIndex(group, router.pathname) !== -1
     const [isOpen, setIsOpen] = useState(
-        (group.isOpen ?? false) || isActiveGroup
+        (group.isOpen ?? !hasChildren) || isActiveGroup
     )
     useEffect(() => {
         if (isActiveGroup) setIsOpen(true)
