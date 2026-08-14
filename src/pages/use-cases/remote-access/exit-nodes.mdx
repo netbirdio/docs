@@ -99,6 +99,50 @@ Add a DNS server with the match domain set to `ALL`. Local DNS servers may not b
 
 See [Manage DNS in your network](/manage/dns) for details.
 
+## Regional Exit Nodes
+
+A single exit node forces every user through one location: a user in Florida whose only exit node sits in California sends all internet traffic across the country and back. If your users are spread across regions, you want each device to exit near itself.
+
+You get this by adding one routing peer per region to the **same exit node** with the **same metric**. When metrics are equal, each device measures its latency to every exit node and picks the lowest one, which in practice means the nearest one. With different metrics, you get [primary/failover](/manage/networks/how-routing-peers-work#primary--failover-different-metrics) instead, so keep them equal for regional distribution.
+
+The running example: an exit node in `us-east` and one in `us-west`, users on both coasts.
+
+### 1. Deploy a routing peer per region
+
+Set up one routing peer in each region as described in the [configuration steps](#configuration-steps) above. Both need masquerading and a stable internet path.
+
+### 2. Add both peers to the same exit node
+
+In the exit node's configuration, add both routing peers and leave the metric identical on both. Adding them as two separate exit node entries does not work: metrics and nearest-peer selection only apply between routing peers of the same route, so separate entries give every device both default routes with no coordinated selection.
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/use-cases/exit-nodes/regional-exit-nodes-equal-metrics.png" alt="One exit node entry with two routing peers at equal metrics, distributed to the remote-workers group" className="imagewrapper-big"/>
+</p>
+
+The finished state: one exit node entry, both regional routing peers under it with the same metric, and the distribution group on each.
+
+### 3. Keep the distribution group and access policy scoped
+
+Use a dedicated distribution group for the devices that should full-tunnel rather than the built-in All group, and keep the access policy one-directional from that group to the routing peers. Every device in the distribution group sends all of its internet traffic through whichever exit node it selects.
+
+<p>
+    <img src="/docs-static/img/manage/network-routes/use-cases/exit-nodes/regional-exit-nodes-access-policy.png" alt="Access control policy with the remote-workers group as source and the exit-nodes group as destination, one-directional" className="imagewrapper-medium"/>
+</p>
+
+The policy that makes the exit nodes reachable: the distribution group as the source, the routing peers' group as the destination, one direction only.
+
+### 4. Verify
+
+On an east-coast device, run `netbird status -d`: the peer carrying the `0.0.0.0/0` route is the selected exit node, shown on its `Networks` line. Then confirm the egress path by checking the device's public IP against the `us-east` exit node's public IP. A west-coast device should show the `us-west` peer instead.
+
+### What this does and does not do
+
+This is nearest-exit selection plus automatic failover, not load balancing: each device follows its own lowest-latency exit node, and traffic is not spread evenly across the exit nodes. See [Latency switching](/manage/networks/how-routing-peers-work#latency-switching-equal-metrics) for the selection mechanism.
+
+Latency-based selection is also not a guarantee of *which* exit node a given user lands on. If a rule must always hold, such as certain users always exiting in a specific country, use separate exit nodes with per-group distribution, or posture checks as in [Geo-Based Exit Node Routing](#geo-based-exit-node-routing) below.
+
+Traffic to your own sites is unaffected by any of this: routes to specific internal ranges are more specific than `0.0.0.0/0`, so devices reach those resources directly through the routing peer that advertises them, regardless of which exit node carries their internet traffic.
+
 ## Geo-Based Exit Node Routing
 
 Some compliance setups require a device's location to decide its tunnel mode. A common example: company devices must send all internet traffic through a corporate exit node while traveling abroad, but keep a normal split tunnel at home, where only internal resources go through NetBird.
@@ -176,4 +220,4 @@ See [IPv6 Overlay Addressing](/manage/settings/ipv6) for more details on enablin
 
 ## High Availability
 
-Exit nodes support high availability configurations. See [Creating Highly Available Routes](/manage/network-routes#creating-highly-available-routes) for more information.
+Exit nodes support high availability configurations. With equal metrics you get nearest-exit selection as described in [Regional Exit Nodes](#regional-exit-nodes); with different metrics you get primary/failover. See [Creating Highly Available Routes](/manage/network-routes#creating-highly-available-routes) for more information.
