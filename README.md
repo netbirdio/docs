@@ -1,6 +1,6 @@
 # The NetBird documentation
 
-This repository contains assets required to build the [documentation website for NetBird](https://netbird.io/docs/). It is built using [Next.js](https://nextjs.org/) with MDX support, a modern React framework for building static and dynamic websites.
+This repository contains assets required to build the [documentation website for NetBird](https://docs.netbird.io/). It is built using [Next.js](https://nextjs.org/) with MDX support, a modern React framework for building static and dynamic websites.
 
 We're glad that you want to contribute!
 
