@@ -331,6 +331,10 @@ export const docsNavigation = [
                                 title: 'Keycloak',
                                 href: '/manage/team/idp-sync/keycloak-sync',
                             },
+                            {
+                                title: 'IIJ ID',
+                                href: '/manage/team/idp-sync/iij-id-sync',
+                            },
                         ],
                     },
                     {
