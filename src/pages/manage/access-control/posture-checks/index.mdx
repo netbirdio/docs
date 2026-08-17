@@ -45,7 +45,7 @@ The check evaluates a peer against two sources of address information:
 - **The peer's local network interfaces** — the IP addresses configured on the device's NICs (e.g. the office LAN `192.168.1.0/24` the device is plugged into).
 - **The peer's public connection IP** — the source IP the NetBird management server observes when the peer connects (i.e. the egress / NAT'd IP).
 
-A configured range matches when it contains any of these addresses, so the same check covers both private subnets and public CIDRs. Both IPv4 and IPv6 are supported. A few examples:
+A configured range matches when it fully contains one of these, so the same check covers both private subnets and public CIDRs. Note that a local interface contributes its whole subnet (e.g. a `/24`), not a single address, so a configured range must be no more specific than that subnet to match it. A `/32` rule will not match a NIC sitting in a `/24`, though it does match the connection IP, which is compared as a single host. Both IPv4 and IPv6 are supported. A few examples:
 
 - Block a single office public IPv4: `203.0.113.10/32`
 - Allow a public ISP/office block: `1.0.0.0/24` or `3.0.0.0/23`
@@ -140,7 +140,12 @@ Ranges that target the **public connection IP** still work on Android, because t
 
 **Impact:**
 
-If a policy's Peer Network Range posture check relies on local NIC ranges, the check cannot match on Android clients, and routes gated by that policy may become unavailable on those devices even when the device is outside the blocked local range.
+A local NIC range never matches on Android, so the outcome depends on the check's action:
+
+- An **Allow** check built on local NIC ranges is never satisfied by an Android peer. Those peers fail the check, and routes gated by that policy become unavailable to them.
+- A **Deny** check built on local NIC ranges is never triggered by an Android peer, so those peers always pass it. The block silently does not apply on those devices.
+
+Checks built on the public connection IP are unaffected and behave on Android exactly as they do on desktop.
 
 **Recommendation:**
 
