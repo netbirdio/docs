@@ -98,7 +98,7 @@ You'll notice a gray dot to the left of the posture check name, indicating it's 
 
 To apply a posture check:
 
-* [Create or edit an access control policy](https://docs.netbird.io/access-control).
+* [Create or edit an access control policy](/manage/access-control).
 * Find the `Posture Checks` tab within the policy settings.
 * Choose `Browse Checks` to select an existing check or `New Posture Check` to create one.
 
@@ -118,38 +118,38 @@ Following these steps, you can effectively implement and manage NetBird's Postur
 
 ## When Posture Checks Are Evaluated
 
-NetBird evaluates posture checks when a peer connects or logs in. The check result is computed at connection time and is not re-evaluated continuously for the duration of an active session.
+NetBird evaluates posture checks when a peer connects or logs in. Checks are also re-evaluated during an active session whenever a peer reports changed system metadata. The management server replays each check against the peer's previous and current metadata, and when a check's verdict flips, it recomputes the network map and distributes the update to the affected peers.
 
-When you add or change a posture check on a policy, the updated configuration is distributed to connected peers immediately. A peer that is already connected is evaluated against the new check on its next connection. There is no periodic redistribution interval; distribution is driven by configuration changes, not a timer. For more on how changes reach peers, see [How Policy Changes Are Distributed](/manage/access-control#how-policy-changes-are-distributed).
+When you add or change a posture check on a policy, the updated configuration is distributed to connected peers immediately. A peer that is already connected is evaluated against the new check on its next connection. There is no periodic redistribution interval; distribution is driven by configuration changes and peer metadata changes, not a timer. For more on how changes reach peers, see [How Policy Changes Are Distributed](/manage/access-control#how-policy-changes-are-distributed).
 
 <Note>
-Because evaluation happens at connection time, a peer that passes a posture check and later changes state during a long-lived session (for example an operating system downgrade or a required process being stopped) is not re-evaluated until it reconnects. If you require enforcement to react to a peer changing state mid-session, account for this connection-time evaluation model in your design.
+Mid-session re-evaluation requires a NetBird management server running [0.74.0](https://github.com/netbirdio/netbird/releases) or newer, and is driven by the peer reporting a metadata change rather than by a continuous poll. A peer that passes a posture check and later changes state during a long-lived session (for example an operating system downgrade or a required process stopping) is re-evaluated on its next metadata sync. On management servers older than 0.74.0, that state change is not picked up until the peer reconnects.
 </Note>
 
 ## Known Limitations
 
-### Peer Network Range Check on Mobile Platforms
+### Peer Network Range Check on Android
 
-iOS and Android do not allow applications to enumerate the device's local network interfaces, so ranges intended to match a peer's **local NIC IPs** (e.g. an office LAN like `192.168.1.0/24`) cannot be evaluated on those platforms.
+The Android client does not report the device's local network interfaces to the management server, so ranges intended to match a peer's **local NIC IPs** (e.g. an office LAN like `192.168.1.0/24`) cannot be evaluated on that platform.
 
-Ranges that target the **public connection IP** still work on mobile, because the management server observes that source IP itself — it does not depend on anything the client reports. So public CIDRs (e.g. `203.0.113.10/32`, `1.0.0.0/24`) and public-IP-based deny/allow rules behave the same on mobile as on desktop.
+Ranges that target the **public connection IP** still work on Android, because the management server observes that source IP itself and does not depend on anything the client reports. So public CIDRs (e.g. `203.0.113.10/32`, `1.0.0.0/24`) and public-IP-based deny/allow rules behave the same on Android as on desktop.
 
-**Affected platforms:**
-- iOS
-- Android
+<Note>
+    iOS was affected by this limitation in earlier releases. Local network ranges are reported and evaluated correctly on iOS from NetBird client [0.69.0](https://github.com/netbirdio/netbird/releases) onward.
+</Note>
 
 **Impact:**
 
-If a policy's Peer Network Range posture check relies on local NIC ranges, the check cannot match on mobile clients and routes gated by that policy may become unavailable on those devices — even when the device is outside the blocked local range.
+If a policy's Peer Network Range posture check relies on local NIC ranges, the check cannot match on Android clients, and routes gated by that policy may become unavailable on those devices even when the device is outside the blocked local range.
 
 **Recommendation:**
 
-If your deployment includes iOS or Android clients and you need to gate on local network membership, consider one of the following:
+If your deployment includes Android clients and you need to gate on local network membership, consider one of the following:
 
-- Create separate policies for mobile clients that do not include local-NIC-based Peer Network Range posture checks
-- Use alternative posture checks (such as Geo Location) that are supported on mobile platforms
+- Create separate policies for Android clients that do not include local-NIC-based Peer Network Range posture checks
+- Use alternative posture checks (such as Geo Location) that are supported on every platform
 - Use Peer Network Range checks based on the **public connection IP**, which work on every platform
-- Apply local-NIC-based Peer Network Range posture checks only to policies targeting desktop platforms (Windows, macOS, Linux)
+- Apply local-NIC-based Peer Network Range posture checks only to policies targeting platforms that report them (Windows, macOS, Linux, and iOS 0.69.0+)
 
 ## Get started with NetBird
 <div>
