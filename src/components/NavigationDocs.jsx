@@ -408,6 +408,10 @@ export const docsNavigation = [
                         title: 'Multi-Factor Authentication',
                         href: '/manage/settings/multi-factor-authentication',
                     },
+                    {
+                        title: 'Permissions',
+                        href: '/manage/settings/permissions',
+                    },
                     { title: 'IPv6 Overlay Addressing', href: '/manage/settings/ipv6' },
                     { title: 'Auto Update', href: '/manage/peers/auto-update' },
                     { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
