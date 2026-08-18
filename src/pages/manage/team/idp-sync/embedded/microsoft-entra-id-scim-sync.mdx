@@ -88,8 +88,12 @@ Under the `Create configuration` section, click `connect your application`.
 Fill out the `New provisioning configuration` form with the following details:
 
 * **Select authentication method**: `Bearer authentication`
-* **Tenant URL**: `https://api.netbird.io/api/scim/v2?aadOptscim062020`
+* **Tenant URL**: `https://YOUR_NETBIRD_DOMAIN/api/scim/v2?aadOptscim062020`
 * **Secret token**: Paste the Token Key you copied from the Entra ID SCIM Setup process in the NetBird integration
+
+<Note>
+    Use your **own** NetBird management domain in the Tenant URL, for example `https://netbird.example.com/api/scim/v2?aadOptscim062020`. On a self-hosted install this is the domain where your dashboard and API run, not `api.netbird.io`. Pointing Entra at `api.netbird.io` sends your users to NetBird Cloud instead of your server, and provisioning silently fails to sync.
+</Note>
 
 <Note>
     The `?aadOptscim062020` flag appended to the Tenant URL is required to ensure Microsoft Entra ID sends SCIM 2.0 compliant requests.
@@ -164,6 +168,24 @@ Change the **Source attribute** from `mailNickname` to `objectId`.
 Click `Ok` to save the change, then click `Save` to apply the final user attribute mapping configuration.
 
 <img src="/docs-static/img/manage/team/idp-sync/entra-id-scim-sync/entra-user-attribute-mapping-updated.png" alt="Microsoft Entra ID Final User Attribute Mapping" className="imagewrapper-big"/>
+
+### Why this mapping prevents duplicate users
+
+Set `externalId` to `objectId` **before** the first sync. Getting this wrong is the most common cause of duplicate user accounts, so it is worth understanding why.
+
+NetBird matches a user by a stable identifier, never by email address. A user who signs in through your Entra connector is stored under their Entra `objectId`. When SCIM provisions that same person, NetBird links the SCIM record to the existing user **only if** the SCIM `externalId` carries the same `objectId`. If `externalId` carries anything else, NetBird has no way to tell the two records apart and creates a **second** account for the same person, with the same email address. That is where the duplicates come from: one account from their earlier sign-in, one from SCIM.
+
+Because the match is on `objectId` and not on email, the two accounts can show the identical email address, which makes the duplication easy to miss.
+
+<Note>
+    If you already have duplicate users, correct them by resetting the sync rather than deleting accounts one by one. Deleting the SCIM integration removes the accounts it created, and the accounts people actually sign in with are left untouched:
+
+    1. Delete the Entra ID (SCIM) integration in NetBird (**Integrations → Entra ID (SCIM) → Danger Zone**). This removes the SCIM-provisioned accounts.
+    2. Set the integration up again, this time with `externalId` mapped to `objectId`.
+    3. Run provisioning. Each user now matches their existing sign-in account, and their groups attach to it.
+
+    Deleting an account also removes its peers, so before removing anything, confirm which accounts are the SCIM-created duplicates and that no one relies on peers or access tied to them. If you must remove a single account instead of resetting the integration, verify its ownership first: keep the account whose identifier matches the user's Entra `objectId`, and migrate any needed peers or access off the account you remove.
+</Note>
 
 ## Assign Users and Groups
 
