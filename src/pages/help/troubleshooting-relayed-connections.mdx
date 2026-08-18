@@ -30,7 +30,7 @@ Find the peer in question and look at the **Connection type** field:
   Status: Connected
   -- detail --
   Connection type: Relayed
-  ICE candidate (Local/Remote): relay/relay
+  ICE candidate (Local/Remote): -/-
   ICE candidate endpoints (Local/Remote): -/-
   Relay server address: rels://us-nyc-2.relay.netbird.io:443
   Last WireGuard handshake: 25 seconds ago
@@ -41,7 +41,7 @@ Find the peer in question and look at the **Connection type** field:
 | Field | What it tells you |
 |---|---|
 | `Connection type: Relayed` | Traffic flows through a relay server instead of directly between the peers |
-| `ICE candidate (Local/Remote)` | How each side is connecting, the key diagnostic, explained below |
+| `ICE candidate (Local/Remote)` | The candidate pair ICE selected; reads `-/-` on a relayed connection, explained below |
 | `Relay server address` | Which relay server carries the connection |
 | `Last WireGuard handshake` | A recent handshake means the tunnel itself is healthy, relayed or not |
 
@@ -80,17 +80,27 @@ The authoritative endpoint and port list is in [Ports & Firewalls](/about-netbir
 
 ## Reading the ICE candidates
 
-The `ICE candidate (Local/Remote)` field shows how each side of the selected connection is reachable. It's the fastest way to tell which peer to investigate:
+The `ICE candidate (Local/Remote)` field shows the candidate pair ICE *selected*: the addresses the tunnel actually uses. It reports successful outcomes only. If hole punching didn't complete, there is no selected pair, and the field reads `-/-`.
 
 | Candidate | Meaning | Implication |
 |---|---|---|
-| `host` | A local interface address | Direct connectivity, P2P possible |
-| `srflx` | Public address discovered via STUN | NAT traversal worked on this side |
-| `prflx` | Address discovered during connectivity checks | P2P possible |
-| `relay` | A relay allocation | Hole punching failed on this side |
-| `-` | No candidate established | STUN unreachable or UDP blocked on this side |
+| `host` | A local interface address | P2P over directly reachable addresses |
+| `srflx` | Server-reflexive: this side's public address, discovered via STUN | P2P; hole punching worked through this side's NAT |
+| `prflx` | Peer-reflexive: an address learned during the connectivity checks themselves | P2P; the working address surfaced mid-checks |
+| `relay` | A TURN relay allocation | Legacy fallback: appears only when a peer's connection to the NetBird relay is down and TURN carries the traffic instead |
+| `-` | No candidate selected, ICE did not complete | Expected on every relayed connection |
 
-The most useful pattern: **when one side shows `srflx` or `host` and the other shows `relay` or `-`, focus your troubleshooting on the weaker side.** That peer's network is the one blocking the direct path.
+The mistake this field invites: reading `-` as "STUN is unreachable or UDP is blocked". That is one way to get here (this side never gathered a public candidate). The other is a symmetric NAT: STUN works, both sides gather `srflx` candidates, and the connectivity checks still fail because each NAT hands out a different port per destination, so the advertised addresses are never the ones packets actually arrive from. Both causes end in the same `-/-`, and **both peers show it**: a relayed connection never displays a good side and a bad side, so this field alone cannot tell you which network to fix. The [decision flow](#the-decision-flow) below can.
+
+The client log can also split the two causes directly. Raise the log level with `netbird debug log level debug` (or use the log inside a [debug bundle](/help/troubleshooting-client#debug-bundle)) and look for the candidate and state lines:
+
+```
+discovered local candidate udp4 srflx 203.0.113.10:51791 ...
+ICE ConnectionState has changed to Checking
+ICE ConnectionState has changed to Failed
+```
+
+If `srflx` lines appear and the state still cycles from `Checking` to `Failed`, STUN discovery works and something is blocking the direct path itself: a host firewall ([Step 4](#step-4-is-a-host-firewall-in-the-way)), an egress policy that allows UDP only to the NetBird endpoints, or a symmetric NAT. Clear the first two on both peers ([Step 5](#step-5-repeat-on-the-other-peer)) before concluding symmetric NAT ([Step 1](#step-1-environment-triage), [Step 6](#step-6-conclude-or-escalate)). If no `srflx` lines appear at all, this side never learned its public address, so STUN or UDP is blocked: go to [Step 3](#step-3-is-stun-reachable). A strong tell for symmetric NAT: the `srflx` port differs per STUN destination across those lines.
 
 ## The decision flow
 
@@ -182,7 +192,7 @@ If instead something looks wrong but you can't place it, collect evidence and es
 
 A remote engineer's laptop reaches `build-server` in the office, but `netbird status -d` on the laptop shows the connection is relayed and latency is poor. Working the flow:
 
-1. **Confirm.** The laptop shows `Connection type: Relayed` and `ICE candidate (Local/Remote): srflx/relay`. The laptop's own side reached STUN fine (`srflx`); the weak side is the server.
+1. **Confirm.** The laptop shows `Connection type: Relayed` and `ICE candidate (Local/Remote): -/-`, like every relayed connection. The field can't say which side is the blocker, so work the flow on both peers.
 2. **Triage.** The laptop is on home fiber, the server on the office LAN. Neither is mobile, CGNAT, or behind a cloud NAT gateway, so this should be fixable. Continue.
 3. **Control plane, on the server.** `curl` to the Management API and `nc -zv signal.netbird.io 443` both succeed.
 4. **STUN, on the server.** The `Relays:` section shows `[stun:stun.netbird.io:3478] is Unavailable, reason: stun request: context deadline exceeded`. The office egress firewall is dropping outbound UDP.
