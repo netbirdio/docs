@@ -157,6 +157,10 @@ export const docsNavigation = [
                         isOpen: false,
                         links: [
                             {
+                                title: 'Understanding Posture Checks',
+                                href: '/manage/access-control/posture-checks',
+                            },
+                            {
                                 title: 'Disable route when in the office',
                                 href: '/manage/access-control/posture-checks/connecting-from-the-office',
                             },
