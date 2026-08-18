@@ -416,7 +416,24 @@ export const docsNavigation = [
                         title: 'Permissions',
                         href: '/manage/settings/permissions',
                     },
-                    { title: 'IPv6 Overlay Addressing', href: '/manage/settings/ipv6' },
+                    {
+                        title: 'Groups',
+                        href: '/manage/settings/groups',
+                    },
+                    {
+                        title: 'Networks',
+                        isOpen: false,
+                        links: [
+                            {
+                                title: 'Network Settings',
+                                href: '/manage/settings/networks',
+                            },
+                            {
+                                title: 'IPv6 Overlay Addressing',
+                                href: '/manage/settings/ipv6',
+                            },
+                        ],
+                    },
                     { title: 'Auto Update', href: '/manage/peers/auto-update' },
                     { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                     {
