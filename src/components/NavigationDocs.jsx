@@ -1063,6 +1063,10 @@ export const docsNavigation = [
                                 href: '/help/troubleshooting-resource-connectivity',
                             },
                             {
+                                title: 'Performance',
+                                href: '/help/troubleshooting-performance',
+                            },
+                            {
                                 title: 'Reverse Proxy',
                                 href: '/manage/reverse-proxy/troubleshooting',
                             },
