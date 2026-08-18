@@ -461,11 +461,11 @@ export const docsNavigation = [
     },
     {
         title: 'AGENT NETWORK',
-        // Featured highlight: any group with `featured: true` renders as the
-        // card at the top of the sidebar, with an optional `badge`. isOpen:false
-        // keeps this card collapsed by default, while the other top-level
-        // sections start expanded. To spotlight a different product later, move
-        // these lines to its group; remove them to drop the card entirely.
+        // Featured highlight: any group with `featured: true` is pinned to the
+        // top of the sidebar, with an optional `badge` pill. isOpen:false keeps
+        // it collapsed by default, while the other top-level sections start
+        // expanded. To spotlight a different product later, move these lines to
+        // its group; remove them to drop the highlight entirely.
         featured: true,
         badge: 'New',
         isOpen: false,
@@ -473,6 +473,7 @@ export const docsNavigation = [
             {
                 title: 'Getting Started',
                 href: '/agent-network',
+                isOpen: true,
                 links: [
                     { title: 'What is Agent Network?', href: '/agent-network' },
                     { title: 'How It Works', href: '/agent-network/how-it-works' },
@@ -1198,15 +1199,9 @@ export function NavigationDocs({ className }) {
                 {docsNavigation.map((group, groupIndex) =>
                     group.featured ? (
                         <NavigationStateProvider key={group.title} index={groupIndex}>
-                            <NavigationGroup group={group} index={groupIndex} className="md:mt-0" />
+                            <NavigationGroup group={group} index={groupIndex} className="mb-6 md:mt-0" />
                         </NavigationStateProvider>
                     ) : null
-                )}
-                {docsNavigation.some((group) => group.featured) && (
-                    <li
-                        aria-hidden="true"
-                        className="my-4 border-t border-zinc-900/10 dark:border-white/10"
-                    />
                 )}
                 {docsNavigation.map((group, groupIndex) =>
                     group.featured ? null : (
@@ -1273,7 +1268,7 @@ function NavigationGroup({ group, className, hasChildren }) {
                 className={clsx(
                     'group flex items-center justify-between gap-2',
                     isFeatured
-                        ? 'cursor-pointer select-none rounded-lg border border-netbird/30 bg-netbird/5 px-3 py-2 text-xs font-bold uppercase tracking-wide text-netbird transition hover:bg-netbird/10'
+                        ? '-mx-[9px] cursor-pointer select-none rounded-md border border-netbird/20 px-2 py-1.5 text-xs font-semibold text-zinc-900 transition hover:bg-netbird/5 dark:text-white'
                         : hasChildren
                         ? 'cursor-pointer select-none py-1 pr-3 text-sm font-medium text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white'
                         : 'cursor-pointer select-none text-xs font-semibold text-zinc-900 dark:text-white',
