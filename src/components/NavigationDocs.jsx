@@ -445,7 +445,7 @@ export const docsNavigation = [
                         href: '/manage/settings/clients',
                     },
                     {
-                        title: 'Client Metrics',
+                        title: 'Metrics',
                         href: '/manage/client-metrics',
                     },
                     {
