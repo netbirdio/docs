@@ -880,6 +880,10 @@ export const docsNavigation = [
                         href: '/use-cases/remote-access/active-directory',
                     },
                     {
+                        title: 'Clientless RDP for Third Parties',
+                        href: '/use-cases/remote-access/clientless-rdp',
+                    },
+                    {
                         title: 'Cloud to On-Premise',
                         href: '/use-cases/remote-access/cloud-to-on-premise',
                     },
