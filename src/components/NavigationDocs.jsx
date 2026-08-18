@@ -406,11 +406,17 @@ export const docsNavigation = [
                 links: [
                     {
                         title: 'Authentication',
-                        href: '/manage/settings/enforce-periodic-user-authentication',
-                    },
-                    {
-                        title: 'Multi-Factor Authentication',
-                        href: '/manage/settings/multi-factor-authentication',
+                        isOpen: false,
+                        links: [
+                            {
+                                title: 'Session Expiration',
+                                href: '/manage/settings/enforce-periodic-user-authentication',
+                            },
+                            {
+                                title: 'Multi-Factor Authentication',
+                                href: '/manage/settings/multi-factor-authentication',
+                            },
+                        ],
                     },
                     {
                         title: 'Permissions',
@@ -434,8 +440,10 @@ export const docsNavigation = [
                             },
                         ],
                     },
-                    { title: 'Auto Update', href: '/manage/peers/auto-update' },
-                    { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
+                    {
+                        title: 'Clients',
+                        href: '/manage/settings/clients',
+                    },
                     {
                         title: 'Client Metrics',
                         href: '/manage/client-metrics',
