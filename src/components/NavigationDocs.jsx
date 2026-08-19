@@ -409,7 +409,7 @@ export const docsNavigation = [
                         isOpen: false,
                         links: [
                             {
-                                title: 'Session Expiration',
+                                title: 'Peer Session Expiration',
                                 href: '/manage/settings/enforce-periodic-user-authentication',
                             },
                             {
