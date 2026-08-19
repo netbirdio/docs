@@ -403,17 +403,40 @@ Then restart the proxy:
 docker compose up -d proxy
 ```
 
-Verify the connection in the proxy logs:
+At this point the proxy logs will **not** mention CrowdSec yet:
 
 ```bash
 docker compose logs proxy | grep -i crowdsec
 ```
 
-You should see `CrowdSec bouncer synced initial decisions` once the LAPI connection is established.
+Empty output here is expected. The stream bouncer is started lazily: it does not connect to the LAPI until at least one service has CrowdSec enabled in step 7d.
+
+To confirm the proxy picked up the configuration, check that the cluster now advertises CrowdSec support instead:
+
+```bash
+curl -s -H "Authorization: Token <your-pat>" \
+  https://<your-domain>/api/reverse-proxies/clusters | jq '.[].supports_crowdsec'
+```
+
+This should return `true`. In the dashboard, the equivalent check is that a **CrowdSec IP Reputation** dropdown now appears on the **Access Control** tab of a reverse proxy service.
 
 #### 7d. Enable per service
 
 CrowdSec must be enabled individually on each service through the dashboard under **Access Control**. Set the CrowdSec mode to **enforce** or **observe**.
+
+Once the first service is set to `enforce` or `observe`, the bouncer starts and the proxy logs the connection:
+
+```bash
+docker compose logs proxy | grep -i crowdsec
+```
+
+```text
+netbird-proxy  | INFO proxy/internal/crowdsec/bouncer.go:70: connecting to CrowdSec LAPI at http://crowdsec:8080
+netbird-proxy  | INFO proxy/internal/crowdsec/registry.go:94: CrowdSec bouncer started
+netbird-proxy  | INFO proxy/internal/crowdsec/bouncer.go:187: CrowdSec bouncer synced initial decisions
+```
+
+The bouncer re-polls the LAPI every 10 seconds. You can confirm from the CrowdSec side with `cscli bouncers list`, which shows a recent **Last API pull** for `netbird-proxy`.
 
 ![CrowdSec IP Reputation Overview](/docs-static/img/selfhosted/maintenance/crowdsec-overview.png)
 
@@ -450,11 +473,26 @@ If this fails, verify both containers are on the same Docker network.
 
 **All connections denied after enabling enforce mode**: This typically means the bouncer has not completed its initial sync. Check the proxy logs for the `CrowdSec bouncer synced initial decisions` message. If it's missing, the LAPI may be unreachable or the API key may be incorrect. Switch to **observe** mode on affected services until the issue is resolved.
 
+Note that the message is only expected *after* a service has CrowdSec enabled (step 7d). Its absence before that point is normal and does not indicate a problem.
+
+**No decisions on a new installation**: a freshly registered CrowdSec instance receives an empty community blocklist and pulls the full list on its next scheduled sync, up to two hours later. The startup logs state this directly:
+
+```text
+capi/community-blocklist : received 0 new entries (expected if you just installed crowdsec)
+Start pull from CrowdSec Central API (interval: 1h59m7s once, then 2h0m0s)
+```
+
+Until that first pull completes, a service in `enforce` mode has nothing to enforce and traffic passes normally. Use a manual decision (below) to verify enforcement immediately, since local decisions apply straight away.
+
 **Checking active decisions**:
 
 ```bash
-# List current decisions
+# List locally-generated and manually-added decisions
 docker compose exec crowdsec cscli decisions list
+
+# List community blocklist decisions (hidden from the default view)
+# --limit bounds alerts, not decisions, so pipe through head
+docker compose exec crowdsec cscli decisions list --origin CAPI | head -20
 
 # Ban an IP for 1 hour (for testing)
 docker compose exec crowdsec cscli decisions add --ip 1.2.3.4 --duration 1h --reason "manual test"
@@ -462,6 +500,16 @@ docker compose exec crowdsec cscli decisions add --ip 1.2.3.4 --duration 1h --re
 # Remove all decisions for an IP
 docker compose exec crowdsec cscli decisions delete --ip 1.2.3.4
 ```
+
+`cscli decisions list` excludes CAPI-sourced decisions by default, so it can report a handful of entries while the engine holds thousands. To size the blocklist, read the `cs_active_decisions` gauge, which is reported per `origin`/`reason`/`action` combination rather than as a single total:
+
+```bash
+docker compose exec crowdsec sh -c "wget -qO- http://127.0.0.1:6060/metrics" | grep '^cs_active_decisions'
+```
+
+<Warning>
+`cscli decisions delete --all` removes every decision including the entire synced community blocklist. Restarting CrowdSec may not immediately re-fetch it: startup attempts a pull, but the request is skipped if the previous CAPI pull was recent, leaving restoration to the next scheduled pull up to two hours later. The instance runs without community reputation data until then. Prefer `--ip` for targeted removals.
+</Warning>
 
 ## Configure SSO for external identity providers
 
@@ -682,7 +730,7 @@ The proxy is configured through environment variables (each one maps to an equiv
 | `NB_PROXY_PRESHARED_KEY` | No | Pre-shared key for the tunnel between the proxy and peers. | - |
 | `NB_PROXY_SUPPORTS_CUSTOM_PORTS` | No | Whether the proxy can bind arbitrary ports for UDP/TCP passthrough. | `true` |
 | `NB_PROXY_REQUIRE_SUBDOMAIN` | No | Require a subdomain label in front of the cluster domain. | `false` |
-| `NB_PROXY_PRIVATE` | No | Serve private services with NetBird-Only authentication, reachable exclusively over the WireGuard tunnel (also enables per-account inbound listeners). Advanced; intended for proxies embedded in a NetBird client rather than standalone deployments. | `false` |
+| `NB_PROXY_PRIVATE` | No | Serve private services with NetBird-Only authentication, reachable exclusively over the WireGuard tunnel (also enables per-account inbound listeners). Required for the **Proxy Cluster** target type and **NetBird-Only Access**. The `netbirdio/reverse-proxy` image runs in embedded mode by default, so setting this on a standard self-hosted deployment is supported: the cluster then reports the `Private` capability and the dashboard **Clusters** page shows a **Private** badge. | `false` |
 | `NB_PROXY_MAX_DIAL_TIMEOUT` | No | Cap the per-service backend dial timeout (`0` = no cap), e.g. `10s`. | `0` |
 | `NB_PROXY_MAX_SESSION_IDLE_TIMEOUT` | No | Cap the per-service session idle timeout (`0` = no cap), e.g. `5m`. | `0` |
 
