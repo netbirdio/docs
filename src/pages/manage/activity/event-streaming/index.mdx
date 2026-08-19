@@ -1,26 +1,107 @@
-# Stream Network Activity to Third-Party SIEM Platforms
+# Stream Audit and Traffic Events to Third-Party Services
 
 <p>
     <img src="/docs-static/img/manage/activity/event-streaming/event-streaming-integration.png" alt="event-streaming-integration" className="imagewrapper-big"/>
 </p>
 
+Event Streaming forwards your NetBird activity to an external destination as the events occur. Destinations include SIEM
+platforms such as [Datadog](https://www.datadoghq.com/dg/security/siem-solution/), object storage such as
+[Amazon S3](https://aws.amazon.com/s3/), streaming pipelines such as
+[Amazon Data Firehose](https://aws.amazon.com/firehose/), and any other service you can reach over HTTP through the
+Generic HTTP integration.
+
 Security Information and Event Management (SIEM) systems play a critical role in network security by monitoring,
 detecting, and responding to security threats in real-time. By aggregating and analyzing activity across the network,
-SIEMs help identify anomalous patterns and potential breaches, providing a centralized view of security events.
-
-NetBird provides an event streaming feature that allows you to stream network [activity events](/manage/activity/traffic-events-logging)
-to third-party SIEM systems, such as [Datadog](https://www.datadoghq.com/dg/security/siem-solution/), [Amazon S3](https://aws.amazon.com/s3/), [Amazon Data Firehose](https://aws.amazon.com/firehose/), and others through a generic HTTP integration.
+SIEMs help identify anomalous patterns and potential breaches, providing a centralized view of security events. Streaming
+NetBird events into one of them puts your network activity alongside the rest of your security telemetry.
 
 <Note>
-    This feature is only available in the cloud version of NetBird.
+    Event Streaming is available in NetBird Cloud under the [Business plan](https://www.netbird.io/pricing?utm_source=docs&utm_content=event-streaming)
+    and in licensed self-hosted deployments. It is not served by the open-source management server.
 </Note>
 
-This documentation provides step-by-step guides and best practices for integrating NetBird activity event streaming with
-supported third-party platforms. To get started, select one of the following integrations:
+## What Gets Streamed
 
-- [Datadog](/manage/activity/event-streaming/datadog)
-- [Amazon S3](/manage/activity/event-streaming/amazon-s3)
-- [Amazon Data Firehose](/manage/activity/event-streaming/amazon-firehose)
-- [SentinelOne Data Lake](/manage/activity/event-streaming/sentinelone-data-lake)
-- [Generic HTTP](/manage/activity/event-streaming/generic-http)
-- [Wazuh](/manage/activity/event-streaming/wazuh)
+A single integration carries both classes of NetBird activity. The dashboard describes the feature as
+`Event Streaming allows you to stream NetBirds audit & traffic events to different third-party services.`
+
+- **[Audit events](/manage/activity)** record changes to your network, such as a peer joining, a policy being modified,
+or a setup key being revoked. Audit events are enabled by default for every NetBird account, so they start streaming as
+soon as you connect an integration.
+- **[Traffic events](/manage/activity/traffic-events-logging)** record connection flows between peers and resources.
+Traffic events logging is **disabled by default**. Turn it on under `Settings` > `Networks` in the Experimental section
+before you expect traffic events to reach your destination. If you have scoped traffic events to specific groups, only
+peers in those groups report flows.
+
+Both event types travel through whichever integration is enabled, in the same stream. There is no per-integration filter
+that separates them.
+
+## Where to Find It
+
+Open the NetBird dashboard and navigate to `Integrations` > `Event Streaming`. Configuring an integration requires an
+account role with event streaming permissions, so if the tab is missing or the cards are read-only, ask an administrator
+of your account.
+
+## Available Integrations
+
+NetBird ships four integrations as cards on the `Event Streaming` tab:
+
+| Integration | Card description in the dashboard | Guide |
+| --- | --- | --- |
+| `Datadog` | Datadog is a monitoring service for cloud-scale applications. | [Datadog](/manage/activity/event-streaming/datadog) |
+| `Amazon S3` | Amazon S3 is a scalable storage in the cloud. | [Amazon S3](/manage/activity/event-streaming/amazon-s3) |
+| `Amazon Data Firehose` | Firehose delivers real-time data streaming to destinations such as Amazon S3, Amazon Redshift & more. | [Amazon Data Firehose](/manage/activity/event-streaming/amazon-firehose) |
+| `Generic HTTP` | Provide your custom HTTP endpoint to stream audit & traffic events. | [Generic HTTP](/manage/activity/event-streaming/generic-http) |
+
+### Recipes Built on Generic HTTP
+
+There is no dedicated card for every platform. `Generic HTTP` posts each event to any HTTPS endpoint you choose, with
+your own authentication headers and an optional body template, which makes it the building block for destinations NetBird
+does not integrate with natively. The following guides are configurations of the `Generic HTTP` card rather than separate
+integrations, so read the [Generic HTTP](/manage/activity/event-streaming/generic-http) page first:
+
+- [SentinelOne Data Lake](/manage/activity/event-streaming/sentinelone-data-lake) uses the SentinelOne HTTP Event
+Collector endpoint with a custom body template.
+- [Wazuh](/manage/activity/event-streaming/wazuh) posts to a webhook receiver in front of a Wazuh manager using a custom
+authentication header.
+
+## One Integration at a Time
+
+Only one event streaming integration can be enabled per account. While an integration is enabled, the remaining cards on
+the `Event Streaming` tab are greyed out and cannot be connected. To switch destinations, disconnect the active
+integration first, then connect the new one.
+
+Turning off `Datadog`, `Amazon S3`, or `Amazon Data Firehose` deletes the integration rather than pausing it. The
+dashboard asks you to confirm with `Disconnecting deletes the current configuration. You will need to start the setup
+process again.`, and you have to re-enter the credentials to connect that destination again.
+
+`Generic HTTP` behaves differently. Its toggle only enables or disables the integration and keeps the saved endpoint,
+headers, and body template, so you can switch it back on without reconfiguring. Deleting it is a separate action in the
+`Danger Zone` tab of its configuration panel.
+
+## Connection Test
+
+When you connect an integration, NetBird sends a synthetic `integration test` event to validate that the credentials and
+endpoint work, followed by an `integration created` audit event once the integration is saved. Looking for those two
+events at the destination is the quickest way to confirm the setup, and each guide shows where they appear.
+
+Because `integration created` is itself an audit event, it streams out through the integration you just created. Later
+configuration changes produce `integration updated` the same way.
+
+## Credential Handling
+
+Credentials you enter, such as API keys and secret access keys, are stored with the integration and masked as `****` when
+the configuration is read back through the API.
+
+<Warning>
+    NetBird does not display saved credentials again. Keep API keys and secret access keys in your own secret manager so
+    you can reconnect an integration after disconnecting it.
+</Warning>
+
+## Manage Integrations Through the API
+
+Event streaming integrations can also be created, listed, updated, and deleted programmatically. See the
+[Event Streaming Integrations API reference](/api/resources/event-streaming-integrations) for the available endpoints.
+The API accepts the same four platform values as the dashboard: `datadog`, `s3`, `firehose`, and `generic_http`. The
+`config` object is a free-form set of key-value pairs whose keys depend on the platform, so use the setup steps in each
+guide to work out which values you need.

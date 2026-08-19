@@ -2,8 +2,12 @@
 
 <Note>
 This feature is available in NetBird Cloud under the [Business plan](https://www.netbird.io/pricing?utm_source=docs&utm_content=traffic-events) and in licensed self-hosted Enterprise deployments with traffic flow enabled.
-This feature is in Beta and may change over time — including how data is collected and reported.
+Traffic events are experimental, so functionality and behavior may evolve, including how data is collected and reported.
 To use this feature, make sure you're running NetBird client version 0.39 or higher.
+</Note>
+
+<Note>
+On self-hosted deployments, traffic flow is an opt-in part of the [Enterprise stack](/selfhosted/enterprise/getting-started). It requires a license, a PostgreSQL store, and the extra `nats`, `receiver`, and `enricher` services. It is not available on the community self-hosted stack.
 </Note>
 
 
@@ -51,7 +55,8 @@ You'll see two aggregated flow records, one reported by each peer (source and de
 The record from `server` represents the receiver's perspective. Because `server` allows the connection, it includes the policy `IT Admins to Servers` that authorized the flow over `TCP` on port `443`.
 
 <Note>
-     Use the `P2P` filter in the table to view only peer-to-peer connection events.
+    The `Router` column is empty for peer-to-peer flows, so an empty `Router` value is the quickest way to spot them in the table.
+    The API also accepts a `connection_type` query parameter on `GET /api/events/network-traffic` if you want to filter programmatically.
 </Note>
 
 #### Blocked P2P Connections Events
@@ -60,15 +65,15 @@ If a connection is refused, NetBird logs the blocked event on the peer that deni
 The initiating peer `Alice` will still report the connection attempt but won't be aware that it was blocked.
 
 In this scenario, the `IT Admins to Servers` policy is configured to allow only ping requests (`ICMP`),
-meaning all `HTTP` requests are intentionally not allowed. The screenshot below illustrates this behavior.
+meaning `TCP` connections are intentionally not allowed. The screenshot below illustrates this behavior.
 <p>
     <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-blocked-connection.png" alt="traffic-events-p2p-blocked-connection" className="imagewrapper-big"/>
 </p>
 
 ### Peer-to-Network Resource Connections
 
-When a peer connects to a [network resource](/manage/networks#resources), NetBird captures and logs the traffic
-events for that connection on the peer that initiated the connection, and on the [routing peer](/manage/networks#routing-peers) that connects the peer to
+When a peer connects to a [network resource](/manage/networks#resource), NetBird captures and logs the traffic
+events for that connection on the peer that initiated the connection, and on the [routing peer](/manage/networks#routing-peer) that connects the peer to
 the internal network resource.
 
 A slightly modified example of the CRM server connection scenario would be if instead of running the NetBird client on the CRM server,
@@ -85,21 +90,21 @@ routed the connection to the CRM server. If the connection was blocked, NetBird 
 The screenshot below illustrates a successful connection from `Alice` to the network resource `CRM` running in the AWS VPC.
 The traffic is routed through a routing peer, which logs the connection event and reports it to the NetBird servers.
 The access is permitted by the policy `IT Admins to AWS Servers`, which allows connections over the `TCP` protocol on port `443`.
-Note the `ROUTER` column in the table, which identifies the routing peer responsible for routing to the internal network resource.
+Note the `Router` column in the table, which identifies the routing peer responsible for routing to the internal network resource.
 
 <p>
     <img src="/docs-static/img/manage/activity/traffic-events-logging/network-resource-successful-connection.png" alt="network-resource-succesful-connection" className="imagewrapper-big"/>
 </p>
 
 <Note>
-    Use the `Routed` filter in the table to view only peer-to-network resource connection events.
+    Routed flows are the ones with a value in the `Router` column, because the routing peer, not the destination, is the peer that reports them.
 </Note>
 
 #### Blocked Peer-to-Network Resource Events
 
 In the event of a blocked connection, the initiating peer logs the connection attempt, while the routing peer records the blocked event.
 The screenshot below demonstrates this behavior: the routing peer blocks a connection to the network resource `CRM` because
-the policy `IT Admins to AWS Servers` does not permit connections over the `HTTP` protocol on port `6432`.
+the policy `IT Admins to AWS Servers` does not permit `TCP` connections on port `6432`.
 The routing peer's aggregate shows the number of dropped attempts, so repeated application retries increase the drop count instead of creating one top-level row for every attempt.
 
 <p>
@@ -113,26 +118,30 @@ The routing peer's aggregate shows the number of dropped attempts, so repeated a
 
 ## Event Aggregation
 
-Starting with v0.75, clients aggregate related traffic events before reporting them. For a given source address and direction, a group is identified by protocol, destination address, destination port for TCP or UDP, and ICMP type for ICMP traffic. Source port and ICMP code do not split aggregates. During each reporting window, NetBird accumulates:
+Since client v0.75.0, clients aggregate related traffic events before reporting them. A group is identified by source address, destination address, direction, protocol, destination port for TCP or UDP, and ICMP type for ICMP traffic. Source port and ICMP code do not split aggregates. During each reporting window, NetBird accumulates:
 
 * connection start, end, and drop counts;
 * transmitted and received packet totals;
 * transmitted and received byte totals;
 * the start and end of the aggregation window.
 
-The Dashboard and API therefore present one flow record with counters for activity in that window instead of a separate top-level record for every start, end, or blocked event. The `events` array can retain individual event timestamps where they are available.
+The Dashboard and API therefore present one flow record with counters for activity in that window instead of a separate top-level record for every start, end, or blocked event. Only TCP, UDP, ICMP, and ICMPv6 flows are aggregated. Any other protocol is reported as an individual event.
+
+<Note>
+Aggregated rows in the Dashboard show the window range instead of a single timestamp, and the description reads as a summary, for example `Peer Alice started 3 connections to Peer server` or `Peer Alice got blocked 5 times trying to connect to Resource CRM`. Expand the row to see which policy allowed or blocked the flow.
+</Note>
 
 ## Enabling Traffic Events Logging
 
-Traffic events logging feature is disabled by default. To enable it on the NetBird dashboard, navigate to `Settings > Networks`.
-Under the Experimental section, you'll find the `Enable Traffic Events` option. Toggle the switch to enable traffic event logging.
+Traffic events logging is disabled by default. To enable it on the NetBird dashboard, navigate to `Settings > Networks`.
+Under the `Experimental` section, you'll find the `Enable Traffic Events` option. Toggle the switch to enable traffic event logging.
+Changing this setting requires the `Owner` or `Admin` role.
 
-By default, traffic reporting in userspace is always enabled, providing basic logging of network interactions.
-However, packet size reporting at the kernel level is disabled by default to minimize CPU usage.
+Peers that run the NetBird userspace packet filter always report packet and byte counts for the flows they see.
+Kernel-level counting is disabled by default to minimize CPU usage.
 
 <Note>
-You can optionally enable `Traffic Reporting (Kernel)` to capture additional details, such as network packet sizes,
-at the kernel level. Be aware that enabling this option may lead to higher CPU usage on the NetBird client.
+You can optionally turn on `Enable Traffic Reporting (Kernel)` to capture packet and byte counts on Linux peers that use the WireGuard kernel module. It turns on kernel connection tracking accounting (`net.netfilter.nf_conntrack_acct`) on those peers and has no effect on peers that already run in userspace, such as macOS and Windows clients. Be aware that enabling this option may lead to higher CPU usage on the NetBird client.
 </Note>
 
 
@@ -147,20 +156,19 @@ You can scope traffic events logging to only the peers that belong to specific g
 - When you select one or more groups, only peers that are members of the selected groups will report traffic events.
 - If no group is selected, logging applies to all peers in the account (default behavior).
 
-To configure this setting, navigate to `Settings > Networks` in the Experimental section, open the Group Selector under `Enable Traffic Events`
-choose the groups you want to include, and click `Save Groups`.
+To configure this setting, navigate to `Settings > Networks`, and in the `Experimental` section open the `Limit To Specific Groups` selector
+below `Enable Traffic Events`, choose the groups you want to include, and click `Save Groups`.
 <p>
     <img src="/docs-static/img/manage/activity/traffic-events-logging/traffic-events-groups-logging-settings.png" alt="traffic-events-groups-logging-settings" className="imagewrapper-big"/>
 </p>
 
 ## Log Retention
 
-While in experimental mode, logs are retained for **seven days**.
-Additionally, the current API returns a maximum of **50,000 flow records**.
-This limit may change.
+While the feature is experimental, traffic event data is retained for **48 hours** and capped at a maximum of **50,000 events**.
+The same limits are printed in the `Experimental` section of `Settings > Networks`. They may change.
 
 ## Report rate
-Aggregated flows might take up to **ten minutes** to become available through the API and Dashboard. An end count for some TCP connections can appear in a later window, depending on OS settings and connection termination.
+A flow is only sent once its aggregation window closes, and the window length is set by the NetBird server, not by the client. Aggregated flows might take up to **ten minutes** to become available through the API and Dashboard. An end count for some TCP connections can appear in a later window, depending on OS settings and connection termination.
 
 ## Enable Traffic Events Streaming to SIEM Systems
 
@@ -174,111 +182,129 @@ For detailed instructions on supported integrations and how to set them up, refe
 
 When enabled, a NetBird peer will record metadata for each network flow that it participates in. The data collected by peers includes:
 
-* **Window start and end**: The bounds of the aggregation window.
-* **Flow ID**: A unique identifier for the aggregated traffic flow.
+* **Window start and end**: The bounds of the aggregation window (`window_start` and `window_end`).
+* **Flow ID**: The identifier of the connection flow (`flow_id`). It is not globally unique, because both sides of the same connection can report it.
 * **Event counts**: `num_of_starts`, `num_of_ends`, and `num_of_drops` for the group.
 * **Source and Destination IP Addresses**: The IP of the peer (source) and the IP of the remote endpoint (destination). For peer-to-peer traffic,
 these will be the NetBird network IPs (e.g. 100.x.x.x addresses of each peer). For traffic to an external resource (like a private server or subnet), the destination might be an IP in that remote network.
-* **Source and Destination Ports**: The network ports recorded for TCP/UDP flows. Destination port is part of the aggregation key; source port does not split aggregates.
-* **ICMP Type**: For ICMP traffic, the ICMP type used to group the flow. ICMP code does not split aggregates.
-* **Protocol**: The protocol of the traffic, such as TCP, UDP, or ICMP.
-* **Direction**: Whether the flow was inbound or outbound. This takes into consideration the perspective of the **peer reporting the traffic** and the NetBird interface.
-* **Volume of Data**: Packet and byte totals sent and received during the aggregation window.
-* **Resource ID**: Network route or Networks resource ID that the flow is associated with. This is useful for identifying the routing configuration that allowed the flow. DNS route information is **available only** on the routing client.
-* **Rule ID**: The ID of the policy that allowed the flow. This is useful for identifying the access control policy that allowed the flow. This information is **available only** on the receiving side of the traffic.
+* **Source and Destination Ports**: The network ports recorded for TCP/UDP flows. They are reported as part of the `address` field of the source and destination. Destination port is part of the aggregation key; source port does not split aggregates.
+* **ICMP Type and Code**: For ICMP and ICMPv6 traffic, the type and code of the flow. Only the type is part of the aggregation key, so the code does not split aggregates.
+* **Protocol**: The IANA protocol number of the traffic, for example `1` for ICMP, `6` for TCP, `17` for UDP, and `58` for ICMPv6.
+* **Direction**: `INGRESS` or `EGRESS`. This takes into consideration the perspective of the **peer reporting the traffic** and the NetBird interface.
+* **Volume of Data**: Packet and byte totals sent and received during the aggregation window (`tx_packets`, `rx_packets`, `tx_bytes`, `rx_bytes`).
+* **Resource ID**: Network route or Networks resource ID that the flow is associated with. This is useful for identifying the routing configuration that allowed the flow. For domain based resources, the resource is attributed on the peer that resolved the domain, so one side of a flow can carry the resource while the other side reports only the address.
+* **Rule ID**: The ID of the policy that allowed or blocked the flow. This is useful for identifying the access control policy that applied to the flow. This information is **available only** on the receiving side of the traffic, and only when that peer runs the userspace packet filter. See [Limitations](#limitations).
 
 In addition to the data collected by the peers, the NetBird API provides additional context about the peers and resources involved in the traffic event. These details include:
-* **Peer Name**: The name of the peer.
-* **Peer ID**: The unique identifier of the peer.
-* **Resource name**: The name of the resource or network route.
-* **Policy Name**: The name of the policy that allowed the flow.
-* **User ID, name, and email**: The name and email of the user associated with the source peer.
-* **Reporter ID**: The unique identifier of the peer that reported the traffic event.
-* **Received timestamp**: The timestamp when the event was received by the NetBird servers.
+* **Peer or resource name, ID, and type**: Returned as the `source` and `destination` objects, with `type` set to `PEER`, `HOST_RESOURCE`, `SUBNET_RESOURCE`, `DOMAIN_RESOURCE`, `ROUTE`, or `UNKNOWN`.
+* **Operating system, DNS label, and geo location**: Extra context on each endpoint.
+* **Policy ID and name**: Returned as the `policy` object.
+* **User ID, name, and email**: The user associated with the source peer, returned as the `user` object.
+* **Reporter ID**: The unique identifier of the peer that reported the traffic event (`reporter_id`).
+* **Sub-events**: The `events` array carries the individual event types and timestamps that the peer reported for the flow.
 
 <details>
-<summary>API sample response</summary>
+<summary>API sample response (one entry from the data array)</summary>
 ```json
-  {
-    "destination": {
-      "address": "142.250.185.206:443",
-      "dns_label": "*.google.com",
-      "geo_location": {
-        "city_name": "",
-        "country_code": ""
-      },
-      "id": "cvco2st9q2cs73btphmg",
-      "name": "Any google.com domain",
-      "os": "",
-      "type": "DOMAIN_RESOURCE"
+{
+  "flow_id": "9682d060-3b28-4fa3-8b47-98595a51bbda",
+  "reporter_id": "cvco2st9q2cs73btphm0",
+  "source": {
+    "id": "cvco2st9q2cs73btphm0",
+    "type": "PEER",
+    "name": "MacBook-Pro-10.local",
+    "geo_location": {
+      "city_name": "Frankfurt",
+      "country_code": "DE"
     },
-    "direction": "EGRESS",
-    "flow_id": "9682d060-3b28-4fa3-8b47-98595a51bbda",
-    "icmp_code": 0,
-    "icmp_type": 0,
-    "id": "c94e398c-dbfb-4344-8c47-a731b984d86e",
-    "policy_id": "ndkslcanlksncl",
-    "policy_name": "Allow google access",
-    "protocol": 6,
-    "receive_timestamp": "2025-03-22T20:26:19.491144Z",
-    "reporter_id": "ldkfnwklenfklernl",
-    "rx_bytes": 0,
-    "rx_packets": 0,
-    "source": {
-      "address": "100.89.67.186:50229",
-      "dns_label": "macbook-pro-10-2",
-      "geo_location": {
-        "city_name": "Frankfurt",
-        "country_code": "DE"
-      },
-      "id": "ldkfnwklenfklernl",
-      "name": "MacBook-Pro-10.local",
-      "os": "Darwin",
-      "type": "PEER"
+    "os": "Darwin",
+    "address": "100.89.67.186:50229",
+    "dns_label": "macbook-pro-10-2"
+  },
+  "destination": {
+    "id": "cvco2st9q2cs73btphmg",
+    "type": "DOMAIN_RESOURCE",
+    "name": "Any google.com domain",
+    "geo_location": {
+      "city_name": "",
+      "country_code": ""
     },
-    "window_start": "2025-03-22T20:26:16.937522Z",
-    "window_end": "2025-03-22T20:30:17.257891Z",
-    "num_of_starts": 1,
-    "num_of_ends": 1,
-    "num_of_drops": 0,
-    "tx_bytes": 64,
-    "tx_packets": 1,
-    "events": [
-      {
-        "type": "TYPE_START",
-        "timestamp": "2025-03-22T20:26:16.937522Z"
-      },
-      {
-        "type": "TYPE_END",
-        "timestamp": "2025-03-22T20:30:17.257891Z"
-      }
-    ],
-    "user_email": "john@example.com",
-    "user_id": "google-oauth2|xyz0123",
-    "user_name": "John Doe"
-  }
+    "os": "",
+    "address": "142.250.185.206:443",
+    "dns_label": "*.google.com"
+  },
+  "user": {
+    "id": "google-oauth2|xyz0123",
+    "email": "john@example.com",
+    "name": "John Doe"
+  },
+  "policy": {
+    "id": "cvco2st9q2cs73btphn0",
+    "name": "Allow google access"
+  },
+  "icmp": {
+    "type": 0,
+    "code": 0
+  },
+  "protocol": 6,
+  "direction": "EGRESS",
+  "rx_bytes": 0,
+  "rx_packets": 0,
+  "tx_bytes": 64,
+  "tx_packets": 1,
+  "num_of_starts": 1,
+  "num_of_ends": 1,
+  "num_of_drops": 0,
+  "window_start": "2026-03-22T20:26:16.937522Z",
+  "window_end": "2026-03-22T20:30:17.257891Z",
+  "events": [
+    {
+      "type": "TYPE_START",
+      "timestamp": "2026-03-22T20:26:16.937522Z"
+    },
+    {
+      "type": "TYPE_END",
+      "timestamp": "2026-03-22T20:30:17.257891Z"
+    }
+  ]
+}
 ```
 </details>
 
 ## Viewing Traffic Events on the Dashboard
 There are two places where you can see the traffic events on the NetBird dashboard:
-1. **Traffic events**: Under Activity, you will find the Traffic events menu. This view shows the traffic events in a table format for all peers in your network.
-2. **Peer details**: When you click on a peer, you will see the traffic events for that peer in the Peer details view.
+1. **Traffic Events**: Under `Activity`, you will find the `Traffic Events` menu. This view shows the traffic events in a table format for all peers in your network.
+2. **Peer details**: When you click on a peer, the `Traffic Events` tab shows the events reported by that peer, with an `Inbound` and `Outbound` switch.
+
+Reading traffic events requires the `Owner`, `Admin`, `Auditor`, or `Network Admin` role. Users with the `User` role do not see the `Activity` menu.
+
+The `Traffic Events` table shows the following columns:
+
+| Column | Description |
+| --- | --- |
+| `Event` | The aggregation window and a summary of what happened, for example how many connections started, ended, or were blocked. Expand the row to see which policy allowed or blocked the flow. |
+| `Source` | The peer, resource, route, or address that the flow came from. Hover it for the endpoint's domain, geo location, and, on outbound flows from a peer, the user behind it. |
+| `Protocol & Port` | The protocol of the flow and the destination port. For ICMP and ICMPv6, the type and code are shown instead of a port. |
+| `Destination` | The peer, resource, route, or address that the flow was sent to. |
+| `Traffic` | Received and transmitted bytes for the aggregation window. |
+| `Router` | The routing peer that reported the flow. Empty for peer-to-peer flows. |
+
+The peer's `Traffic Events` tab uses the same columns without `Router`, because every row on that tab is reported by the peer you are looking at.
 
 ### Filters
-You can use various filters to search and filter received events. The filters include:
-- **Source**: Select a source peer, network resource, route, or user. The API equivalent is `source_id`.
+The traffic events table defaults to the last **7 days**. You can narrow the list with:
+
+- **Search**: The `Search by ip, port, peer or resource...` box does a case-insensitive partial match on user email, source and destination names, and source and destination addresses. The API equivalent is `search`.
+- **Date range**: The date picker sets the window to query. The API equivalents are `start_date` and `end_date`.
+- **Source**: Select a source peer, network resource, or user. The API equivalent is `source_id` for peers and resources, and `user_id` for users.
 - **Destination**: Select a destination peer or network resource. The API equivalent is `destination_id`.
-- **IP address**: Source or destination IP addresses
-- **Ports**: Source or destination ports
-- **Timestamp**: Aggregation-window time range
-- **Protocol**: ICMP, TCP, or UDP
-- **Flow type and direction**: P2P or routed traffic, inbound or outbound, including groups with start, end, or drop counts
+
+The `GET /api/events/network-traffic` endpoint accepts more filters than the Dashboard exposes, including `protocol`, `type`, `connection_type`, `direction`, and `reporter_id`. See the [API reference](/api/resources/events).
 
 ## Correlating events
 Correlate a session by comparing the aggregated flow records reported by both sides. If Peer A connects to Peer B, each reporter can contribute a record for the same source and destination tuple. A successful flow normally increases the start and end counters. If Peer B rejects it, the receiver's record increases the drop counter while the initiator may only know that it attempted the connection.
 <Note>
- Blocked events are only reported when the destination peer is in userspace mode. See [Limitations](#limitations).
+ Blocked events are only reported when the peer that refuses the traffic runs the NetBird userspace packet filter. See [Limitations](#limitations).
 </Note>
 
 ### Viewing TCP and UDP connections
@@ -296,7 +322,7 @@ The UDP connection is very similar:
     <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-udp-allow.png" alt="P2P UDP Allowed" className="imagewrapper-big"/>
 </p>
 <Note>
- UDP is stateless, so its end counter is updated after the client observes the configured inactivity period.
+ UDP is stateless, so its end counter is only updated after the client observes 30 seconds of inactivity on the connection.
 </Note>
 
 When a connection is blocked, you may see similar entries to the following events but with a few differences:
@@ -310,9 +336,9 @@ When a connection is blocked, you may see similar entries to the following event
 <p>
     <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-udp-blocked.png" alt="P2P UDP Blocked" className="imagewrapper-big"/>
 </p>
-On the refusing side, retries increase `num_of_drops`; the client does not record a successful start or end for traffic it rejected.
+On the refusing side, retries increase `num_of_drops`; the client does not record a successful start or end for traffic it rejected. Drops are always recorded as `INGRESS`, because a peer can only observe traffic that it refused to accept.
 <Note>
- Blocked events are only reported when the destination peer is in userspace mode. See [Limitations](#limitations).
+ Blocked events are only reported when the peer that refuses the traffic runs the NetBird userspace packet filter. See [Limitations](#limitations).
 </Note>
 
 ### Viewing ICMP connections
@@ -321,7 +347,7 @@ ICMP events are similar to TCP and UDP events. The main difference is that ICMP 
     <img src="/docs-static/img/manage/activity/traffic-events-logging/p2p-icmp-allowed.png" alt="P2P ICMP Allowed" className="imagewrapper-big"/>
 </p>
 <Note>
- ICMP is grouped by ICMP type and does not use ports. Its end counter is updated after inactivity.
+ ICMP is grouped by ICMP type and does not use ports. Its end counter is only updated after 30 seconds of inactivity.
 </Note>
 ### Routed events
 Routed events follow the same pattern as P2P events. The main difference is that the destination or source can be a resource or network route. Below, we have a few examples of a connection from a peer to a resource:
@@ -334,7 +360,7 @@ Routed events follow the same pattern as P2P events. The main difference is that
 <p>
     <img src="/docs-static/img/manage/activity/traffic-events-logging/routed-tcp-allowed.png" alt="Routed TCP Allowed" className="imagewrapper-big"/>
 </p>
-For routed aggregates, the source or destination can be a resource or network route. The record identifies the routing peer that reported it. The source or destination identifier can be unknown on the routing-peer side for DNS resources.
+For routed aggregates, the source or destination can be a resource or network route, and the `Router` column identifies the routing peer that reported it. For domain based resources, the endpoint is resolved on the peer that performed the DNS resolution, so one side of the flow can show the resource name while the other side shows only the address with type `UNKNOWN`.
 
 For site-2-site connections, the events will be similar to the above examples, but you will see a routing peer for each event:
 <p>
@@ -342,15 +368,28 @@ For site-2-site connections, the events will be similar to the above examples, b
 </p>
 
 ## Limitations
-<Note>
-Policy IDs and blocked traffic events are not reported when the destination peer (or routing peer) is running in kernel mode.
-</Note>
 
-On Linux, you can force a routing peer into userspace mode with three [environment variables](/client/environment-variables):
+Policy IDs and blocked traffic events are produced by the NetBird userspace packet filter. A peer that hands access control to the kernel does not report them.
+
+* On **macOS and Windows**, the client always runs the userspace packet filter, so policy IDs and blocked events are reported.
+* On **Linux**, the client uses the native `nftables` or `iptables` backend by default, even when WireGuard itself runs in userspace. On those peers, drops happen in the kernel and are not reported.
+
+Packet and byte counters have a separate constraint. Linux peers that use the WireGuard kernel module only report them when `Enable Traffic Reporting (Kernel)` is on. Peers on the userspace packet filter always report them.
+
+On Linux, you can force a peer or routing peer fully into userspace with three [environment variables](/client/environment-variables):
 
 ```bash
 sudo netbird service reconfigure --service-env NB_WG_KERNEL_DISABLED=true,NB_FORCE_USERSPACE_FIREWALL=true,NB_FORCE_USERSPACE_ROUTER=true
 ```
+
+<Warning>
+Running the data path in userspace costs more CPU than the kernel path. Test the change on a non-critical peer before applying it to a routing peer that carries production traffic.
+</Warning>
+
+Two more classes of traffic are filtered out by the client before events are sent, unless the NetBird server enables them for your account:
+
+* **DNS traffic**: UDP flows to port `53` and to the NetBird DNS forwarder ports `5353` and `22054`.
+* **Exit node traffic**: Flows that match a default route through an [exit node](/use-cases/remote-access/exit-nodes).
 
 ## Conclusion
 Traffic events logging provides a powerful tool for monitoring and analyzing network traffic across your infrastructure.

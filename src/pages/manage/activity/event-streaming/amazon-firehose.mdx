@@ -4,8 +4,15 @@
 an other AWS services. You can use Amazon Data Firehose as a bridge between NetBird and other third-party providers that support Data Firehose
 to ingest, transform and analyze your network activity events.
 
+NetBird sends audit and traffic events to the Firehose stream in real-time once they occur. Because Firehose buffers and batches
+records before delivering them, it is the more efficient option when your destination is Amazon S3. See the
+[Amazon S3 integration](/manage/activity/event-streaming/amazon-s3) if you prefer writing one object per event instead.
+
 <Note>
-    This feature is only available in the cloud version of NetBird.
+    Event streaming is a paid feature. On NetBird Cloud it is available on the **Business** plan and above, and during a trial.
+    On a self-hosted deployment it requires the [Enterprise Commercial License](/selfhosted/enterprise); the open source
+    Community Edition does not serve the event streaming API, so the tab stays locked. Self-hosted dashboards started showing
+    the Event Streaming tab in dashboard `v2.80.0`.
 </Note>
 
 ## Prerequisites
@@ -13,19 +20,31 @@ to ingest, transform and analyze your network activity events.
 Before you start creating and configuring an Amazon Data Firehose event streaming integration, ensure that you have the following:
 - An AWS account with the permissions to create and manage Data Firehose delivery streams.
 - Permissions to create and manage IAM users, roles and policies.
+- A NetBird user with permission to manage integrations, such as an account owner or admin.
 
 If you don't have the required permissions, ask your AWS administrator to grant them to you.
 
 ## Create a Data Firehose Stream
 - Navigate to the [Data Firehose Dashboard](https://console.aws.amazon.com/firehose/home)
 - Click `Create Firehose stream`
-- As source select `Direct PUT` and the desired destination
+- As `Source` select `Direct PUT`
+- As `Destination` select the AWS service you want to push the events to
 - Give it a descriptive name like `netbird-activity-events` and configure the stream to your needs
+- Click `Create Firehose stream`
+
+<Note>
+    Create the stream in one of the regions NetBird offers in the setup wizard. See [Supported regions](#supported-regions)
+    for the full list. AWS GovCloud and the China regions are not available.
+</Note>
+
+You can use the stream's transformation and format conversion settings to reshape the event messages before they reach the
+destination.
 
 ## Create an IAM User
 - Navigate to the [IAM Dashboard](https://console.aws.amazon.com/iam/home)
 - Create an IAM User (for details see the [Amazon Docs](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_create.html))
-- Create a custom policy with the following permissions (replace the resource with the ARN of your delivery stream):
+- Create a custom policy with the following permissions, scoped to the stream you created (replace `region`, `accountID`, and
+the stream name with your own values):
 ```json
 {
     "Version": "2012-10-17",
@@ -36,7 +55,7 @@ If you don't have the required permissions, ask your AWS administrator to grant 
                 "firehose:PutRecord",
                 "firehose:PutRecordBatch"
             ],
-            "Resource": "arn:aws:firehose:region:accountID:deliverystream/netbird-event-streaming"
+            "Resource": "arn:aws:firehose:region:accountID:deliverystream/netbird-activity-events"
         }
     ]
 }
@@ -48,22 +67,76 @@ If you don't have the required permissions, ask your AWS administrator to grant 
 - Give it a description
 - Store `Access key` and `Secret access key` in a secure place. You will need these when configuring an integration in NetBird.
 
+<Note>
+    `firehose:PutRecord` and `firehose:PutRecordBatch` are the only permissions NetBird needs. Do not grant read or management
+    permissions to this user.
+</Note>
+
 ## Create an Integration in NetBird
-- Navigate to the [Integrations &raquo; Event Streaming](https://preview.netbird.io/integrations) tab in the NetBird dashboard
+- Navigate to the [Integrations &raquo; Event Streaming](https://app.netbird.io/integrations?tab=event-streaming) tab in the NetBird dashboard
 <p>
     <img src="/docs-static/img/manage/activity/event-streaming/event-streaming-integration.png" alt="event-streaming-integration" className="imagewrapper-big"/>
 </p>
 
-- Enable and configure the `Amazon Data Firehose` integration
-- First select the region your Firehose stream is created in
+- On the `Amazon Data Firehose` card, click `Connect Amazon Data Firehose` or turn the card's toggle on to open the
+`Connect NetBird with Amazon Data Firehose` wizard. The wizard has three steps, and each step's button stays disabled until you
+fill in the field on that step.
+- Step 1, `Select your Amazon Data Firehose region`: pick the region your stream lives in and click `Continue`. The dropdown
+defaults to `US East (N. Virginia)`, so change it if your stream is elsewhere.
 <p>
     <img src="/docs-static/img/manage/activity/event-streaming/amazon-firehose/firehose-region-select.png" alt="firehose-region-select" className="imagewrapper" />
 </p>
-- Then enter the Firehose stream name you created in [Step 1](#step-1-create-a-data-firehose-stream) and click `Next`
+- Step 2, `Create your Firehose Stream`: under `Enter your Firehose stream name`, enter the stream you created in
+[Create a Data Firehose Stream](#create-a-data-firehose-stream) and click `Continue`
 <p>
     <img src="/docs-static/img/manage/activity/event-streaming/amazon-firehose/firehose-stream-name.png" alt="firehose-stream-name" className="imagewrapper" />
 </p>
-- Enter the `Access key` and `Secret access key` you created in [Step 2](#step-2-create-an-iam-user-2) and click `Connect`
+- Step 3, `Create IAM credential`: enter the access key under `Enter your Access-Key`, the secret under `Enter your Secret-Key`,
+both created in [Create an IAM User](#create-an-iam-user), and click `Connect`
 <p>
     <img src="/docs-static/img/manage/activity/event-streaming/amazon-firehose/firehose-iam-credentials.png" alt="firehose-iam-credentials" className="imagewrapper" />
 </p>
+
+All four values (region, stream name, access key, secret key) are required. Once you click `Connect`, the integration is created
+and enabled in one step.
+
+<Note>
+    Only one event streaming integration can be enabled at a time. If Datadog, Amazon S3, or the Generic HTTP integration is
+    already enabled, the `Amazon Data Firehose` card is greyed out until you disconnect the active one.
+</Note>
+
+### Supported regions
+
+The region dropdown offers a fixed set of AWS regions:
+
+- **US**: `us-east-1`, `us-east-2`, `us-west-1`, `us-west-2`
+- **Europe**: `eu-central-1`, `eu-central-2`, `eu-west-1`, `eu-west-2`, `eu-west-3`, `eu-south-1`, `eu-south-2`, `eu-north-1`
+- **Asia Pacific**: `ap-east-1`, `ap-south-1`, `ap-south-2`, `ap-northeast-1`, `ap-northeast-2`, `ap-northeast-3`, `ap-southeast-1`, `ap-southeast-2`, `ap-southeast-3`, `ap-southeast-4`
+- **Canada**: `ca-central-1`, `ca-west-1`
+- **Middle East**: `me-south-1`, `me-central-1`
+- **Africa**: `af-south-1`
+- **South America**: `sa-east-1`
+- **Israel**: `il-central-1`
+
+## Verify the Integration
+
+To confirm the integration works, check the stream's monitoring metrics in the AWS console, or the destination itself, for
+incoming records. As with the [Amazon S3 integration](/manage/activity/event-streaming/amazon-s3#verify-the-integration),
+NetBird validates the credentials during setup and streams the first events right away, so you do not have to wait for new
+network activity.
+
+Delivery is not instant. Firehose applies the buffer interval and buffer size configured on the stream before writing to the
+destination, so allow for that delay before concluding that events are missing.
+
+## Change or Remove the Integration
+
+The dashboard does not offer an edit form for a connected integration. To change the stream, the region, or the credentials,
+disconnect the integration and run the setup wizard again.
+
+To disconnect, turn the `Amazon Data Firehose` card's toggle off. NetBird asks you to confirm with a
+`Disconnect Amazon Data Firehose?` dialog that warns "Disconnecting deletes the current configuration. You will need to start the
+setup process again." Click `Disconnect` to delete the configuration, or `Cancel` to keep it. Records already delivered to your
+stream's destination are not touched.
+
+If you need to update a configuration in place rather than recreate it, use the
+[event streaming API](/api/resources/event-streaming-integrations), which supports updating an existing integration.
