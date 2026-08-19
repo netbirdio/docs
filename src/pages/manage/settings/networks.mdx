@@ -1,0 +1,53 @@
+export const description = 'Configure account-wide network settings such as a custom IPv4 network range, a custom peer DNS domain, and routing peer DNS resolution.'
+
+# Network Settings
+
+The `Networks` tab in your account settings holds network-wide configuration that applies to every peer in your account: the DNS domain peers are named under, the IP ranges peers get their addresses from, and DNS resolution behavior for routed domains.
+
+To find it, log in to your NetBird dashboard and navigate to `Settings` > `Networks`.
+
+## DNS Domain
+
+Every peer gets a DNS name made up of its peer DNS label and the account's DNS domain, for example `server-1.netbird.cloud`. The `DNS Domain` setting replaces the default domain with one of your own, so peers resolve as, for example, `server-1.vpn.example.com` instead.
+
+When the field is empty, the account uses the server default: `netbird.cloud` on NetBird Cloud and `netbird.selfhosted` on self-hosted deployments (self-hosted servers can also set a different default in the management configuration).
+
+The value must be a valid domain name without wildcards, such as `example.com` or `intra.example.com`. It also cannot be a domain you already use as a [custom DNS zone](/manage/dns/custom-zones) in the same account; the update is rejected with a conflict error in that case.
+
+<Note>
+    Use a domain that does not resolve on the public internet, for example a dedicated subdomain like `vpn.example.com` that has no public records. NetBird clients answer queries for this domain themselves, so pointing it at a real, publicly resolvable domain would override its DNS results for your peers.
+</Note>
+
+## Network Range
+
+Peers get their NetBird IPv4 address from the account's network range. New accounts are assigned a random `/16` subnet from the `100.64.0.0/10` carrier-grade NAT block, for example `100.77.0.0/16`, so the overlay network does not collide with common private LAN ranges.
+
+The `Network Range` setting lets you replace that with a custom IPv4 range in CIDR notation, for example `10.100.0.0/16`. The range must satisfy the following:
+
+- It must be a valid IPv4 CIDR prefix. Loopback, multicast, and link-local ranges are not allowed.
+- The prefix can be at most `/28` (16 addresses). Larger prefixes such as `/29` are rejected as too small.
+- It must be big enough for your current peers plus a 50% buffer, with a minimum of 10 usable addresses. For example, with 100 peers the range needs at least 150 addresses, so `/24` or larger.
+
+<Warning>
+    Changing the network range immediately re-allocates the NetBird IP of **every peer** in the account. Peers receive new addresses from the new range, connected clients are updated with the new network map, and reverse proxy services are reloaded to pick up the new IPs. Anything that references the old NetBird IPs directly, such as firewall rules or scripts outside of NetBird, needs to be updated. Where possible, reference peers by DNS name or by group instead of by IP.
+</Warning>
+
+## IPv6 settings
+
+The `IPv6 Network Range` and `IPv6 Enabled Groups` settings on the same tab control dual-stack overlay addressing. See [IPv6 Overlay Addressing](/manage/settings/ipv6) for how to enable IPv6 and configure the IPv6 range.
+
+## Enable Routing Peer DNS Resolution
+
+When enabled, DNS lookups for routed domain resources are performed on the routing peer instead of on each client, so clients do not need to be able to resolve those names themselves. It requires NetBird client v0.35 or higher, and changes take effect after clients restart. See [Routing Peer DNS Resolution](/manage/networks/how-routing-peers-work#routing-peer-dns-resolution) for details on how it affects domain resources.
+
+## Traffic events
+
+On NetBird Cloud, the tab also contains an experimental `Enable Traffic Events` section for logging connection events between peers. See [Traffic Events Logging](/manage/activity/traffic-events-logging) for plan requirements and configuration.
+
+## Changing the settings
+
+1. Go to `Settings` > `Networks`.
+2. Adjust the settings. Invalid values, such as a malformed CIDR range or domain, are flagged inline.
+3. Click `Save Changes`. The `Enable Routing Peer DNS Resolution` toggle saves immediately without the button.
+
+You need permission to update account settings to change these values, which in practice means an owner or administrator. Roles with read-only settings access, such as `Network Admin` and `Auditor`, can open the tab but the fields are disabled for them.

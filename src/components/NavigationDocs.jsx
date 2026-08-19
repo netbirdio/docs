@@ -406,21 +406,46 @@ export const docsNavigation = [
                 links: [
                     {
                         title: 'Authentication',
-                        href: '/manage/settings/enforce-periodic-user-authentication',
-                    },
-                    {
-                        title: 'Multi-Factor Authentication',
-                        href: '/manage/settings/multi-factor-authentication',
+                        isOpen: false,
+                        links: [
+                            {
+                                title: 'Peer Session Expiration',
+                                href: '/manage/settings/enforce-periodic-user-authentication',
+                            },
+                            {
+                                title: 'Multi-Factor Authentication',
+                                href: '/manage/settings/multi-factor-authentication',
+                            },
+                        ],
                     },
                     {
                         title: 'Permissions',
                         href: '/manage/settings/permissions',
                     },
-                    { title: 'IPv6 Overlay Addressing', href: '/manage/settings/ipv6' },
-                    { title: 'Auto Update', href: '/manage/peers/auto-update' },
-                    { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                     {
-                        title: 'Client Metrics',
+                        title: 'Groups',
+                        href: '/manage/settings/groups',
+                    },
+                    {
+                        title: 'Networks',
+                        isOpen: false,
+                        links: [
+                            {
+                                title: 'Network Settings',
+                                href: '/manage/settings/networks',
+                            },
+                            {
+                                title: 'IPv6 Overlay Addressing',
+                                href: '/manage/settings/ipv6',
+                            },
+                        ],
+                    },
+                    {
+                        title: 'Clients',
+                        href: '/manage/settings/clients',
+                    },
+                    {
+                        title: 'Metrics',
                         href: '/manage/client-metrics',
                     },
                     {

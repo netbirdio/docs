@@ -12,12 +12,14 @@ Lazy connections reduce resource use in large NetBird networks by opening peer c
 
 When lazy connections are enabled, the client:
 
-- Starts a connection to a peer when traffic is sent to it.
-- Tears down an established peer connection after it has been idle for the configured inactivity threshold.
+- Starts a connection to a peer when traffic is sent to it, or when the remote peer signals a connection attempt.
+- Tears down an established peer connection after it has been idle for the configured inactivity threshold. Idle detection runs on clients using userspace WireGuard; a client running kernel WireGuard relies on the remote peer to detect inactivity and close the connection.
+- Keeps routing peers in the same high-availability group awake together while any one of them is active, so failover targets stay usable.
 - Keeps peers used for ingress forwarding connected so forwarding targets remain reachable.
+- Opens permanent connections to peers whose client version does not support lazy connections.
 - Reopens all applicable peer connections when lazy connections are disabled.
 
-The default inactivity threshold is `15m`. Change it with `NB_LAZY_CONN_INACTIVITY_THRESHOLD`, using a [Go duration](https://pkg.go.dev/time#ParseDuration) such as `30m` or `1h`.
+The default inactivity threshold is `15m`. Change it with `NB_LAZY_CONN_INACTIVITY_THRESHOLD`, using a [Go duration](https://pkg.go.dev/time#ParseDuration) such as `30m` or `1h`. The minimum is `1m`; shorter or invalid values fall back to the default.
 
 <Note>
     The first request to an idle peer can take slightly longer while NetBird establishes the connection.
@@ -31,9 +33,15 @@ Set `NB_DNS_LAZY_WARMUP_TIMEOUT` on the daemon to change this per-query wait. Th
 
 ## Enable Lazy Connections in Management
 
-The account setting in the NetBird Dashboard is the normal source of truth. When it is enabled, compatible clients activate their lazy connection manager. When it is disabled, clients stop lazy mode and immediately attempt to connect to all applicable peers.
+The account setting in the NetBird Dashboard is the normal source of truth: go to `Settings` > `Clients` and turn on the `Enable Lazy Connections` toggle. When it is enabled, compatible clients activate their lazy connection manager. When it is disabled, clients stop lazy mode and immediately attempt to connect to all applicable peers.
+
+Accounts created on NetBird v0.74.0 or later have lazy connections enabled by default. Accounts created before that keep the setting disabled until an administrator turns it on.
 
 Existing active connections are not interrupted merely because lazy mode is enabled. They become eligible for teardown after the inactivity threshold.
+
+<Note>
+    Clients with [Rosenpass post-quantum cryptography](/client/post-quantum-cryptography) enabled do not start the lazy connection manager and keep permanent connections regardless of this setting.
+</Note>
 
 ## Override the Management Setting on a Client
 
@@ -47,7 +55,7 @@ sudo netbird service reconfigure --service-env NB_LAZY_CONN=on
 sudo netbird service reconfigure --service-env NB_LAZY_CONN=off
 ```
 
-`on` and `off` override Management in both directions. Leave the variable unset to follow the Management setting. See [Client Environment Variables](/client/environment-variables#ice-and-connectivity) for service configuration details.
+`on` and `off` override Management in both directions; boolean values such as `true`/`false` or `1`/`0` are also accepted. Leave the variable unset to follow the Management setting. See [Client Environment Variables](/client/environment-variables#ice-and-connectivity) for service configuration details.
 
 On MDM-managed clients, the boolean `lazyConnection` policy key provides the same local override: `true` forces lazy connections on, `false` forces them off, and an absent key defers to Management. If both are configured, `NB_LAZY_CONN` takes precedence over MDM.
 
