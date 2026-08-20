@@ -3,7 +3,7 @@
 [Amazon Simple Storage Service (Amazon S3)](https://aws.amazon.com/s3/) is a scalable, high-speed, web-based cloud storage service.
 You can use Amazon S3 to store and analyze large amounts of data, including network activity events from NetBird.
 
-NetBird integrates with Amazon S3 and sends activity events to an S3 bucket in real-time once they occur. For every event,
+NetBird integrates with Amazon S3 and sends audit and traffic events to an S3 bucket in real-time once they occur. For every event,
 NetBird creates a new object in the S3 bucket, which you can then analyze, filter, and query using Amazon tools.
 
 Storing one event per object is not the most efficient way to save data in S3, therefore NetBird provides an
@@ -11,7 +11,10 @@ Storing one event per object is not the most efficient way to save data in S3, t
 data ingestion.
 
 <Note>
-    This feature is only available in the cloud version of NetBird.
+    Event streaming is a paid feature. On NetBird Cloud it is available on the **Business** plan and above, and during a trial.
+    On a self-hosted deployment it requires the [Enterprise Commercial License](/selfhosted/enterprise); the open source
+    Community Edition does not serve the event streaming API, so the tab stays locked. Self-hosted dashboards started showing
+    the Event Streaming tab in dashboard `v2.80.0`.
 </Note>
 
 ## Prerequisites
@@ -19,6 +22,7 @@ data ingestion.
 Before you start creating and configuring an Amazon S3 event streaming integration, ensure that you have the following:
 - An AWS account with the permissions to create and manage S3 buckets.
 - Permissions to create and manage IAM users, roles and policies.
+- A NetBird user with permission to manage integrations, such as an account owner or admin.
 
 If you don't have the required permissions, ask your AWS administrator to grant them to you.
 
@@ -30,10 +34,16 @@ If you don't have the required permissions, ask your AWS administrator to grant 
 - (Optional) Change bucket configurations to your needs
 - Click `Create bucket`
 
+<Note>
+    Create the bucket in one of the regions NetBird offers in the setup wizard. See [Supported regions](#supported-regions)
+    for the full list. AWS GovCloud and the China regions are not available.
+</Note>
+
 ## Create an IAM User
 - Navigate to the [IAM Dashboard](https://console.aws.amazon.com/iam/home)
 - Create an IAM User (for details see the [Amazon Docs](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_create.html))
-- Create a custom policy with the following permissions:
+- Create a custom policy with the following permissions, scoped to the bucket you created (replace `netbird-activity-events`
+with your own bucket name):
 ```json
 {
     "Version": "2012-10-17",
@@ -56,25 +66,55 @@ If you don't have the required permissions, ask your AWS administrator to grant 
 - Give it a description
 - Store `Access key` and `Secret access key` in a secure place. You will need these when configuring an integration in NetBird.
 
+<Note>
+    `s3:PutObject` and `s3:PutObjectAcl` are the only permissions NetBird needs. Do not grant read or delete permissions to
+    this user.
+</Note>
+
 ## Create an Integration in NetBird
-- Navigate to the [Integrations &raquo; Event Streaming](https://preview.netbird.io/integrations) tab in the NetBird dashboard
+- Navigate to the [Integrations &raquo; Event Streaming](https://app.netbird.io/integrations?tab=event-streaming) tab in the NetBird dashboard
 <p>
-    <img src="/docs-static/img/manage/activity/event-streaming/event-streaming-integration.png" alt="event-streaming-integration" className="imagewrapper-big"/>
+    <img src="/docs-static/img/manage/activity/event-streaming/event-streaming-integration.png" alt="The Event Streaming tab showing the Datadog, Amazon S3, Amazon Data Firehose, and Generic HTTP integration cards" className="imagewrapper-big"/>
 </p>
 
-- Enable and configure the `Amazon S3` integration
-- First select the region your S3 bucket is created in
+- On the `Amazon S3` card, click `Connect Amazon S3` or turn the card's toggle on to open the `Connect NetBird with Amazon S3` wizard.
+The wizard has three steps, and each step's button stays disabled until you fill in the field on that step.
+- Step 1, `Select your Amazon S3 region`: pick the region your bucket lives in and click `Continue`. The dropdown defaults to
+`US East (N. Virginia)`, so change it if your bucket is elsewhere.
 <p>
-    <img src="/docs-static/img/manage/activity/event-streaming/amazon-s3/s3-region-select.png" alt="s3-region-select" className="imagewrapper" />
+    <img src="/docs-static/img/manage/activity/event-streaming/amazon-s3/s3-region-select.png" alt="Step one of the Amazon S3 wizard, selecting the AWS region for the bucket" className="imagewrapper" />
 </p>
-- Then enter the S3 bucket name you created in [Step 1](#step-1-create-an-s3-bucket) and click `Next`
+- Step 2, `Create your S3 Bucket`: under `Enter your S3 Bucket name`, enter the bucket you created in
+[Create an S3 Bucket](#create-an-s3-bucket) and click `Continue`
 <p>
-    <img src="/docs-static/img/manage/activity/event-streaming/amazon-s3/s3-bucket-name.png" alt="s3-bucket-name" className="imagewrapper"/>
+    <img src="/docs-static/img/manage/activity/event-streaming/amazon-s3/s3-bucket-name.png" alt="Step two of the Amazon S3 wizard, entering the S3 bucket name" className="imagewrapper"/>
 </p>
-- Enter the `Access key` and `Secret access key` you created in [Step 2](#step-2-create-an-iam-user) and click `Connect`
+- Step 3, `Create IAM credential`: enter the access key under `Enter your Access-Key`, the secret under `Enter your Secret-Key`,
+both created in [Create an IAM User](#create-an-iam-user), and click `Connect`
 <p>
-    <img src="/docs-static/img/manage/activity/event-streaming/amazon-s3/s3-iam-credentials.png" alt="s3-iam-credentials" className="imagewrapper" />
+    <img src="/docs-static/img/manage/activity/event-streaming/amazon-s3/s3-iam-credentials.png" alt="Step three of the Amazon S3 wizard, entering the IAM access key and secret key" className="imagewrapper" />
 </p>
+
+All four values (region, bucket name, access key, secret key) are required. Once you click `Connect`, the integration is created
+and enabled in one step.
+
+<Note>
+    Only one event streaming integration can be enabled at a time. If Datadog, Amazon Data Firehose, or the Generic HTTP
+    integration is already enabled, the `Amazon S3` card is greyed out until you disconnect the active one.
+</Note>
+
+### Supported regions
+
+The region dropdown offers a fixed set of AWS regions:
+
+- **US**: `us-east-1`, `us-east-2`, `us-west-1`, `us-west-2`
+- **Europe**: `eu-central-1`, `eu-central-2`, `eu-west-1`, `eu-west-2`, `eu-west-3`, `eu-south-1`, `eu-south-2`, `eu-north-1`
+- **Asia Pacific**: `ap-east-1`, `ap-south-1`, `ap-south-2`, `ap-northeast-1`, `ap-northeast-2`, `ap-northeast-3`, `ap-southeast-1`, `ap-southeast-2`, `ap-southeast-3`, `ap-southeast-4`
+- **Canada**: `ca-central-1`, `ca-west-1`
+- **Middle East**: `me-south-1`, `me-central-1`
+- **Africa**: `af-south-1`
+- **South America**: `sa-east-1`
+- **Israel**: `il-central-1`
 
 ## Verify the Integration
 
@@ -86,7 +126,7 @@ containing the following events:
 - `integration created`
 
 <p>
-    <img src="/docs-static/img/manage/activity/event-streaming/amazon-s3/verify-amazon-s3-integration.png" alt="verify-amazon-s3-integration" className="imagewrapper-big" />
+    <img src="/docs-static/img/manage/activity/event-streaming/amazon-s3/verify-amazon-s3-integration.png" alt="The S3 bucket in the AWS console containing the objects NetBird delivered" className="imagewrapper-big" />
 </p>
 
 ```json
@@ -117,3 +157,15 @@ The integration test event is sent to validate whether the provided credentials 
 The integration created event is sent when the integration is successfully created.
 
 The integration is now set up and ready to stream network activity events to Amazon S3.
+
+## Change or Remove the Integration
+
+The dashboard does not offer an edit form for a connected integration. To change the bucket, the region, or the credentials,
+disconnect the integration and run the setup wizard again.
+
+To disconnect, turn the `Amazon S3` card's toggle off. NetBird asks you to confirm with a `Disconnect S3?` dialog that warns
+"Disconnecting deletes the current configuration. You will need to start the setup process again." Click `Disconnect` to
+delete the configuration, or `Cancel` to keep it. Existing objects already written to your bucket are not touched.
+
+If you need to update a configuration in place rather than recreate it, use the
+[event streaming API](/api/resources/event-streaming-integrations), which supports updating an existing integration.

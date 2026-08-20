@@ -368,7 +368,7 @@ export const docsNavigation = [
                         href: '/manage/activity/traffic-events-logging',
                     },
                     {
-                        title: 'Stream Activity Events',
+                        title: 'Event Streaming',
                         href: '/manage/activity/event-streaming',
                         isOpen: false,
                         links: [
@@ -381,20 +381,23 @@ export const docsNavigation = [
                                 href: '/manage/activity/event-streaming/amazon-s3',
                             },
                             {
-                                title: 'Amazon Firehose',
+                                title: 'Amazon Data Firehose',
                                 href: '/manage/activity/event-streaming/amazon-firehose',
-                            },
-                            {
-                                title: 'SentinelOne Data Lake',
-                                href: '/manage/activity/event-streaming/sentinelone-data-lake',
                             },
                             {
                                 title: 'Generic HTTP',
                                 href: '/manage/activity/event-streaming/generic-http',
-                            },
-                            {
-                                title: 'Wazuh',
-                                href: '/manage/activity/event-streaming/wazuh',
+                                isOpen: false,
+                                links: [
+                                    {
+                                        title: 'SentinelOne Data Lake',
+                                        href: '/manage/activity/event-streaming/sentinelone-data-lake',
+                                    },
+                                    {
+                                        title: 'Wazuh',
+                                        href: '/manage/activity/event-streaming/wazuh',
+                                    },
+                                ],
                             },
                         ],
                     },
