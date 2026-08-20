@@ -19,20 +19,42 @@ export function Video({ src, label, className, ...props }) {
   useEffect(() => {
     const video = ref.current
     if (!video) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          video.play().catch(() => {})
-        } else {
-          video.pause()
-        }
-      },
-      { threshold: 0.25 }
-    )
-    observer.observe(video)
-    return () => observer.disconnect()
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let observer = null
+
+    const observe = () => {
+      observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            video.play().catch(() => {})
+          } else {
+            video.pause()
+          }
+        },
+        { threshold: 0.25 }
+      )
+      observer.observe(video)
+    }
+
+    // React to the OS setting changing while the page is open.
+    const handleMotionChange = () => {
+      if (reducedMotion.matches) {
+        observer?.disconnect()
+        observer = null
+        video.pause()
+      } else if (!observer) {
+        observe()
+      }
+    }
+
+    if (!reducedMotion.matches) observe()
+    reducedMotion.addEventListener('change', handleMotionChange)
+
+    return () => {
+      reducedMotion.removeEventListener('change', handleMotionChange)
+      observer?.disconnect()
+    }
   }, [])
 
   return (
