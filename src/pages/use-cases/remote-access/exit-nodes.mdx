@@ -37,7 +37,7 @@ Peers in the distribution groups send their internet traffic through the routing
 - **Auto Apply enabled** (the default): devices in the distribution groups start routing internet traffic through the exit node as soon as they receive it. Users do not have to do anything, and most will not notice.
 - **Auto Apply disabled**: the exit node appears as an option in the user's NetBird menu, like an offered network they have not joined. Nothing changes until the user selects it there.
 
-In both cases the user's own choice wins. A user who deselects the exit node on their device stays off it even with Auto Apply enabled, and a user who selects it manually stays on it. Auto Apply sets the starting position of the switch on each device; it is not a lock. It cannot enforce the exit node against a user's explicit choice.
+In both cases the user's own choice wins. A user who deselects the exit node on their device stays off it even with Auto Apply enabled, and a user who selects it manually stays on it. Auto Apply sets the starting position of the switch on each device; it is not a lock. It cannot enforce the exit node against a user's explicit choice. If your setup requires enforcement, see [Enforcing the Exit Node on Managed Devices](#enforcing-the-exit-node-on-managed-devices) below.
 
 <Note>
     Auto Apply requires NetBird client version 0.55.0 or later.
@@ -180,6 +180,55 @@ Also set a DNS server with match domain `ALL`; see [Configure DNS](#5-configure-
 On a device outside the US, run `netbird networks ls` and confirm the `internet-egress` network is selected. Then check the device's public IP (for example with `curl ifconfig.me`): it should be the exit node's IP.
 
 On a device inside the US, the same checks show no `internet-egress` network, the device's own public IP, and working internet. Internal NetBird resources remain reachable on both devices.
+
+## Enforcing the Exit Node on Managed Devices
+
+Auto Apply turns the exit node on for every device in the distribution groups, but as noted [above](#exit-node-selection-and-auto-apply), it is not a lock: a user can still turn the exit node off in the NetBird menu or with `netbird networks deselect`. Compliance setups often need more than a default. Company devices must send their internet traffic through the exit node, and users must not be able to opt out.
+
+You get this by combining Auto Apply with the `disableNetworks` client policy. The policy is enforced by the NetBird daemon on the device, which rejects every network selection call, so there is no way to change the selection from the client UI or CLI. Continuing the example from the previous sections: company laptops are in the group `remote-workers`, and the exit node peer is in the group `exit-nodes`.
+
+<Note>
+    The `disableNetworks` MDM key requires NetBird client v0.73.0 or later; the `--disable-networks` service flag requires v0.69.0 or later.
+</Note>
+
+### 1. Configure the exit node with Auto Apply enabled
+
+Set up the exit node as described in the [configuration steps](#configuration-steps), with `remote-workers` as the distribution group and **Auto Apply** left enabled. Keep the distribution group dedicated to the devices that should full-tunnel, and keep the access policy one-directional from `remote-workers` to `exit-nodes`.
+
+### 2. Lock network selection on the devices
+
+Deliver `disableNetworks: true` to the devices through your device management tooling: a registry policy or Intune profile on Windows, a configuration profile on macOS. See [MDM Integration](/client/mdm-integration) for the payload formats and delivery options per platform. The daemon re-reads the policy about once a minute, so it takes effect without restarting NetBird.
+
+On Linux devices and servers, where there is no MDM channel, set the equivalent flag when installing the service:
+
+```bash
+netbird service install --disable-networks
+```
+
+With the policy in place, the Networks and Exit Node menus disappear from the client UI, and selection commands are rejected by the daemon:
+
+```bash
+netbird networks deselect all
+# Error: failed to deselect networks: network selection is disabled by the administrator
+```
+
+A common mistake is reaching for `disableUpdateSettings` instead: that key makes the device's NetBird configuration read-only, but it does not touch network selection. `disableNetworks` is the key that locks the exit node.
+
+### 3. Deploy the lock before users touch the switch
+
+Order matters. A user's exit node choice is saved on the device, and a deselection made before the policy arrives keeps winning over Auto Apply afterward: the policy blocks new selection calls, but it does not clear a choice that was already saved. Roll out `disableNetworks` before (or together with) the exit node, not after users have discovered the toggle.
+
+If a device is already stuck in that state, clear its saved selection once: stop the NetBird service, delete the daemon state file (`/var/lib/netbird/state.json` on Linux; the same file in the NetBird data directory on other platforms), and start the service again. The exit node auto-applies on reconnect.
+
+### 4. Verify
+
+On a locked device, `netbird networks list` returns the "network selection is disabled by the administrator" error instead of a network list, and the device's public IP (for example with `curl ifconfig.me`) matches the exit node's public IP. To confirm the policy reached the daemon at all, use `netbird debug config` as described in [Verifying enforcement](/client/mdm-integration#verifying-enforcement).
+
+### What this does and does not do
+
+With Auto Apply and `disableNetworks` in place, every device in `remote-workers` routes its internet traffic through the exit node, and no user can select, deselect, or switch exit nodes from the device. Enforcement lives in the daemon, so the CLI and the UI are equally locked.
+
+It does not make the tunnel itself mandatory. A user can still disconnect NetBird entirely with `netbird down`, and a user with administrator rights on the device can stop or remove the service; NetBird has no always-on or kill-switch mode. Enforce that layer with the operating system: run devices with standard user accounts, manage the NetBird service through your MDM, and design your access policies so that disconnecting from NetBird costs the user access to company resources instead of freeing them from restrictions. The `disableUpdateSettings` and `disableProfiles` keys close the remaining side doors of reconfiguring the client or switching to an unmanaged profile; see [MDM Integration](/client/mdm-integration#policy-keys-reference).
 
 ## Performance Expectations
 
