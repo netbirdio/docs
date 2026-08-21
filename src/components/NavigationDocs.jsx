@@ -547,6 +547,10 @@ export const docsNavigation = [
                     },
                     { title: 'Codex', href: '/agent-network/integrations/codex' },
                     { title: 'LiteLLM', href: '/agent-network/integrations/litellm' },
+                    {
+                        title: 'agentgateway',
+                        href: '/agent-network/integrations/agentgateway',
+                    },
                     { title: 'vLLM', href: '/agent-network/integrations/vllm' },
                     {
                         title: 'Google Vertex AI',
