@@ -5,7 +5,7 @@
   by importing a sidecar netbird-policy.reg file.
 
 .DESCRIPTION
-  Windows counterpart of docs/netbird-macos.sh. Outcome:
+  Windows counterpart of netbird-macos.sh. Outcome:
   HKLM\Software\Policies\NetBird populated from the attached
   netbird-policy.reg file, daemon picks up the change via the
   1-minute MDM reload ticker.
