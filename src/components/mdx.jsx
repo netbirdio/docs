@@ -26,6 +26,16 @@ export const h5 = function H5(props) {
   return <Heading level={5} {...props} />
 }
 
+// Wide markdown tables would otherwise paint past the content column and
+// under the sticky "On this page" menu; scroll them within the column instead.
+export const table = function Table(props) {
+  return (
+    <div className="overflow-x-auto">
+      <table {...props} />
+    </div>
+  )
+}
+
 function InfoIcon(props) {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true" {...props}>
