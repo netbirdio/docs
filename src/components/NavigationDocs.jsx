@@ -228,6 +228,10 @@ export const docsNavigation = [
                         href: '/manage/network-routes/use-cases/site-to-site',
                     },
                     {
+                        title: 'Exit Nodes',
+                        href: '/use-cases/remote-access/exit-nodes',
+                    },
+                    {
                         title: 'Access Control',
                         href: '/manage/network-routes/access-control',
                     },
