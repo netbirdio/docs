@@ -81,7 +81,14 @@ export const docsNavigation = [
     {
         title: 'MANAGE NETBIRD',
         links: [
-            { title: 'Control Center', href: '/manage/control-center' },
+            {
+                title: 'Control Center',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/manage/control-center' },
+                    { title: 'Draft Mode', href: '/manage/control-center/draft-mode' },
+                ],
+            },
             {
                 title: 'Peers',
                 isOpen: false,
