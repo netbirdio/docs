@@ -14,13 +14,13 @@ The NetBird client does not require any inbound ports on your network firewall â
 
 This section covers **network/perimeter firewall** requirements (e.g., Fortigate, pfSense, cloud security groups). For host-based firewalls (Windows Firewall, UFW, iptables), see [Host-based firewalls](#host-based-firewalls) below.
 
-### Incoming ports
+### Inbound ports
 
-The NetBird client doesn't require any incoming port to be open; it negotiates the connection with the support of the signal and relay services.
+The NetBird client doesn't require any inbound port to be open; it negotiates the connection with the support of the signal and relay services.
 
-### Outgoing ports
+### Outbound ports
 
-NetBird usually won't need open ports, but sometimes you or your IT team needs to secure and verify all outgoing traffic, and that may affect how NetBird clients connect to the [control plane](/about-netbird/how-netbird-works) and negotiate the peer-to-peer connections.
+NetBird usually won't need open ports, but sometimes you or your IT team needs to secure and verify all outbound traffic, and that may affect how NetBird clients connect to the [control plane](/about-netbird/how-netbird-works) and negotiate the peer-to-peer connections.
 
 <Note>
     In more restricted networks, allowing the outbound **P2P (STUN)** and **Relay** services below is **recommended** for reliable peer connections. This also improves the reliability of your [routing peers](/manage/networks/how-routing-peers-work).
@@ -75,7 +75,7 @@ NetBird is designed to work through corporate firewalls with no inbound rules. P
 
 These have different outcomes. Blocking outbound UDP is the milder case: NetBird falls back to its relay over TCP/443, so peers stay connected, just relayed instead of direct. Losing the control plane is the disruptive case: if the client cannot reach the management, signal, or relay endpoints over TCP/443, or a firewall intercepts that TLS, it can fail to connect at all. Two settings cover most products:
 
-1. **Allowlist the NetBird endpoints** from [Outgoing ports](#outgoing-ports) above, by domain where the firewall supports it (`*.netbird.io`, plus `relay.netbird.io` and `*.relay.netbird.io` for the relay servers). Allowing the outbound **P2P (STUN)** endpoints enables direct, low-latency connections. Direct connections also need outbound UDP to the peers' own discovered addresses, so a firewall that permits UDP only to the NetBird endpoints still falls back to the relay. The relay endpoints provide that fallback.
+1. **Allowlist the NetBird endpoints** from [Outbound ports](#outbound-ports) above, by domain where the firewall supports it (`*.netbird.io`, plus `relay.netbird.io` and `*.relay.netbird.io` for the relay servers). Allowing the outbound **P2P (STUN)** endpoints enables direct, low-latency connections. Direct connections also need outbound UDP to the peers' own discovered addresses, so a firewall that permits UDP only to the NetBird endpoints still falls back to the relay. The relay endpoints provide that fallback.
 2. **Exclude those same domains from TLS/SSL inspection and deep packet inspection.** Intercepting NetBird's control-plane or relay traffic can break the session or push it onto the slower relay path. Scope the exclusion to the NetBird domains rather than disabling inspection broadly. A `*.netbird.io` wildcard usually does not match the deeper `*.relay.netbird.io` relay hostnames, so exclude `relay.netbird.io` and `*.relay.netbird.io` explicitly.
 
 The table below maps this to common firewall and SASE products. "Expected behavior" assumes only the outbound endpoints are allowed, with no other tuning.
@@ -102,6 +102,40 @@ The table below maps this to common firewall and SASE products. "Expected behavi
 
 <Note>
     The endpoints to allow are exact (see [Network firewall ports](#network-firewall-ports)). Per-product behavior and menu names vary by firmware version and policy, so treat each row as a starting point and confirm against your firewall vendor's current documentation.
+</Note>
+
+## Static peer ports for site-to-site firewall rules
+
+Some organizations run strict egress policies at every branch office: outbound traffic is allowed only to named destinations and ports. To guarantee direct peer-to-peer connections from every branch to the peers at a main location (a data center or headquarters), the branch firewalls need a rule like "allow UDP to the main location on these ports", and that rule only stays valid if those ports never change.
+
+By default they can change. Running `netbird status -d` on a branch peer shows something like:
+
+```
+ICE candidate endpoints (Local/Remote): 172.17.192.1:51820 / 203.0.113.10:51823
+```
+
+The local port is the peer's WireGuard listening port (default `51820`; NetBird's ICE negotiation shares the same socket). The remote port, `51823` here, is whatever public port the main location's NAT happened to assign to that peer's session. The mistake to avoid is writing a branch firewall rule against that observed port: it is a dynamic NAT mapping, and it can be reassigned whenever the session state expires or the NAT device restarts. To make it stable, pin it at both layers at the main location, the peer and the NAT in front of it:
+
+1. **Give each peer at the main location a distinct WireGuard port.** Allocate a range up front, sized for growth (for example `51820-51839` for up to 20 peers), and assign one port per peer:
+
+   ```bash
+   netbird up --wireguard-port 51821
+   ```
+
+   The port persists in the peer's configuration across restarts. Track the assignments; two peers behind the same public IP must not share a port.
+
+   The pinned port is a preference, not a guarantee: if another process already holds it when NetBird starts, the client falls back to a random free port and only notes it in the client log (`using <port> as wireguard port: <configured port> is in use`). Reserve the port for NetBird on each peer, and re-verify after anything that could have raced it at startup.
+
+2. **Make the main location's NAT preserve that port.** Prefer the outbound-only approach: set the firewall's source NAT mode to preserve the source port for these peers (Static Port outbound NAT on pfSense and OPNsense, Persistent Dynamic IP And Port on Palo Alto; see the [Corporate firewalls](#corporate-firewalls) table for other vendors), and raise the UDP session timeout (around 240 seconds or more) so mappings are not torn down between WireGuard keepalives. With the port preserved, the public port equals the pinned WireGuard port, hole punching opens the path as usual, and nothing is exposed inbound.
+
+   If the firewall has no port-preserving NAT mode, or the mapping must hold with no dependence on NAT session state at all, add a **static destination NAT (port forwarding) rule per peer** instead: UDP on the peer's assigned port, from the public IP to the peer's LAN address, same port. A static bidirectional DNAT is sufficient on its own and cannot expire or be reassigned, but it is an inbound opening; treat it as the last resort, not the default.
+
+3. **Allow outbound UDP from each branch** to the main location's public IPs on the allocated range. This is the only rule the branches need, and it never changes: adding a peer at the main site later means assigning it a free port from the range and covering that port in the main site's NAT setup, with no change at any branch.
+
+To verify, check a branch peer after reconnecting (`netbird down && netbird up`): the connection type should read `P2P`, and the remote ICE candidate endpoint should show the exact port assigned to the main-location peer. A different port there means the main-location peer fell back because its pinned port was occupied at startup; free the port on that peer and restart NetBird.
+
+<Note>
+    Keep this setup's scope narrow: use it only between sites you control, and only where policy demands static rules. The port-preserving variant stays entirely outbound. If you do fall back to the DNAT, you are trading NetBird's no-inbound-ports default for determinism. The exposure is one UDP port per peer carrying WireGuard, which silently drops every packet that fails authentication against that peer's key, so the forwarded port does not respond to scans or unauthenticated traffic. Do not use this pattern for roaming devices such as laptops, and do not treat it as a fix for relayed connections in general; for that, start with [Troubleshooting relayed connections](/help/troubleshooting-relayed-connections).
 </Note>
 
 ## Host-based firewalls
@@ -234,10 +268,10 @@ Get-NetFirewallProfile | Format-List Name, Enabled, DefaultInboundAction
 
 In most environments, NAT provides stateful connection tracking. When Peer A sends UDP to Peer B, the return traffic is allowed because the NAT device tracks it as part of an established connection.
 
-However, in environments **without NAT between peers** (e.g., flat office networks, routed VLANs without masquerading), Windows Firewall may block incoming WireGuard P2P traffic because:
+However, in environments **without NAT between peers** (e.g., flat office networks, routed VLANs without masquerading), Windows Firewall may block inbound WireGuard P2P traffic because:
 
 1. There is no NAT state tracking the "connection"
-2. Windows Firewall sees the incoming UDP packets as unsolicited inbound traffic
+2. Windows Firewall sees the inbound UDP packets as unsolicited inbound traffic
 3. The default NetBird rule only covers traffic on the `wt0` interface (after decryption), not the raw WireGuard packets arriving on the physical interface
 
 **Symptoms**:
