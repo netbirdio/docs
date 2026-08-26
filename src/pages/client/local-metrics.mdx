@@ -1,0 +1,117 @@
+import {Note} from "@/components/mdx";
+
+export const description = 'Scrape NetBird client connection health with Prometheus through the local /metrics endpoint on the client daemon.'
+
+# Local Metrics Endpoint
+
+The NetBird client daemon can expose a Prometheus `/metrics` endpoint on the local machine. It reports whether the client is connected to Management and Signal, how many peers it knows and how many of those are connected, the latency to each directly connected peer, and how long connection establishment, sync processing, and logins take.
+
+The endpoint is opt-in and off by default. When enabled, it binds to `127.0.0.1:9191` unless you set another address. It is independent of [client metrics push](/manage/client-metrics): nothing here is sent anywhere, the data is only served to whatever scrapes the endpoint.
+
+<Note>
+    Available since NetBird <strong>v0.78.0</strong>.
+</Note>
+
+## Enabling the endpoint
+
+```bash
+netbird up --enable-local-metrics
+```
+
+To listen on a different port:
+
+```bash
+netbird up --enable-local-metrics --local-metrics-address 127.0.0.1:9300
+```
+
+To disable it again:
+
+```bash
+netbird up --enable-local-metrics=false
+```
+
+The setting is stored in the [profile](/client/profiles) config, so it survives restarts and applies per profile. Switching profiles starts, stops, or rebinds the endpoint to match the profile you switch to.
+
+<Note>
+    `netbird up` ignores configuration flags when the client is already connected. Run `netbird down` first, then `netbird up` with the flags.
+</Note>
+
+Once the client is up, check the endpoint:
+
+```bash
+curl http://127.0.0.1:9191/metrics
+```
+
+## Exposing it beyond localhost
+
+The endpoint has no authentication. Anything that can reach it can read your peer names, the latency to each of them, and your connectivity state. Keep it on a loopback address and let the scraper run on the same host.
+
+If a scraper genuinely has to reach it from elsewhere, binding to a non-loopback address requires root on Linux and macOS, and administrator privileges on Windows. The daemon runs with those privileges itself, so an unprivileged local user must not be able to publish this to the network:
+
+```bash
+sudo netbird down
+sudo netbird up --enable-local-metrics --local-metrics-address 0.0.0.0:9191
+```
+
+The daemon logs a warning for every non-loopback bind. Put the endpoint behind a firewall rule, or a reverse proxy that adds authentication, if you do this.
+
+## Scraping with Prometheus
+
+```yaml
+scrape_configs:
+  - job_name: netbird-client
+    static_configs:
+      - targets: ['127.0.0.1:9191']
+```
+
+## Metrics reference
+
+### Connection state
+
+These are read from the daemon at scrape time and are always present while the daemon runs.
+
+| Metric | Type | Labels | Description |
+| --- | --- | --- | --- |
+| `netbird_management_connected` | gauge | — | `1` when connected to the management service, `0` otherwise. |
+| `netbird_signal_connected` | gauge | — | `1` when connected to the signal service, `0` otherwise. |
+| `netbird_peers` | gauge | — | Number of peers known to this client, matching the total in `netbird status`. Includes peers that are currently offline. |
+| `netbird_peers_connected` | gauge | `connection_type` | Number of connected peers, split into `p2p` and `relay`. |
+| `netbird_peer_latency_seconds` | gauge | `peer` | Round-trip latency to a directly connected peer, labeled with its FQDN. Relayed connections carry no latency measurement and produce no series. |
+
+### Connection establishment and management interactions
+
+These are recorded as the client runs, so they appear only once the engine is up and the corresponding event has happened at least once. They reset when the daemon restarts.
+
+| Metric | Type | Labels | Description |
+| --- | --- | --- | --- |
+| `netbird_peer_connection_stage_duration_seconds` | histogram | `stage`, `connection_type`, `attempt_type` | Duration of peer connection establishment stages. |
+| `netbird_sync_duration_seconds` | histogram | — | Duration of processing a sync message from the management service. |
+| `netbird_sync_phase_duration_seconds` | histogram | `phase` | Duration of an individual sync processing phase, for example `routes_apply`, `filtering`, or `added_peers`. |
+| `netbird_login_duration_seconds` | histogram | `success` | Duration of logins to the management service, split by whether the login succeeded. |
+
+Label values for `netbird_peer_connection_stage_duration_seconds`:
+
+| Label | Values |
+| --- | --- |
+| `stage` | `signaling_to_connection`, `connection_to_wg_handshake`, `total` |
+| `connection_type` | `ice_p2p`, `ice_turn`, `relay` |
+| `attempt_type` | `initial` for the first connection to a peer, `reconnection` for a later one |
+
+<Note>
+    Every label is a bounded enum except `peer` on `netbird_peer_latency_seconds`, which carries one series per directly connected peer. On a client with many direct connections this is the one metric whose cardinality grows with your network.
+</Note>
+
+## Grafana dashboard
+
+NetBird ships a [client dashboard](/selfhosted/observability/dashboards#client) that graphs everything above. Import [`client.json`](https://github.com/netbirdio/netbird/blob/main/infrastructure_files/observability/grafana/dashboards/client.json) into Grafana and point it at the Prometheus datasource that scrapes your clients.
+
+## MDM
+
+Both settings can be enforced through [MDM](/client/mdm-integration):
+
+| Key | Type | Description |
+| --- | --- | --- |
+| `enableLocalMetrics` | boolean | Turn the local `/metrics` endpoint on or off. |
+| `localMetricsAddress` | string | Listen address for the endpoint, for example `127.0.0.1:9191`. |
+
+An MDM-supplied address is applied as-is and is not subject to the privilege check, since the policy already comes from an administrator.
