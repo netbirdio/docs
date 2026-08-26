@@ -35,6 +35,23 @@ To clear all saved service parameters (including env vars), run `sudo netbird se
 | `NB_DISABLE_CUSTOM_ROUTING` | All | Revert to the routing behavior from before exit node support was added. No exclusion routes or fwmark-based socket routing will be used; all dialers and listeners fall back to plain `net.Dial`/`net.Listen`. Routes with a prefix of /7 or larger (e.g. default routes, 0.0.0.0/0) will be rejected. |
 | `NB_ROUTE_PROTO_FLAG` | macOS, BSD | Set a custom route flag on routes the client adds to the routing table. Accepted values: `2` (RTF_PROTO2) or `3` (RTF_PROTO3); defaults to RTF_PROTO1. Not used on Linux (Linux uses netlink with its own protocol field). |
 | `NB_DISABLE_ROUTE_CACHE` | Windows | Disable the 2-second cache on Windows routing table lookups. The client reads the OS routing table (via Win32 API) when adding or removing routes; without the cache, each operation triggers a fresh read. Only needed for debugging route conflicts. |
+| `NB_FWMARK_BASE` | Linux | Move the netfilter mark range the client uses (default base `0x1BD00`, covering `0x1BD00`-`0x1BD0FF`). Set this when other software on the host claims bits the NetBird marks use, so its rules act on NetBird traffic. The value is the base of the range, decimal or `0x`-prefixed, and the low byte identifies the individual mark, so it has to be left free: `NB_FWMARK_BASE=0x11000` puts the marks at `0x11000`-`0x110FF`. A value that is zero, larger than 32 bits, or has a bit set in its low byte is rejected with a warning in the log and the default range is used. |
+
+Container network plugins, CNIs and other VPNs claim bits of the mark space for themselves. When one of them has a rule matching a bit that a NetBird mark also sets, that rule acts on NetBird traffic, which shows up as traffic being dropped, masqueraded, or routed elsewhere. `NB_FWMARK_BASE` moves the whole NetBird range out of the way.
+
+<Warning>
+The client removes the routing rule for its mark range on shutdown. If you change `NB_FWMARK_BASE` while the client was not shut down gracefully (killed, crashed, host reset), the rule for the previous range stays behind and has to be removed by hand, otherwise traffic keeps being sent to the NetBird routing table:
+
+```shell
+# Find the leftover rule, it names the old mark
+ip rule show
+ip -6 rule show
+
+# Remove it, for both families
+sudo ip -4 rule del not from all fwmark 0x1bd00 lookup netbird priority 110
+sudo ip -6 rule del not from all fwmark 0x1bd00 lookup netbird priority 110
+```
+</Warning>
 
 ## WireGuard and interface
 
