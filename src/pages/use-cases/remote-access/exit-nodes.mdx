@@ -257,14 +257,14 @@ Create no resource for `10.90.0.0/20`. NetBird denies by default: a subnet you n
 
 ### 2. Deploy the exit node where it cannot reach the internal networks
 
-Run the exit node on its own host, and place that host in a network segment with internet-only egress: a DMZ subnet, a dedicated VLAN, or a cloud security group that blocks all private ranges outbound. Configure the exit node as described in the [configuration steps](#configuration-steps), with `remote-workers` as the distribution group.
+Run the exit node on its own host, and place that host in a network segment with internet-only egress: a DMZ subnet, a dedicated VLAN, or cloud egress rules that keep private ranges unreachable. Configure the exit node as described in the [configuration steps](#configuration-steps), with `remote-workers` as the distribution group.
 
 This placement is the actual enforcement. Traffic to `10.90.0.0/20` still matches the default route and arrives at the exit node, but the host has no path to the destination, and nothing configured in NetBird can reopen it.
 
 Two shortcuts do not achieve this, and both are worth naming:
 
 - **Block LAN access alone is not enough.** As noted [above](#routing-peer), it blocks only the networks on the exit node's own interfaces. A network one gateway hop away, like `10.90.0.0/20` behind the data center router, is still forwarded.
-- **Host firewall rules on the exit node are not a reliable substitute.** To keep routing working alongside firewalls such as ufw or firewalld, NetBird inserts allow rules for its own interface at the top of forward chains on the host, including chains created after it starts. Filtering added there does not take effect for tunneled traffic. Restrict the host at the network layer instead: an upstream ACL, the VLAN, or the cloud security group.
+- **Host firewall rules on the exit node are not a reliable substitute.** To keep routing working alongside firewalls such as ufw or firewalld, NetBird inserts allow rules for its own interface at the top of forward chains on the host, including chains created after it starts. Filtering added there does not take effect for tunneled traffic. Restrict the host at the network layer instead: an upstream ACL, the VLAN, or the cloud egress rules.
 
 The two allowed resources are unaffected by any of this: their routes are more specific than `0.0.0.0/0`, so devices reach them through the data center routing peer no matter which exit node carries their internet traffic.
 
@@ -286,7 +286,7 @@ The design rests on one property, so test that property directly on the exit nod
 Then confirm the user-visible behavior from a device in `remote-workers`:
 
 - The allowed resources respond: a host in `10.60.0.0/20` and the host `10.70.5.20` are reachable.
-- The forbidden network does not: connections to addresses in `10.90.0.0/20` fail. Depending on how the segment enforces egress, they time out, are rejected, or report an unreachable route; any of these is the correct result.
+- The forbidden network does not respond: connections to addresses in `10.90.0.0/20` fail. Depending on how the segment enforces egress, they time out, are rejected, or report an unreachable route; any of these is the correct result.
 - Internet traffic exits through the exit node: the device's public IP (for example with `curl ifconfig.me`) matches the exit node's public IP.
 
 ### What this does and does not do
