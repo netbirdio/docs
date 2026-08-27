@@ -1,10 +1,10 @@
 import {Note, Warning} from "@/components/mdx";
 
-export const description = "Use a Peer Network Range posture check so devices in the office reach the office network over their local link, and receive the NetBird route only when they are remote."
+export const description = "Use a Peer Network Range posture check so devices in the office reach the LAN over their local link, and receive the NetBird route only when they are remote."
 
 # Connecting from the office
 
-Remote access to an office network is straightforward with [Networks](/manage/networks): a routing peer inside the office opens the LAN to your overlay network. The awkward part is what happens when a user walks into that office. Their device is already on the LAN, but the route distributed by NetBird is still installed, so traffic to a machine sitting one switch away goes out to the routing peer and comes back. You pay latency and bandwidth for a trip the device never needed to make.
+Remote access to an office network is straightforward with [Networks](/manage/networks): a routing peer inside the office opens the LAN to your overlay network. The awkward part is what happens when a user walks into that office. Their device is already on the LAN, but the route distributed by NetBird is still installed, so traffic to a machine one switch away can leave over the tunnel, reach the routing peer, and come back. You pay latency and bandwidth for a trip the device never needed to make.
 
 The fix is to stop distributing the route to devices that are already on site. A **Peer Network Range** posture check with the `Block` action, attached to the access policy that grants access to the resource, does exactly that: while the device's own address falls inside the office subnet, the policy does not apply to it, the route is not distributed, and the operating system uses its local link. When the user leaves, the route comes back on its own.
 
@@ -70,7 +70,7 @@ The example below uses a macOS client named `client-01` in the group `route-user
     <img src="/docs-static/img/manage/access-control/posture-checks/connecting-from-the-office/wifi-inside-office-subnet.png" alt="macOS Wi-Fi details showing the client with the address 192.168.1.68 on the office network" className="imagewrapper"/>
 </p>
 
-`netbird networks list` reports nothing available, and the system route table sends `192.168.1.0/24` over the local interface `en0`.
+`netbird networks list` does not show the office network, and the system route table sends `192.168.1.0/24` over the local interface `en0`.
 
 <p>
     <img src="/docs-static/img/manage/access-control/posture-checks/connecting-from-the-office/netbird-routes-list-local.png" alt="The NetBird client reporting no available routes while the device is on site" className="imagewrapper"/>
@@ -96,13 +96,13 @@ The example below uses a macOS client named `client-01` in the group `route-user
 
 **An IP range is not an identity.** The check can only compare addresses, so it cannot tell two networks apart that use the same range. An office on `192.168.1.0/24` and a home network on `192.168.1.0/24` look identical to it, and blocking one blocks the other. If your office range collides with the ranges your users have at home, match on the office public IP instead, as described below.
 
-**Platform coverage.** Matching a device's local interface addresses depends on the client reporting them. See [Peer Network Range Check on Android](/manage/access-control/posture-checks#peer-network-range-check-on-android) for the platform detail.
+**Platform coverage.** Matching a device's local interface addresses depends on the client reporting them. See [Peer Network Range Check on Android](/manage/access-control/posture-checks#peer-network-range-check-on-android) for the platform details.
 
 ## Matching by office public IP
 
 The example above relies on the office LAN subnet showing up on the peer's local network interface. In some deployments this isn't practical, for example when the office hands out an opaque DHCP range that overlaps with common home-network subnets, or when peers connect through a guest network that doesn't expose the production LAN on the device.
 
-In these cases you can match the peer's **public egress IP** instead, the source IP the NetBird management server observes when the peer connects. The Peer Network Range posture check evaluates this IP automatically against any range in the list and matches when the IP is contained in the range, so you can use a single-host prefix for one address or a CIDR for a whole block.
+In these cases you can match the peer's **public egress IP** instead: the source IP the NetBird management server observes when the peer connects. The Peer Network Range posture check evaluates this IP automatically against any range in the list and matches when the IP is contained in the range, so you can use a single-host prefix for one address or a CIDR for a whole block.
 
 ### IPv4 example
 
@@ -126,5 +126,5 @@ If your office also (or only) has an IPv6 egress, add the address as a `/128`, f
 
 - A routing peer in the office publishes `192.168.1.0/24` as a resource in a Network.
 - One access policy grants `route-users` access to that resource.
-- A Peer Network Range posture check with the `Block` action for `192.168.1.0/24` hangs off that policy.
+- A Peer Network Range posture check with the `Block` action for `192.168.1.0/24` is attached to that policy.
 - On site, the policy does not apply, so the route is never installed and the device uses `en0`. Off site, the route returns and traffic takes `utun100`.
