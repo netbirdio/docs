@@ -27,7 +27,7 @@ You can limit this in two ways:
 - Enable **Block LAN access** on the routing peer (in the peer's settings, or with `netbird up --block-lan-access`) to block forwarded traffic to its local networks. It breaks site-to-site or LAN routes served by the same peer, so enable it only on a dedicated exit node. It does not restrict remote networks reachable through the exit node's upstream gateway.
 - Place the exit node on an isolated network segment (a DMZ or dedicated VLAN) that can only reach the internet. This enforces the restriction outside the peer and also covers upstream networks.
 
-Both options assume the exit node does nothing else. If peers also need to reach resources on that site's LAN, serve those through a separate routing peer using a [Network](/manage/networks) with scoped access policies instead of the exit node's broad route.
+Both options assume the exit node does nothing else. If peers also need to reach resources on that site's LAN, serve those through a separate routing peer using a [Network](/manage/networks) with scoped access policies instead of the exit node's broad route. For the full setup combining both, see [Selective Internal Access Behind an Exit Node](#selective-internal-access-behind-an-exit-node) below.
 
 <Note>
 For the mental model — see [How Routing Peers Work — Exit node mode](/manage/networks/how-routing-peers-work#exit-node-mode).
@@ -240,6 +240,60 @@ On a locked device, `netbird networks list` returns the "network selection is di
 With Auto Apply and `disableNetworks` in place, every device in `remote-workers` routes its internet traffic through the exit node, and no user can select, deselect, or switch exit nodes from the device. Enforcement lives in the daemon, so the CLI and the UI are equally locked.
 
 It does not make the tunnel itself mandatory. A user can still disconnect NetBird entirely with `netbird down`, and a user with administrator rights on the device can stop or remove the service; NetBird has no always-on or kill-switch mode. Enforce that layer with the operating system: run devices with standard user accounts, manage the NetBird service through your MDM, and design your access policies so that disconnecting from NetBird costs the user access to company resources instead of freeing them from restrictions. The `disableUpdateSettings` and `disableProfiles` keys close the remaining side doors of reconfiguring the client or switching to an unmanaged profile; see [MDM Integration](/client/mdm-integration#policy-keys-reference).
+
+## Selective Internal Access Behind an Exit Node
+
+An exit node grants more than internet access. Its `0.0.0.0/0` route matches all traffic, so devices using it can reach any network the exit node's host can route to, including internal networks you never exposed as a resource. If your users need specific internal resources plus a full tunnel, but must not reach everything the site's routers can see, the exit node's route cannot express that on its own.
+
+The fix is an architecture, not a setting: split the roles across two routing peers. Serve the internal resources from a routing peer inside the data center, where specific routes and access policies decide exactly what is reachable. Run the exit node on a host that can reach only the internet, so its unbounded route has nothing internal to expose.
+
+The running example: devices in the group `remote-workers` must reach `10.60.0.0/20` and the single host `10.60.100.20`, must not reach `10.90.0.0/20`, and send all internet traffic through the company exit node. The data center's routers can reach all three networks.
+
+### 1. Serve the internal resources from a routing peer inside the data center
+
+Create a [Network](/manage/networks) (for example `datacenter`) with a routing peer that sits inside the data center. Add exactly the resources users need: one for `10.60.0.0/20`, and one for the single host `10.60.100.20`. Grant access with a one-directional policy from `remote-workers` to those resources.
+
+Create no resource for `10.90.0.0/20`. NetBird denies by default: a subnet you never add as a resource gets no route and no accept rule, so this peer cannot take users there.
+
+### 2. Deploy the exit node where it cannot reach the internal networks
+
+Run the exit node on its own host, and place that host in a network segment with internet-only egress: a DMZ subnet, a dedicated VLAN, or a cloud security group that blocks all private ranges outbound. Configure the exit node as described in the [configuration steps](#configuration-steps), with `remote-workers` as the distribution group.
+
+This placement is the actual enforcement. Traffic to `10.90.0.0/20` still matches the default route and arrives at the exit node, but the host has no path to the destination, and nothing configured in NetBird can reopen it.
+
+Two shortcuts do not achieve this, and both are worth naming:
+
+- **Block LAN access alone is not enough.** As noted [above](#routing-peer), it blocks only the networks on the exit node's own interfaces. A network one gateway hop away, like `10.90.0.0/20` behind the data center router, is still forwarded.
+- **Host firewall rules on the exit node are not a reliable substitute.** To keep routing working alongside firewalls such as ufw or firewalld, NetBird inserts allow rules for its own interface at the top of forward chains on the host, including chains created after it starts. Filtering added there does not take effect for tunneled traffic. Restrict the host at the network layer instead: an upstream ACL, the VLAN, or the cloud security group.
+
+The two allowed resources are unaffected by any of this: their routes are more specific than `0.0.0.0/0`, so devices reach them through the data center routing peer no matter which exit node carries their internet traffic.
+
+### 3. Enable Block LAN access on the exit node
+
+With the segment doing the real work, enable **Block LAN access** in the exit node peer's settings as an additional guard for the one network the segment cannot remove: the exit node's own subnet. Since this exit node serves no LAN resources, the setting costs nothing here.
+
+When setting it from the CLI on a peer that is already connected, disconnect first. `netbird up --block-lan-access` on a connected peer reports `Already connected` and does not apply the flag:
+
+```bash
+netbird down
+netbird up --block-lan-access
+```
+
+### 4. Verify
+
+The design rests on one property, so test that property directly on the exit node's host: try to reach an address inside `10.90.0.0/20`, for example with `curl --max-time 5 10.90.0.10` or a ping. If the host can reach it, tunneled devices can too, and the segment's egress restriction needs fixing before anything else matters.
+
+Then confirm the user-visible behavior from a device in `remote-workers`:
+
+- The allowed resources respond: a host in `10.60.0.0/20` and the host `10.60.100.20` are reachable.
+- The forbidden network does not: connections to addresses in `10.90.0.0/20` time out.
+- Internet traffic exits through the exit node: the device's public IP (for example with `curl ifconfig.me`) matches the exit node's public IP.
+
+### What this does and does not do
+
+Users get precisely the two internal resources and a full tunnel, and the forbidden network stays unreachable even though every packet toward it still arrives at the exit node. The restriction is enforced by where the exit node lives, so no dashboard change, policy mistake, or client setting can widen it.
+
+It does not restrict what the data center routing peer exposes: that peer's host can reach `10.90.0.0/20`, and only its resource list and policies keep users out. Keep those scoped to exact prefixes and single hosts, and treat any new resource on that peer as a deliberate access decision.
 
 ## Performance Expectations
 
