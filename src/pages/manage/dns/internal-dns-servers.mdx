@@ -103,7 +103,7 @@ A primary nameserver does more than catch unmatched queries. On macOS, a match-d
 <Note>
 From client **v0.78.0**, on Windows a primary nameserver makes NetBird the **exclusive** resolver while the peer is connected. Earlier clients only set the resolver on the tunnel adapter, leaving Windows free to query the other adapters' resolvers alongside it. Windows otherwise queries the resolvers of every network adapter in parallel and keeps the first answer that arrives, which both leaks queries to the local network and lets another resolver answer for a name NetBird is authoritative for. The client prevents that with a Name Resolution Policy Table rule covering every namespace.
 
-The cost is that names only the local network's resolver knows — a home router's own zone, or an internal domain not reachable through NetBird — stop resolving while connected. Declare those zones as match domain nameservers: a more specific rule takes precedence over the catch-all, so a declared zone keeps resolving. `.local` is exempt, so multicast DNS names keep working.
+The cost is that names only the local network's resolver knows — a home router's own zone, or an internal domain not reachable through NetBird — stop resolving while connected. Declare those zones as match domain nameservers: a more specific rule takes precedence over the catch-all, so a declared zone keeps resolving. `.local` is exempt, so multicast DNS names keep working. Short names can also stop expanding when another adapter is preferred — see the note under [Search Domains](#search-domains).
 
 Setting `NB_USE_LEGACY_DNS_RESOLUTION=true` on a peer restores the pre-v0.78.0 behaviour — see [Client Environment Variables](/client/environment-variables).
 </Note>
@@ -117,9 +117,9 @@ Toggle **Mark match domains as search domains** to enable domain suffix searchin
 </Note>
 
 <Note>
-On Windows a short name is expanded by the DNS client using the suffix list of the **preferred** network interface — the one with the lowest interface metric. Windows walks that list in full, but it does not fall through to another interface's suffixes when the name is not found there. So when an adapter other than NetBird's is preferred, a short name fails while its fully qualified form resolves.
+**On Windows, from client v0.78.0**, making NetBird the exclusive resolver also ends the suffix search early. A short name is expanded by the DNS client using the suffix list of the **preferred** network interface — the one with the lowest interface metric — and Windows no longer falls through to another interface's suffixes when the name is not found there. So when an adapter other than NetBird's is preferred, a short name fails while its fully qualified form still resolves. Earlier clients kept searching the other adapters' suffixes, so the same short name resolved.
 
-NetBird's interface usually wins, but a tie on the metric is enough to lose it. When that happens, declaring the local network's zone as a match domain with search domains enabled puts both suffixes in the same list, and short names resolve again for either zone. Otherwise, use the fully qualified name.
+NetBird's interface is usually the preferred one, but a tie on the metric is enough to lose it. When that happens, declaring the local network's zone as a match domain with search domains enabled puts both suffixes in the same list, and short names resolve again for either zone. Otherwise use the fully qualified name, or set `NB_USE_LEGACY_DNS_RESOLUTION=true` to go back to shared resolution.
 </Note>
 
 ### Split-Horizon DNS
