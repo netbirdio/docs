@@ -569,6 +569,45 @@ export const docsNavigation = [
         title: 'SELF-HOST NETBIRD',
         links: [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
+            {
+                title: 'Manual Setup',
+                href: '/selfhosted/manual-setup',
+                isOpen: false,
+                links: [
+                    {
+                        title: 'Plan Your Deployment',
+                        href: '/selfhosted/manual-setup/planning',
+                    },
+                    { title: 'Combined Container', href: '/selfhosted/manual-setup' },
+                    {
+                        title: 'Multi-Container',
+                        href: '/selfhosted/manual-setup/multi-container',
+                    },
+                    {
+                        title: 'Reverse Proxies',
+                        href: '/selfhosted/external-reverse-proxy',
+                        isOpen: false,
+                        links: [
+                            {
+                                title: 'Traefik',
+                                href: '/selfhosted/manual-setup/reverse-proxies/traefik',
+                            },
+                            {
+                                title: 'Nginx',
+                                href: '/selfhosted/manual-setup/reverse-proxies/nginx',
+                            },
+                            {
+                                title: 'Caddy',
+                                href: '/selfhosted/manual-setup/reverse-proxies/caddy',
+                            },
+                            {
+                                title: 'Nginx Proxy Manager',
+                                href: '/selfhosted/manual-setup/reverse-proxies/nginx-proxy-manager',
+                            },
+                        ],
+                    },
+                ],
+            },
             { title: 'Automated Setup', href: '/selfhosted/automated-setup' },
             {
                 title: 'Commercial License',
