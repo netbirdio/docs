@@ -1006,6 +1006,10 @@ export const docsNavigation = [
                         title: 'Private Proxy Without Inbound Ports',
                         href: '/use-cases/security/private-no-inbound',
                     },
+                    {
+                        title: 'Private Proxy with LEGO',
+                        href: '/use-cases/security/private-proxy-with-lego',
+                    },
                 ],
             },
             { title: 'Homelab', href: '/use-cases/homelab' },
