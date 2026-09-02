@@ -173,11 +173,11 @@ chmod 600 secrets/cloudflare_dns_api_token
 The file must contain only the token. You can verify that Cloudflare recognizes it before starting LEGO:
 
 ```bash
-CF_LEGO_TOKEN="$(<secrets/cloudflare_dns_api_token)"
-curl -fsS https://api.cloudflare.com/client/v4/user/tokens/verify \
-  --header "Authorization: Bearer $CF_LEGO_TOKEN"
-unset CF_LEGO_TOKEN
+printf 'Authorization: Bearer %s\n' "$(<secrets/cloudflare_dns_api_token)" |
+  curl -fsS https://api.cloudflare.com/client/v4/user/tokens/verify --header @-
 ```
+
+The `--header @-` flag makes `curl` read the header from standard input, so the token never appears in the command line or in the process list.
 
 The response should contain `"success": true` and `"status": "active"`. This check validates the token itself; LEGO's first DNS-01 run also confirms that its zone scope and both permissions are correct.
 
@@ -455,7 +455,7 @@ LEGO's `run` command obtains a missing certificate or renews an existing one whe
 
 Use the absolute path to your deployment and choose a non-midnight start time. LEGO also adds a small randomized delay for automated renewals. The deployment hook runs only after a certificate is issued or renewed, and the proxy hot-reloads the updated pair without a restart.
 
-Back up the `lego_state` volume. It contains the ACME account and certificate state required for reliable renewals.
+Back up both the `lego_state` and `proxy_certs` volumes. The first contains the ACME account and certificate state required for reliable renewals, and the second holds the `wildcard.crt` and `wildcard.key` files the proxy serves. Restoring only one of them leaves you either unable to renew or unable to serve traffic until the next issuance.
 
 ## Verify the result
 
