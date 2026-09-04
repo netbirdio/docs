@@ -648,6 +648,7 @@ export const docsNavigation = [
                     },
                     { title: 'Backup', href: '/selfhosted/maintenance/backup' },
                     { title: 'Upgrade', href: '/selfhosted/maintenance/upgrade' },
+                    { title: 'Change Domain', href: '/selfhosted/maintenance/change-domain' },
                     { title: 'Remove', href: '/selfhosted/maintenance/remove' },
                     { title: 'Reverse Proxy', href: '/selfhosted/reverse-proxy' },
                     {

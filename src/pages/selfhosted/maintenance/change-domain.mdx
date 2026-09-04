@@ -1,0 +1,246 @@
+import {Note, Warning} from "@/components/mdx";
+
+export const description = 'Move a self-hosted NetBird deployment to a new domain: update the generated config files, recreate the stack, and point every peer at the new management URL without re-registering them.';
+
+# Change the Domain of a Self-Hosted Deployment
+
+You set up NetBird on one hostname and now need it on another. Maybe you moved to a new domain, consolidated subdomains, or picked a name during testing that you do not want to keep. The catch is that the hostname is not stored in one place. The setup script writes it into several generated files, the embedded identity provider signs tokens with it, and every peer you have ever enrolled keeps a copy of it in its own local config.
+
+This guide walks through the change end to end on a deployment created by `getting-started.sh` with the combined `netbird-server` container. The running example moves a deployment from `netbird.example.com` to `vpn.example.com`.
+
+<Note>
+Deployments that predate the combined container (before v0.65.0) store the domain in `setup.env`, `management.json`, `relay.env`, and `turnserver.conf` instead of `config.yaml`. The approach is the same: find every copy of the old hostname in the generated files and replace it. Consider [migrating to the combined container](/selfhosted/migration/combined-container) first, since the file layout below is what current tooling expects.
+</Note>
+
+## What changes and what does not
+
+Server-side, the hostname appears in three generated files. Each one drives a different part of the login and connection path, so missing any of them produces a distinct failure:
+
+| File | Where the hostname appears | What breaks if you miss it |
+|------|---------------------------|----------------------------|
+| `docker-compose.yml` | Traefik `Host()` rules on the dashboard and server routers | Traefik returns 404 for the new name and never requests a certificate for it |
+| `config.yaml` | `server.exposedAddress`, `server.auth.issuer`, `server.auth.dashboardRedirectURIs` | Peers get the old relay and signal address; dashboard login fails with a redirect or issuer mismatch |
+| `dashboard.env` | `NETBIRD_MGMT_API_ENDPOINT`, `NETBIRD_MGMT_GRPC_API_ENDPOINT`, `AUTH_AUTHORITY` | Dashboard loads but API calls and login go to the old name |
+
+Client-side, every peer stores the management URL in its local config. Peers never receive a new URL from the server, so each one has to be told. The good news is that peers are identified by their WireGuard public key, not by the URL they connect through. Pointing an existing peer at the new URL reconnects it as the same peer with the same NetBird IP. No re-registration and no new setup key.
+
+Nothing in the database depends on the hostname. Accounts, users, peers, groups, policies, routes, and setup keys all carry over untouched. Peer DNS names also stay the same: the peer DNS suffix is the account's DNS domain (`netbird.selfhosted` by default), which is stored in the database and is not derived from the server hostname.
+
+<Note>
+This guide is for renaming the one public hostname of a deployment. If you only want the server reachable under a second name (for example an internal one) while keeping the current domain, this is the wrong tool: `exposedAddress` and the identity provider issuer can hold only one value. Keep the domain and put the second name in front with your own reverse proxy instead.
+</Note>
+
+## Prerequisites
+
+- Shell access to the host and the directory where you ran `getting-started.sh`. It holds `docker-compose.yml`, `config.yaml`, and `dashboard.env`.
+- Control of DNS for the new name, and ports 80 and 443 still reachable on the host so Traefik can complete the Let's Encrypt challenge.
+- A maintenance window. Between recreating the server and updating a peer, that peer cannot reach the management server. Tunnels that are already established generally keep running, but no new connections can be negotiated until the peer is updated.
+- A fresh [backup](/selfhosted/maintenance/backup) of the `netbird_data` volume and the config directory.
+
+## Step 1: Create the DNS record first
+
+Add an `A` (or `AAAA`) record for `vpn.example.com` pointing at the same public IP as `netbird.example.com`. Do this before touching any files. DNS propagation can take a while, and Traefik can only obtain a certificate once the name resolves to the host.
+
+Confirm the record resolves from the host before continuing:
+
+```bash
+dig +short vpn.example.com
+```
+
+Leave the old `netbird.example.com` record in place for now. You may want it during the switch (see the optional bridge in step 4), and it does no harm afterwards.
+
+## Step 2: Back up the config directory
+
+The config files contain secrets that are not stored anywhere else: the relay auth secret, the datastore encryption key, and the session cookie encryption key. Copy the directory before editing so a bad search-and-replace is a one-command rollback.
+
+```bash
+cd ~/netbird   # or wherever you ran getting-started.sh
+cp -a . ../netbird-backup-$(date +%F)
+```
+
+## Step 3: Replace the hostname in the generated files
+
+First see every occurrence of the old name so nothing is missed:
+
+```bash
+grep -rn 'netbird.example.com' .
+```
+
+For a default Traefik deployment you should see the Traefik labels in `docker-compose.yml`, four lines in `config.yaml`, and three lines in `dashboard.env`. Replace them all in one pass:
+
+```bash
+sed -i 's/netbird\.example\.com/vpn.example.com/g' docker-compose.yml config.yaml dashboard.env
+```
+
+Run the `grep` again. It should return nothing.
+
+After the replacement, the relevant parts of the files look like this. In `config.yaml`:
+
+```yaml
+server:
+  exposedAddress: "https://vpn.example.com:443"
+  auth:
+    issuer: "https://vpn.example.com/oauth2"
+    dashboardRedirectURIs:
+      - "https://vpn.example.com/nb-auth"
+      - "https://vpn.example.com/nb-silent-auth"
+```
+
+In `dashboard.env`:
+
+```bash
+NETBIRD_MGMT_API_ENDPOINT=https://vpn.example.com
+NETBIRD_MGMT_GRPC_API_ENDPOINT=https://vpn.example.com
+AUTH_AUTHORITY=https://vpn.example.com/oauth2
+```
+
+And in `docker-compose.yml`, every router rule:
+
+```yaml
+- traefik.http.routers.netbird-dashboard.rule=Host(`vpn.example.com`)
+- traefik.http.routers.netbird-grpc.rule=Host(`vpn.example.com`) && (PathPrefix(`/signalexchange.SignalExchange/`) || ...)
+- traefik.http.routers.netbird-backend.rule=Host(`vpn.example.com`) && (PathPrefix(`/relay`) || ...)
+```
+
+`exposedAddress` deserves a second look. The combined server derives the relay address (`rels://vpn.example.com:443`) and the signal address from it and hands both to every peer on each sync. If it still says the old name, peers reconnect to management but relay through a hostname that no longer routes.
+
+Nothing in the Traefik `command:` block needs to change. The Let's Encrypt resolver is already configured; Traefik requests a certificate for whatever host the router rules name, and the old certificate simply stays unused in the `netbird_traefik_letsencrypt` volume.
+
+### If you use your own reverse proxy
+
+With an external proxy (options 1 through 4 in the setup script), the files `nginx-netbird.conf`, `caddyfile-netbird.txt`, and `npm-advanced-config.txt` are templates the script printed for you. Editing them does nothing on its own. Update the `server_name`, site block, or proxy host in your live Nginx, Caddy, or Nginx Proxy Manager config, request a certificate for the new name there, and reload the proxy. The `config.yaml` and `dashboard.env` changes above still apply unchanged. See [External Reverse Proxy Setup](/selfhosted/external-reverse-proxy) for the full templates.
+
+### If you enabled the NetBird Proxy service
+
+The proxy has its own domain, set as `NB_PROXY_DOMAIN` in `proxy.env`, and services you publish get names under it (for example `wiki.proxy.example.com`). The management hostname change does not force a proxy domain change. If you decide to move that too, update `NB_PROXY_DOMAIN`, the wildcard `CNAME`, and expect every published service URL to change. See [Reverse Proxy](/manage/reverse-proxy) for how the proxy domain is used.
+
+### If you use an external identity provider
+
+If you replaced the embedded identity provider with Zitadel, Authentik, Keycloak, or another OIDC provider, the `issuer` and `AUTH_AUTHORITY` values point at that provider and stay as they are. What does change is on the provider's side: update the NetBird application's redirect URIs to `https://vpn.example.com/nb-auth` and `https://vpn.example.com/nb-silent-auth`, plus any post-logout URI you configured. The CLI redirect `http://localhost:53000/` is unaffected. See [Identity Providers](/selfhosted/identity-providers) for where each provider keeps these.
+
+## Step 4: Recreate the stack
+
+`docker compose` detects the changed labels and environment file, but it does not watch the bind-mounted `config.yaml`. Bringing the stack fully down and up recreates every container and avoids a half-applied state:
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+Volumes survive `down`, so your data, identity provider state, and existing certificates are preserved.
+
+Watch Traefik obtain the new certificate. Within a minute or so you should see an ACME entry for the new host and no errors:
+
+```bash
+docker compose logs -f traefik
+```
+
+Then confirm the server answers on the new name and reports the new issuer:
+
+```bash
+curl -fsS https://vpn.example.com/oauth2/.well-known/openid-configuration
+```
+
+The `issuer` field in the JSON response must read `https://vpn.example.com/oauth2`. If it shows the old host, `config.yaml` was not updated or the container did not restart.
+
+Open `https://vpn.example.com` and log in. Every existing dashboard session is invalid because tokens were signed for the old issuer, so expect a fresh login for every user. Local users and passwords in the embedded identity provider are unchanged.
+
+### Optional: keep the old name answering during the switch
+
+If you have many peers and cannot update them all inside one window, you can let Traefik accept both names until the last peer has moved. Add the old host to each of the three router rules:
+
+```yaml
+- traefik.http.routers.netbird-dashboard.rule=Host(`vpn.example.com`) || Host(`netbird.example.com`)
+```
+
+Do the same for the `netbird-grpc` and `netbird-backend` rules, keeping their `PathPrefix` conditions, and recreate the stack. Peers still pointing at `netbird.example.com` keep syncing, and receive the new relay and signal address from `exposedAddress` on their next sync. Remove the old host from the rules once everyone has switched. This is a routing bridge only: dashboard login works solely through the new name because the issuer and redirect URIs hold one value.
+
+## Step 5: Point every peer at the new URL
+
+Peers still have `https://netbird.example.com:443` in their config and will show as disconnected until you change it. How you do that depends on how the peer runs.
+
+### CLI (Linux, macOS, Windows, servers)
+
+```bash
+netbird down
+netbird up --management-url https://vpn.example.com:443
+```
+
+The client writes the new URL into its stored profile and logs in with its existing WireGuard key. Because the peer is already registered, no browser login or setup key is needed unless the peer's login had already expired. Confirm with:
+
+```bash
+netbird status
+```
+
+The output should show the management connection as `Connected` against the new URL, and the peer's NetBird IP should be unchanged.
+
+<Note>
+The port matters. The client treats `https://vpn.example.com` and `https://vpn.example.com:443` as the same URL, but a deployment served on a non-standard port must include it, matching `exposedAddress`.
+</Note>
+
+### Docker peers
+
+The container image runs `netbird up` on start and reads its flags from `NB_*` environment variables. Add the new URL to the service definition and recreate the container:
+
+```yaml
+services:
+  netbird-client:
+    image: netbirdio/netbird:latest
+    environment:
+      - NB_MANAGEMENT_URL=https://vpn.example.com:443
+    volumes:
+      - netbird-client:/var/lib/netbird
+```
+
+```bash
+docker compose up -d --force-recreate netbird-client
+```
+
+Keep the volume. It holds the peer's WireGuard key, which is what lets it reconnect as the same peer. If the container comes up but still reports the old URL, switch it from inside instead:
+
+```bash
+docker exec -it netbird-client netbird down
+docker exec -it netbird-client netbird up --management-url https://vpn.example.com:443
+```
+
+### Desktop app
+
+Open **Settings → Profiles** and edit the profile that points at the old server, changing its management URL. See [Profiles](/client/profiles). Reconnect the profile afterwards.
+
+### Mobile
+
+On Android, open the menu, choose **Change Server**, and enter `https://vpn.example.com:443`. See the [Android install page](/get-started/install/android) for screenshots. On iOS, enter the new server address in the app's server settings when you reconnect.
+
+### Fleets managed by MDM
+
+If you push client configuration through MDM, update the `managementURL` policy value and let the channel deliver it. See [MDM Integration](/client/mdm-integration).
+
+### New peers
+
+Nothing extra to do. The dashboard's install instructions and `netbird up` snippets are generated from `NETBIRD_MGMT_GRPC_API_ENDPOINT` in `dashboard.env`, so they already show the new URL. Existing setup keys keep working.
+
+## The mistakes to avoid
+
+- **Updating only `dashboard.env`.** The dashboard loads and even shows the login page, but the embedded identity provider still advertises the old issuer and rejects the redirect. `config.yaml` and `dashboard.env` must agree.
+- **Forgetting `exposedAddress`.** Peers reconnect to management but are handed a relay and signal address on the old hostname. The symptom is peers that cannot reach each other while `netbird status` shows management as connected.
+- **Expecting peers to update themselves.** They cannot. The URL lives in each peer's config, and the server has no way to push a new one to a peer that can no longer reach it.
+- **Editing the printed proxy templates.** With an external reverse proxy, the files in the NetBird directory are copies for you to paste. The proxy reads its own config.
+- **Deleting the client volume or config to "reset" a Docker peer.** That discards the WireGuard key. The container then enrolls as a brand new peer, needing a setup key or login, and leaves the old peer entry behind in the dashboard.
+
+## Verify
+
+1. `curl -fsS https://vpn.example.com/oauth2/.well-known/openid-configuration` returns JSON with the new issuer.
+2. Dashboard login at `https://vpn.example.com` succeeds.
+3. On an updated peer, `netbird status` shows management connected and the same NetBird IP as before.
+4. Two updated peers can reach each other, and the connection type is direct or relayed as it was before the change.
+5. In the dashboard, updated peers show a recent last-seen time under their existing names.
+
+## Recap
+
+Moving `netbird.example.com` to `vpn.example.com` comes down to five moves:
+
+- DNS record for the new name first, and wait for it to resolve.
+- Back up, then replace the hostname in `docker-compose.yml`, `config.yaml`, and `dashboard.env` (plus your own proxy or identity provider config if you use one).
+- `docker compose down && docker compose up -d`, then confirm the issuer in the OIDC discovery document.
+- Every peer: `netbird down` then `netbird up --management-url https://vpn.example.com:443`, or the equivalent environment variable, profile edit, or app setting.
+- Same peers, same IPs, same DNS names, same policies. Only the address they dial changed.
