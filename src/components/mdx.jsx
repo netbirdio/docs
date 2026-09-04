@@ -9,6 +9,7 @@ export { Button } from '@/components/Button'
 export { CodeGroup, Code as code, Pre as pre } from '@/components/Code'
 export { Badge } from '@/components/Badge'
 export { YouTube }
+export { Video } from '@/components/Video'
 
 export const h2 = function H2(props) {
   return <Heading level={2} {...props} />

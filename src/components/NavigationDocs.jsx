@@ -81,7 +81,14 @@ export const docsNavigation = [
     {
         title: 'MANAGE NETBIRD',
         links: [
-            { title: 'Control Center', href: '/manage/control-center' },
+            {
+                title: 'Control Center',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/manage/control-center' },
+                    { title: 'Draft Mode', href: '/manage/control-center/draft-mode' },
+                ],
+            },
             {
                 title: 'Peers',
                 isOpen: false,
@@ -551,6 +558,10 @@ export const docsNavigation = [
                     },
                     { title: 'Codex', href: '/agent-network/integrations/codex' },
                     { title: 'LiteLLM', href: '/agent-network/integrations/litellm' },
+                    {
+                        title: 'agentgateway',
+                        href: '/agent-network/integrations/agentgateway',
+                    },
                     { title: 'vLLM', href: '/agent-network/integrations/vllm' },
                     {
                         title: 'Google Vertex AI',
