@@ -100,12 +100,26 @@ Each peer should have exactly **one** primary nameserver. If you don't configure
 
 A primary nameserver does more than catch unmatched queries. On macOS, a match-domain-only configuration registers a *scoped* resolver through system APIs and leaves the nameservers in `/etc/resolv.conf` untouched. Applications that use the system resolver follow the scoped entry, but tools that read `resolv.conf` directly (`dig`, `host`, and some language runtimes) keep querying your LAN or public nameservers and get `NXDOMAIN` for internal names. Adding a primary group puts NetBird's resolver into `resolv.conf`, so both kinds of tools query the same server. If your users report that browsers resolve internal names but `dig` does not, see [dig and host fail, but browsers and curl work](/manage/dns/troubleshooting#issue-5-dig-and-host-fail-but-browsers-and-curl-work-mac-os).
 
+<Note>
+From client **v0.78.0**, on Windows a primary nameserver makes NetBird the **exclusive** resolver while the peer is connected. Earlier clients only set the resolver on the tunnel adapter, leaving Windows free to query the other adapters' resolvers alongside it. Windows otherwise queries the resolvers of every network adapter in parallel and keeps the first answer that arrives, which both leaks queries to the local network and lets another resolver answer for a name NetBird is authoritative for. The client prevents that with a Name Resolution Policy Table rule covering every namespace.
+
+The cost is that names only the local network's resolver knows — a home router's own zone, or an internal domain not reachable through NetBird — stop resolving while connected. Declare those zones as match domain nameservers: a more specific rule takes precedence over the catch-all, so a declared zone keeps resolving. `.local` is exempt, so multicast DNS names keep working. Short names can also stop expanding when another adapter is preferred — see the note under [Search Domains](#search-domains).
+
+Setting `NB_USE_LEGACY_DNS_RESOLUTION=true` on a peer restores the pre-v0.78.0 behaviour — see [Client Environment Variables](/client/environment-variables).
+</Note>
+
 ### Search Domains
 
 Toggle **Mark match domains as search domains** to enable domain suffix searching. When enabled, typing `server` expands to `server.company.internal`. Only applies to match domain nameservers.
 
 <Note>
 **Don't convert a match-domain group to primary by emptying its domains.** Removing the match domains also removes the search domains, so short names like `server` stop expanding. Domain-joined Windows machines hide the regression because Active Directory supplies its own suffix, so it surfaces as "short names broke for some users." To add a primary, create a **second** nameserver group with the same servers and leave the existing match-domain group in place.
+</Note>
+
+<Note>
+**On Windows, from client v0.78.0**, making NetBird the exclusive resolver also ends the suffix search early. A short name is expanded by the DNS client using the suffix list of the **preferred** network interface — the one with the lowest interface metric — and Windows no longer falls through to another interface's suffixes when the name is not found there. So when an adapter other than NetBird's is preferred, a short name fails while its fully qualified form still resolves. Earlier clients kept searching the other adapters' suffixes, so the same short name resolved.
+
+NetBird's interface is usually the preferred one, but a tie on the metric is enough to lose it. When that happens, declaring the local network's zone as a match domain with search domains enabled puts both suffixes in the same list, and short names resolve again for either zone. Otherwise use the fully qualified name, or set `NB_USE_LEGACY_DNS_RESOLUTION=true` to go back to shared resolution.
 </Note>
 
 ### Split-Horizon DNS
