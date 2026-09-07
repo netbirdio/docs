@@ -1,42 +1,39 @@
 # The NetBird documentation
 
-This repository contains assets required to build the [documentation website for NetBird](https://docs.netbird.io/). It is built using [Next.js](https://nextjs.org/) with MDX support, a modern React framework for building static and dynamic websites.
+This repository builds [docs.netbird.io](https://docs.netbird.io/) with Next.js and MDX.
 
-We're glad that you want to contribute!
+## Work on the docs locally
 
-- [Contributing to the docs](#contributing-to-the-docs)
+Use Node.js 20.9 or newer. Install the versions pinned in `package-lock.json`:
 
-### Requirements
-* node 16
-* npm 8+
-
-### Installation
-
-```
-$ npm install
+```bash
+npm ci
 ```
 
-### Local Development
+Start the development server:
 
-```
-$ npm run dev
+```bash
+npm run dev
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
+Before opening a pull request, run the checks used by docs CI:
+
+```bash
+npm run lint:mdx
+npm run build
+```
+
+CI also runs Codespell. If you change JSX, JavaScript, navigation, or a component, run `npm run lint` and make sure your change introduces no new findings.
 
 ## Contributing to the docs
 
-You can click the **Fork** button in the upper-right area of the screen to create a copy of this repository in your GitHub account. This copy is called a _fork_. Make any changes you want in your fork, and when you are ready to send those changes to us, go to your fork and create a new pull request to let us know about it.
+Fork the repository and create a focused branch from the current `main` branch. Keep the pull request limited to one problem, explain how you verified the change, and include screenshots for layout or interaction changes.
 
-Once your pull request is created, a NetBird reviewer will take responsibility for providing clear, actionable feedback. As the owner of the pull request, **it is your responsibility to modify your pull request to address the feedback that has been provided to you by the NetBird reviewer.**
-
-Also, note that you may end up having more than one NetBird reviewer provide you feedback or you may end up getting feedback from a NetBird reviewer that is different than the one initially assigned to provide you feedback.
-
-Furthermore, in some cases, one of your reviewers might ask for a technical review from a NetBird author when needed. Reviewers will do their best to provide feedback in a timely fashion but response time can vary based on circumstances.
+For the full workflow, start with [Contribute to NetBird](src/pages/contribute/index.mdx). The guide also covers the [repository map](src/pages/contribute/repositories.mdx), [local development and test safety](src/pages/contribute/development.mdx), [pull request review](src/pages/contribute/pull-requests.mdx), and [security and contribution policies](src/pages/contribute/policies.mdx).
 
 ## Code of conduct
 
-Participation in the NetBird community is governed by the [NetBirds' Code of Conduct](https://github.com/netbirdio/netbird/blob/main/CODE_OF_CONDUCT.md).
+Participation in the NetBird community is governed by the [NetBird Code of Conduct](https://github.com/netbirdio/netbird/blob/main/CODE_OF_CONDUCT.md).
 
 ## Components and Use
 
@@ -54,7 +51,7 @@ import {Note} from "@/components/mdx"
 
 <Note>
     NetBird is an **[open-source](https://github.com/netbirdio/netbird)** project and can be self-hosted.
-    See a comparison between the self-hosted and cloud-hosted versions [here](/selfhosted/self-hosted-vs-cloud-netbird).
+    Compare the [self-hosted and cloud-hosted versions](/about-netbird/self-hosted-vs-cloud).
 </Note>
 ```
 
@@ -65,7 +62,7 @@ Displays warning content with a red theme:
 import {Warning} from "@/components/mdx"
 
 <Warning>
-    The API is still in Beta state so some errors might not be handled properly yet.
+    Do not include setup keys, tokens, or unredacted logs in a public issue.
 </Warning>
 ```
 
@@ -223,18 +220,20 @@ Displays small status badges:
 ```mdx
 import {Badge} from "@/components/mdx"
 
-<Badge>New</Badge>
-<Badge variant="secondary">Beta</Badge>
+<Badge status="info" text="New" />
+<Badge status="experimental" text="Beta" hoverText="This feature may change." />
 ```
+
+`status` accepts `default`, `info`, or `experimental`. Set the visible label with `text`; use `hoverText` only when the badge needs a short explanation.
 
 #### Code Blocks
 Code syntax highlighting (automatically available):
 
-```mdx
-\`\`\`bash
+````mdx
+```bash
 npm install
 npm run dev
-\`\`\`
+```
 
 // Or use code groups for multiple languages
 <CodeGroup>
@@ -245,7 +244,7 @@ npm run dev
   yarn install
   ```
 </CodeGroup>
-```
+````
 
 ## Thank you
 

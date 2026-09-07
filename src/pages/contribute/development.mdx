@@ -1,0 +1,228 @@
+import {Warning} from "@/components/mdx"
+
+export const description =
+  "Set up a NetBird contribution, run repository-specific checks, and contain tests that can alter networking or create live resources."
+
+# Build and test NetBird changes
+
+Use the target repository's instructions and continuous-integration workflows as the source of truth. The commands below are a starting point for the main NetBird repositories; local requirements can change sooner than this page.
+
+## Start from the repository instructions
+
+Before installing tools or running commands, inspect the repository root and `.github/` directory for:
+
+- `CONTRIBUTING.md`, `AGENTS.md`, and `CLAUDE.md`;
+- the pull request and issue templates;
+- `Makefile`, `GNUmakefile`, `Taskfile.yml`, package scripts, and platform project files;
+- workflow matrices and pinned tool versions;
+- generated files and the source definitions that produce them.
+
+If this page conflicts with those files, follow the repository. Do not transfer a command or policy from one NetBird project to another without checking.
+
+## Prepare your checkout
+
+Clone your fork, add the upstream repository, and create a focused branch from its current default branch. For a repository that uses `main`:
+
+```bash
+git clone https://github.com/YOUR_USERNAME/REPOSITORY.git
+cd REPOSITORY
+git remote add upstream https://github.com/netbirdio/REPOSITORY.git
+git fetch upstream
+git switch -c YOUR_BRANCH upstream/main
+```
+
+Some repositories use another base branch or require submodules. Check the repository page and its local instructions before copying the final command unchanged.
+
+Do not commit local environment files, credentials, build output, editor state, test clusters, or copied binaries. Run `git status --short` before and after every generator or build so you can distinguish intended output from local debris.
+
+## Core client and services
+
+The core [`netbirdio/netbird`](https://github.com/netbirdio/netbird) repository currently requires [Go 1.26](https://github.com/netbirdio/netbird/blob/main/CONTRIBUTING.md#go-126). Start with the smallest test set that covers the changed package, then expand based on the affected component.
+
+```bash
+go fmt ./...
+go test ./path/to/changed/package/...
+```
+
+The repository exposes its main quality checks as Make targets:
+
+```bash
+make lint
+make lint-all
+make test-unit
+```
+
+`make lint` checks files changed against `origin/main`; `make lint-all` runs the full-repository linter used by CI. `make test-unit` is the host-safe suite and runs without changing host networking.
+
+For firewall, routing, interface management, and other privileged networking paths, run the contained privileged suite:
+
+```bash
+make test-privileged
+```
+
+That target selects tests carrying the `privileged` build tag and runs them in a Docker container with elevated networking capabilities. It needs Docker and can take longer than the unit suite. Narrow runs with `PRIV_RUN` and `PRIV_PKGS` only as documented in the core contribution guide.
+
+Build or test an individual component when it gives faster feedback:
+
+```bash
+go build ./client
+go test ./client/...
+go test ./management/...
+go test ./signal/...
+go test ./relay/...
+```
+
+Packages that use build tags, elevated privileges, concurrency, or operating-system-specific backends can need more than `go test ./...`. Read package comments, nearby tests, `AGENTS.md`, and the core [quality checks](https://github.com/netbirdio/netbird/blob/main/CONTRIBUTING.md#quality-checks) before deciding the test is complete.
+
+<Warning>
+  Starting a locally built NetBird client with elevated privileges can replace the running client and change routes, firewall rules, DNS settings, interfaces, and active connectivity. Use a VM or disposable test host, keep console or SSH access that does not depend on the NetBird path, and stop the test client before leaving the environment.
+</Warning>
+
+## Desktop UI
+
+The desktop application is built from `client/ui` in the core repository. Its current `Taskfile.yml` dispatches platform-specific Wails v3 builds.
+
+```bash
+cd client/ui
+task build
+task dev
+```
+
+Run the core Go checks when backend code changes. Exercise tray behavior, connection state, update flows, and platform permissions on every operating system affected by the change. A successful Wails build does not establish that native lifecycle behavior works.
+
+## Web dashboard
+
+The [`netbirdio/dashboard`](https://github.com/netbirdio/dashboard) package requires Node.js 20.9 or newer. Install locked dependencies and use the repository scripts:
+
+```bash
+npm ci
+npm run dev
+npm run build
+npm run lint
+```
+
+The repository also defines unit and Playwright suites. Select the checks that cover your change from its `package.json` and workflows. For changed UI flows, exercise empty, loading, error, permission-denied, and narrow-screen states, and include screenshots or a short recording when the interaction cannot be understood from the diff alone.
+
+If API types or clients change, run the generator named by the dashboard repository and review its complete diff.
+
+## Documentation site
+
+The [`netbirdio/docs`](https://github.com/netbirdio/docs) site requires Node.js 20.9 or newer. Install the versions pinned in `package-lock.json`, then start the local preview:
+
+```bash
+npm ci
+npm run dev
+```
+
+Before requesting review, run the same heading and production-build checks used by docs pull requests:
+
+```bash
+npm run lint:mdx
+npm run build
+```
+
+The docs repository also has a Codespell workflow. If you change JSX, JavaScript, navigation, or a component, run:
+
+```bash
+npm run lint
+```
+
+Keep these repository boundaries in mind:
+
+- Add user-facing pages to <code className="break-all">src/components/NavigationDocs.jsx</code>; API navigation lives in `NavigationAPI.jsx`.
+- Add a permanent redirect in `next.config.mjs` when a published route moves.
+- Store images under `public/docs-static/img/<section>/` and reference them with `/docs-static/img/<section>/...` URLs.
+- Do not hand-edit generated API pages under `src/pages/ipa/resources`.
+- Use `npm install` instead of `npm ci` only when intentionally changing dependencies and updating `package-lock.json`.
+
+Preview every changed route at desktop and narrow widths. Check heading order, links, copied commands, tables, light and dark themes, and whether every required instruction remains understandable without a screenshot.
+
+## Mobile clients
+
+Use the platform project files and CI versions in the target repository instead of assuming that core Go commands apply.
+
+- [`netbirdio/android-client`](https://github.com/netbirdio/android-client) is an Android project. Check its current project files and workflows before selecting the JDK, Gradle task, emulator, or device matrix.
+- [`netbirdio/ios-client`](https://github.com/netbirdio/ios-client) uses Xcode and a `netbird-core` submodule. Clone with submodules, follow the current build scripts, and check signing and physical-device requirements before choosing a target.
+
+Test VPN lifecycle behavior on the affected platforms where possible: fresh install, sign-in, connect, disconnect, reconnect after sleep or a network change, and upgrade from a previous release. Keep accounts, setup keys, signing material, and device identifiers out of logs and screenshots.
+
+## Kubernetes operator
+
+The [`netbirdio/kubernetes-operator`](https://github.com/netbirdio/kubernetes-operator) contribution guide and `Makefile` define the current workflow. Its main checks are:
+
+```bash
+make lint
+make generate
+make test-unit
+```
+
+Run the end-to-end suite for changes to reconciliation, finalizers, networking, installation, upgrades, or external integration:
+
+```bash
+make test-e2e
+```
+
+`make test-unit` uses an in-memory Kubernetes control plane. The end-to-end target builds an operator image and runs against a cluster, so use a disposable cluster and clean up namespaces, NetBird peers, setup keys, images, and other temporary resources afterward.
+
+After API-type changes, review generated deepcopy and apply-configuration code, CRDs, chart CRDs, RBAC or manifests where affected, reference documentation, and test fixtures. Edit the API source and markers, not generated output.
+
+## Terraform provider
+
+The [`netbirdio/terraform-provider-netbird`](https://github.com/netbirdio/terraform-provider-netbird) repository documents its commands in `AGENTS.md` and `GNUmakefile`:
+
+```bash
+make fmt
+make lint
+make test
+make build
+make generate
+```
+
+`make test` runs the Go unit and integration tests without Docker or the Terraform CLI. Acceptance tests compile the `e2e`-tagged harness, start a NetBird deployment through Docker, and can create or change resources:
+
+```bash
+make testacc
+```
+
+The target sets `TF_ACC=1` and the `e2e` build tag itself. Use an isolated environment, keep credentials out of source and logs, and inspect the NetBird deployment for resources left by a failed test.
+
+## Generated and synchronized files
+
+Generated output belongs in review, but edit its source definition and use the repository's documented generator.
+
+<div className="my-6 overflow-x-auto" role="region" aria-label="Generated files and source definitions" tabIndex={0}>
+
+| Area | Edit | Regenerate and review |
+|---|---|---|
+| Core protocol definitions | `.proto` source files | Generated Go bindings and affected consumers |
+| Core management API | API implementation and schema sources | OpenAPI output, API clients, mocks, and dependent docs |
+| Dashboard API client | Its configured OpenAPI source | Generated client code and types |
+| Kubernetes APIs | `api/` types and markers | Deepcopy and apply-configuration code, CRDs, chart files, docs, and test fixtures |
+| Terraform reference docs | Provider schemas and examples | Generated files under `docs/` |
+| Documentation API pages | The core OpenAPI source and docs generator | `src/pages/ipa/resources` and API navigation changes |
+
+</div>
+
+Do not invoke an underlying tool with guessed flags. Generated changes should be reproducible from the same source revision as the pull request.
+
+## Test cross-repository behavior
+
+A passing build in one repository does not cover a contract shared with another. For related pull requests:
+
+1. State the dependency and intended merge order in each pull request.
+2. Test compatible source revisions together.
+3. Record the versions or commits used without exposing credentials or private environment details.
+4. Verify backward compatibility when one side may ship first.
+5. Update user-facing documentation in the same release window as the behavior.
+
+The [repository map](/contribute/repositories#changes-that-cross-repository-boundaries) lists common boundaries.
+
+## Keep privileged tests contained
+
+Prefer a VM, disposable CI runner, short-lived cluster, or isolated account for work that needs root, `NET_ADMIN`, host networking, TUN devices, firewall access, kernel modules, signing credentials, or real cloud resources.
+
+Before a host-networking test, record the existing routes, DNS configuration, firewall state, interfaces, and active NetBird process. Keep a recovery path outside the NetBird connection. After the test, stop local clients, restore the original host configuration, remove temporary resources, and verify normal connectivity from a separate terminal or host.
+
+## Review the final diff
+
+Before handing off the work, follow the full [pull request review checklist](/contribute/pull-requests#review-the-final-diff), including repository status, generated output, credentials, verification evidence, and documentation.

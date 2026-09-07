@@ -1012,6 +1012,28 @@ export const docsNavigation = [
         ],
     },
     {
+        title: 'CONTRIBUTE',
+        links: [
+            { title: 'Contribute to NetBird', href: '/contribute' },
+            {
+                title: 'Find a Repository',
+                href: '/contribute/repositories',
+            },
+            {
+                title: 'Build and Test',
+                href: '/contribute/development',
+            },
+            {
+                title: 'Pull Requests',
+                href: '/contribute/pull-requests',
+            },
+            {
+                title: 'Policies',
+                href: '/contribute/policies',
+            },
+        ],
+    },
+    {
         title: 'GET MORE HELP',
         links: [
             {

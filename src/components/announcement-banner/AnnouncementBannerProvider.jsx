@@ -16,6 +16,7 @@ const BANNER_HEIGHT = 33
 
 const AnnouncementContext = createContext({
   bannerHeight: 0,
+  setBannerHeight: () => {},
   announcements: undefined,
   closeAnnouncement: () => {},
 })
@@ -83,6 +84,7 @@ const saveAnnouncements = (closedAnnouncements) => {
 
 export function AnnouncementBannerProvider({ children }) {
   const [announcements, setAnnouncements] = useState(undefined)
+  const [measuredHeight, setBannerHeight] = useState(BANNER_HEIGHT)
   const fetchingRef = useRef(false)
 
   useEffect(() => {
@@ -108,12 +110,13 @@ export function AnnouncementBannerProvider({ children }) {
     [announcements]
   )
 
-  const bannerHeight = announcements?.some((a) => a.isOpen) ? BANNER_HEIGHT : 0
+  const bannerHeight = announcements?.some((a) => a.isOpen) ? measuredHeight : 0
 
   return (
     <AnnouncementContext.Provider
       value={{
         bannerHeight,
+        setBannerHeight,
         announcements,
         closeAnnouncement,
       }}
