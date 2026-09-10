@@ -427,11 +427,11 @@ export const docsNavigation = [
                                 title: 'Multi-Factor Authentication',
                                 href: '/manage/settings/multi-factor-authentication',
                             },
+                            {
+                                title: 'Sign-in Domains',
+                                href: '/manage/settings/sign-in-domains',
+                            },
                         ],
-                    },
-                    {
-                        title: 'Sign-in Domains',
-                        href: '/manage/settings/sign-in-domains',
                     },
                     {
                         title: 'Permissions',
