@@ -317,6 +317,10 @@ export const docsNavigation = [
                     { title: 'User Roles', href: '/manage/team/user-roles' },
                     { title: 'Approve Users', href: '/manage/team/approve-users' },
                     {
+                        title: 'Sign-in Domains',
+                        href: '/manage/team/sign-in-domains',
+                    },
+                    {
                         title: 'Enable NetBird for Entra ID',
                         href: '/manage/team/entra-id-app-enablement',
                     },
