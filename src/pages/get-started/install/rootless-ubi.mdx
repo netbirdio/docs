@@ -1,0 +1,161 @@
+import {Note, Warning} from "@/components/mdx";
+
+export const description = "Install and verify the NetBird rootless UBI client with Podman, Docker, Kubernetes, or OpenShift restricted-v2."
+
+# Rootless UBI Installation
+
+Use the rootless UBI 9 image when you need NetBird without network administration privileges. It supports arbitrary non-root UIDs and runs under stock OpenShift `restricted-v2`: no custom SCC, privileged mode, TUN device, host networking, or elevated capabilities are required.
+
+The public image is `ghcr.io/netbirdio/netbird:0.79.0-rootless-ubi`, available for Linux AMD64 and ARM64. Pin a version or digest for reproducible deployments; see [NetBird releases](https://github.com/netbirdio/netbird/releases).
+
+## Configure the client
+
+Create a [setup key](/manage/peers/register-machines-using-setup-keys) and inject it as `NB_SETUP_KEY` through your secret manager. For self-hosted management, also set `NB_MANAGEMENT_URL`, for example `https://netbird.example.com`. Omit it for NetBird Cloud. Never commit populated secrets or bake credentials into images.
+
+Keep the image's entrypoint: it starts the daemon and runs `netbird up`. Configure it through environment variables, not arguments appended to the image. By default, netstack and local forwarding are enabled, DNS management and packet capture are disabled, and configuration, state, the daemon socket, and file logs live under `/var/lib/netbird`.
+
+See [CLI environment variables](/get-started/cli#environment-variables) and [client environment variables](/client/environment-variables) for configuration options. Allow egress to management, signal, relay, and your resources as described in [Ports & Firewalls](/about-netbird/ports-and-firewalls).
+
+## Run with Podman or Docker
+
+Export `NB_SETUP_KEY` from your secret manager into the current shell, then run:
+
+```bash
+podman volume create netbird-ubi-state
+podman run -d --name netbird-ubi --hostname netbird-ubi \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges \
+  -e NB_SETUP_KEY \
+  -v netbird-ubi-state:/var/lib/netbird \
+  ghcr.io/netbirdio/netbird:0.79.0-rootless-ubi
+```
+
+Use `docker` in place of `podman` for the same example. Run Podman as your normal user for a rootless container engine. For self-hosting, add `-e NB_MANAGEMENT_URL=https://netbird.example.com` before the image reference. No published host ports are required.
+
+Verify the connection; use the logs if the check fails:
+
+```bash
+podman exec netbird-ubi netbird status --check startup
+podman exec netbird-ubi netbird status --detail
+podman logs netbird-ubi
+```
+
+## Run on Kubernetes or OpenShift
+
+This example creates one peer with persistent state. Use a default StorageClass that supports pod volume permissions. Create this Secret in your target namespace through your normal secret-management process:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: netbird-ubi
+stringData:
+  NB_SETUP_KEY: "<YOUR_SETUP_KEY>"
+  # Include only for self-hosted management:
+  # NB_MANAGEMENT_URL: "https://netbird.example.com"
+```
+
+On OpenShift, leave `runAsUser`, `runAsGroup`, and `fsGroup` unset so `restricted-v2` admission applies the namespace's allowed identity and volume group. Save the following as `netbird-ubi.yaml`:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: netbird-ubi-state
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netbird-ubi
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: netbird-ubi
+  template:
+    metadata:
+      labels:
+        app: netbird-ubi
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/os: linux
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: netbird
+          image: ghcr.io/netbirdio/netbird:0.79.0-rootless-ubi
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          envFrom:
+            - secretRef:
+                name: netbird-ubi
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/netbird
+          readinessProbe:
+            exec:
+              command: ["netbird", "status", "--check", "startup"]
+            periodSeconds: 10
+            timeoutSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: netbird-ubi-state
+```
+
+On Kubernetes without OpenShift SCC admission, add `runAsUser: 1000`, `runAsGroup: 0`, and `fsGroup: 1000` under `spec.template.spec.securityContext` so a fresh PVC is writable. The storage driver must support `fsGroup`, or an administrator must provision suitable ownership. Do not add privileged init containers or relax the SCC to fix permissions. Adjust resource requests and limits to your workload.
+
+Apply the manifest in the Secret's namespace and require the startup check to succeed. Use `kubectl` instead of `oc` on Kubernetes:
+
+```bash
+oc apply -f netbird-ubi.yaml
+oc rollout status deployment/netbird-ubi
+oc exec deployment/netbird-ubi -- netbird status --check startup
+oc exec deployment/netbird-ubi -- netbird status --detail
+oc logs deployment/netbird-ubi
+```
+
+<Note>
+`--check startup` requires management and signal connectivity, plus an available relay when relays are listed. The weaker `--check ready` accepts Idle and Connecting states and does not prove connectivity. The manifest therefore uses `startup` for readiness; also test your intended application from an authorized peer.
+</Note>
+
+## Persist the peer identity
+
+Mount the **entire `/var/lib/netbird` directory**, not just `config.json`, to retain the peer identity across container or pod replacements. Keep **one identity and one writer per state volume**. The Deployment uses one replica and `Recreate`; do not scale it with the same PVC. Give each additional routing peer its own state volume and identity.
+
+<Warning>
+Persisted credentials have restrictive permissions. Arbitrary-UID support does not make one UID's existing credentials readable by another UID. Retain the same allowed UID when reusing state; moving a PVC to a different namespace may require an administrator to migrate ownership. Do not make credential files world-readable.
+</Warning>
+
+## Routing and limitations
+
+To expose resources reachable from the container, assign it as a [routing peer](/manage/networks/how-routing-peers-work), add the resources to a Network, and allow only the required protocols and ports through access policies and cluster NetworkPolicies. No host IP-forwarding sysctls are needed. Use separate identities and volumes for routing-peer high availability.
+
+- **Not a transparent outbound VPN:** rootless/netstack does not install overlay routes for the host or pod. Applications initiating overlay connections must use SOCKS5 at `127.0.0.1:1080` in the same network namespace. Keep this unauthenticated proxy on loopback; see [netstack application usage](/use-cases/cloud/netbird-on-faas).
+- **Local forwarding is enabled:** review peer-to-peer policies for services in the container or pod. Set `NB_ENABLE_NETSTACK_LOCAL_FORWARDING=false` if you do not need local service access.
+- **DNS management and packet capture are disabled by default:** `NB_DISABLE_DNS=true` and `NB_ENABLE_CAPTURE=false`. Do not assume NetBird names resolve through the pod's normal DNS resolver.
+
+<Warning>
+ICMP diagnostics may be unavailable in a capability-free container. Test your intended TCP or UDP service instead of relying on ping or traceroute.
+</Warning>
