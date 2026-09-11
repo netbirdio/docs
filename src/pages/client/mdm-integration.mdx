@@ -1,7 +1,7 @@
 import { Note, Warning } from "@/components/mdx";
 
 export const description =
-  "Enforce NetBird client configuration through your MDM channel (Intune, Jamf, Kandji, Mosyle, Workspace ONE, JumpCloud, Group Policy). Push management URL, kill switches, and other settings to a fleet of Windows and macOS devices.";
+  "Enforce NetBird client configuration through your MDM channel (Intune, Jamf, Kandji, Mosyle, Workspace ONE, JumpCloud, Group Policy). Push management URL, kill switches, and other settings to a fleet of Windows, macOS, and iOS devices.";
 
 # MDM Integration
 
@@ -14,8 +14,8 @@ you and the MDM provider; whatever you can push to that store (manually,
 via Group Policy, via a Configuration Profile, via your MDM console)
 becomes effective NetBird policy.
 
-This page covers Windows and macOS. iOS and Android support is on the
-roadmap.
+This page covers Windows, macOS, and iOS (including tvOS). Android
+support is on the roadmap.
 
 ## At a glance
 
@@ -23,11 +23,14 @@ roadmap.
 | --- | --- | --- |
 | Windows | `HKLM\Software\Policies\NetBird` (registry) | Group Policy (ADMX) · Intune ADMX ingestion or OMA-URI · `reg import` · MDM-vendor scripts |
 | macOS | `/Library/Managed Preferences/io.netbird.client.plist` | Configuration Profile (`.mobileconfig`) pushed by your MDM, targeting bundle id `io.netbird.client` |
+| iOS / tvOS | Managed App Configuration delivered to the app, bundle id `io.netbird.app` (tvOS: `io.netbird.app.tv`) | App configuration payload pushed by your MDM alongside the managed app — see [iOS](#i-os) for the current scope |
 
-Both backends are the de-facto convention for desktop apps (the same
-shape Chrome, Edge, Firefox, Zoom, Tailscale, Citrix Workspace, and
-others use). Any MDM that supports the platform also supports NetBird —
-there is no NetBird-specific integration to build.
+Each backend is the de-facto convention for its platform (the registry
+and managed-preferences shapes are what Chrome, Edge, Firefox, Zoom,
+Tailscale, and Citrix Workspace use; Managed App Configuration is
+Apple's standard channel for managed apps). Any MDM that supports the
+platform also supports NetBird — there is no NetBird-specific
+integration to build.
 
 ## How enforcement works
 
@@ -60,9 +63,12 @@ stale residue on the device.
 
 ## Policy keys reference
 
-The same 16 keys apply on every platform. Names are camelCase in the
-managed-configuration payload; the Windows ADMX template renders the
-PascalCase variant in the Group Policy Editor — both are recognized.
+The 23 keys below are recognized on every platform. A few of them have
+no surface on some platforms; those are parsed and ignored there, so a
+single cross-platform payload is always safe to ship. Names are
+camelCase in the managed-configuration payload; the Windows ADMX
+template renders the PascalCase variant in the Group Policy Editor —
+both are recognized.
 
 | Key | Type | Description |
 | --- | --- | --- |
@@ -79,9 +85,14 @@ PascalCase variant in the Group Policy Editor — both are recognized.
 | `disableClientRoutes` | boolean | This peer does not route traffic to other peers. |
 | `disableServerRoutes` | boolean | This peer is not a router for others. |
 | `disableMetricsCollection` | boolean | Disable anonymous usage telemetry. |
+| `enableLocalMetrics` | boolean | Expose the client's local Prometheus `/metrics` endpoint. |
+| `localMetricsAddress` | string | Listen address of the local `/metrics` endpoint (default `127.0.0.1:9191`). |
 | `disableUpdateSettings` | boolean | Block every configuration change from UI or CLI on this device (read-only mode). |
 | `disableProfiles` | boolean | Hide the profile menu in the GUI and reject profile CRUD via CLI. |
 | `disableNetworks` | boolean | Hide the Networks / Exit Node menus in the GUI and reject the related RPCs. |
+| `disableAdvancedView` | boolean | Hide the advanced section of the client UI. UI-only: it is not part of the daemon configuration, so nothing is rejected on its account — the client just stops offering the section. |
+| `allowRemoteJobs` | boolean | Allow management-requested remote jobs (e.g. debug bundles) on this peer. Off by default; equivalent to `--allow-remote-jobs`. |
+| `debugBundleUploadURL` | string | Override the upload service used for debug bundles produced by remote jobs, taking precedence over the value requested by Management. Must be an `https` URL with a host. |
 | `splitTunnelMode` | string | `allow` or `disallow` — split-tunnel policy mode (Android only at the client level; harmless on desktop). |
 | `splitTunnelApps` | string | Comma-separated list of package names that the split-tunnel mode applies to (Android only). |
 
@@ -111,7 +122,16 @@ PascalCase variant in the Group Policy Editor — both are recognized.
   ignored there. Safe to ship in cross-platform payloads.
 - The `disableMetricsCollection` key is reserved for an upcoming
   metrics integration; the client recognizes it today but no metrics
-  pipeline is shipped yet.
+  pipeline is shipped yet. It is unrelated to `enableLocalMetrics`,
+  which exposes the client's own Prometheus endpoint.
+- `disableAdvancedView` is UI-only: unlike the keys above it is not
+  stored in the daemon configuration and never causes a request to be
+  rejected. The daemon reports it to the client, which hides the
+  advanced section. Pushing it as `false` explicitly re-enables the
+  section on a client that hid it for another reason.
+- `allowRemoteJobs` locks the corresponding client toggle whenever the
+  key is present, including when its value is `false` — so an admin can
+  pin remote jobs off and keep users from turning them on.
 
 ## Windows
 
@@ -335,10 +355,101 @@ reboots; on un-enrolled devices the file is wiped at the next reboot
 (macOS-imposed). Prefer the Custom Mac Application Settings policy
 above when the fleet is enrolled.
 
+## iOS
+
+On iOS and tvOS there is no filesystem location for policy. Apple's
+channel for a managed app is **Managed App Configuration**: the MDM
+sends a dictionary together with the managed app, and iOS hands it to
+that app only. NetBird reads it from the app's own preferences, so the
+payload must target the NetBird app's bundle id — `io.netbird.app` on
+iOS and iPadOS, `io.netbird.app.tv` on tvOS.
+
+The app must be installed **as a managed app** by the same MDM that
+sends the configuration. A copy the user installed from the App Store
+themselves cannot receive an app configuration, and NetBird will run
+with no policy on such a device.
+
+### Pushing the payload
+
+The payload is a plain property-list dictionary with the same key names
+used on desktop:
+
+```xml
+<dict>
+    <key>managementURL</key>
+    <string>https://api.netbird.io:443</string>
+    <key>disableProfiles</key>
+    <true/>
+    <key>disableUpdateSettings</key>
+    <true/>
+</dict>
+```
+
+Start from <a href="/docs-static/files/netbird-ios-appconfig.plist" download>netbird-ios-appconfig.plist</a> and delete the keys you do not want to
+enforce. Where to put it, by provider:
+
+- **Microsoft Intune**: **Apps → App configuration policies → Add →
+  Managed devices**, platform **iOS/iPadOS**, pick the NetBird app, then
+  **Configuration settings format → Enter XML data** and paste the
+  dictionary.
+- **Jamf Pro**: **Devices → Mobile Device Apps → NetBird → App
+  Configuration**, paste the dictionary.
+- **Kandji**, **Mosyle**, **Workspace ONE**, **JumpCloud**: the same
+  field exists on the managed-app assignment, usually labelled *App
+  Configuration* or *Application Configuration*.
+
+Booleans may be written as `<true/>`/`<false/>` or as `<integer>1</integer>`/`<integer>0</integer>`;
+both are accepted. Integers and strings behave as on desktop.
+
+### What each key does on iOS
+
+<Warning>
+The policy reaches the NetBird **app**, not the tunnel engine. On iOS
+the engine runs in a Network Extension, a separate process with its own
+preferences domain, which Apple's app-configuration channel does not
+deliver to. So the keys below lock and reshape the interface, and the
+app refuses configuration changes accordingly — but keys whose effect is
+applied by the engine on the connection itself (`managementURL`,
+`preSharedKey`, `rosenpassEnabled`, `rosenpassPermissive`,
+`blockInbound`, `wireguardPort`, `lazyConnection`) are **not yet
+enforced on the tunnel**. Treat iOS policy as interface lockdown today,
+not as connection compliance. Mirroring the dictionary into the shared
+app group so the extension can read it is tracked work.
+</Warning>
+
+| Key | Effect in the iOS / tvOS app |
+| --- | --- |
+| `managementURL` | Hides Settings → Connection and the onboarding server step; the profile-creation sheet shows and submits the enforced URL |
+| `preSharedKey` | The key row reads *Configured* and is locked — no Save, no Remove. The value itself never crosses the bridge |
+| `rosenpassEnabled` / `rosenpassPermissive` | Locks its own toggle and shows the enforced value |
+| `disableClientRoutes` | Hides the exit-node selector; the resource list explains why instead of listing |
+| `disableAutoConnect` | VPN On Demand becomes read-only |
+| `disableProfiles` | Hides the Profiles section — no create, switch, or remove |
+| `disableNetworks` | Removes the Resources tab |
+| `disableAdvancedView` | Hides Advanced (on tvOS, the whole section) |
+| `disableUpdateSettings` | Read-only mode: nothing is hidden, every configuration control is locked |
+| `allowRemoteJobs` | Locks the remote debug bundle toggle |
+
+The remaining keys have no iOS surface and are parsed and ignored:
+`allowServerSSH`, `disableServerRoutes`, `disableAutostart`,
+`disableMetricsCollection`, `enableLocalMetrics`, `localMetricsAddress`,
+`debugBundleUploadURL`, `splitTunnelMode`, `splitTunnelApps`. They are
+safe to leave in a payload shared with desktop devices.
+
+### Verifying on a device
+
+There is no CLI on iOS. A managed setting shows a lock and a **Managed
+by your organization** note in the app; a gated section disappears
+altogether. If neither happens, the app did not receive the
+configuration — check that it is installed as a managed app, that the
+app-configuration payload is assigned to the same device group, and that
+the bundle id matches (`io.netbird.app`, or `io.netbird.app.tv` on
+tvOS).
+
 ## Verifying enforcement
 
-On any platform, the cleanest verification is the daemon's own debug
-dump:
+On Windows and macOS, the cleanest verification is the daemon's own
+debug dump:
 
 ```bash
 netbird debug config
@@ -373,6 +484,11 @@ Check that the daemon can see the source.
   `sudo defaults read /Library/Managed\ Preferences/io.netbird.client`
   — if the file is missing, the MDM payload was not pushed or the
   bundle id in the profile does not match `io.netbird.client`.
+- iOS / tvOS: nothing is locked in the app. The app configuration only
+  reaches an app the MDM itself installed, so confirm NetBird is a
+  managed app on that device, that the app-configuration payload is
+  assigned to the same group, and that its bundle id is
+  `io.netbird.app` (`io.netbird.app.tv` on tvOS).
 
 **The key shows up in the registry / plist but not in `netbird debug
 config` `mDMManagedFields`.**
@@ -393,9 +509,15 @@ The device is not MDM-enrolled. macOS protects
 controls the directory. Enroll the device with a real MDM provider for
 persistent rollouts.
 
+**On iOS, the interface is locked but the connection ignores the policy.**
+Expected today: the tunnel engine runs in a Network Extension that does
+not receive the app configuration. See the warning under
+[iOS](#what-each-key-does-on-i-os).
+
 **My MDM provider is not in the list above.**
-Any MDM that can push a Configuration Profile on macOS or write a
-registry value on Windows works. The mechanism is OS-native, not
+Any MDM that can push a Configuration Profile on macOS, write a
+registry value on Windows, or send an app configuration on iOS works.
+The mechanism is OS-native, not
 NetBird-specific. If you hit a quirk specific to your provider, please
 open an issue at
 https://github.com/netbirdio/netbird/issues with the provider name and
