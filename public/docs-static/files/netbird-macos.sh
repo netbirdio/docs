@@ -65,9 +65,15 @@ disableMetricsCollection="$NULL"
 disableUpdateSettings="$NULL"
 disableProfiles="$NULL"
 disableNetworks="$NULL"
+disableAdvancedView="$NULL"                # UI-only: hides the advanced section, rejects nothing
 rosenpassEnabled="$NULL"
 rosenpassPermissive="$NULL"
+lazyConnection="$NULL"                     # "true"/"false"; absent defers to the Management setting
 wireguardPort='51820'
+allowRemoteJobs="$NULL"                    # present at any value locks the client toggle
+debugBundleUploadURL="$NULL"               # https URL with a host
+enableLocalMetrics="$NULL"                 # local Prometheus endpoint; not the usage telemetry switch
+localMetricsAddress="$NULL"                # default 127.0.0.1:9191
 splitTunnelMode="$NULL"                    # "allow" or "disallow", Android-only at the daemon level
 splitTunnelApps="$NULL"                    # comma-separated app IDs, Android-only
 ##############################################################################
@@ -175,9 +181,15 @@ main() {
   is_set "$disableUpdateSettings"     && emit_bool    disableUpdateSettings     "$disableUpdateSettings"
   is_set "$disableProfiles"           && emit_bool    disableProfiles           "$disableProfiles"
   is_set "$disableNetworks"           && emit_bool    disableNetworks           "$disableNetworks"
+  is_set "$disableAdvancedView"       && emit_bool    disableAdvancedView       "$disableAdvancedView"
   is_set "$rosenpassEnabled"          && emit_bool    rosenpassEnabled          "$rosenpassEnabled"
   is_set "$rosenpassPermissive"       && emit_bool    rosenpassPermissive       "$rosenpassPermissive"
+  is_set "$lazyConnection"            && emit_bool    lazyConnection            "$lazyConnection"
   is_set "$wireguardPort"             && emit_int     wireguardPort             "$wireguardPort"
+  is_set "$allowRemoteJobs"           && emit_bool    allowRemoteJobs           "$allowRemoteJobs"
+  is_set "$debugBundleUploadURL"      && emit_string  debugBundleUploadURL      "$debugBundleUploadURL"
+  is_set "$enableLocalMetrics"        && emit_bool    enableLocalMetrics        "$enableLocalMetrics"
+  is_set "$localMetricsAddress"       && emit_string  localMetricsAddress       "$localMetricsAddress"
   is_set "$splitTunnelMode"           && emit_split_tunnel_mode                  "$splitTunnelMode"
   is_set "$splitTunnelApps"           && emit_string  splitTunnelApps           "$splitTunnelApps"
 
