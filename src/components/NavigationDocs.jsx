@@ -515,6 +515,10 @@ export const docsNavigation = [
                     { title: 'How It Works', href: '/agent-network/how-it-works' },
                     { title: 'Quickstart', href: '/agent-network/quickstart' },
                     { title: 'Providers', href: '/agent-network/providers' },
+                    {
+                        title: 'Connect Agents',
+                        href: '/agent-network/connect-agents',
+                    },
                     { title: 'Clusters', href: '/agent-network/clusters' },
                 ],
             },
