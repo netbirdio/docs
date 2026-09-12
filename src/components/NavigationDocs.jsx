@@ -892,6 +892,10 @@ export const docsNavigation = [
                         href: '/client/connect-on-startup',
                     },
                     {
+                        title: 'Disable Firewall Configuration',
+                        href: '/client/disable-firewall',
+                    },
+                    {
                         title: 'Enable Quantum-Resistance',
                         href: '/client/post-quantum-cryptography',
                     },
