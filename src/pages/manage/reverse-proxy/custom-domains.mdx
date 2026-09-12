@@ -1,4 +1,4 @@
-import {Note} from "@/components/mdx"
+import {Note, Warning} from "@/components/mdx"
 
 export const description =
     'Configure free and custom domains for NetBird Reverse Proxy services, including CNAME verification and DNS setup.'
@@ -90,6 +90,53 @@ On a self-hosted deployment:
 
 The exact target value depends on the proxy cluster you selected when adding the domain. The NetBird dashboard displays the required CNAME record and target after you save the domain.
 
+### Check your CAA records
+
+A [CAA record](https://datatracker.ietf.org/doc/html/rfc8659) lists the certificate authorities allowed to issue certificates for a domain. If your domain has CAA records and none of them authorize the certificate authority the proxy uses, certificate issuance is refused and your services are unreachable over HTTPS.
+
+Domains without any CAA records need no action - when no records exist, every certificate authority is allowed.
+
+#### Which certificate authority to authorize
+
+NetBird Cloud issues certificates through [ZeroSSL](https://zerossl.com/) on all shared proxy clusters, and ZeroSSL certificates are signed by Sectigo. The value to authorize is therefore `sectigo.com`.
+
+<Note>
+    The `sectigo.com` value applies only to the shared proxy clusters that NetBird manages on NetBird Cloud. If your services run on a self-hosted proxy, authorize whichever certificate authority that proxy is configured to use instead - for example, `letsencrypt.org` for Let's Encrypt. Everything else in this section applies either way.
+</Note>
+
+#### Add the records
+
+If your domain has CAA records, add both of the following. The `issue` tag covers regular names and `issuewild` covers wildcard names; the proxy needs both:
+
+| Record Type | Name | Flags | Tag | Value |
+|-------------|------|-------|-----|-------|
+| `CAA` | `proxy.example.com` | `0` | `issue` | `sectigo.com` |
+| `CAA` | `proxy.example.com` | `0` | `issuewild` | `sectigo.com` |
+
+Some DNS providers ask for flags, tag, and value in separate fields, as above. Others accept the full zone file line:
+
+```
+proxy.example.com. 3600 IN CAA 0 issue "sectigo.com"
+proxy.example.com. 3600 IN CAA 0 issuewild "sectigo.com"
+```
+
+Adding these records does not replace your existing CAA records - a domain can authorize several certificate authorities at once, so your other providers keep working. Removing all CAA records from the domain also resolves the problem, but it lifts the restriction for every certificate authority.
+
+<Warning>
+    CAA records are inherited. A certificate authority checks the exact name first and then walks up the tree, stopping at the closest ancestor that has CAA records. If `proxy.example.com` has no records but `example.com` does, the records on `example.com` apply. Add the records above to `proxy.example.com`, or include `sectigo.com` in the records on `example.com`.
+</Warning>
+
+#### Verify the records
+
+Check the custom domain and each parent name before verifying the domain in the dashboard:
+
+```bash
+dig CAA proxy.example.com +short
+dig CAA example.com +short
+```
+
+Empty output for both means no CAA records apply and nothing needs to change. If either returns records, they must include `sectigo.com` for both the `issue` and `issuewild` tags.
+
 ### Step 2: Verify in the dashboard
 
 After creating the DNS record, return to the **Reverse Proxy** > **Custom Domains** page and click **Verify Domain** next to the domain.
@@ -172,6 +219,17 @@ If the record does not appear, check your DNS provider for typos or wait for pro
 ### CNAME pointing to the wrong cluster
 
 The CNAME record must resolve to one of your available proxy clusters. If you selected a different cluster when adding the domain, the verification lookup will fail. Verify the expected target value on the Custom Domains page in the dashboard and update your DNS record accordingly.
+
+### Certificate is not issued after verification
+
+If the domain reaches **Active** but services on it return a TLS error, a CAA record is most likely refusing the certificate authority. Check the domain and its parents:
+
+```bash
+dig CAA proxy.example.com +short
+dig CAA example.com +short
+```
+
+If either returns records that do not include the certificate authority your proxy uses - `sectigo.com` on NetBird Cloud's managed clusters - add the `issue` and `issuewild` records described in [Check your CAA records](#check-your-caa-records). Certificate issuance is retried automatically once the DNS change propagates.
 
 ### Domain already in use
 
