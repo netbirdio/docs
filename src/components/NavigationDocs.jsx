@@ -368,6 +368,10 @@ export const docsNavigation = [
                         //                            { title: 'JumpCloud', href: '/manage/team/single-sign-on/jumpcloud' },
                         //                        ]
                     },
+                    {
+                        title: 'Sign-in Domains',
+                        href: '/manage/team/sign-in-domains',
+                    },
                 ],
             },
             {
