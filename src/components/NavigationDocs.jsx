@@ -878,6 +878,7 @@ export const docsNavigation = [
             { title: 'gRPC Daemon Socket', href: '/client/grpc-socket' },
             { title: 'HTTP/JSON Daemon Socket', href: '/client/json-socket' },
             { title: 'Environment Variables', href: '/client/environment-variables' },
+            { title: 'Local Metrics Endpoint', href: '/client/local-metrics' },
             { title: 'MDM Integration', href: '/client/mdm-integration' },
             {
                 title: 'Settings',
