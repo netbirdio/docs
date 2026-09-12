@@ -1,0 +1,429 @@
+import {Note, Warning} from "@/components/mdx"
+
+export const description =
+  "Manually deploy NetBird with separate Management, Signal, Relay, and Dashboard containers using Docker Compose and an external reverse proxy."
+
+# Manual multi-container setup
+
+This guide manually deploys NetBird with separate `management`, `signal`, `relay`, and `dashboard` containers. It uses the embedded identity provider, SQLite, and the current NetBird images.
+
+The [combined `netbird-server` manual setup](/selfhosted/manual-setup) is recommended for most installations because it reduces the number of services and configuration files to manage. Choose this multi-container layout when separate service lifecycles, per-service resource controls, or your infrastructure topology make distinct Management, Signal, and Relay services a better fit.
+
+The guide prepares the NetBird services and loopback backend ports. Finish the deployment with one of the tested reverse proxy guides:
+
+- [Traefik](/selfhosted/manual-setup/reverse-proxies/traefik)
+- [Nginx](/selfhosted/manual-setup/reverse-proxies/nginx)
+- [Caddy](/selfhosted/manual-setup/reverse-proxies/caddy)
+- [Nginx Proxy Manager](/selfhosted/manual-setup/reverse-proxies/nginx-proxy-manager)
+
+## Architecture and ports
+
+One public hostname serves every HTTP, WebSocket, and gRPC endpoint. The reverse proxy selects a backend by path.
+
+| Public path | Protocol | Backend |
+|---|---|---|
+| `/relay` | WebSocket | `relay:80` |
+| `/ws-proxy/signal` | WebSocket | `signal:80` |
+| `/signalexchange.SignalExchange/*` | gRPC over h2c | `signal:10000` |
+| `/api/*` | HTTP | `management:80` |
+| `/oauth2/*` | HTTP | `management:80` |
+| `/ws-proxy/management` | WebSocket | `management:80` |
+| `/management.ManagementService/*` | gRPC over h2c | `management:80` |
+| `/management.ProxyService/*` | gRPC over h2c | `management:80` |
+| Every other path | HTTP | `dashboard:80` |
+
+The public listener requirements are:
+
+| Port | Protocol | Owner | Purpose |
+|---|---|---|---|
+| `80` | TCP | Reverse proxy | HTTP redirect and ACME HTTP challenge, when used. |
+| `443` | TCP | Reverse proxy | Dashboard, API, embedded IdP, Management, Signal, and secure Relay. |
+| `3478` | UDP | `relay` | STUN for NAT discovery. This bypasses the HTTP reverse proxy. |
+
+The Compose file also binds backend ports to loopback for a proxy installed on the host:
+
+| Host address | Service |
+|---|---|
+| `127.0.0.1:8080` | Dashboard HTTP |
+| `127.0.0.1:8081` | Management HTTP, WebSocket, and h2c gRPC |
+| `127.0.0.1:8083` | Signal WebSocket |
+| `127.0.0.1:10000` | Signal h2c gRPC |
+| `127.0.0.1:8084` | Relay WebSocket |
+
+<Note>
+A Docker-based Traefik or Nginx Proxy Manager deployment reaches the services by container name over the private `netbird-proxy` network. Keeping the loopback bindings does not publish them to the Internet.
+</Note>
+
+## Prerequisites
+
+- A public Linux server with Docker Engine and Docker Compose v2.
+- A hostname such as `netbird.example.com` whose A record points directly to the server. If an AAAA record exists, IPv6 must reach the same server.
+- Inbound TCP 80 and 443 and inbound UDP 3478 allowed by provider, network, and host firewalls.
+- `curl`, `jq`, and `openssl`.
+- No CDN or HTTP proxy in front of the NetBird hostname.
+
+A small deployment can run with 1 CPU and 1 GB of memory when swap is available. At least 2 GB is recommended to give image pulls, upgrades, and diagnostics more headroom.
+
+<Warning>
+Docker-published ports can bypass rules managed only through `ufw` or `firewalld`. Enforce the public port policy in your hosting provider or upstream network firewall too. Never publish ports 8080, 8081, 8083, 8084, or 10000 on all interfaces.
+</Warning>
+
+## 1. Verify DNS and Docker
+
+Set the real hostname and confirm that DNS and Docker are ready:
+
+```bash
+NETBIRD_DOMAIN="netbird.example.com"
+
+getent ahostsv4 "$NETBIRD_DOMAIN"
+docker --version
+docker compose version
+```
+
+If the hostname has an AAAA record, verify it too:
+
+```bash
+getent ahostsv6 "$NETBIRD_DOMAIN"
+```
+
+For a host using `ufw`, the required rules are:
+
+```bash
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 3478/udp
+sudo ufw status
+```
+
+## 2. Create the deployment directory
+
+```bash
+install -d -m 700 "$HOME/netbird"
+cd "$HOME/netbird"
+umask 077
+```
+
+Create `.env`:
+
+```bash
+cat > .env <<'EOF'
+NETBIRD_DOMAIN=netbird.example.com
+EOF
+
+chmod 600 .env
+```
+
+Replace the example hostname before continuing.
+
+## 3. Choose the trusted proxy address
+
+NetBird accepts forwarded client addresses only from explicitly trusted proxies. Choose one address based on where the proxy runs:
+
+| Proxy placement | Trusted address |
+|---|---|
+| Nginx or Caddy installed on this host | `172.30.0.1/32` (the private Docker bridge gateway) |
+| Traefik or Nginx Proxy Manager in Docker | `172.30.0.10/32` (the fixed proxy address used by these guides) |
+
+Add the choice to `.env`. This example is for a host-installed proxy:
+
+```bash
+cat >> .env <<'EOF'
+NETBIRD_TRUSTED_PROXY=172.30.0.1/32
+EOF
+```
+
+Do not use `0.0.0.0/0`. Trusting every source allows clients to forge forwarding headers.
+
+## 4. Create `management.json`
+
+Generate independent Relay and data-store encryption secrets, then render the Management configuration:
+
+```bash
+set -a
+. ./.env
+set +a
+
+NETBIRD_RELAY_AUTH_SECRET="$(openssl rand -base64 32 | tr -d '=')"
+NETBIRD_STORE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+
+cat > management.json <<EOF
+{
+  "Stuns": [
+    {
+      "Proto": "udp",
+      "URI": "stun:${NETBIRD_DOMAIN}:3478"
+    }
+  ],
+  "Relay": {
+    "Addresses": ["rels://${NETBIRD_DOMAIN}:443"],
+    "CredentialsTTL": "24h",
+    "Secret": "${NETBIRD_RELAY_AUTH_SECRET}"
+  },
+  "Signal": {
+    "Proto": "https",
+    "URI": "${NETBIRD_DOMAIN}:443"
+  },
+  "ReverseProxy": {
+    "TrustedHTTPProxies": ["${NETBIRD_TRUSTED_PROXY}"],
+    "TrustedHTTPProxiesCount": 0,
+    "TrustedPeers": ["${NETBIRD_TRUSTED_PROXY}"]
+  },
+  "Datadir": "/var/lib/netbird",
+  "DataStoreEncryptionKey": "${NETBIRD_STORE_ENCRYPTION_KEY}",
+  "EmbeddedIdP": {
+    "Enabled": true,
+    "Issuer": "https://${NETBIRD_DOMAIN}/oauth2",
+    "DashboardRedirectURIs": [
+      "https://${NETBIRD_DOMAIN}/nb-auth",
+      "https://${NETBIRD_DOMAIN}/nb-silent-auth"
+    ]
+  }
+}
+EOF
+
+chmod 600 management.json
+```
+
+<Warning>
+Back up `management.json`, especially `DataStoreEncryptionKey`, and the Management data volume. Losing the key makes stored setup keys, API tokens, and other encrypted values unusable.
+</Warning>
+
+## 5. Create Relay and Dashboard environments
+
+Use the same Relay secret in Management and Relay:
+
+```bash
+set -a
+. ./.env
+NETBIRD_RELAY_AUTH_SECRET="$(jq -r '.Relay.Secret' management.json)"
+set +a
+
+cat > relay.env <<EOF
+NB_LOG_LEVEL=info
+NB_LISTEN_ADDRESS=:80
+NB_EXPOSED_ADDRESS=rels://${NETBIRD_DOMAIN}:443
+NB_AUTH_SECRET=${NETBIRD_RELAY_AUTH_SECRET}
+NB_ENABLE_STUN=true
+NB_STUN_LOG_LEVEL=info
+NB_STUN_PORTS=3478
+EOF
+
+unset NETBIRD_RELAY_AUTH_SECRET NETBIRD_STORE_ENCRYPTION_KEY
+chmod 600 relay.env
+```
+
+Create the Dashboard environment:
+
+```bash
+set -a
+. ./.env
+set +a
+
+cat > dashboard.env <<EOF
+NETBIRD_MGMT_API_ENDPOINT=https://${NETBIRD_DOMAIN}
+NETBIRD_MGMT_GRPC_API_ENDPOINT=https://${NETBIRD_DOMAIN}
+AUTH_AUDIENCE=netbird-dashboard
+AUTH_CLIENT_ID=netbird-dashboard
+AUTH_CLIENT_SECRET=
+AUTH_AUTHORITY=https://${NETBIRD_DOMAIN}/oauth2
+USE_AUTH0=false
+AUTH_SUPPORTED_SCOPES=openid profile email groups
+AUTH_REDIRECT_URI=/nb-auth
+AUTH_SILENT_REDIRECT_URI=/nb-silent-auth
+NGINX_SSL_PORT=443
+LETSENCRYPT_DOMAIN=none
+EOF
+
+chmod 600 dashboard.env
+```
+
+`LETSENCRYPT_DOMAIN=none` keeps certificate handling in the selected reverse proxy.
+
+## 6. Create the Compose file
+
+```bash
+cat > docker-compose.yml <<'YAML'
+services:
+  dashboard:
+    image: netbirdio/dashboard:latest
+    container_name: netbird-dashboard
+    restart: unless-stopped
+    networks: [netbird-proxy]
+    ports:
+      - "127.0.0.1:8080:80"
+    env_file:
+      - ./dashboard.env
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "2"
+
+  signal:
+    image: netbirdio/signal:latest
+    container_name: netbird-signal
+    restart: unless-stopped
+    networks: [netbird-proxy]
+    ports:
+      - "127.0.0.1:8083:80"
+      - "127.0.0.1:10000:10000"
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "2"
+
+  relay:
+    image: netbirdio/relay:latest
+    container_name: netbird-relay
+    restart: unless-stopped
+    networks: [netbird-proxy]
+    ports:
+      - "127.0.0.1:8084:80"
+      - "3478:3478/udp"
+    env_file:
+      - ./relay.env
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "2"
+
+  management:
+    image: netbirdio/management:latest
+    container_name: netbird-management
+    restart: unless-stopped
+    networks: [netbird-proxy]
+    ports:
+      - "127.0.0.1:8081:80"
+    volumes:
+      - netbird_management:/var/lib/netbird
+      - ./management.json:/etc/netbird/management.json:ro
+    command:
+      - --port
+      - "80"
+      - --log-file
+      - console
+      - --log-level
+      - info
+      - --disable-anonymous-metrics=false
+      - --single-account-mode-domain=netbird.selfhosted
+      - --dns-domain=netbird.selfhosted
+      - --idp-sign-key-refresh-enabled
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+        max-file: "2"
+
+volumes:
+  netbird_management:
+
+networks:
+  netbird-proxy:
+    name: netbird-proxy
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
+YAML
+
+chmod 600 docker-compose.yml
+docker compose config --quiet
+```
+
+If `172.30.0.0/24` overlaps another host or Docker network, select an unused private subnet and change the gateway and trusted proxy addresses consistently.
+
+## 7. Start the NetBird backends
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose ps
+```
+
+All four services must show `Up`. The public HTTPS endpoint will not work until the reverse proxy is configured.
+
+Inspect a failed service without dumping every log:
+
+```bash
+docker compose logs --tail=100 management
+docker compose logs --tail=100 signal
+docker compose logs --tail=100 relay
+docker compose logs --tail=100 dashboard
+```
+
+Logs can contain hostnames, addresses, user information, and tokens. Redact them before sharing.
+
+## 8. Configure the reverse proxy
+
+Choose the multi-container section in one guide:
+
+- [Traefik multi-container routing](/selfhosted/manual-setup/reverse-proxies/traefik#multi-container-layout)
+- [Nginx multi-container routing](/selfhosted/manual-setup/reverse-proxies/nginx#multi-container-layout)
+- [Caddy multi-container routing](/selfhosted/manual-setup/reverse-proxies/caddy#multi-container-layout)
+- [Nginx Proxy Manager multi-container routing](/selfhosted/manual-setup/reverse-proxies/nginx-proxy-manager#multi-container-layout)
+
+For Docker-based Traefik or Nginx Proxy Manager, confirm that the proxy joins `netbird-proxy` at `172.30.0.10`. For host-installed Nginx or Caddy, keep the loopback upstreams and trust `172.30.0.1/32`.
+
+## 9. Verify the complete deployment
+
+Run these tests from a machine outside the server's network:
+
+```bash
+NETBIRD_DOMAIN="netbird.example.com"
+
+curl -fsSI "http://${NETBIRD_DOMAIN}/"
+curl -fsSI "https://${NETBIRD_DOMAIN}/setup"
+curl -fsS "https://${NETBIRD_DOMAIN}/oauth2/.well-known/openid-configuration"
+```
+
+Expected results:
+
+- HTTP redirects to HTTPS.
+- HTTPS uses a certificate trusted for the exact hostname.
+- `/setup` returns `200` before the first owner exists.
+- OIDC discovery returns an issuer of `https://netbird.example.com/oauth2` with your real hostname.
+
+Verify gRPC reaches Management rather than the Dashboard:
+
+```bash
+curl -sS --http2 -D - -o /dev/null \
+  -X POST "https://${NETBIRD_DOMAIN}/management.ManagementService/GetServerKey" \
+  -H 'Content-Type: application/grpc' \
+  --data-binary $'\x00\x00\x00\x00\x00'
+```
+
+The response must use `content-type: application/grpc`. An application-level gRPC error is acceptable for this deliberately incomplete request; HTML is not.
+
+Verify the Relay WebSocket upgrade:
+
+```bash
+curl -sS --http1.1 --max-time 3 -D - -o /dev/null \
+  "https://${NETBIRD_DOMAIN}/relay" \
+  -H 'Connection: Upgrade' \
+  -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=='
+```
+
+A successful route returns `101 Switching Protocols`; `curl` then times out because the WebSocket remains open.
+
+Finally, create the first owner at `https://netbird.example.com/setup`, enroll two clients, and confirm both `netbird status --detail` and traffic between them. A working Dashboard alone does not verify Signal or Relay.
+
+## Stop, resume, and migrate
+
+Stop the containers while preserving data:
+
+```bash
+docker compose down
+```
+
+Resume them with:
+
+```bash
+docker compose up -d
+```
+
+Do not add `--volumes` unless you intend to delete the Management database permanently. Before changes, follow the [backup guide](/selfhosted/maintenance/backup). If you later want to consolidate the services, follow [Migrate to the combined container](/selfhosted/migration/combined-container).
