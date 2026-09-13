@@ -1,0 +1,233 @@
+import {Note, Warning} from "@/components/mdx";
+
+export const description = 'Install the NetBird client on Red Hat OpenShift using the certified rootless UBI image, with ephemeral or persistent peer identity.'
+
+# OpenShift Installation
+
+The NetBird client allows a peer to join a pre-existing NetBird deployment. If a NetBird deployment is not yet available, there are both managed and [self-hosted](https://docs.netbird.io/selfhosted/selfhosted-quickstart) options available.
+
+This guide uses the Red Hat certified client image, which is built on Red Hat Universal Base Image (UBI) 9 and runs under the stock OpenShift `restricted-v2` security context constraint. No custom SCC, privileged mode, TUN device, host networking, or elevated capabilities are required.
+
+## Certified Image
+
+```bash
+ghcr.io/netbirdio/netbird:0.79.0-rootless-ubi
+```
+
+The image is published for Linux AMD64 and ARM64. It runs the WireGuard stack entirely in userspace through netstack, runs as a non-root user, and keeps its state directory writable for group `0` so OpenShift can assign an arbitrary UID. Pin a version or digest for reproducible deployments; see [NetBird releases](https://github.com/netbirdio/netbird/releases).
+
+Configuration, state, the daemon socket, and file logs all live under `/var/lib/netbird`.
+
+## Quick Test with Podman
+
+Before deploying to a cluster, verify the image and your setup key locally.
+
+1. Pull the image:
+
+```bash
+podman pull ghcr.io/netbirdio/netbird:0.79.0-rootless-ubi
+```
+
+2. Create a setup key in your NetBird dashboard under **Setup Keys**, or via the [API](/api/resources/setup-keys), then start the client:
+
+```bash
+podman run -d --name netbird-ubi --hostname netbird-ubi \
+  --cap-drop=ALL \
+  --security-opt=no-new-privileges \
+  -e NB_SETUP_KEY=<SETUP KEY> \
+  -v netbird-ubi-state:/var/lib/netbird \
+  ghcr.io/netbirdio/netbird:0.79.0-rootless-ubi
+```
+
+3. Verify the connection, and use the logs if the check fails:
+
+```bash
+podman exec netbird-ubi netbird status --check startup
+podman exec netbird-ubi netbird status --detail
+podman logs netbird-ubi
+```
+
+If you self-host NetBird, also set `NB_MANAGEMENT_URL` to your management service, for example `https://netbird.example.com`. Omit it for NetBird Cloud. `NB_HOSTNAME` sets the peer name shown in the dashboard. To supply the key from a file instead of an environment variable, use `NB_SETUP_KEY_FILE`. See [Environment variables](/get-started/cli#environment-variables) for the full list.
+
+## Create the Setup Key Secret
+
+Store the setup key in a Secret rather than in the pod spec. Create it in your target namespace through your normal secret-management process:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: netbird-ubi
+stringData:
+  NB_SETUP_KEY: "<YOUR_SETUP_KEY>"
+  # Include only for self-hosted management:
+  # NB_MANAGEMENT_URL: "https://netbird.example.com"
+```
+
+See [setup keys](/manage/peers/register-machines-using-setup-keys) for how to create and scope them.
+
+## Choose a Deployment Mode
+
+The client keeps its peer identity in `/var/lib/netbird`. Whether that directory has to survive a restart determines which mode to use.
+
+<Note>
+    On OpenShift, leave `runAsUser`, `runAsGroup`, and `fsGroup` unset in both examples below. The `restricted-v2` admission applies the namespace's allowed identity and volume group for you.
+</Note>
+
+### Ephemeral Peers
+
+Create a setup key marked both **Reusable** and **Ephemeral**. Each time the container starts it registers as a new peer, and the management service automatically deletes peers that have been offline for 10 minutes, so stale entries do not accumulate. This suits Deployments, autoscaled replicas, and short-lived jobs, and needs no volume at all.
+
+Assign auto-groups to the setup key so that access policies apply to every peer it registers, since peer names and addresses change between restarts.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netbird-ubi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: netbird-ubi
+  template:
+    metadata:
+      labels:
+        app: netbird-ubi
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: netbird
+          image: ghcr.io/netbirdio/netbird:0.79.0-rootless-ubi
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          envFrom:
+            - secretRef:
+                name: netbird-ubi
+          readinessProbe:
+            exec:
+              command: ["netbird", "status", "--check", "startup"]
+            periodSeconds: 10
+            timeoutSeconds: 15
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+```
+
+Because a reusable key is required here, restrict its scope with auto-groups and an expiry, and rotate it like any other credential.
+
+### Persistent Peer Identity
+
+Mount a PersistentVolumeClaim at `/var/lib/netbird` to keep the same peer identity and NetBird address across pod replacements. Use this when policies, routes, or DNS records reference a specific peer.
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: netbird-ubi-state
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: netbird-ubi
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: netbird-ubi
+  template:
+    metadata:
+      labels:
+        app: netbird-ubi
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: netbird
+          image: ghcr.io/netbirdio/netbird:0.79.0-rootless-ubi
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          envFrom:
+            - secretRef:
+                name: netbird-ubi
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/netbird
+          readinessProbe:
+            exec:
+              command: ["netbird", "status", "--check", "startup"]
+            periodSeconds: 10
+            timeoutSeconds: 15
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: netbird-ubi-state
+```
+
+Mount the entire `/var/lib/netbird` directory, not just `config.json`. Keep one identity and one writer per state volume: the Deployment uses a single replica and the `Recreate` strategy, so do not scale it against the same PVC. Give each additional peer its own state volume.
+
+<Warning>
+    Persisted credentials have restrictive permissions, and arbitrary-UID support does not make one UID's credentials readable by another. Retain the same allowed UID when reusing state; moving a PVC to a different namespace may require an administrator to migrate ownership. Do not make credential files world-readable.
+</Warning>
+
+## Verify the Deployment
+
+Apply the manifest in the Secret's namespace, then require the startup check to succeed:
+
+```bash
+oc apply -f netbird-ubi.yaml
+oc rollout status deployment/netbird-ubi
+oc exec deployment/netbird-ubi -- netbird status --check startup
+oc exec deployment/netbird-ubi -- netbird status --detail
+oc logs deployment/netbird-ubi
+```
+
+The peer also appears in your NetBird dashboard under **Peers** once registration completes.
+
+<Note>
+    `--check startup` requires management and signal connectivity, plus an available relay when relays are listed. The weaker `--check ready` accepts Idle and Connecting states and does not prove connectivity, which is why the manifests above probe with `startup`.
+</Note>
+
+## Limitations
+
+The rootless image is well suited to inbound access and routing peer roles. It is not a transparent outbound VPN: netstack does not install overlay routes for the pod, so applications initiating overlay connections must use the SOCKS5 proxy at `127.0.0.1:1080` in the same network namespace. Keep that unauthenticated proxy on loopback.
+
+DNS management and packet capture are disabled by default in this image (`NB_DISABLE_DNS=true`, `NB_ENABLE_CAPTURE=false`), so NetBird names do not resolve through the pod's normal resolver.
+
+<Warning>
+    ICMP diagnostics may be unavailable in a capability-free container. Test your intended TCP or UDP service instead of relying on ping or traceroute.
+</Warning>
+
+## Troubleshooting
+
+1. If you are using the self-hosted version and haven't set `NB_MANAGEMENT_URL`, the client will use the default URL, which is `https://api.netbird.io:443`.
+
+2. If the pod fails to start with a permissions error on `/var/lib/netbird`, confirm that no `runAsUser` or `fsGroup` is set in the pod or container `securityContext`, and that the StorageClass supports pod volume permissions. Do not add privileged init containers or relax the SCC to work around it.
+
+3. If peers accumulate in the dashboard after restarts, the setup key is likely not marked **Ephemeral**. Ephemeral peers are removed after 10 minutes of inactivity; other peers persist until deleted.

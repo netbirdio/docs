@@ -55,6 +55,7 @@ export const docsNavigation = [
                     { title: 'Windows', href: '/get-started/install/windows' },
                     { title: 'MacOS', href: '/get-started/install/macos' },
                     { title: 'Docker', href: '/get-started/install/docker' },
+                    { title: 'OpenShift', href: '/get-started/install/openshift' },
                     { title: 'iOS', href: '/get-started/install/ios' },
                     { title: 'tvOS', href: '/get-started/install/tvos' },
                     { title: 'Android', href: '/get-started/install/android' },
