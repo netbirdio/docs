@@ -401,20 +401,45 @@ enforce. Where to put it, by provider:
 Booleans may be written as `<true/>`/`<false/>` or as `<integer>1</integer>`/`<integer>0</integer>`;
 both are accepted. Integers and strings behave as on desktop.
 
-### What each key does on iOS
+### When a policy takes effect
+
+Every key is enforced on iOS: the ones that reshape the interface, and
+the ones the engine applies to the connection itself. Getting there
+takes one extra step that is worth understanding, because it decides
+*when* a change lands.
+
+iOS delivers the configuration to the NetBird app. The tunnel, though,
+runs in a Network Extension — a separate process the system starts when
+the tunnel comes up and stops when it goes down, and which Apple's
+app-configuration channel does not deliver to. The app therefore passes
+the configuration on to the extension, and does so whenever it is
+running: on activation, when a settings screen appears, and on a timer
+roughly every 30 seconds. When the policy has changed, the engine
+restarts on its own and the user is told their IT policy was applied.
+
+<Note>
+**A policy lands while the app is open.** With NetBird in the
+foreground, a change pushed from your MDM reaches the tunnel within
+about 30 seconds, or immediately when the user switches back to the
+app. Nothing needs to be restarted by hand.
+
+**While the app is closed or backgrounded, iOS suspends it**, and a
+policy pushed in that window — or withdrawn in it — reaches the tunnel
+only the next time the app is opened. This matters most with VPN On
+Demand or the widget, where the tunnel can come up without the app ever
+appearing: it then runs on the last policy the app saw. Plan rollouts
+accordingly, and treat "applied" as "applied once the user next opens
+the app".
+</Note>
 
 <Warning>
-The policy reaches the NetBird **app**, not the tunnel engine. On iOS
-the engine runs in a Network Extension, a separate process with its own
-preferences domain, which Apple's app-configuration channel does not
-deliver to. So the keys below lock and reshape the interface, and the
-app refuses configuration changes accordingly — but keys whose effect is
-applied by the engine on the connection itself (`managementURL`,
-`preSharedKey`, `rosenpassEnabled`, `rosenpassPermissive`,
-`blockInbound`, `wireguardPort`, `lazyConnection`) are **not yet
-enforced on the tunnel**. Treat iOS policy as interface lockdown today,
-not as connection compliance. Mirroring the dictionary into the shared
-app group so the extension can read it is tracked work.
+**On tvOS only the interface is enforced.** The hand-off described above
+relies on a shared app group, which does not work between the tvOS app
+and its extension, so the tvOS engine runs without the policy. Keys that
+lock or hide controls behave as described; the ones the engine applies
+to the connection — `managementURL`, `preSharedKey`, `rosenpassEnabled`,
+`rosenpassPermissive`, `blockInbound`, `wireguardPort`, `lazyConnection`
+— do not reach the tunnel there yet.
 </Warning>
 
 | Key | Effect in the iOS / tvOS app |
@@ -430,11 +455,19 @@ app group so the extension can read it is tracked work.
 | `disableUpdateSettings` | Read-only mode: nothing is hidden, every configuration control is locked |
 | `allowRemoteJobs` | Locks the remote debug bundle toggle |
 
-The remaining keys have no iOS surface and are parsed and ignored:
-`allowServerSSH`, `disableServerRoutes`, `disableAutostart`,
-`disableMetricsCollection`, `enableLocalMetrics`, `localMetricsAddress`,
-`debugBundleUploadURL`, `splitTunnelMode`, `splitTunnelApps`. They are
-safe to leave in a payload shared with desktop devices.
+The table above is what the user sees. A second group of keys has no
+control to lock, because the engine applies them straight to the
+connection: `blockInbound`, `wireguardPort`, `lazyConnection`, and
+`debugBundleUploadURL` when a remote job produces a bundle. They are
+enforced just the same — there is simply nothing on screen to mark.
+
+The rest do not apply to the platform and are parsed and ignored:
+`allowServerSSH` (no SSH server on iOS), `disableServerRoutes` (an iOS
+peer does not route for others), `disableAutostart` (desktop GUI only),
+`disableMetricsCollection`, `enableLocalMetrics` and
+`localMetricsAddress` (the local endpoint is not reachable on iOS), and
+`splitTunnelMode` / `splitTunnelApps` (Android). They are safe to leave
+in a payload shared with desktop devices.
 
 ### Verifying on a device
 
@@ -445,6 +478,13 @@ configuration — check that it is installed as a managed app, that the
 app-configuration payload is assigned to the same device group, and that
 the bundle id matches (`io.netbird.app`, or `io.netbird.app.tv` on
 tvOS).
+
+That covers delivery to the app. To confirm a change reached the
+*tunnel*, change a policy while the tunnel is connected and bring
+NetBird to the foreground: the engine restarts and the device shows
+"NetBird configuration was updated by your IT policy". That notice comes
+from the extension, so seeing it means the engine applied the new
+policy.
 
 ## Verifying enforcement
 
@@ -509,10 +549,12 @@ The device is not MDM-enrolled. macOS protects
 controls the directory. Enroll the device with a real MDM provider for
 persistent rollouts.
 
-**On iOS, the interface is locked but the connection ignores the policy.**
-Expected today: the tunnel engine runs in a Network Extension that does
-not receive the app configuration. See the warning under
-[iOS](#what-each-key-does-on-i-os).
+**On iOS, a policy change has not reached the tunnel.**
+The app passes the configuration to the engine only while it is running.
+Open NetBird and leave it in the foreground for half a minute; the
+engine restarts and reports that the policy was applied. On tvOS the
+engine does not receive the policy at all — see [When a policy takes
+effect](#when-a-policy-takes-effect).
 
 **My MDM provider is not in the list above.**
 Any MDM that can push a Configuration Profile on macOS, write a
