@@ -43,7 +43,7 @@ This guide is for renaming the one public hostname of a deployment. If you only 
 - Shell access to the host and the directory where you ran `getting-started.sh`. It holds `docker-compose.yml`, `config.yaml`, and `dashboard.env`.
 - NetBird server v0.67.0 or later.
 - Control of DNS for the new name. If the built-in Traefik instance handles certificates, port 443 must remain reachable for its TLS-ALPN ACME challenge; keep port 80 reachable if you use its HTTP-to-HTTPS redirect. With an external reverse proxy, route the new hostname there and provision its certificate instead.
-- A maintenance window. Without the optional routing bridge in step 4, a peer cannot reach Management between recreating the server and updating that peer. Tunnels that are already established generally keep running, but the peer cannot receive configuration updates or negotiate new connections until it can reach Management again.
+- A maintenance window. `docker compose down` in step 4 stops Traefik along with the server, so both hostnames are unavailable for the short time it takes to recreate the stack, with or without the optional routing bridge. The bridge matters after the restart: with it, peers that still point at the old name reconnect; without it, a peer cannot reach Management until you update that peer. Tunnels that are already established generally keep running either way, but a peer cannot receive configuration updates or negotiate new connections until it can reach Management again.
 - A fresh [backup](/selfhosted/maintenance/backup) of the `netbird_data` volume and the config directory.
 
 ## Step 1: Create the DNS record first
@@ -167,7 +167,7 @@ Open `https://vpn.example.com` and log in. Every existing dashboard session is i
 
 ### Optional: keep the old name answering during the switch
 
-If you have many peers, or any Docker peers with persistent volumes, let Traefik accept both names until the last peer has moved. Parenthesize the two `Host()` matchers before combining them with a `PathPrefix`; without the parentheses, Traefik treats every path on the new host as a match for the gRPC and backend routers.
+If you have many peers, let Traefik accept both names until the last peer has moved. Parenthesize the two `Host()` matchers before combining them with a `PathPrefix`; without the parentheses, Traefik treats every path on the new host as a match for the gRPC and backend routers.
 
 ```yaml
 - traefik.http.routers.netbird-dashboard.rule=(Host(`vpn.example.com`) || Host(`netbird.example.com`))
@@ -204,7 +204,7 @@ The port matters. The client treats `https://vpn.example.com` and `https://vpn.e
 
 ### Docker peers
 
-The container image runs `netbird up` on start and reads its initial settings from `NB_*` environment variables. Keep the old-host routing bridge from step 4 active while updating Docker peers. An existing profile in `/var/lib/netbird` can take precedence over a changed `NB_MANAGEMENT_URL`; if the old hostname no longer routes, the entrypoint can restart-loop before you can run `docker compose exec`.
+The container image runs `netbird up` on start and reads its settings from `NB_*` environment variables. A changed `NB_MANAGEMENT_URL` is written into the stored profile in `/var/lib/netbird` on the next start, so recreating the container with the new value is enough to move the peer.
 
 Run the following commands from the directory containing the **client** Compose file. Update the existing service's environment entry as shown below; retain its other settings, capabilities, and volume declaration. This is a partial example, not a complete Compose file:
 
@@ -222,20 +222,13 @@ services:
 docker compose up -d --force-recreate netbird-client
 ```
 
-Keep the volume. It holds the peer's WireGuard key, which is what lets it reconnect as the same peer. Update the stored profile while the bridge keeps the container running:
-
-```bash
-docker compose exec -T netbird-client netbird down
-docker compose exec -T netbird-client netbird up --management-url https://vpn.example.com:443
-```
-
-Then verify the result:
+Keep the volume. It holds the peer's WireGuard key, which is what lets it reconnect as the same peer. Once the container is running again, verify the result:
 
 ```bash
 docker compose exec -T netbird-client netbird status --json
 ```
 
-If the container is already restart-looping, restore the old router rule or add the bridge before retrying. Do not remove the bridge until the JSON output reports the new `management.url` and `management.connected` is `true`. If your Compose service has a different name, substitute that service name in these commands.
+The JSON output should report the new `management.url` and `management.connected` as `true`. If your Compose service has a different name, substitute that service name in these commands.
 
 ### Desktop app
 
@@ -286,17 +279,15 @@ Confirm that the old OIDC issuer answers again, then point CLI peers back at the
 
 For each Docker peer, switch to the **client host** and the directory containing its Compose file, not the server's `~/netbird` directory. Restore `NB_MANAGEMENT_URL` to `https://netbird.example.com:443` in that client's Compose file, preserving its data volume and other settings. If the client uses a different service name, substitute it for `netbird-client` below.
 
-If the container cannot stay running because its stored profile points at the unavailable new hostname, first restore routing for that hostname in the server's parenthesized Traefik bridge, retaining valid certificates for both names. Once the client container stays running, run these commands from its Compose directory to validate the restored settings, update the stored profile, and recreate the service:
+Run these commands from its Compose directory to validate the restored settings and recreate the service. The restored `NB_MANAGEMENT_URL` is written into the stored profile on start:
 
 ```bash
 docker compose config --quiet
-docker compose exec -T netbird-client netbird down
-docker compose exec -T netbird-client netbird up --management-url https://netbird.example.com:443
 docker compose up -d --force-recreate netbird-client
 docker compose exec -T netbird-client netbird status --json
 ```
 
-Wait for the client to reconnect, then confirm that `management.url` contains the old URL, `management.connected` is `true`, and `netbirdIp` matches its pre-migration value. Retry the status command if the recreated container is still starting. Keep both DNS records and the routing bridge until every peer is back on the old URL and can reach a representative service, then remove the temporary bridge.
+Wait for the client to reconnect, then confirm that `management.url` contains the old URL, `management.connected` is `true`, and `netbirdIp` matches its pre-migration value. Retry the status command if the recreated container is still starting. Keep both DNS records, and the routing bridge if you added one, until every peer is back on the old URL and can reach a representative service.
 
 ## Recap
 
