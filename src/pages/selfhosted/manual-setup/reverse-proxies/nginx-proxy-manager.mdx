@@ -1,0 +1,365 @@
+import {Note, Warning} from "@/components/mdx"
+
+export const description =
+  "Configure Nginx Proxy Manager for manual NetBird combined-container and multi-container deployments with TLS, gRPC, WebSockets, and a private admin UI."
+
+# Use Nginx Proxy Manager with a manual NetBird deployment
+
+Nginx Proxy Manager (NPM) can terminate TLS for NetBird, but its standard forwarding fields are not enough. NetBird uses path-specific HTTP, WebSocket, and native gRPC backends, so you must paste the complete routing block into the Proxy Host's **Advanced** tab.
+
+This guide covers both the combined-container and multi-container NetBird layouts. Start with [Manual setup](/selfhosted/manual-setup) or [Manual multi-container setup](/selfhosted/manual-setup/multi-container).
+
+<Warning>
+Do not expose NPM's administration port 81 to the Internet. The Compose example binds it to loopback. Use an SSH tunnel or a private NetBird connection to administer it.
+</Warning>
+
+## 1. Create or reuse the proxy network
+
+The examples place NPM at a fixed address so NetBird can trust exactly one proxy:
+
+```bash
+docker network create \
+  --driver bridge \
+  --subnet 172.30.0.0/24 \
+  --gateway 172.30.0.1 \
+  netbird-proxy
+```
+
+If the manual NetBird Compose project already created `netbird-proxy`, do not recreate it.
+
+Combined `config.yaml`:
+
+```yaml
+server:
+  reverseProxy:
+    trustedHTTPProxies:
+      - "172.30.0.10/32"
+    trustedPeers:
+      - "172.30.0.10/32"
+```
+
+Multi-container `management.json`:
+
+```json
+{
+  "ReverseProxy": {
+    "TrustedHTTPProxies": ["172.30.0.10/32"],
+    "TrustedHTTPProxiesCount": 0,
+    "TrustedPeers": ["172.30.0.10/32"]
+  }
+}
+```
+
+Trust only NPM's fixed `/32`, not the whole subnet.
+
+## 2. Deploy Nginx Proxy Manager
+
+Create a separate directory and Compose file:
+
+```bash
+install -d -m 700 "$HOME/nginx-proxy-manager"
+cd "$HOME/nginx-proxy-manager"
+```
+
+```yaml
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:2.15.1
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    networks:
+      netbird-proxy:
+        ipv4_address: 172.30.0.10
+    ports:
+      - "80:80"
+      - "443:443"
+      - "127.0.0.1:81:81"
+    environment:
+      DISABLE_IPV6: "true"
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+
+volumes:
+  npm_data:
+  npm_letsencrypt:
+
+networks:
+  netbird-proxy:
+    external: true
+```
+
+If the host has working IPv6 and the container is configured for it, remove `DISABLE_IPV6`. If the NetBird hostname publishes an AAAA record, TCP 80/443 over IPv6 must reach NPM too.
+
+Validate and start:
+
+```bash
+docker compose config --quiet
+docker compose pull
+docker compose up -d
+docker compose logs --tail=100 npm
+```
+
+Wait until the log reports that the backend is listening on port 3000.
+
+## 3. Create the NPM owner
+
+NPM 2.15 uses a first-run setup screen; it does not rely on the historical `admin@example.com`/`changeme` credentials.
+
+From your workstation, open an SSH tunnel to the server:
+
+```bash
+ssh -L 8181:127.0.0.1:81 user@netbird.example.com
+```
+
+Open `http://127.0.0.1:8181`, create the NPM owner, and use a real email address. NPM supplies that address to Let's Encrypt when requesting certificates.
+
+<Note>
+Keep the SSH session open while configuring NPM. The public NetBird hostname should serve only NPM's ports 80 and 443, never its admin interface.
+</Note>
+
+## Combined container layout
+
+The Dashboard and `netbird-server` must share `netbird-proxy` with NPM. No HTTP backend ports need to be public:
+
+```yaml
+services:
+  dashboard:
+    networks: [netbird-proxy]
+
+  netbird-server:
+    networks: [netbird-proxy]
+    ports:
+      - "3478:3478/udp"
+
+networks:
+  netbird-proxy:
+    external: true
+```
+
+### Create the Proxy Host
+
+In **Hosts → Proxy Hosts → Add Proxy Host**, set:
+
+**Details**
+
+- Domain Names: `netbird.example.com`
+- Scheme: `http`
+- Forward Hostname / IP: `netbird-dashboard`
+- Forward Port: `80`
+- Block Common Exploits: enabled
+- Websockets Support: enabled
+
+**SSL**
+
+- Request a new SSL Certificate, or select an existing valid certificate.
+- Force SSL: enabled.
+- HTTP/2 Support: enabled. Native NetBird gRPC requires it.
+- Agree to the Let's Encrypt terms when requesting a certificate.
+
+**Advanced**
+
+Paste the complete block:
+
+```nginx
+client_header_timeout 1d;
+client_body_timeout 1d;
+
+# Relay and gRPC-over-WebSocket fallback paths.
+location ~ ^/(relay|ws-proxy/) {
+    proxy_pass http://netbird-server:80;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# Native Signal, Management, and optional NetBird Proxy gRPC.
+location ~ ^/(signalexchange\.SignalExchange|management\.(ManagementService|ProxyService))/ {
+    grpc_pass grpc://netbird-server:80;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+
+# REST API and embedded identity provider.
+location ~ ^/(api|oauth2)/ {
+    proxy_pass http://netbird-server:80;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+The Proxy Host's normal destination remains the Dashboard catch-all. The Advanced locations override it for every backend path.
+
+## Multi-container layout
+
+Join `dashboard`, `management`, `signal`, and `relay` to `netbird-proxy`; keep UDP 3478 published from Relay.
+
+### Create the Proxy Host
+
+Use the same Details and SSL settings as the combined layout, with `netbird-dashboard:80` as the normal destination. In **Advanced**, paste:
+
+```nginx
+client_header_timeout 1d;
+client_body_timeout 1d;
+
+# Secure Relay WebSocket.
+location /relay {
+    proxy_pass http://netbird-relay:80;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# Signal WebSocket fallback.
+location /ws-proxy/signal {
+    proxy_pass http://netbird-signal:80;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# Signal native gRPC.
+location /signalexchange.SignalExchange/ {
+    grpc_pass grpc://netbird-signal:10000;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+
+# Management REST API and embedded identity provider.
+location ~ ^/(api|oauth2)/ {
+    proxy_pass http://netbird-management:80;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# Management WebSocket fallback.
+location /ws-proxy/management {
+    proxy_pass http://netbird-management:80;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1d;
+}
+
+# Management and optional NetBird Proxy native gRPC.
+location ~ ^/management\.(ManagementService|ProxyService)/ {
+    grpc_pass grpc://netbird-management:80;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+```
+
+Do not use NPM's Custom Locations screen for these routes. The Advanced block preserves the required prefix matching, WebSocket settings, and distinct gRPC upstreams.
+
+## Reaching backends through the host
+
+The shared Docker network is recommended. Inside the NPM container, `127.0.0.1` means the NPM container itself—not the Docker host.
+
+If NPM cannot join the NetBird network, add the Linux host gateway to its Compose service:
+
+```yaml
+services:
+  npm:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+Then replace the backend hostnames in the Advanced block with `host.docker.internal` and use the loopback-published port numbers only if Docker allows the container to reach those bindings. On many Linux systems a host service bound strictly to `127.0.0.1` is not reachable through `host.docker.internal`; bind it to the bridge address and firewall it, or use the shared network instead.
+
+<Warning>
+Do not solve backend reachability by publishing Management, Signal, Relay HTTP, or Dashboard ports on `0.0.0.0`. That bypasses NPM and exposes unauthenticated internal listeners.
+</Warning>
+
+## Verify NPM and NetBird
+
+Confirm that NPM generated a host configuration and has no reload errors:
+
+```bash
+docker logs --tail=100 nginx-proxy-manager
+docker exec nginx-proxy-manager nginx -t
+```
+
+From a machine outside the server network:
+
+```bash
+NETBIRD_DOMAIN="netbird.example.com"
+
+curl -fsSI "http://${NETBIRD_DOMAIN}/"
+curl -fsSI "https://${NETBIRD_DOMAIN}/setup"
+curl -fsS "https://${NETBIRD_DOMAIN}/oauth2/.well-known/openid-configuration"
+```
+
+Run the native gRPC and Relay WebSocket probes from [Manual multi-container setup](/selfhosted/manual-setup/multi-container#9-verify-the-complete-deployment). Then create the first NetBird owner and enroll two clients. Confirm Management and Signal are connected and that secure Relay is available in `netbird status --detail`.
+
+## Troubleshooting Nginx Proxy Manager
+
+### The Proxy Host is offline
+
+NPM resolves Docker names only on a shared network. Check membership and DNS:
+
+```bash
+docker network inspect netbird-proxy
+docker exec nginx-proxy-manager getent hosts netbird-dashboard
+```
+
+For combined-container deployments, also resolve `netbird-server`. For multi-container deployments, resolve `netbird-management`, `netbird-signal`, and `netbird-relay`.
+
+### Certificate request fails
+
+Confirm the domain points directly to this host, TCP 80 and 443 are reachable, and no other service owns those ports. Check NPM's logs and ensure the NPM owner's email is valid.
+
+### Dashboard loads but gRPC fails
+
+Enable **HTTP/2 Support** in the SSL tab. Confirm the Advanced block uses `grpc_pass` for native gRPC and that the request path is not falling through to `netbird-dashboard`.
+
+### WebSocket paths return `400` or disconnect
+
+Confirm **Websockets Support** is enabled and keep the explicit upgrade headers and one-day read timeout in every WebSocket location.
+
+### Saving Advanced configuration makes NPM fail to reload
+
+Use NPM's generated error message and container log to locate the syntax error:
+
+```bash
+docker logs --tail=100 nginx-proxy-manager
+docker exec nginx-proxy-manager nginx -t
+```
+
+Do not paste an entire `server {}` block into Advanced; paste only the directives and `location` blocks shown here.
+
+### Forwarded addresses are ignored
+
+Confirm NPM's fixed address:
+
+```bash
+docker inspect nginx-proxy-manager \
+  --format '{{(index .NetworkSettings.Networks "netbird-proxy").IPAddress}}'
+```
+
+Put that exact `/32` in both `trustedHTTPProxies` and `trustedPeers`, then restart NetBird Server or the multi-container Management service.
