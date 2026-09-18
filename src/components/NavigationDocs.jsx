@@ -263,6 +263,10 @@ export const docsNavigation = [
                         href: '/manage/reverse-proxy/bring-your-own-proxy',
                     },
                     {
+                        title: 'OpenShift',
+                        href: '/manage/reverse-proxy/openshift',
+                    },
+                    {
                         title: 'Custom Domains',
                         href: '/manage/reverse-proxy/custom-domains',
                     },
