@@ -259,12 +259,22 @@ JumpCloud, Apple Configurator 2, etc.).
    preference domain.
 3. Replace the placeholder `PayloadUUID` values with freshly generated
    UUIDs (`uuidgen` on macOS) so each deployment has unique ids.
-4. (Optional, recommended for production) sign the profile with your
-   organization's Developer ID Installer certificate using
-   `productsign` — unsigned profiles on Sonoma/Sequoia/Tahoe require
-   an extra user confirmation on install.
-5. Upload the resulting `.mobileconfig` to your MDM as a **Custom
+4. Upload the resulting `.mobileconfig` to your MDM as a **Custom
    Configuration Profile** and scope it to the target device group.
+
+Profiles delivered through an MDM are signed by the MDM channel itself,
+so there is nothing to sign by hand for a managed rollout. A profile you
+hand out some other way — Apple Configurator, or a double-click install —
+installs unsigned and asks the user for an extra confirmation on recent
+macOS releases. To avoid that, sign it as a CMS message:
+
+```bash
+security cms -S -N "<signing identity>" -i netbird-macos.mobileconfig -o signed.mobileconfig
+```
+
+Use an identity the target Macs already trust. Note that configuration
+profiles are **not** signed with `productsign`, which handles installer
+packages, nor with an Apple Developer ID certificate.
 
 Verify on a target device with:
 
@@ -403,10 +413,11 @@ both are accepted. Integers and strings behave as on desktop.
 
 ### When a policy takes effect
 
-Every key is enforced on iOS: the ones that reshape the interface, and
-the ones the engine applies to the connection itself. Getting there
-takes one extra step that is worth understanding, because it decides
-*when* a change lands.
+Every key that applies to the platform is enforced on iOS: the ones that
+reshape the interface, and the ones the engine applies to the connection
+itself. (A handful have no iOS surface at all and are listed at the end
+of this section.) Getting there takes one extra step that is worth
+understanding, because it decides *when* a change lands.
 
 iOS delivers the configuration to the NetBird app. The tunnel, though,
 runs in a Network Extension — a separate process the system starts when
@@ -458,9 +469,10 @@ The table above is what the user sees. A second group of keys has no
 control to lock, because the engine applies them straight to the
 connection: `blockInbound`, `wireguardPort`, `lazyConnection`,
 `allowRemoteJobs`, and `debugBundleUploadURL` when a remote job produces
-a bundle. They are enforced just the same — a peer whose policy withholds
-`allowRemoteJobs` refuses those jobs — there is simply nothing on screen
-to mark yet.
+a bundle. **On iOS** they are enforced just the same — a peer whose policy
+withholds `allowRemoteJobs` refuses those jobs — there is simply nothing
+on screen to mark. On tvOS none of them reach the engine, for the reason
+in the warning above.
 
 The rest do not apply to the platform and are parsed and ignored:
 `allowServerSSH` (no SSH server on iOS), `disableServerRoutes` (an iOS
