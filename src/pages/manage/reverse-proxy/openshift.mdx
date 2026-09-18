@@ -7,11 +7,7 @@ export const description =
 
 This guide deploys the NetBird reverse proxy on OpenShift so an external client can reach a backend Service over the NetBird overlay. The proxy obtains and renews its own TLS certificates with ACME, runs under the stock `restricted-v2` security context constraint, and needs no custom SCC, privileged mode, host networking, or elevated capabilities.
 
-It uses the rootless proxy image built on Red Hat Universal Base Image (UBI) 9. The image runs as a non-root user and keeps its writable directories group-writable so OpenShift can assign an arbitrary UID.
-
-<Note>
-    **Availability:** The rootless UBI proxy image is published starting with NetBird **v0.80.0** as `ghcr.io/netbirdio/reverse-proxy:0.80.0-rootless-ubi`. Use it for every new OpenShift deployment from that release forward. It is also available on Docker Hub as `netbirdio/reverse-proxy`. Pin a version or digest for reproducible deployments; see [NetBird releases](https://github.com/netbirdio/netbird/releases).
-</Note>
+It uses the rootless proxy image built on Red Hat Universal Base Image (UBI) 9, published for Linux AMD64 and ARM64 as `ghcr.io/netbirdio/reverse-proxy:0.80.0-rootless-ubi`. The image runs as a non-root user and keeps its writable directories group-writable so OpenShift can assign an arbitrary UID. Pin a version or digest for reproducible deployments; see [NetBird releases](https://github.com/netbirdio/netbird/releases).
 
 ## How it works
 
@@ -41,7 +37,7 @@ The public TCP entrypoint can be either of the following. Both forward TCP 443 t
 Before you start, make sure you have:
 
 - An OpenShift login with permission to create Deployments, Services, Secrets, PersistentVolumeClaims and, for the Route fallback, Routes in the target namespace. No additional SCC is needed.
-- A Linux amd64 node to schedule the proxy on, and a default StorageClass that can provision a 1 GiB PVC.
+- A default StorageClass that can provision a 1 GiB PVC.
 - A **proxy access token** from your NetBird management server. This is not a client setup key or a personal access token:
   - **NetBird Cloud** - create an account-scoped token in the dashboard under **Reverse Proxy** > **Clusters** > **Setup Self-Hosted Cluster**, or through the API. See [Bring Your Own Proxy](/manage/reverse-proxy/bring-your-own-proxy). The management address is `https://api.netbird.io`.
   - **Self-hosted** - create a management-wide token with `netbird-server admin token create` (combined container) or `netbird-mgmt admin token create` (multi-container). See [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy). Because this proxy runs outside the management host's Docker network, the management server's Traefik must also route the `ProxyService` gRPC path and have its idle timeout disabled. Follow [Prepare the management server for cross-host proxies](/selfhosted/maintenance/scaling/multiple-proxy-instances#prepare-the-management-server-for-cross-host-proxies) first.
@@ -56,27 +52,26 @@ The examples use two hostnames. Replace them with your own:
 | `NB_PROXY_DOMAIN` | `proxy.example.com` | The proxy **cluster address**. This is the value of the `NB_PROXY_DOMAIN` environment variable and the base domain services are created under. |
 | `NB_SERVICE_DOMAIN` | `nginx.proxy.example.com` | The **service hostname** users visit. Here it is a subdomain of the cluster domain; a verified [custom domain](/manage/reverse-proxy/custom-domains) works the same way. |
 
-Run the commands in this guide in Bash:
+Export them for the commands in this guide, then create the namespace:
 
 ```bash
-NB_PROXY_DOMAIN=proxy.example.com
-NB_SERVICE_DOMAIN=nginx.proxy.example.com
-NAMESPACE=netbird-proxy
+export NB_PROXY_DOMAIN=proxy.example.com
+export NB_SERVICE_DOMAIN=nginx.proxy.example.com
+export NAMESPACE=netbird-proxy
 
 oc create namespace "$NAMESPACE" --dry-run=client -o yaml | oc apply -f -
 ```
 
 ## Step 1: Create the configuration Secret
 
-The Deployment reads `NB_PROXY_TOKEN` and `NB_PROXY_DOMAIN` from the `proxy-token` and `proxy-domain` keys of a Secret named `netbird-proxy-config`. Create it without writing the token into a manifest or your shell history:
+The Deployment reads `NB_PROXY_TOKEN` and `NB_PROXY_DOMAIN` from the `proxy-token` and `proxy-domain` keys of a Secret named `netbird-proxy-config`. Create it with your proxy access token:
 
 ```bash
-read -r -s -p 'Proxy access token: ' NB_PROXY_TOKEN
-printf '\n'
+export NB_PROXY_TOKEN=nbx_replace_with_your_proxy_token
+
 oc create secret generic netbird-proxy-config -n "$NAMESPACE" \
   --from-literal=proxy-domain="$NB_PROXY_DOMAIN" \
   --from-literal=proxy-token="$NB_PROXY_TOKEN"
-unset NB_PROXY_TOKEN
 ```
 
 Changes to this Secret are picked up only after a rollout restart of the proxy Deployment.
@@ -120,9 +115,6 @@ spec:
         app.kubernetes.io/name: netbird-proxy
     spec:
       automountServiceAccountToken: false
-      nodeSelector:
-        kubernetes.io/os: linux
-        kubernetes.io/arch: amd64
       securityContext:
         runAsNonRoot: true
         seccompProfile:
