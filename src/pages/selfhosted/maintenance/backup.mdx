@@ -1,22 +1,171 @@
-# Back Up Your Self-Hosted NetBird Installation
+export const description = 'Back up and restore a self-hosted NetBird installation, including the proxy and CrowdSec data added by the quickstart script.'
 
-To back up your NetBird installation, you need to copy the configuration files and the Management service databases.
+# Back Up and Restore Your Self-Hosted NetBird Installation
 
-The configuration files are located in the folder where you ran [the installation script](/selfhosted/selfhosted-quickstart#installation-script). To back up, copy the files to a backup location:
-```bash
-mkdir backup
-cp docker-compose.yml dashboard.env config.yaml backup/
-```
+A NetBird server that loses its data directory loses every account, peer, policy and setup key, and every client has to re-enroll. This page shows what to copy so that a fresh server can pick up exactly where the old one left off, and how to put that copy back.
+
+A self-hosted installation lives in three places:
+
+1. **Configuration files** in the directory where you ran [the installation script](/selfhosted/selfhosted-quickstart#installation-script). They describe the deployment.
+2. **Docker volumes** that hold state: the Management database and keys, and the CrowdSec database if you enabled it. This is the part you cannot regenerate.
+3. **Certificates** in Docker volumes. Traefik and the proxy reissue these on their own, so backing them up is optional.
+
+The steps below use `backup/` as the target directory and assume the default quickstart layout with the built-in Traefik reverse proxy. If your deployment predates the combined `netbird-server` container, jump to [Older Setup](#older-setup-separate-containers).
+
+## What to back up
+
+| Item | Where | Present when | Why it matters |
+|------|-------|--------------|----------------|
+| `docker-compose.yml`, `config.yaml`, `dashboard.env` | Install directory | Always | Service definitions and server configuration. See the [Configuration Files Reference](/selfhosted/maintenance/configuration-files). |
+| `proxy.env`, `traefik-dynamic.yaml` | Install directory | [Reverse proxy](/manage/reverse-proxy) enabled | Proxy access token and the Traefik routing rules that pass TLS through to the proxy. |
+| `crowdsec/` directory | Install directory | [CrowdSec](/selfhosted/maintenance/crowdsec) enabled | CrowdSec configuration, mounted into the container at `/etc/crowdsec`. |
+| `nginx-netbird.conf`, `caddyfile-netbird.txt`, `npm-advanced-config.txt` | Install directory | External reverse proxy chosen during setup | Snippets for your own reverse proxy. Harmless to copy if present. |
+| `/var/lib/netbird` in `netbird-server` | Docker volume `netbird_data` | Always | Management database (SQLite by default), encryption keys and state. **Required.** |
+| `/var/lib/crowdsec/data` in `crowdsec` | Docker volume `crowdsec_db` | CrowdSec enabled | CrowdSec LAPI database, including the bouncer key that `proxy.env` references. Without it the restored proxy cannot authenticate to CrowdSec. |
+| `/certs` in `proxy` | Docker volume `netbird_proxy_certs` | Reverse proxy enabled | Certificates for proxied services. Optional: the proxy reissues them, but restoring avoids a burst of Let's Encrypt requests. |
+| `/letsencrypt` in `traefik` | Docker volume `netbird_traefik_letsencrypt` | Built-in Traefik | Certificates for the NetBird domain itself. Optional, same reasoning as above. |
 
 <Note>
-For detailed information about each configuration file and its options, see the [Configuration Files Reference](/selfhosted/maintenance/configuration-files).
+If you moved the Management database to PostgreSQL or MySQL, the `netbird_data` volume no longer holds it. Back up the database server with its own tools as well. See [PostgreSQL store](/selfhosted/maintenance/postgres-store).
 </Note>
-To save the server databases, stop the server and copy the files from the data directory:
+
+## Create a backup
+
+Run these commands from the install directory.
+
+### 1. Stop the services
+
+Stopping the containers guarantees a consistent copy of the databases. Stopping only `netbird-server` is enough if you do not run CrowdSec; stopping everything is simplest.
+
 ```bash
-docker compose stop netbird-server
-docker compose cp -a netbird-server:/var/lib/netbird/ backup/
-docker compose start netbird-server
+docker compose stop
 ```
+
+### 2. Copy the configuration files
+
+```bash
+mkdir -p backup
+cp docker-compose.yml config.yaml dashboard.env backup/
+```
+
+If the reverse proxy is enabled, also copy its files:
+
+```bash
+cp proxy.env traefik-dynamic.yaml backup/
+```
+
+If CrowdSec is enabled, copy its configuration directory:
+
+```bash
+cp -r crowdsec backup/crowdsec
+```
+
+### 3. Copy the data volumes
+
+`docker compose cp` reads from a stopped container, so the services do not need to be running.
+
+```bash
+docker compose cp -a netbird-server:/var/lib/netbird/ backup/
+```
+
+This creates `backup/netbird/`. If CrowdSec is enabled, copy its database too:
+
+```bash
+docker compose cp -a crowdsec:/var/lib/crowdsec/data/ backup/crowdsec_db/
+```
+
+### 4. Optional: copy the certificates
+
+Skip this step if you are happy to let Traefik and the proxy request new certificates on the restored server.
+
+```bash
+docker compose cp -a proxy:/certs/ backup/proxy_certs/
+docker compose cp -a traefik:/letsencrypt/ backup/traefik_letsencrypt/
+```
+
+### 5. Start the services and archive the backup
+
+```bash
+docker compose start
+tar czf netbird-backup.tar.gz -C backup .
+```
+
+Move `netbird-backup.tar.gz` off the server. It contains the encryption keys for your Management database and every secret in the configuration files, so treat it like a private key.
+
+## Restore on a new server
+
+The restored server must be reachable under the same domain as the old one. Peers, the dashboard and the relay are all configured with that domain, so once DNS points at the new IP address, clients reconnect without re-enrolling.
+
+Before you start:
+
+- Install Docker and Docker Compose.
+- Open the same ports as on the old server: TCP 80 and 443, UDP 3478 for STUN, and UDP 51820 if the reverse proxy is enabled.
+- Copy `netbird-backup.tar.gz` to the new server.
+
+### 1. Unpack the backup and restore the configuration files
+
+```bash
+mkdir -p netbird backup
+tar xzf netbird-backup.tar.gz -C backup
+cd netbird
+cp ../backup/docker-compose.yml ../backup/config.yaml ../backup/dashboard.env .
+```
+
+If the reverse proxy is part of the backup, also restore its files:
+
+```bash
+cp ../backup/proxy.env ../backup/traefik-dynamic.yaml .
+```
+
+If CrowdSec is part of the backup, also restore its configuration directory:
+
+```bash
+cp -r ../backup/crowdsec .
+```
+
+### 2. Create the containers without starting them
+
+Creating the containers also creates their empty volumes, which you fill in the next step.
+
+```bash
+docker compose create netbird-server
+```
+
+If CrowdSec is part of the backup, create it too:
+
+```bash
+docker compose create crowdsec
+```
+
+### 3. Restore the data volumes
+
+```bash
+docker compose cp -a ../backup/netbird/. netbird-server:/var/lib/netbird/
+```
+
+If CrowdSec is part of the backup, restore its database too:
+
+```bash
+docker compose cp -a ../backup/crowdsec_db/. crowdsec:/var/lib/crowdsec/data/
+```
+
+### 4. Optional: restore the certificates
+
+Only if you copied them in the backup:
+
+```bash
+docker compose create proxy traefik
+docker compose cp -a ../backup/proxy_certs/. proxy:/certs/
+docker compose cp -a ../backup/traefik_letsencrypt/. traefik:/letsencrypt/
+```
+
+### 5. Start everything
+
+```bash
+docker compose up -d
+```
+
+Open the dashboard under your domain and check that your peers, policies and setup keys are there. Peers show as connected once DNS has propagated and they reach the new server.
 
 ## Older Setup (Separate Containers)
 
