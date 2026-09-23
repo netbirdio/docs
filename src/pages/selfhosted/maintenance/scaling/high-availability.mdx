@@ -4,7 +4,7 @@ import {Note, Warning} from "@/components/mdx";
 
 A single NetBird server works well for many deployments, but production environments may need to remain available when an individual host or service instance fails. A highly available deployment removes those single points of failure by spreading services across separate failure domains and routing traffic to healthy instances.
 
-NetBird Enterprise supports **active-active high availability (HA)** for Management and Signal. This guide shows how to move an existing self-hosted deployment to that mode: Management, Signal, and Relay run as independent, load-balanced pools, while PostgreSQL, Redis, and NATS provide the shared state that lets a healthy instance continue serving traffic when another instance fails.
+NetBird Enterprise supports **active-active high availability (HA)** for Management and Signal. This guide shows how to move an existing self-hosted deployment to that mode: Management, Signal, and Relay run as independent pools: Management and Signal behind load balancers, and Relay with an address of its own for every instance. PostgreSQL, Redis, and NATS provide the shared state that lets a healthy Management or Signal instance continue serving traffic when another instance fails.
 
 Use this guide when you need to tolerate the loss of a Management, Signal, Relay, or NATS node and perform rolling upgrades with minimal disruption. It assumes an existing Enterprise deployment that already uses PostgreSQL. For a distributed deployment without active-active Management and Signal, see [Splitting Your Self-Hosted Deployment](/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment).
 
@@ -22,7 +22,7 @@ This is an infrastructure migration, not an in-place switch. Build and validate 
 | You have a recent, restorable PostgreSQL backup. | Database migration or endpoint changes should always have a rollback path. |
 | You have recorded the current `server.store.encryptionKey` value. | Every Management replica must use the exact same key to read existing encrypted data. |
 | You can deploy instances in separate failure domains. | Two containers on one host do not provide high availability. |
-| You have stable DNS names and load balancers for Management, Signal, and Relay. | Peers and the dashboard must keep using stable URLs while backends change. |
+| You have stable DNS names and load balancers for Management and Signal, and a DNS name for every Relay instance. | Peers and the dashboard must keep using stable URLs while backends change. Relay instances are reached by their own names, not through a load balancer. |
 | PostgreSQL and Redis can each expose one highly available, read-write endpoint. | Management replicas need a shared database and cache, not per-instance stores. |
 | You can test the change in staging first. | Failure testing is part of validating an HA deployment. |
 
@@ -32,20 +32,20 @@ Build the HA deployment in this sequence:
 
 1. Make PostgreSQL and Redis highly available.
 2. Deploy and validate the three-node NATS cluster.
-3. Create the Management, Signal, and Relay load-balancer frontends and DNS records.
+3. Create the Management and Signal load-balancer frontends, and the DNS records for every service, including one per Relay instance.
 4. Deploy the Relay and Signal pools.
 5. Configure and deploy the Management pool.
 6. Validate normal operation and then run the failure tests.
 
 ### Scope and endpoint choices
 
-This guide uses three public service URLs:
+This guide uses these public service URLs:
 
 | Service | Example URL | Used by |
 |---|---|---|
 | Management | `https://app.example.com` | Dashboard, Management API, Management gRPC, and OAuth |
 | Signal | `https://signal.example.com` | NetBird peers for signaling |
-| Relay | `rels://relay.example.com:443` | NetBird peers that need relay connectivity |
+| Relay | One per instance, e.g. `rels://us-1.relay.example.com:443` and `rels://eu-1.relay.example.com:443`. With the geo-DNS option, also a shared `rels://relay.example.com:443`. | NetBird peers that need relay connectivity |
 
 The Management URL can remain the URL used by your existing deployment. If you change it, update the dashboard environment to use the new Management API and gRPC endpoints; see [Dashboard environment configuration](/selfhosted/maintenance/configuration-files#dashboardenv). The dashboard itself is stateless and can be served behind the Management load balancer or separately, as long as browsers can reach the configured Management URL.
 
@@ -55,7 +55,7 @@ A highly available deployment has three service pools. They have different conne
 
 - **Management pool:** Enterprise Management replicas serve the dashboard API, Management gRPC, and OAuth2 endpoints. Fully stateless: any replica can serve any request because all durable state lives in PostgreSQL and all short-lived state lives in Redis. Replicas scale horizontally to absorb dashboard traffic, peer sync, and OAuth flows.
 - **Signal pool:** Enterprise Signal replicas serve the Signal gRPC API. Peers connect to one Signal instance through the load balancer. The NATS cluster reconciles cross-instance peer signaling, so any Signal instance can deliver a message to any peer regardless of its connected instance. This makes Signal active-active in the Enterprise build. See [How active-active Signal works](#how-active-active-signal-works).
-- **Relay pool:** Relay instances serve WebSocket relay traffic for peers that cannot reach each other directly. Each relay session stays on one Relay instance for its lifetime through the load balancer's natural connection affinity. When an instance fails, peers reconnect through the load balancer to a healthy instance. Relay traffic flows directly between peers and the Relay pool.
+- **Relay pool:** Relay instances carry traffic for peers that cannot reach each other directly. Unlike Management and Signal, Relay does not go behind a load balancer. Relay instances share no state, so two peers can be relayed to each other only when each can reach the other's instance by that instance's own address. Every instance therefore has its own URL, and a peer that loses its relay moves to another instance by itself. See [Step 5](#step-5-deploy-the-relay-pool).
 
 The pools depend on the following shared infrastructure:
 
@@ -63,7 +63,7 @@ The pools depend on the following shared infrastructure:
 - **PostgreSQL HA endpoint:** Stores durable Management data, including accounts, peers, policies, OAuth state, and integrations. It is operator-managed. NetBird treats it as an opaque connection string and expects failover to happen transparently behind the DSN.
 - **Redis HA endpoint:** Stores ephemeral cache data, including OAuth PKCE verifiers, peer cache data, and dynamic configuration. It is operator-managed. Losing Redis interrupts in-flight OAuth flows but does not break running peer connections.
 
-Each pool uses one stable URL backed by its load-balanced instances. Adding or removing instances is transparent to peers because the URL does not change.
+The Management and Signal pools each use one stable URL backed by load-balanced instances, so adding or removing one of their instances is transparent to peers. The Relay pool is reached by each instance's own address instead.
 
 ```mermaid
 flowchart TB
@@ -71,7 +71,6 @@ flowchart TB
 
     LBM[Load Balancer<br/>app.example.com]
     LBS[Load Balancer<br/>signal.example.com]
-    LBR[Load Balancer<br/>relay.example.com]
 
     subgraph Mgmt[Management pool: Enterprise]
         M1[Management 1]
@@ -84,8 +83,8 @@ flowchart TB
     end
 
     subgraph Rel[Relay pool]
-        R1[Relay 1]
-        R2[Relay 2]
+        R1[Relay us-1<br/>us-1.relay.example.com]
+        R2[Relay eu-1<br/>eu-1.relay.example.com]
     end
 
     subgraph NATSC[NATS cluster: 3 nodes with JetStream]
@@ -99,11 +98,10 @@ flowchart TB
 
     Peers --> LBM
     Peers --> LBS
-    Peers -.->|relay traffic| LBR
+    Peers -.->|relay traffic, direct to each instance| R1 & R2
 
     LBM --> M1 & M2
     LBS --> S1 & S2
-    LBR --> R1 & R2
 
     M1 & M2 --> PG
     M1 & M2 --> RD
@@ -111,7 +109,7 @@ flowchart TB
     S1 & S2 --> NATSC
 ```
 
-The three load balancers can be independent load balancers, frontends on one shared load balancer, or managed load-balancer resources. Choose the model that fits your infrastructure. Each pool must be reached through one stable URL with at least two backend instances and a load balancer that can fail over within seconds.
+The two load balancers can be independent load balancers, frontends on one shared load balancer, or managed load-balancer resources. Choose the model that fits your infrastructure. Management and Signal must each be reached through one stable URL with at least two backend instances and a load balancer that can fail over within seconds.
 
 ### How active-active Signal works
 
@@ -124,9 +122,9 @@ In single-node mode, the Signal service keeps peer connection state in memory an
 - At least **2 enterprise Signal instances**, on separate failure domains.
 - At least **2 Relay instances**, on separate failure domains.
 - At least **3 NATS instances** for the coordination cluster, on separate failure domains. NATS can colocate with NetBird hosts, but the 3 NATS instances must be on different failure domains.
-- A **load balancer** for each pool: Management, Signal, and Relay. These can be three independent load balancers, three frontends on one shared load balancer, or three managed load-balancer resources, as long as each pool is reachable through a single stable URL. Management and Signal require HTTP/2 + gRPC support. Relay requires WebSocket support.
-- Three public **FQDNs**, one per pool. For example: `app.example.com`, `signal.example.com`, and `relay.example.com`. Each must resolve to its corresponding load balancer.
-- Permissions to deploy services, mount configuration and secrets, expose network ports, and register instances with the load balancers in your environment.
+- A **load balancer** for the Management and Signal pools. These can be two independent load balancers, two frontends on one shared load balancer, or two managed load-balancer resources, as long as each pool is reachable through a single stable URL. Both require HTTP/2 + gRPC support. The Relay pool does not use a load balancer.
+- Public **FQDNs** for Management and Signal, for example `app.example.com` and `signal.example.com`, each resolving to its load balancer. One more per Relay instance, for example `us-1.relay.example.com` and `eu-1.relay.example.com`, each resolving to that instance. With the geo-DNS option, also a shared `relay.example.com`.
+- Permissions to deploy services, mount configuration and secrets, expose network ports, manage DNS records, and register instances with the load balancers in your environment.
 
 ## Step 1: Make PostgreSQL highly available
 
@@ -340,15 +338,14 @@ Signal instances reference the same list via the `NATS_ENDPOINTS` environment va
 
 **Why an explicit list and not a single DNS round-robin URL?** A single hostname with multiple A/AAAA records (e.g. `nats://nats.example.com:4222`) works because the underlying client resolves and reconnects, but recovery time depends on DNS TTL and cache. An explicit comma-separated list of node addresses gives immediate visibility of every node and the fastest possible failover when one becomes unreachable. **Prefer the explicit list.**
 
-## Step 4: Configure the three load balancers
+## Step 4: Configure the load balancers
 
 Use the load balancer your organization already operates. NetBird works with any Layer 7 load balancer that supports HTTP/2 and gRPC, including HAProxy, NGINX, AWS Application Load Balancer, Google Cloud Load Balancing, Azure Application Gateway, and Envoy.
 
-Plan one load-balancer frontend for each service pool: Management, Signal, and Relay. These can be separate load balancers or three frontends on a shared load balancer. Each frontend needs its own DNS name and backend pool. Configure the frontends and empty backend pools now, then add instances as you deploy the Relay, Signal, and Management services in Steps 5 through 7.
+Plan one load-balancer frontend for each of the Management and Signal pools. These can be separate load balancers or two frontends on a shared load balancer. Each frontend needs its own DNS name and backend pool. Configure the frontends and empty backend pools now, then add instances as you deploy the Signal and Management services in Steps 6 and 7. The Relay pool does not go behind a load balancer; see Step 5.
 
 | Pool | Public FQDN | Backend port | Frontend protocol | Health check |
 |---|---|---|---|---|
-| Relay | e.g. `relay.example.com` | 443 | HTTPS with WebSocket upgrade | TCP/443 |
 | Signal | e.g. `signal.example.com` | 443 | HTTPS, HTTP/2, gRPC | TCP/443 (or gRPC health if supported) |
 | Management | e.g. `app.example.com` | 443 | HTTPS, HTTP/2, gRPC | `GET /api/health` → HTTP 200 |
 
@@ -357,13 +354,11 @@ Common requirements for every pool:
 | Requirement | Notes |
 |---|---|
 | **TLS termination** | **Prefer terminating TLS at the load balancer.** Set `server.tls` to empty on the Management replicas. If your environment requires TLS pass-through, configure TLS on every backend instead. |
-| **HTTP/2 + gRPC support end-to-end** | Required for Management and Signal pools. The Relay pool uses WebSockets over HTTPS. Make sure your load balancer supports WebSocket upgrades and long-lived connections. |
+| **HTTP/2 + gRPC support end-to-end** | Required for Management and Signal pools. Make sure your load balancer supports long-lived connections. |
 | **Connection-level affinity** | This is the default for Layer 4 load balancers and Layer 7 load balancers that use HTTP/2 streaming. A long-lived connection stays on one backend for its lifetime. **No application-level sticky sessions are required.** NATS reconciles cross-instance Signal state, while PostgreSQL and Redis hold Management state. |
 | **Active health checks** | Mark backends out of the pool on failure within seconds, not minutes. |
-| **Connection draining on rolling upgrade** | When you remove a backend, the LB should let in-flight gRPC streams and WebSocket connections finish before tearing them down. |
-| **Generous idle timeout** | Management gRPC streams and Relay WebSocket connections can be long-lived. Set the idle timeout above your peer-sync interval. Ten to 30 minutes is a comfortable range for both. |
-
-For the Relay frontend, configure the load balancer to strip any client-supplied `X-Real-Ip` and `X-Real-Port`, then overwrite both headers from the validated client connection. Each Relay instance must trust only the load balancer addresses that connect directly to it, using `NB_TRUSTED_PROXIES`. Without that trust, forwarded client addresses are intentionally ignored.
+| **Connection draining on rolling upgrade** | When you remove a backend, the LB should let in-flight gRPC streams finish before tearing them down. |
+| **Generous idle timeout** | Management and Signal gRPC streams can be long-lived. Set the idle timeout above your peer-sync interval. Ten to 30 minutes is a comfortable range for both. |
 
 For the full set of paths and protocols NetBird exposes to each load balancer, see [Configuration Files Reference](/selfhosted/maintenance/configuration-files).
 
@@ -371,87 +366,132 @@ If you're using a managed cloud load balancer, configure the equivalent of each 
 
 ## Step 5: Deploy the Relay pool
 
-Deploy at least two Relay instances on separate failure domains. Configure every instance with the same `NB_AUTH_SECRET` and `NB_EXPOSED_ADDRESS`, which is the Relay load balancer URL. The Relay load balancer distributes new WebSocket connections across instances. Each connection stays on one instance for its lifetime through the load balancer's natural connection affinity.
+Deploy at least two Relay instances on separate failure domains. The Relay pool uses the **upstream Relay image** (`netbirdio/relay`). There is no Enterprise-specific Relay image. Relay does not validate a license. It authenticates incoming connections against the shared `NB_AUTH_SECRET`.
 
-The Relay pool uses the **upstream Relay image** (`netbirdio/relay`). There is no Enterprise-specific Relay image. Relay does not validate a license. It authenticates incoming WebSocket connections against the shared `NB_AUTH_SECRET`.
+Relay instances share no state with each other, which is why this pool works differently from Management and Signal. The instance a peer connects to becomes its home relay, and announces its own address to that peer. When two peers are on different instances, each reaches the other's instance directly by that announced address. So **every instance needs an `NB_EXPOSED_ADDRESS` of its own**, with a DNS name and a TLS certificate that peers can reach.
 
-Run this on each Relay host. For example, use `relay-host-1` and `relay-host-2` as internal hostnames because peers reach the instances only through the load balancer URL:
+<Warning>
+Do not put Relay instances behind a load balancer that gives them one shared address. Two peers whose connections land on different instances then cannot be relayed to each other: each waits for the other to come online on its own instance, and the connection never forms. Every peer still reports the relay as `Available`, so the only symptoms are peers that stay `Connecting`, with `peer not available: ..., context deadline exceeded` in the client log.
+</Warning>
+
+Choose how peers find an instance:
+
+| Option | `server.relays.addresses` | Which instance a peer uses | Choose it when |
+|---|---|---|---|
+| **1. List every instance** | Every instance's URL | The first to answer: the client connects to all of them in parallel and keeps the fastest, normally the nearest | By default. There is nothing extra to run. |
+| **2. Geo-DNS** | One shared name that your DNS provider resolves to a nearby instance | The one DNS returns for the peer's location | You run many instances across regions and do not want every peer racing all of them. |
+
+In both options, a peer that loses its relay moves to another instance by itself, and peers on different instances still reach each other.
+
+### Option 1: list every instance
+
+Give each instance its own DNS name and let it obtain its own Let's Encrypt certificate for that name. On `us-1`, create `/etc/netbird/relay/relay.env`:
+
+```bash
+NB_LOG_LEVEL=info
+NB_LISTEN_ADDRESS=:443
+# This instance's own address. Different on every instance.
+NB_EXPOSED_ADDRESS=rels://us-1.relay.example.com:443
+NB_AUTH_SECRET=<shared secret, identical on every Relay instance and on the Management pool>
+NB_LETSENCRYPT_DOMAINS=us-1.relay.example.com
+NB_LETSENCRYPT_EMAIL=admin@example.com
+NB_LETSENCRYPT_DATA_DIR=/data/letsencrypt
+NB_ENABLE_STUN=true
+NB_STUN_PORTS=3478
+```
+
+The file holds the shared secret, so make it readable by root only:
+
+```bash
+chmod 600 /etc/netbird/relay/relay.env
+```
+
+Then create `/etc/netbird/relay/docker-compose.yml`:
 
 ```yaml
-# /etc/netbird/relay/docker-compose.yml on each Relay host
 services:
   relay:
     image: netbirdio/relay:latest
     container_name: netbird-relay
     restart: unless-stopped
     ports:
-      - "443:443"          # WebSocket relay traffic (registered with the Relay LB)
-      - "3478:3478/udp"    # STUN is direct and not load-balanced. See below.
-    environment:
-      - NB_LOG_LEVEL=info
-      - NB_LISTEN_ADDRESS=:443
-      - NB_EXPOSED_ADDRESS=rels://relay.example.com:443
-      - NB_AUTH_SECRET=<shared secret, identical on every Relay instance and on the Management pool>
-      - NB_TRUSTED_PROXIES=<Relay LB IP or CIDR; comma-separated if needed>
-      - NB_ENABLE_STUN=true
-      - NB_STUN_PORTS=3478
+      - "443:443/tcp"    # relay over WebSocket
+      - "443:443/udp"    # relay over QUIC
+      - "3478:3478/udp"  # STUN
+    env_file:
+      - relay.env
+    volumes:
+      - relay_data:/data
+
+volumes:
+  relay_data:
 ```
 
-| Env var | Required | Notes |
-|---|---|---|
-| `NB_EXPOSED_ADDRESS` | Yes | The Relay load balancer URL. **It must be identical on every instance.** This is the URL peers see, not the per-instance hostname. |
-| `NB_AUTH_SECRET` | Yes | Shared with `server.relays.secret` in every Management replica's `config.yaml`. Must be byte-identical on every Relay instance and on every Management replica. |
-| `NB_LISTEN_ADDRESS` | Yes | The address the relay binds inside the container. |
-| `NB_LOG_LEVEL` | No | `debug`, `info` (default), `warn`, `error`. |
-| `NB_TRUSTED_PROXIES` | When preserving client addresses behind the LB | Comma-separated immediate load-balancer IPs or CIDRs allowed to supply `X-Real-Ip` and `X-Real-Port`. Both headers are required. The load balancer must strip client-supplied values and overwrite them from the validated connection. Never use broad, uncontrolled ranges. |
-| `NB_ENABLE_STUN` | No | Enables the embedded STUN server on UDP. |
-| `NB_STUN_PORTS` | No | STUN port (default `3478`). |
+Repeat on every instance with its own name, for example `eu-1.relay.example.com`. Open 443/tcp, 443/udp and 3478/udp to the internet on each. No inbound port 80 is needed: the relay proves its domain to Let's Encrypt over 443.
 
-Start the relay on each host:
+### Option 2: geo-DNS
+
+Option 2 keeps everything in option 1 and adds one shared name, `relay.example.com`, that resolves to a nearby instance. A peer connects to the shared name, lands on an instance, and from then on is known by that instance's own address. Your DNS provider must support location-based or latency-based answers, such as Route 53 geolocation or latency routing.
+
+Keep `NB_EXPOSED_ADDRESS` unique on every instance, exactly as in option 1. The shared name goes only in `server.relays.addresses`, never in `NB_EXPOSED_ADDRESS`.
+
+Two things change:
+
+- **The certificate.** A peer's first connection uses the shared name, and its connections to another peer's instance use that instance's name, so every instance must present one certificate valid for both. For example, `relay.example.com` plus `*.relay.example.com`. What breaks depends on which name is missing:
+  - Without the shared name, no peer can connect at all: `x509: certificate is valid for us-1.relay.example.com, not relay.example.com`.
+  - Without the instance's own name, every peer connects and looks healthy, but peers on different instances cannot relay to each other: `x509: certificate is valid for relay.example.com, not us-1.relay.example.com`.
+
+  A wildcard needs DNS-based validation from your CA. The relay's built-in Let's Encrypt is not suitable: it proves the domain over port 443, and Let's Encrypt's check of the shared name reaches whichever instance DNS returns to Let's Encrypt. Every other instance fails with `acme/autocert: ... no viable challenge type found`. Supply the certificate yourself. Delete the three `NB_LETSENCRYPT_*` lines, set both `NB_TLS_CERT_FILE` and `NB_TLS_KEY_FILE`, and mount the files. Restart every instance after each renewal, because the relay reads the files only at startup.
+- **Health checks on the DNS record.** Peers of a failed instance reconnect through the shared name, so the record must stop returning that instance within seconds. Attach health checks and keep the TTL low, or peers are sent back to the failed instance until the record changes. Once it does, peers re-home by themselves on their next reconnection attempt, which can take a minute or more.
+
+### Start and verify each instance
 
 ```bash
-docker compose -f /etc/netbird/relay/docker-compose.yml up -d
+cd /etc/netbird/relay
+docker compose up -d
 docker compose logs -f relay  # verify startup
 ```
 
-### Register the Relay instances in the Relay LB
-
-Add each Relay host's IP (or backend reference, depending on your LB) to the Relay LB's backend pool on port `443`. Once all instances are registered and healthy, verify:
+Then check each instance by its own name from outside:
 
 ```bash
-curl -I https://relay.example.com/
+curl -v https://us-1.relay.example.com/
 ```
 
-You should get a `200 OK`. A `426 Upgrade Required` response is also healthy when the relay rejects non-WebSocket probes.
+A `404 page not found` response with `SSL certificate verify ok` is healthy. With option 2, run the same check against `relay.example.com` from a client, and confirm the certificate is valid for that name too.
 
 ### STUN handling
 
-STUN is served by the **Relay instances themselves**. Each relay container with `NB_ENABLE_STUN=true` runs an embedded STUN server on UDP/3478 alongside the WebSocket relay listener. You do **not** need a separate STUN/TURN service.
+STUN is served by the **Relay instances themselves**. Each relay container with `NB_ENABLE_STUN=true` runs an embedded STUN server on UDP/3478 alongside the relay listener. You do **not** need a separate STUN/TURN service.
 
-Tell peers where to find STUN through `server.stuns` in the Management configuration. UDP/3478 cannot pass through an HTTP or TCP load balancer, so peers reach each Relay instance's STUN endpoint **directly**. Configure one STUN URL and DNS A record for each Relay instance:
+Tell peers where to find STUN through `server.stuns` in the Management configuration, with one entry per Relay instance under that instance's own name.
 
-- Add an A record per relay host: `stun-1.example.com → relay-host-1`, `stun-2.example.com → relay-host-2`, etc.
-- List each in `server.stuns` (see the config fragment below). Peers iterate the list during NAT discovery.
+### How Management points at the Relay pool and STUN
 
-### How Management points at the Relay LB and STUN
-
-Every Management replica's `config.yaml` references the Relay pool through a **single load balancer URL** in `server.relays.addresses`. The load balancer distributes traffic across Relay instances, so this list always has one entry. Configure STUN separately under `server.stuns`:
+Every Management replica's `config.yaml` lists the Relay pool in `server.relays.addresses` and STUN in `server.stuns`. With option 1, list every instance:
 
 ```yaml
 server:
-  # External STUN: per-instance hostnames (option 1) or external STUN/TURN (option 2)
   stuns:
-    - uri: "stun:stun-1.example.com:3478"
+    - uri: "stun:us-1.relay.example.com:3478"
       proto: "udp"
-    - uri: "stun:stun-2.example.com:3478"
+    - uri: "stun:eu-1.relay.example.com:3478"
       proto: "udp"
 
-  # External Relay pool: one URL pointing at the Relay load balancer
+  relays:
+    addresses:
+      - "rels://us-1.relay.example.com:443"
+      - "rels://eu-1.relay.example.com:443"
+    secret: "<NB_AUTH_SECRET; identical on every Relay instance>"
+    credentialsTTL: "24h"
+```
+
+With option 2, `relays.addresses` holds only the shared name:
+
+```yaml
   relays:
     addresses:
       - "rels://relay.example.com:443"
-    secret: "<NB_AUTH_SECRET; identical on every Relay instance>"
-    credentialsTTL: "24h"
 ```
 
 The full Management `config.yaml` is assembled in [Step 7](#step-7-configure-and-deploy-the-management-pool).
@@ -527,26 +567,27 @@ The full Management `config.yaml` is assembled in [Step 7](#step-7-configure-and
 
 ## Step 7: Configure and deploy the Management pool
 
-Now configure the Management replicas to point at everything you've set up: Postgres, Redis, NATS, the Relay LB URL, and the Signal LB URL. Distribute the same `config.yaml` to every enterprise Management replica.
+Now configure the Management replicas to point at everything you've set up: Postgres, Redis, NATS, the Relay instances, and the Signal LB URL. Distribute the same `config.yaml` to every enterprise Management replica.
 
-`server.relays.addresses` and `server.signalUri` each take **one URL**, which is the load balancer URL for that pool. The load balancer distributes traffic across the instances behind it, so NetBird does not need to know the individual Relay or Signal instance addresses.
+`server.signalUri` takes **one URL**, the Signal load balancer's, which distributes traffic across the Signal instances. `server.relays.addresses` takes every Relay instance's URL with option 1, or only the geo-DNS name with option 2. See [Step 5](#step-5-deploy-the-relay-pool).
 
 ```yaml
 server:
   exposedAddress: "https://app.example.com:443"
   dataDir: "/var/lib/netbird/"
 
-  # External STUN: see Step 5 for the per-instance and external STUN options
+  # External STUN: one entry per Relay instance, see Step 5
   stuns:
-    - uri: "stun:stun-1.example.com:3478"
+    - uri: "stun:us-1.relay.example.com:3478"
       proto: "udp"
-    - uri: "stun:stun-2.example.com:3478"
+    - uri: "stun:eu-1.relay.example.com:3478"
       proto: "udp"
 
-  # External Relay pool: one URL pointing at the Relay load balancer
+  # Relay pool: every instance (option 1). With option 2, only the geo-DNS name.
   relays:
     addresses:
-      - "rels://relay.example.com:443"
+      - "rels://us-1.relay.example.com:443"
+      - "rels://eu-1.relay.example.com:443"
     secret: "<NB_AUTH_SECRET; same value as on every Relay instance>"
     credentialsTTL: "24h"
 
@@ -608,9 +649,9 @@ Run each failure scenario and confirm the expected behavior. Do this in a stagin
 
 | Scenario | Expected behavior |
 |---|---|
-| Stop one Management replica | The Management LB marks it unhealthy within seconds; API traffic continues on remaining replicas. Established peer connections (signal, relay) are unaffected because they flow through the Signal and Relay LBs, not the Management LB. |
+| Stop one Management replica | The Management LB marks it unhealthy within seconds; API traffic continues on remaining replicas. Established peer connections (signal, relay) are unaffected because they flow through the Signal LB and directly to the Relay instances, not through the Management LB. |
 | Stop one Signal instance | The Signal LB marks it unhealthy; peers connected to that instance reconnect via the LB and land on a surviving Signal instance. Cross-peer signaling continues via NATS without interruption to peers that were already connected to a different instance. |
-| Stop one Relay instance | The Relay LB marks it unhealthy; new peer relay sessions go to surviving instances. Existing WebSocket sessions on the killed instance drop and peers re-establish via the LB. |
+| Stop one Relay instance | Peers homed on that instance move to another by themselves: with option 1 to the next instance that answers, with option 2 to the instance DNS returns once its health check drops the stopped one. Relayed connections through the stopped instance drop and re-establish. Peers homed on other instances are unaffected. |
 | Stop one NATS node | Cluster retains quorum (2 of 3 healthy). Writes to the `traffic-events` stream continue. Cross-instance Signal routing continues. |
 | Disconnect Redis | New OAuth flows fail until Redis returns; established peer connections continue working. Dynamic log/rate-limit changes pause. |
 | Trigger PostgreSQL failover (managed service) | Brief outage during the failover; Management replicas reconnect to the new primary and resume. Existing peer connections survive the gap because they don't touch PostgreSQL on every message. |
@@ -621,7 +662,7 @@ If any scenario doesn't match the expected behavior, see [Troubleshooting](#trou
 
 ### Rolling upgrades
 
-The procedure is the same for any of the three pools: drain one instance, upgrade it, return it to the LB, repeat. Schema migrations on the Management pool run automatically on first startup of any replica; subsequent replicas detect the migrated schema and start without re-running it.
+For the Management and Signal pools, drain one instance, upgrade it, return it to the LB, and repeat. Schema migrations on the Management pool run automatically on first startup of any replica; subsequent replicas detect the migrated schema and start without re-running it.
 
 1. Mark instance #1 as draining in its load balancer. Wait for active gRPC streams or WebSocket connections to drain (or hit your drain timeout).
 2. Stop and re-pull the image on instance #1: `docker compose pull && docker compose up -d`.
@@ -629,13 +670,17 @@ The procedure is the same for any of the three pools: drain one instance, upgrad
 4. Add instance #1 back to the LB pool.
 5. Repeat for the remaining instances in the pool.
 
+The Relay pool has no load balancer to drain. Upgrade one instance at a time, and peers on it move to another instance by themselves. With option 2, take the instance out of the DNS record first.
+
 Upgrade Relay, Signal, and Management pools in any order. The protocols between pools are stable across patch releases.
 
 ### Adding or removing instances
 
-To **add** an instance to a pool, provision the host, install the same image with the same configuration as existing instances, start the service, and add it to the load balancer pool once healthy. No additional coordination is required because the new instance reads the same shared state.
+To **add** a Management or Signal instance, provision the host, install the same image with the same configuration as existing instances, start the service, and add it to the load balancer pool once healthy. No additional coordination is required because the new instance reads the same shared state.
 
-To **remove** an instance: mark it as draining in the LB, wait for streams to drain, stop the service. The remaining instances continue serving traffic.
+A Relay instance is different: it needs its own name, certificate and `NB_EXPOSED_ADDRESS`. With option 1, add its URL to `server.relays.addresses` and its STUN entry to `server.stuns` on every Management replica, then restart the replicas one at a time. With option 2, add it to `server.stuns` the same way, and to the geo-DNS record once it is healthy.
+
+To **remove** a Management or Signal instance: mark it as draining in the LB, wait for streams to drain, stop the service. The remaining instances continue serving traffic. To remove a Relay instance, first take it out of `server.relays.addresses` (option 1) or the geo-DNS record (option 2), and out of `server.stuns`, then stop it.
 
 ### Rotating secrets
 
@@ -643,7 +688,7 @@ To **remove** an instance: mark it as draining in the LB, wait for streams to dr
 |---|---|
 | `POSTGRES_PASSWORD` / Postgres user password | Update the password in PostgreSQL, update the DSN in every Management replica's `config.yaml`, restart Management replicas one at a time. |
 | Redis password | Update Redis, update `server.ha.redisAddr` on every Management replica, restart Management replicas one at a time. |
-| `NB_AUTH_SECRET` (relay auth) | Update every Relay instance simultaneously, then update `server.relays.secret` on every Management replica at the same time. Peer relay sessions can be rejected while the values differ. Restart Management and Relay together to minimise this window. |
+| `NB_AUTH_SECRET` (relay auth) | Update every Relay instance simultaneously, then update `server.relays.secret` on every Management replica at the same time. Peer relay sessions can be rejected while the values differ. Restart Management and Relay together to minimise this window. On each Relay instance, apply the new value with `docker compose up -d`: `docker compose restart` keeps the old one. |
 | `server.store.encryptionKey` | **Do not rotate.** This key encrypts data at rest in PostgreSQL. Rotating it makes existing encrypted data unreadable. Plan a fresh deployment if you need to change it. |
 
 ## Troubleshooting
@@ -680,9 +725,15 @@ nats --server nats://nats-1.example.com:4222 server check jetstream
 
 If a node is down, restart it and wait for it to rejoin the cluster. The `traffic-events` stream resumes writes as soon as quorum returns.
 
-### Relay rejects peer connections with `auth: invalid token`
+### Relay rejects peer connections: `invalid signature`
 
-`NB_AUTH_SECRET` on the Relay instances differs from `server.relays.secret` on the Management replicas. The two values must be byte-identical. Confirm on every Relay container and in every Management replica's `config.yaml`.
+`NB_AUTH_SECRET` on the Relay instances differs from `server.relays.secret` on the Management replicas. The relay logs `failed to handshake: validate ... invalid signature` for every rejected peer. The two values must be byte-identical. Confirm on every Relay container and in every Management replica's `config.yaml`.
+
+### Relayed connections never form between some peers: `peer not available`
+
+Some pairs of peers stay `Connecting` while others relay normally, every peer reports the relay as `Available`, and the client log shows `peer not available: ..., context deadline exceeded`. The Relay instances share one `NB_EXPOSED_ADDRESS`, usually because they sit behind a load balancer, so peers on different instances cannot find each other. Give every instance its own address, as in [Step 5](#step-5-deploy-the-relay-pool).
+
+If the client log shows `x509: certificate is valid for relay.example.com, not us-1.relay.example.com` instead, the addresses are right but an instance's certificate lacks its own name. See option 2 in [Step 5](#step-5-deploy-the-relay-pool).
 
 ### Management replica refuses to start: `Redis is required for multi-instance mode`
 
