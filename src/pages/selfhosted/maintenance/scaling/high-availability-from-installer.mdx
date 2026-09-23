@@ -32,7 +32,7 @@ The example uses these names. Replace them with your own throughout:
 | Name | What it is |
 |---|---|
 | `app.example.com` | The domain you gave the installer. Peers and the dashboard keep using it. |
-| `pg.example.com` | Your highly available PostgreSQL endpoint |
+| `pg.example.com` | Your shared, highly available PostgreSQL |
 | `redis.example.com` | Your Redis endpoint |
 | `nats-1.example.com` to `nats-3.example.com` | Your NATS cluster |
 | `us-1.relay.example.com`, `eu-1.relay.example.com` | Your relay instances |
@@ -78,7 +78,7 @@ The installer's PostgreSQL runs in a container on node 1, so it goes down with n
    docker compose exec -T postgres pg_dump -U "$PGU" -d "$PGD" --no-owner --no-privileges > netbird.sql
    ```
 
-3. Restore it into your endpoint. This reads the endpoint user's password without echoing it:
+3. Restore it into the shared PostgreSQL. The first line reads the database user's password without echoing it:
 
    ```bash
    read -rs PGPASSWORD && export PGPASSWORD
@@ -86,11 +86,11 @@ The installer's PostgreSQL runs in a container on node 1, so it goes down with n
      psql -q -v ON_ERROR_STOP=1 -h pg.example.com -p 5432 -U netbird -d netbird < netbird.sql
    ```
 
-   If your endpoint listens on another port, change `-p` here and `port=` in the DSNs below.
+   If your PostgreSQL listens on another port, change `-p` here and `port=` in the DSNs below.
 
    The command prints a list of `setval` results and ends without an error.
 
-4. Point all three stores at your endpoint in `config.yaml`. Change the `dsn` of `store` and `activityStore`, and add an `authStore` block with the same DSN. The installer does not write `authStore`, which is why the login data is still in SQLite:
+4. Point all three stores at the shared PostgreSQL in `config.yaml`. Change the `dsn` of `store` and `activityStore`, and add an `authStore` block with the same DSN. The installer does not write `authStore`, which is why the login data is still in SQLite:
 
    ```yaml
    server:
@@ -112,7 +112,7 @@ The installer's PostgreSQL runs in a container on node 1, so it goes down with n
 
    The installer's DSN uses `sslmode=disable`, because its database runs on the same host. Across the network, use `sslmode=require`, which encrypts the connection. Do not use `verify-ca` or `verify-full` with `sslrootcert` for now: the embedded identity provider ignores `sslrootcert`, and the server stops at startup with `x509: certificate signed by unknown authority`.
 
-5. Move the login data from `idp.db` into the endpoint. The NetBird image includes a tool for this:
+5. Move the login data from `idp.db` into the shared PostgreSQL. The NetBird image includes a tool for this:
 
    ```bash
    docker compose run --rm --no-deps netbird-server migrate-store --config /etc/netbird/config.yaml --verify
@@ -153,7 +153,7 @@ You should see `using redis cache at redis://redis.example.com:6379`, `Connected
 
 ## Step 3: Move Relay to separate instances
 
-The server's built-in relay cannot be shared between nodes. Deploy relay instances as described in [Step 5 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-5-deploy-the-relay-pool), with one change: set every instance's `NB_AUTH_SECRET` to the `authSecret` value already in node 1's `config.yaml`. Your deployment keeps its existing secret, and nothing else needs to change with it. Apply a changed `NB_AUTH_SECRET` with `docker compose up -d` on the relay host: `docker compose restart` keeps the old value.
+The server's built-in relay cannot be shared between nodes. Deploy relay instances as described in [Step 5 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-5-deploy-the-relay-pool), with one change: set every instance's `NB_AUTH_SECRET` to the `authSecret` value already in node 1's `config.yaml`, so your deployment keeps its existing secret. Apply a changed `NB_AUTH_SECRET` with `docker compose up -d` on the relay host: `docker compose restart` keeps the old value.
 
 A relay accepts only peers whose credentials were signed with its own secret, so these relay instances serve this deployment only. Do not point them at a secret another deployment uses.
 
@@ -265,13 +265,13 @@ From here on, TLS and routing move from the installer's Traefik to your load bal
    | `/api/*`, `/oauth2/*`, `/ws-proxy/*` and `/relay*` | every node, port 80 | HTTP |
    | everything else | every node, port 8080 (the dashboard) | HTTP |
 
-   Put each group of nodes in a backend pool that skips a node that stops answering, and make sure the specific paths win over the catch-all row, which your load balancer may do by path length or by rule order.
+   Give each row a backend pool that skips a node that stops answering. Make sure the specific paths take priority over the catch-all row: depending on your load balancer, that means longest path first or rule order.
 
    Health-check the nodes with `GET /oauth2/.well-known/openid-configuration` on port 80, which returns `200`. This check only confirms the node is up and serving: it keeps returning `200` while PostgreSQL or Redis is down, so monitor those separately. Set a generous idle timeout, because peers hold long-lived gRPC streams.
 
 4. Point `app.example.com` at the load balancer in DNS. Lower the record's TTL a day ahead, so the change spreads quickly.
 
-   Existing peers reconnect by themselves, but not immediately: the NetBird client keeps its own cache of the Management address and can keep dialling the old address for several minutes. Plan a maintenance window for this step.
+   Existing peers reconnect by themselves, but not immediately: the NetBird client keeps its own cache of the Management address, and can keep dialling the old address for several minutes. Plan a maintenance window for this step.
 
 ## Step 5: Move Signal to the Signal pool
 
@@ -329,7 +329,7 @@ For more failure tests and day-to-day operations, see the [High Availability gui
 
 ### The restore fails with `unrecognized configuration parameter "transaction_timeout"`
 
-Your PostgreSQL endpoint runs a version older than 17. The installer's backup comes from PostgreSQL 17 and does not restore into older versions. Use an endpoint running PostgreSQL 17 or later.
+The shared PostgreSQL runs a version older than 17. The installer's backup comes from PostgreSQL 17 and does not restore into older versions. Use PostgreSQL 17 or later.
 
 ### The server stops at startup with `failed to create embedded IDP service` and `x509: certificate signed by unknown authority`
 
@@ -349,6 +349,6 @@ The client is still using the old address from its own cache. Its log shows conn
 
 ## Recap
 
-- One host from the installer becomes node 1: its database moves to your PostgreSQL endpoint, its login data follows with `migrate-store`, and its built-in Relay and Signal give way to shared instances.
+- The installer's host becomes node 1: its data moves to the shared PostgreSQL, its login data follows with `migrate-store`, and its built-in Relay and Signal give way to shared instances.
 - Your load balancer replaces Traefik, and the Signal pool sits behind the same URL peers already use.
 - Every further node is three copied files and `docker compose up -d`.
