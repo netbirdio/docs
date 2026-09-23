@@ -4,15 +4,25 @@ import {Note, Warning} from "@/components/mdx";
 
 This guide is part of the [Splitting Your Self-Hosted Deployment](/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment) guide. It covers deploying external relay and STUN servers and configuring your main server to use them.
 
+<Note>
+Running NetBird Enterprise with a commercial license? Use [External Relays on a Commercial License](/selfhosted/enterprise/external-relays) instead. It is the same procedure written for an Enterprise deployment, and it is complete on its own. Following this page would have you generate a new shared secret, which on Enterprise stops traffic event logging without breaking connectivity.
+</Note>
+
 For each relay server you want to deploy:
 
 ## Server Requirements
 
-- A Linux VM with at least **1 CPU** and **1GB RAM**
+- A Linux VM with at least **1 CPU** and **1 GB RAM**
 - Public IP address
 - A domain name pointing to the server (e.g., `relay-us.example.com`)
 - Docker installed
-- Firewall ports open: **80/tcp** (Let's Encrypt HTTP challenge), **443/tcp** (relay), and **3478/udp** (STUN). If you configure multiple STUN ports, open all of them
+- Firewall ports open: **443/tcp** and **443/udp** (relay), and **3478/udp** (STUN). If you configure multiple STUN ports, open all of them
+
+<Note>
+**No inbound port 80 is needed.** A relay proves its domain to Let's Encrypt over 443 itself, using the TLS-ALPN-01 challenge. Your main NetBird server is different and does still need 80, and so may a proxy in front of the relay.
+
+**Both 443 rules matter.** The relay serves two transports on that port: WebSocket over TCP and QUIC over UDP. Clients race both and use whichever connects first. With 443/udp closed the QUIC attempt runs until it times out, WebSocket carries the connection, and nothing reports an error, so the missing rule is easy to overlook. A relay behind a TLS-terminating reverse proxy is the exception: it cannot serve QUIC, so it does not need 443/udp. See [Running the Relay Behind a Proxy or Load Balancer](#running-the-relay-behind-a-proxy-or-load-balancer).
+</Note>
 
 ## Generate Authentication Secret
 
@@ -23,7 +33,9 @@ All relay servers must share the same authentication secret with your main serve
 openssl rand -base64 32
 ```
 
-Save this secret - you'll need it for both the relay servers and your main server's config.
+Save this secret. The identical value goes in two settings: `NB_AUTH_SECRET` on every relay server, and `relays.secret` on your main server.
+
+Paste it from one source into each file rather than retyping it. A single wrong character produces a relay that looks healthy and refuses every peer.
 
 ## Create Relay Configuration
 
@@ -42,9 +54,6 @@ NB_LISTEN_ADDRESS=:443
 NB_EXPOSED_ADDRESS=rels://relay-us.example.com:443
 NB_AUTH_SECRET=your-shared-secret-here
 
-# Only when a reverse proxy or load balancer is directly in front of the relay
-# NB_TRUSTED_PROXIES=10.20.0.10,10.20.1.0/24
-
 # TLS via Let's Encrypt (automatic certificate provisioning)
 NB_LETSENCRYPT_DOMAINS=relay-us.example.com
 NB_LETSENCRYPT_EMAIL=admin@example.com
@@ -59,6 +68,14 @@ NB_STUN_PORTS=3478
 Replace `relay-us.example.com` with your relay server's domain and `your-shared-secret-here` with the secret you generated.
 </Note>
 
+The file holds the shared secret, so make it readable by root only:
+
+```bash
+chmod 600 relay.env
+```
+
+The relay reads `relay.env` when its container is created. If you change the file later on a running relay, apply it with `docker compose up -d`. `docker compose restart` keeps the old values.
+
 Create `docker-compose.yml`:
 
 ```yaml
@@ -68,7 +85,10 @@ services:
     container_name: netbird-relay
     restart: unless-stopped
     ports:
-      - '443:443'
+      # Both relay transports: WebSocket over TCP and QUIC over UDP.
+      # Docker treats a bare '443:443' as TCP only, so the UDP line is required.
+      - '443:443/tcp'
+      - '443:443/udp'
       # Expose all ports listed in NB_STUN_PORTS
       - '3478:3478/udp'
     env_file:
@@ -87,37 +107,81 @@ volumes:
 
 ## Running the Relay Behind a Proxy or Load Balancer
 
-When a reverse proxy or load balancer terminates the Relay WebSocket connection, set `NB_TRUSTED_PROXIES` to the IP addresses or CIDRs of the proxies that connect **directly** to the relay:
+In this shape your proxy holds the certificate and the relay serves plain HTTP behind it.
+
+Use this shape only because a load balancer or proxy is already in front of your relays. Do not add one just to terminate TLS on the relay host: the relay already does that itself, and a proxy in front of it costs you QUIC.
+
+**On the relay host**, `relay.env` has no `NB_LETSENCRYPT_*` lines, listens on an internal port, and names the proxy's address:
 
 ```bash
-NB_TRUSTED_PROXIES=10.20.0.10,10.20.1.0/24
+NB_LOG_LEVEL=info
+NB_LISTEN_ADDRESS=:8080
+NB_EXPOSED_ADDRESS=rels://relay-us.example.com:443
+NB_AUTH_SECRET=your-shared-secret-here
+NB_TRUSTED_PROXIES=10.20.0.10
+NB_ENABLE_STUN=true
+NB_STUN_PORTS=3478
 ```
 
-The proxy must strip any client-supplied `X-Real-Ip` and `X-Real-Port`, then overwrite both headers with the address and source port from the validated client connection. The relay accepts those headers only when the immediate connection source matches the trusted list. If either header is missing, the list is empty, or the immediate source is not trusted, the relay ignores the headers and uses the direct connection address.
+Keep `rels://` written out in `NB_EXPOSED_ADDRESS`. With no TLS of its own, the relay would otherwise advertise `rel://`.
+
+In `docker-compose.yml`, remove the two `443` port lines and keep `3478:3478/udp` for STUN. Make port 8080 reachable from the proxy and nothing else. If the proxy is on another machine, publish the port with `'8080:8080/tcp'` and allow it at your firewall from the proxy's address only.
+
+**Your proxy must:**
+
+- hold a certificate for the relay's domain, and accept connections on 443/tcp;
+- forward WebSocket upgrades over HTTP/1.1 to the relay's port 8080;
+- set both `X-Real-Ip` and `X-Real-Port` to the address and source port of the connection it received, overwriting anything the client sent.
+
+The relay uses those two headers only when the connection comes from an address in `NB_TRUSTED_PROXIES`, and only when both are present. A proxy that sets only `X-Real-Ip` gets its own address logged for every peer. A proxy that passes the client's headers through lets any client write the address of its choice into your relay logs.
+
+`NB_TRUSTED_PROXIES` is the address the relay sees the proxy's connections come from, which is not always the proxy's public address. When the proxy and relay share a Docker network, it is the proxy container's address on that network. When the proxy is another machine on the same private network, it is that machine's private address: a published Docker port keeps the original source address.
 
 <Warning>
-Trust only the smallest proxy IP ranges you control. Do not trust `0.0.0.0/0`, `::/0`, or a shared network where untrusted systems can connect directly to the relay and forge forwarding headers. Invalid IP or CIDR entries prevent the relay from starting.
+Trust only the smallest proxy ranges you control. Never `0.0.0.0/0`, `::/0`, or a shared network where an untrusted system could reach the relay directly and forge these headers. Entries are IP addresses or CIDRs separated by commas. Hostnames are rejected, and a prefix such as `10.20.0.10/24` trusts the whole `/24`.
 </Warning>
 
-The CLI equivalent is `--trusted-proxies`. Restart the relay after changing the list and check its startup logs for parsing errors.
+These headers decide only which client address the relay records, including in the `invalid signature` lines used for troubleshooting. Authentication does not depend on them.
+
+Apply a change to `NB_TRUSTED_PROXIES` with `docker compose up -d relay`. An invalid entry stops the relay: it exits with `failed to parse trusted proxies: ...` and restarts in a loop until you fix it. To confirm the setting works, check that the relay logs your peers' addresses rather than the proxy's:
+
+```bash
+docker compose logs relay | grep 'WS client connected from'
+```
+
+The CLI equivalent of `NB_TRUSTED_PROXIES` is `--trusted-proxies`, available since **v0.75.0**.
+
+At startup the relay reports that it cannot serve QUIC:
+
+```
+WARN relay/server/server.go:78: Not starting QUIC listener: valid TLS config is required for QUIC listener
+```
+
+That is expected here. Peers connect over WebSocket, so neither the proxy nor the relay host needs 443/udp. The proxy needs 443/tcp, plus whatever it uses to obtain its own certificate, often 80/tcp. The relay host needs 3478/udp for STUN.
 
 ## Alternative: TLS with Existing Certificates
 
-If you have existing TLS certificates (e.g., from your own CA or a wildcard cert), replace the Let's Encrypt variables in `relay.env` with:
+If you have existing TLS certificates (e.g., a wildcard certificate, or one from your own CA), delete the three `NB_LETSENCRYPT_*` lines from `relay.env` and add:
 
 ```bash
-# Replace the NB_LETSENCRYPT_* lines with:
 NB_TLS_CERT_FILE=/certs/fullchain.pem
 NB_TLS_KEY_FILE=/certs/privkey.pem
 ```
 
-And add a certificate volume to `docker-compose.yml`:
+Then replace the relay service's `volumes:` list in `docker-compose.yml` with this one. Do not add it as a second `volumes:` key, which makes the file invalid:
 
 ```yaml
     volumes:
       - /path/to/certs:/certs:ro
       - relay_data:/data
 ```
+
+`fullchain.pem` is your certificate followed by any intermediates, and the certificate must cover the relay's domain. Four things catch people out:
+
+- **Set both variables, and remove every `NB_LETSENCRYPT_*` line.** If a Let's Encrypt line remains, the relay uses Let's Encrypt and ignores your files. If only one `NB_TLS_*` variable is set, the relay starts with no TLS at all. Either way, the sign is a missing QUIC line at startup.
+- **Nothing in the startup log names your certificate.** The `curl -v` check below is how you confirm it is the one being served.
+- **The files are read once, at startup.** Restart the relay after every renewal: `docker compose restart relay`.
+- **A private CA must be trusted by every peer.** NetBird checks the relay's certificate against each device's operating-system trust store, and has no setting for a separate CA. A device that does not trust yours reports the relay as `Unavailable` with `x509: certificate signed by unknown authority`, and cannot relay to other peers. Distribute the CA to every device before you switch.
 
 ## Start the Relay Server
 
@@ -131,11 +195,18 @@ Verify it's running:
 docker compose logs -f
 ```
 
-You should see:
+You should see the relay announce its exposed address, both listeners, and the STUN server:
+
 ```
-level=info msg="Starting relay server on :443"
-level=info msg="Starting STUN server on port 3478"
+INFO relay/cmd/root.go:242: server will be available on: rels://relay-us.example.com:443
+INFO relay/server/listener/ws/listener.go:51: WS server listening address: :443
+INFO relay/server/listener/quic/listener.go:39: QUIC server listening on address: :443
+INFO [component: stun] stun/server.go:71: STUN server listening on [::]:3478
 ```
+
+Other lines appear alongside these, including the Let's Encrypt setup, the health check server and the metrics server. The order changes from one start to the next, because the listeners come up concurrently. What matters is that all four lines are present, not where they sit.
+
+A missing QUIC line means the relay has no TLS configuration of its own, which is expected only behind a TLS-terminating proxy.
 
 If you configured Let's Encrypt, the relay generates TLS certificates lazily on the first incoming request. Trigger certificate provisioning and verify it by running:
 
@@ -143,7 +214,7 @@ If you configured Let's Encrypt, the relay generates TLS certificates lazily on 
 curl -v https://relay-us.example.com/
 ```
 
-A `404 page not found` response is expected — what matters is that the TLS handshake succeeds. Look for a valid Let's Encrypt certificate in the output:
+A `404 page not found` response is expected. What matters is that the TLS handshake succeeds:
 
 ```
 * Server certificate:
@@ -151,6 +222,18 @@ A `404 page not found` response is expected — what matters is that the TLS han
 *  issuer: C=US; O=Let's Encrypt; CN=E8
 *  SSL certificate verify ok.
 ```
+
+The issuer's `CN` names whichever intermediate signed your certificate, so yours will often differ.
+
+Two things can go wrong here, and they look different. If the first attempt fails with a TLS error such as `SSL_ERROR_SYSCALL`, wait a few seconds and run it again: that first request is what triggers issuance, and it can time out while that happens.
+
+If instead the command hangs with no output and no error, issuance is stuck rather than slow, and only the relay can tell you why:
+
+```bash
+docker compose logs relay | grep -i acme
+```
+
+A rate limit is the likeliest cause if you have rebuilt the same relay host several times. Let's Encrypt allows five certificates per week for one exact set of domain names.
 
 ## Repeat for Additional Relay Servers
 
@@ -169,15 +252,23 @@ cd ~/netbird  # or wherever your deployment is
 nano config.yaml
 ```
 
-Remove the `authSecret` from the `server` section and add `relays` and `stuns` sections pointing to your external servers. The presence of the `relays` section disables both the embedded relay and the embedded STUN server, so the `stuns` section is required to provide external STUN addresses:
+Add `stuns` and `relays` inside the existing `server:` block, at the same indentation as the keys already there. Anywhere inside that block works.
+
+This is an addition, not a replacement. Leave every key already under `server:` exactly as it is. A quickstart deployment also carries `auth`, `reverseProxy` and `store` sections there, holding your OIDC redirect URIs, your reverse-proxy trust settings and your datastore encryption key. Overwriting any of them breaks the deployment, so do not paste the example below over your existing block.
+
+The presence of `relays.addresses` is what disables the embedded relay, and it disables the embedded STUN server too, so the `stuns` section is required to provide external STUN addresses.
+
+You do not need to remove `server.authSecret`. It is required only when the embedded relay is running. Leaving it in place is also the safer choice on a NetBird Enterprise deployment, where the same value has a second job: see [External Relays on a Commercial License](/selfhosted/enterprise/external-relays).
+
+Both `relays` and `stuns` are available since **v0.65.0**.
 
 ```yaml
 server:
   listenAddress: ":80"
   exposedAddress: "https://netbird.example.com:443"
-  # Remove authSecret to disable the embedded relay
-  # authSecret: ...
-  # Remove or comment out stunPorts since we're using external STUN
+  # Leave authSecret as it is. relays.addresses below is what disables the embedded relay.
+  authSecret: "your-existing-secret"
+  # stunPorts no longer applies once stuns is set, so you can comment it out
   # stunPorts:
   #   - 3478
   metricsPort: 9090
@@ -201,18 +292,20 @@ server:
     secret: "your-shared-secret-here"
     credentialsTTL: "24h"
 
-  auth:
-    issuer: "https://netbird.example.com/oauth2"
-    # ... rest of auth config
+  # ... the rest of your existing configuration is unchanged
 ```
 
 <Warning>
-The `secret` under `relays` and the `NB_AUTH_SECRET` on all relay servers **must be identical**. Mismatched secrets will cause relay connections to fail silently.
+The `secret` under `relays` and the `NB_AUTH_SECRET` on every relay server **must be identical**. If they differ, peers cannot use that relay.
 </Warning>
+
+A mismatch is easiest to spot on the relay host, which logs `failed to handshake: ... invalid signature` for every rejected peer.
+
+It is harder to spot from a peer, because a peer lists only the relays it is actually using. One bad relay among several never appears as a failure: the peer picks a working one instead, and the broken relay is simply absent. Only when every relay rejects does `netbird status -d` report `Unavailable, reason: failed to get reader: failed to read frame header: EOF`. The `stun:` entry stays `Available` throughout, because STUN is unauthenticated.
 
 ### Update docker-compose.yml (Optional)
 
-If your main server was exposing STUN port 3478, you can remove it since STUN is now handled by external relays:
+If your main server was exposing STUN port 3478, you can remove it, since STUN is now handled by external relays. Change only the `ports` entry and leave the rest of the service as it is:
 
 ```yaml
   netbird-server:
@@ -227,14 +320,52 @@ If your main server was exposing STUN port 3478, you can remove it since STUN is
       - netbird_data:/var/lib/netbird
       - ./config.yaml:/etc/netbird/config.yaml
     command: ["--config", "/etc/netbird/config.yaml"]
+    # ... the rest of this service, including its labels, is unchanged
 ```
 
 ### Restart the Main Server
 
+Which command you need depends on whether you did the optional `docker-compose.yml` step above.
+
+**If you edited `config.yaml` only**, restart the container:
+
 ```bash
-docker compose down
-docker compose up -d
+docker compose restart netbird-server
 ```
+
+`config.yaml` is a bind mount, so editing it does not change anything Docker Compose compares. `docker compose up -d` would report the service as already up to date, and the server would keep serving the old configuration.
+
+**If you also removed the STUN port from `docker-compose.yml`**, recreate the container instead:
+
+```bash
+docker compose up -d netbird-server
+```
+
+A published port is fixed when the container is created, so `docker compose restart` cannot remove one: the container comes back with the mapping still in place and nothing reports a problem. Recreating the container applies both files at once, so this one command covers the `config.yaml` change as well.
+
+<Note>
+Avoid `docker compose down` here. It stops every other service too, including your reverse proxy and, on larger deployments, the database and the traffic-flow services.
+</Note>
+
+## The Embedded Relay Is Now Off
+
+Setting `relays.addresses` switches the embedded relay off. There is no setting that keeps it running alongside external relays, and listing the main server's own address among them does not bring it back: clients are handed an address that never answers.
+
+```bash
+curl https://netbird.example.com/relay
+```
+
+```
+Relay service not enabled
+```
+
+The endpoint answers with HTTP 404 and that single line as its body. Add `-i` to the command if you want to see the status code as well.
+
+From here on, relay capacity is whatever your external relay hosts provide. Size them accordingly.
+
+<Note>
+This is a cutover, not a gradual migration. The restart that applies the change is also the restart that drops every connection the embedded relay was serving, so those peers reconnect straight onto the external relays. Bring the relay hosts up and confirm they answer before you edit `config.yaml`, because there is no period where both are available.
+</Note>
 
 ## Verify the Configuration
 
@@ -256,6 +387,8 @@ INFO combined/cmd/root.go:   Relay: false (log level: )
 Relay addresses: [rels://relay-us.example.com:443 rels://relay-eu.example.com:443]
 ```
 
+The address list is logged twice, from two different places in the server. That is normal.
+
 ### Check Peer Status
 
 Connect a NetBird client and verify that both STUN and relay services are available:
@@ -264,23 +397,30 @@ Connect a NetBird client and verify that both STUN and relay services are availa
 netbird status -d
 ```
 
-The output should list your external STUN and relay servers. All configured STUN servers will appear, but only one randomly chosen relay is used per client:
+The output lists your external STUN and relay servers. Every configured STUN server appears. Relays work differently: the client dials them in parallel and keeps the first to answer, which is normally the nearest. That one becomes its **home relay**, so relays in several regions give each client the nearest one automatically.
 
 ```
 Relays:
   [stun:relay-us.example.com:3478] is Available
   [stun:relay-eu.example.com:3478] is Available
-  [rels://relay-eu.example.com:443] is Available
+  [rels://relay-eu.example.com:443] is Available via ws
 ```
 
-You can also test failover by stopping one of the relay servers and checking the status again. The client will detect the unavailable server and use the remaining one:
+You may see more than one `rels://` line. A client also connects to another peer's home relay when that peer picked a different one, so holding two relay connections at once is normal in a multi-region deployment.
+
+The suffix names the transport that won the race, and it is `ws` or `quic` depending on which answered first. Both are normal, the winner can differ between two peers on the same deployment, and neither is a sign of a problem. What 443/udp buys you is that the QUIC attempt can win or lose on merit rather than sitting until it times out.
+
+### Test Failover
+
+Stop the relay a peer is actually using, which is the one on its `rels://` line, otherwise nothing observable changes. Then check that peer again.
+
+Read the `rels://` line, not the `stun:` lines. It is the one that shows failover working: the stopped relay drops out of it and the surviving relay carries the traffic.
 
 ```
-Relays:
-  [stun:relay-us.example.com:3478] is Available
-  [stun:relay-eu.example.com:3478] is Unavailable, reason: stun request: context deadline exceeded
-  [rels://relay-us.example.com:443] is Available
+  [rels://relay-us.example.com:443] is Available via ws
 ```
+
+The `stun:` entries are not a dependable failover signal. Depending on circumstances they either report the stopped server as `Unavailable` with a reason, or sit at `Checking...` for every configured STUN server, including healthy ones, without clearing on their own or after a client restart. Both have been observed. Either way they return to `Available` once the stopped relay is back, so do not read `Checking...` as a second failure.
 
 ### Test Relay Connectivity
 
