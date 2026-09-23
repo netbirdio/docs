@@ -347,7 +347,7 @@ Plan one load-balancer frontend for each of the Management and Signal pools. The
 | Pool | Public FQDN | Backend port | Frontend protocol | Health check |
 |---|---|---|---|---|
 | Signal | e.g. `signal.example.com` | 443 | HTTPS, HTTP/2, gRPC | TCP/443 (or gRPC health if supported) |
-| Management | e.g. `app.example.com` | 443 | HTTPS, HTTP/2, gRPC | `GET /api/health` → HTTP 200 |
+| Management | e.g. `app.example.com` | 443 | HTTPS, HTTP/2, gRPC | `GET /oauth2/.well-known/openid-configuration` → HTTP 200 |
 
 Common requirements for every pool:
 
@@ -361,6 +361,8 @@ Common requirements for every pool:
 | **Generous idle timeout** | Management and Signal gRPC streams can be long-lived. Set the idle timeout above your peer-sync interval. Ten to 30 minutes is a comfortable range for both. |
 
 For the full set of paths and protocols NetBird exposes to each load balancer, see [Configuration Files Reference](/selfhosted/maintenance/configuration-files).
+
+The Management check confirms that a replica is up and serving. It keeps returning 200 while PostgreSQL or Redis is unreachable, so monitor those separately.
 
 If you're using a managed cloud load balancer, configure the equivalent of each row above using your provider's UI or infrastructure as code. If you're using a self-hosted reverse proxy, create one backend pool per service, attach health checks, and enable HTTP/2 or WebSocket support as appropriate for each pool.
 
@@ -567,7 +569,7 @@ The full Management `config.yaml` is assembled in [Step 7](#step-7-configure-and
 
 ## Step 7: Configure and deploy the Management pool
 
-Now configure the Management replicas to point at everything you've set up: Postgres, Redis, NATS, the Relay instances, and the Signal LB URL. Distribute the same `config.yaml` to every enterprise Management replica.
+Now configure the Management replicas to point at everything you've set up: Postgres, Redis, NATS, the Relay instances, and the Signal LB URL. Every replica runs the Enterprise combined server image, `ghcr.io/netbirdio/netbird-server-cloud`, which the Enterprise installer also deploys. Distribute the same `config.yaml` to every replica.
 
 `server.signalUri` takes **one URL**, the Signal load balancer's, which distributes traffic across the Signal instances. `server.relays.addresses` takes every Relay instance's URL with option 1, or only the geo-DNS name with option 2. See [Step 5](#step-5-deploy-the-relay-pool).
 
@@ -638,7 +640,7 @@ Bring up replicas one at a time and register each in the Management LB once heal
    nats --server nats://nats-1.example.com:4222 server check connection  # expect: OK
    ```
 2. **Distribute `config.yaml`** to every Management replica host. Verify identical files (`sha256sum config.yaml`) on each.
-3. **Start replica 1**. Wait for `/api/health` to return 200 and check the logs for `Management server created` followed by `Starting CloudServer`.
+3. **Start replica 1**. Wait for `/oauth2/.well-known/openid-configuration` to return 200 and check the logs for `Management server created` followed by `Starting CloudServer`.
 4. **Register replica 1** in the Management LB. Confirm the dashboard is reachable via `https://app.example.com/`.
 5. **Start replica 2**, verify health, register in the LB.
 6. **Repeat for any additional replicas.**
@@ -735,9 +737,9 @@ Some pairs of peers stay `Connecting` while others relay normally, every peer re
 
 If the client log shows `x509: certificate is valid for relay.example.com, not us-1.relay.example.com` instead, the addresses are right but an instance's certificate lacks its own name. See option 2 in [Step 5](#step-5-deploy-the-relay-pool).
 
-### Management replica refuses to start: `Redis is required for multi-instance mode`
+### Management replica refuses to start: Redis
 
-`server.ha.enabled: true` but `server.ha.redisAddr` is empty or unreachable. Set the address and confirm connectivity from the replica:
+`server.ha.enabled: true` needs a reachable `server.ha.redisAddr`. If it is empty, the replica exits with `server.ha.redisAddr is required when ha.enabled is true`. If Redis cannot be reached, it exits with `failed to create shared cache store: dial tcp ...: connect: connection refused`. Set the address and confirm connectivity from the replica:
 
 ```bash
 redis-cli -u "<server.ha.redisAddr>" ping
