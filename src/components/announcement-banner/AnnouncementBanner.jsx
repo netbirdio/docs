@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import clsx from 'clsx'
 import Link from 'next/link'
 
@@ -36,10 +37,23 @@ function CloseIcon(props) {
 
 function AnnouncementItem({ announcement, onClose }) {
   const announcementLink = useCustomQueryURL(announcement.link || '')
+  const bannerRef = useRef(null)
+  const { setBannerHeight } = useAnnouncements()
+
+  useEffect(() => {
+    const banner = bannerRef.current
+    if (!banner) return
+    const observer = new ResizeObserver(() => {
+      setBannerHeight(Math.ceil(banner.getBoundingClientRect().height))
+    })
+    observer.observe(banner)
+    return () => observer.disconnect()
+  }, [setBannerHeight])
 
   return (
     <div
       id="announcement-banner"
+      ref={bannerRef}
       className={clsx(
         'sticky top-0 z-50 flex w-full items-center justify-center border-b border-zinc-800 bg-netbird/95 px-4 py-1.5 text-[11px] font-medium text-black shadow-sm backdrop-blur'
       )}
