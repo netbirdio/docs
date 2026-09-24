@@ -27,7 +27,7 @@ The table compares what the installer set up on one host with what you have at t
 | TLS and routing | Traefik on node 1 | Your load balancer, in front of every node |
 | PostgreSQL | A container on node 1 | A highly available PostgreSQL service you prepare before you begin |
 | Login data (embedded identity provider) | An SQLite file on node 1 | The same PostgreSQL service |
-| Signal | Built into the server | A Signal pool behind the load balancer, at the same URL |
+| Signal | Built into the server | A Signal pool behind its own load balancer, at `signal.example.com` |
 | Relay | Built into the server | Separate relay instances, one address each |
 | Redis and NATS | None: one server keeps its cache and messaging in memory | Redis and a three-node NATS cluster you set up before you begin, shared by every node |
 
@@ -36,6 +36,7 @@ The example uses these names. Replace them with your own throughout:
 | Name | What it is |
 |---|---|
 | `app.example.com` | The domain you gave the installer. Peers and the dashboard keep using it. |
+| `signal.example.com` | The Signal pool's load balancer, new in Step 5 |
 | `pg.example.com` | Your shared, highly available PostgreSQL |
 | `redis.example.com` | Your Redis endpoint |
 | `nats-1.example.com` to `nats-3.example.com` | Your NATS cluster |
@@ -52,7 +53,7 @@ Have these ready before you change anything on node 1:
 4. **A second host with Docker** for node 2.
 5. **A maintenance window for Step 4.** The dashboard and Management are unreachable from the moment Step 4 stops the installer's stack until DNS points at the load balancer and each client refreshes its cached Management address, which can take 10 minutes. A day ahead, lower the TTL of the `app.example.com` DNS record.
 
-You also deploy relay instances in Step 3 and Signal instances in Step 5.
+You also deploy relay instances in Step 3, and Signal instances with their own load balancer in Step 5.
 
 Then take backups on node 1. Work in the directory where you ran the installer:
 
@@ -223,7 +224,7 @@ From here on, TLS and routing move from the installer's Traefik to your load bal
 
    | Path | Backend | Protocol to the backend |
    |---|---|---|
-   | `/signalexchange.SignalExchange/*` | every node, port 80 (Step 5 moves this to the Signal pool) | HTTP/2 without TLS (h2c) |
+   | `/signalexchange.SignalExchange/*` | every node, port 80 (Step 5 retires this) | HTTP/2 without TLS (h2c) |
    | `/management.ManagementService/*` and `/management.ProxyService/*` | every node, port 80 | HTTP/2 without TLS (h2c) |
    | `/api/*`, `/oauth2/*` and `/ws-proxy/*` | every node, port 80 | HTTP, with WebSocket upgrades |
    | everything else | every node, port 8080 (the dashboard) | HTTP |
@@ -314,26 +315,21 @@ From here on, TLS and routing move from the installer's Traefik to your load bal
 
 ## Step 5: Move Signal to the Signal pool
 
-Deploy Signal instances as described in [Step 6 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-6-deploy-the-signal-pool), up to and including starting Signal on each host. Give them the same NATS cluster as the nodes. Skip the rest of that step: its separate Signal load balancer, `signal.example.com` and its `signalUri` do not apply here.
+Deploy the Signal pool and its load balancer at `signal.example.com` as described in [Step 6 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-6-deploy-the-signal-pool). Give the Signal instances the same NATS cluster as the nodes. Confirm `https://signal.example.com` answers with a valid certificate before you continue.
 
-Keep the Signal URL your peers already use, which is `app.example.com`, and change only what serves it:
+Plan this step for a maintenance window. Peers learn the Signal URL when they log in, so a peer that is connected during the change keeps using the old URL and loses Signal. It does not recover by itself: it stays connected to Management, but it cannot form new connections, even with peers that already use the new Signal. Devices that are offline during the change pick up the new URL when they next start.
 
-1. On your existing load balancer, route `/signalexchange.SignalExchange/*` (h2c) and `/ws-proxy/signal*` (HTTP) for `app.example.com` to the Signal instances, on the port they listen on, instead of the nodes. The `/ws-proxy/signal*` route must take priority over the existing `/ws-proxy/*` route, or Signal over WebSocket keeps going to the nodes.
-2. In `config.yaml`, set `signalUri` to the same URL:
+1. In `config.yaml`, set `signalUri` to the Signal load balancer:
 
    ```yaml
    server:
-     signalUri: "https://app.example.com:443"
+     signalUri: "https://signal.example.com:443"
    ```
 
    Setting `signalUri` turns off the server's built-in Signal.
-3. Restart the server: `docker compose restart netbird-server`.
-
-Peers reconnect to Signal at the same URL by themselves, within about a minute.
-
-<Warning>
-    Do not give Signal a new name at this point. Peers learn the Signal URL when they log in, and a peer already connected keeps using the old one. With a new name, every existing peer loses Signal until someone runs `netbird down` and `netbird up` on it.
-</Warning>
+2. Restart the server: `docker compose restart netbird-server`.
+3. On every device that was connected during the change, run `netbird down` and then `netbird up`. Include devices that are always on, such as routing peers, exit nodes and servers. Each one connects to `signal.example.com` straight away. Check with `netbird status`, which shows `Signal: Connected to https://signal.example.com:443`.
+4. Remove the `/signalexchange.SignalExchange/*` route from the `app.example.com` load balancer. Nothing serves it any more.
 
 ## Step 6: Add node 2
 
@@ -406,12 +402,10 @@ The client is still using the old address from its own cache. Its log shows conn
 
 ### Peers show `Signal: Disconnected, reason: signal receive stream stalled`
 
-Peers log this once while Step 5 moves Signal, just before they reconnect by themselves within about a minute. That is expected.
-
-If it lasts longer, `signalUri` points at a different URL from the one peers are connected to, usually because Signal got a new name. Either route the old URL to the Signal pool as in Step 5, or run `netbird down` and `netbird up` on each peer.
+The peer is still using the Signal URL it had before Step 5. It does not recover by itself. Run `netbird down` and then `netbird up` on it.
 
 ## Recap
 
 - The installer's host becomes node 1: its data moves to the shared PostgreSQL, its login data follows with `migrate-store`, and its built-in Relay and Signal give way to shared instances.
-- Your load balancer replaces Traefik, and the Signal pool sits behind the same URL peers already use.
+- Your load balancer replaces Traefik, and the Signal pool gets its own load balancer at `signal.example.com`.
 - Every further node is three copied files, the same firewall rules, and a place in the load balancer's pools.
