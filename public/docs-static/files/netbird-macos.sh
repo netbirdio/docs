@@ -4,7 +4,7 @@
 #   Push the NetBird MDM policy to a macOS device via JumpCloud Commands.
 #
 # DESCRIPTION
-#   This is the macOS counterpart of docs/netbird-policy.reg.ps1.
+#   This is the macOS counterpart of netbird-policy.reg.ps1.
 #   It writes the values declared in the "POLICY VALUES" block below to
 #   the managed-preferences plist that the NetBird daemon's
 #   client/mdm/policy_darwin.go loader reads on every 1-minute MDM
@@ -25,7 +25,7 @@
 # IMPORTANT: PERSISTENCE
 #   macOS wipes /Library/Managed Preferences/ at every boot on devices
 #   that are NOT MDM-enrolled. For a persistent fleet rollout, push the
-#   companion docs/netbird-macos.mobileconfig as a Custom Configuration
+#   companion netbird-macos.mobileconfig as a Custom Configuration
 #   Profile (Admin Console -> MDM -> Mac Custom Configuration Profiles)
 #   instead of this script. Use this script when:
 #     - the device is MDM-enrolled (file survives reboots), or
@@ -49,8 +49,8 @@ set -euo pipefail
 #
 # Reference for key names + accepted values:
 #   client/mdm/policy.go (Key* constants)
-#   docs/netbird-macos.mobileconfig (sample profile)
-#   docs/netbird.admx + .adml (Windows ADMX schema)
+#   netbird-macos.mobileconfig (sample profile)
+#   netbird.admx + netbird.adml (Windows ADMX schema)
 #
 NULL='__UNSET__'
 managementURL='https://api.netbird.io:443'
