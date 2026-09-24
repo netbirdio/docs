@@ -243,21 +243,19 @@ In the **Details** tab:
 1. Select a **service mode**. Choose **HTTP** for web applications, or **TCP**, **UDP**, or **TLS** for Layer 4 services. See [Service modes](#service-modes) for details on each mode.
 2. Enter a **subdomain** for your service (e.g., `myapp`).
 3. Select a **base domain**. Cloud users see domains with a **Free** badge (e.g., `abc123.eu.proxy.netbird.io`). Self-hosted users see domains with a **Cluster** badge (e.g., `proxy.mycompany.com`, based on their deployed proxy instances). You can also select a custom domain you have already configured.
-4. For L4 services, set the **listen port** that the proxy will accept connections on. Some clusters auto-assign ports; others allow you to specify one manually.
-5. Click **Add Target** to define where traffic should be sent.
+4. For L4 services, select the target host or resource, then configure one or more **Port Mappings**. Each mapping specifies a protocol, an inclusive listener range, and the corresponding destination range. Use the same start and end value for a single port.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-service-details.png" alt="Add Service modal showing the Details tab" className="imagewrapper"/>
 </p>
 
-6. In the target configuration, select the **type** (Peer, Host, Domain, Subnet, or Proxy Cluster), then choose the specific peer, resource, or cluster.
-7. For HTTP services, set the **protocol** (HTTP or HTTPS) and **port** for the target. Optionally, enter a **path** for path-based routing. For L4 services, set the target **host/IP** and **port**. For **Proxy Cluster** targets, the host field accepts any hostname or IP the cluster's embedded proxy can resolve from its own host stack — see [Private services](/manage/reverse-proxy/bring-your-own-proxy#private-services-net-bird-only-access) for details.
+5. For HTTP services, click **Add Target**, select the target **type** (Peer, Host, Domain, Subnet, or Proxy Cluster), and set the backend protocol and port. Optionally, enter a path for path-based routing. For **Proxy Cluster** targets, the host field accepts any hostname or IP the cluster's embedded proxy can resolve from its own host stack — see [Private services](/manage/reverse-proxy/bring-your-own-proxy#private-services-net-bird-only-access) for details.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-target.png" alt="Add Target configuration modal showing the unified Peer / Resource / Proxy Cluster picker" className="imagewrapper"/>
 </p>
 
-You can add multiple targets. HTTP services support path-based routing across targets.
+HTTP services can have multiple targets and support path-based routing across them. An L4 service uses one target with one or more port mappings.
 
 ### Step 3: Configure authentication (HTTP only)
 
@@ -347,9 +345,20 @@ Within a service, you can:
 - **Remove targets** - remove a target to stop routing traffic to that backend
 - **Enable or disable targets** - toggle individual targets on or off without removing them from the service
 
-## Port allocation for L4 services
+## Port mappings for L4 services
 
-L4 services (TCP, UDP, TLS) require a dedicated port on the proxy cluster. How ports are assigned depends on whether the proxy cluster supports custom port selection:
+An L4 service can expose multiple TCP, UDP, and TLS passthrough listeners for one target. Each mapping translates an inclusive public listener range to an equally sized destination range. For example:
+
+| Protocol | Listener | Destination |
+|----------|----------|-------------|
+| TCP | `443` | `443` |
+| TCP | `25565` | `25565` |
+| UDP | `19132` | `19132` |
+| UDP | `5000-5030` | `6000-6030` |
+
+TCP and UDP may use the same numeric listener port because they are different transports. Reversed ranges, ranges of different sizes, and overlapping listener ranges for the same protocol are rejected.
+
+How listener ports are assigned depends on whether the proxy cluster supports custom port selection:
 
 - **Custom port selection available**: you choose the exact port the proxy listens on. This is useful when clients expect a well-known port (e.g., 5432 for PostgreSQL, 3306 for MySQL). Self-hosted proxy clusters support this when configured to allow it.
 - **Auto-assigned ports only**: the proxy cluster automatically assigns an available port. This is the case for NetBird's shared cloud proxy clusters, where port allocation is managed to avoid conflicts between accounts. The assigned port is shown in the service details after creation.
@@ -357,12 +366,18 @@ L4 services (TCP, UDP, TLS) require a dedicated port on the proxy cluster. How p
 The dashboard indicates whether a proxy cluster supports custom ports when you select the domain. If custom ports are not supported, the listen port field is read-only and populated after creation.
 
 <Warning>
-    Each port on a proxy cluster can only be used by one service at a time. If you specify a port that is already in use by another service, creation will fail. L4 listen ports also cannot conflict with the proxy's tunnel port.
+    Raw TCP and UDP listeners are owned per proxy cluster, protocol, and port, even when services use different hostnames. Overlapping listener ranges for the same protocol therefore conflict across services. TLS listeners can share a port across different hostnames because the proxy routes them by SNI. L4 listen ports also cannot conflict with the proxy's tunnel port.
 </Warning>
 
 <Note>
-    The listen port for an L4 service is separate from the target port. For example, a service could listen on port 15432 on the proxy cluster and forward traffic to port 5432 on the backend peer. Clients connect to the proxy cluster address on the listen port.
+    Listener and destination ports are independent. A mapping can listen on `15432` and forward to `5432`, or translate `5000-5030` to `6000-6030`. Clients connect to the proxy cluster address on the listener port.
 </Note>
+
+### Sharing a hostname
+
+You can create separate compatible services on the same hostname. For example, `stream.example.com` can serve an HTTPS application on port 443 and raw TCP on port 1935, while another L4 service on the same hostname exposes additional TCP or UDP mappings.
+
+Only one HTTP service can own a hostname. An HTTP service may share its hostname with raw TCP and UDP services, but not with a TLS passthrough service. Raw UDP carries no hostname on the wire; the domain is a DNS address clients use before connecting to the UDP port.
 
 <Warning>
     **Self-hosted Docker deployments:** The default Docker Compose configuration only routes port 443 (via Traefik TLS passthrough) to the proxy container. L4 services that listen on additional TCP or UDP ports require you to manually expose those ports in your `docker-compose.yml`. See the [migration guide](/selfhosted/migration/enable-reverse-proxy#exposing-l4-ports) for instructions.
