@@ -75,6 +75,30 @@ Compare it with the `management_current_version` field returned by `GET /api/ins
 For upgrades from older versions (pre-v0.26.0), see the [Legacy upgrade notes](#legacy-self-hosting-with-zitadel-idp) below.
 </Note>
 
+## Migration Notes
+
+### Set `reverseProxy.trustedPeers` on older deployments
+
+Deployments created with the Quickstart script (or a marketplace image based on it, such as [Vultr](/selfhosted/marketplaces/vultr)) before **September 2026** are missing the `reverseProxy.trustedPeers` setting in the generated `config.yaml`. Without it, server versions up to v0.79 record your reverse proxy's address instead of the real client IP for each peer connection. Versions after v0.79 ([netbird#7589](https://github.com/netbirdio/netbird/pull/7589)) instead fall back to accepting forwarded client-IP headers from **any** source and log a spoofing warning at startup.
+
+To fix an existing deployment, edit `config.yaml` (in `/opt/netbird` on marketplace images) and pin `trustedPeers` to the address your reverse proxy connects to Management from. For the bundled Traefik setup, replace `<bundled-traefik-address>` below with its configured static container address in CIDR notation (`/32` for a single IPv4 address). If the address is not static, use the configured proxy network's CIDR instead:
+
+```yaml
+  reverseProxy:
+    trustedHTTPProxies:
+      - "<bundled-traefik-address>"
+    trustedPeers:
+      - "<bundled-traefik-address>"
+```
+
+If you run your own external reverse proxy (Nginx, Caddy, Nginx Proxy Manager, etc.), use that proxy's address or network instead. Then restart the server container:
+
+```bash
+docker compose restart netbird-server
+```
+
+With this in place, only your reverse proxy is trusted to supply forwarded client-IP headers and peer connection IPs are recorded correctly. Deployments created with the current Quickstart script include this setting out of the box.
+
 ## Legacy Setup (Separate Containers)
 
 If your deployment uses the older setup with separate containers (`management`, `signal`, `relay`, `coturn`), pull and recreate those containers instead:
