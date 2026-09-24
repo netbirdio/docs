@@ -288,25 +288,7 @@ Generate two passwords, one for NetBird and Signal to connect with and one for t
 openssl rand -hex 24
 ```
 
-The example also encrypts every NATS connection with TLS, using certificates from a certificate authority (CA) of your own. On a machine you trust, create the CA and one certificate per node with OpenSSL 3 or later:
-
-```bash
-umask 077
-openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
-  -keyout ca-key.pem -out ca.pem -days 3650 -subj "/CN=NetBird NATS CA"
-printf 'extendedKeyUsage=serverAuth,clientAuth\n' > ext.cnf
-for n in nats-1 nats-2 nats-3; do
-  openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
-    -keyout $n-key.pem -out $n.csr -subj "/CN=$n.example.com" \
-    -addext "subjectAltName=DNS:$n.example.com"
-  openssl x509 -req -in $n.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial \
-    -days 825 -copy_extensions copy -extfile ext.cnf -out $n-cert.pem
-done
-```
-
-Each certificate allows both server and client use, because every node also connects to the others. Keep `ca-key.pem` on this machine only: anyone who holds it can issue certificates your cluster trusts. If you already have certificates from a CA, use those instead. Each must name its host and allow both uses.
-
-On each host, create a directory with a `tls` subdirectory. Copy into `tls` the node's certificate as `server-cert.pem`, its key as `server-key.pem`, and `ca.pem`, over an encrypted channel such as `scp`. Then add two files. The first, `nats-server.conf`, differs per host in `server_name` and `client_advertise`:
+On each host, create a directory with two files. The first, `nats-server.conf`, differs per host in `server_name` and `client_advertise`:
 
 ```text
 server_name: nats-1
@@ -316,11 +298,6 @@ http_port: 8222
 
 jetstream {
   store_dir: /data
-}
-
-tls {
-  cert_file: "/etc/nats/tls/server-cert.pem"
-  key_file: "/etc/nats/tls/server-key.pem"
 }
 
 authorization {
@@ -335,11 +312,6 @@ cluster {
     user: route
     password: "<route password>"
   }
-  tls {
-    cert_file: "/etc/nats/tls/server-cert.pem"
-    key_file: "/etc/nats/tls/server-key.pem"
-    ca_file: "/etc/nats/tls/ca.pem"
-  }
   routes: [
     "nats-route://route:<route password>@nats-1.example.com:6222"
     "nats-route://route:<route password>@nats-2.example.com:6222"
@@ -348,7 +320,7 @@ cluster {
 }
 ```
 
-The first `tls` block encrypts connections from NetBird and Signal. The one inside `cluster` encrypts the connections between nodes, and `ca_file` makes each node accept only nodes whose certificates your CA signed. `client_advertise` is the address each node gives clients for reconnecting. Without it, a node in a container advertises its Docker-internal address, which NetBird and Signal cannot reach.
+`client_advertise` is the address each node gives clients for reconnecting. Without it, a node in a container advertises its Docker-internal address, which NetBird and Signal cannot reach.
 
 The second file, `docker-compose.yml`, is the same on every host:
 
@@ -365,17 +337,16 @@ services:
       - "127.0.0.1:8222:8222"
     volumes:
       - ./nats-server.conf:/etc/nats/nats-server.conf:ro
-      - ./tls:/etc/nats/tls:ro
       - nats-data:/data
 
 volumes:
   nats-data:
 ```
 
-The configuration holds both passwords and the key file is the node's private key, so keep both readable by root only, then start the node:
+The configuration holds both passwords, so keep it readable by root only, then start the node:
 
 ```bash
-chmod 600 nats-server.conf tls/server-key.pem
+chmod 600 nats-server.conf
 docker compose up -d
 ```
 
@@ -390,17 +361,7 @@ curl -s http://127.0.0.1:8222/jsz | grep -E '"cluster_size"|"leader"'
 
 Each node answers `{"status":"ok"}`, reports `"cluster_size": 3` and names the same leader. Until all three have started, the nodes log `Error trying to connect to route` for the ones that are not up yet.
 
-NetBird and Signal connect as the `netbird` user over TLS, so each NATS URL you give them starts with `tls://` and carries the client password: `tls://netbird:<client password>@nats-1.example.com:4222`. With `tls://`, a client refuses a node that does not offer TLS. Both write these URLs to their logs at startup, password included. Keep those logs as private as the configuration.
-
-NetBird and Signal must also trust your CA. Copy `ca.pem` next to the Compose file on every Management node and Signal host as `nats-ca.pem`, and add it to the volumes of the `netbird-server` and `signal` services:
-
-```yaml
-      - ./nats-ca.pem:/etc/ssl/certs/nats-ca.pem:ro
-```
-
-Restart the container whenever this file changes. Without the CA, they cannot connect to NATS: the NATS nodes log `TLS handshake error: remote error: tls: bad certificate`, and changes on the dashboard or API fail with HTTP 500 while the server logs `no connection to NATS cluster`. Certificates from a public CA need no mount.
-
-The `nats` CLI commands below also need the credentials and the CA: add `--user netbird --password "<client password>" --tlsca ca.pem`, and use `tls://` in `--server`. The `server report` command needs a system account, which this example does not create; use the `curl` checks above instead.
+NetBird and Signal connect as the `netbird` user, so the NATS URLs you give them carry the client password: `nats://netbird:<client password>@nats-1.example.com:4222`. Both write these URLs to their logs at startup, password included. Keep those logs as private as the configuration. The `nats` CLI commands below also need the credentials: add `--user netbird --password "<client password>"`. The `server report` command needs a system account, which this example does not create; use the `curl` checks above instead.
 
 ### Traffic-flow stream
 
