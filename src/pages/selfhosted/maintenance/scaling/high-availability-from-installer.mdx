@@ -37,7 +37,7 @@ The example uses these names. Replace them with your own throughout:
 
 | Name | What it is |
 |---|---|
-| `app.example.com` | The domain you gave the installer. Peers and the dashboard keep using it. |
+| `netbird.example.com` | The domain you gave the installer. Peers and the dashboard keep using it. |
 | `signal.example.com` | The Signal pool's load balancer, new in Step 5 |
 | `pg.example.com` | Your shared, highly available PostgreSQL |
 | `redis.example.com` | Your Redis endpoint |
@@ -51,9 +51,9 @@ Have these ready before you change anything on node 1:
 
 1. **An empty, highly available PostgreSQL service to migrate into, version 17 or later**, with an empty database and a user that owns it. Step 1 moves your data there. The installer runs PostgreSQL 17, and its backup does not restore into an older version. Building a highly available PostgreSQL is outside this guide: use a managed service or your database team's platform, as described in [Step 1 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-1-make-postgre-sql-highly-available).
 2. **Redis and a three-node NATS cluster**, as described in [Steps 2 and 3](/selfhosted/maintenance/scaling/high-availability#step-2-set-up-a-redis-ha-endpoint) of the High Availability guide.
-3. **A load balancer** that supports HTTP/2 and gRPC, with a TLS certificate for `app.example.com` that it can serve before DNS points at it: upload one, or use ACME with DNS validation. ACME with HTTP validation fails until Step 4 moves DNS, and by then Traefik is gone.
+3. **A load balancer** that supports HTTP/2 and gRPC, with a TLS certificate for `netbird.example.com` that it can serve before DNS points at it: upload one, or use ACME with DNS validation. ACME with HTTP validation fails until Step 4 moves DNS, and by then Traefik is gone.
 4. **A second host with Docker** for node 2.
-5. **A maintenance window for Steps 4 and 5**, if devices are already enrolled. The dashboard and Management are unreachable from the moment Step 4 stops the installer's stack until DNS points at the load balancer. A day ahead, lower the TTL of the `app.example.com` DNS record.
+5. **A maintenance window for Steps 4 and 5**, if devices are already enrolled. The dashboard and Management are unreachable from the moment Step 4 stops the installer's stack until DNS points at the load balancer. A day ahead, lower the TTL of the `netbird.example.com` DNS record.
 
 You also deploy relay instances in Step 3, and Signal instances with their own load balancer in Step 5. Build both ahead of the maintenance window: they carry no traffic until `config.yaml` points at them.
 
@@ -138,7 +138,7 @@ The installer's PostgreSQL runs in a container on node 1, so it goes down with n
    docker compose up -d netbird-server
    ```
 
-   Log in to the dashboard at `https://app.example.com` with your existing account, and check that your peers show as connected.
+   Log in to the dashboard at `https://netbird.example.com` with your existing account, and check that your peers show as connected.
 
 7. Rename `idp.db`, so the migration tool can never copy from it again, and restart the server:
 
@@ -201,7 +201,7 @@ server:
     credentialsTTL: "24h"
 ```
 
-Restart the server with `docker compose restart netbird-server`. Setting `relays` turns off the built-in relay and its STUN server. That is why `stuns` is required: without it, the server still tells peers to use STUN at `app.example.com:3478`, where nothing answers.
+Restart the server with `docker compose restart netbird-server`. Setting `relays` turns off the built-in relay and its STUN server. That is why `stuns` is required: without it, the server still tells peers to use STUN at `netbird.example.com:3478`, where nothing answers.
 
 ## Step 4: Put the load balancer in front of node 1
 
@@ -222,7 +222,7 @@ From here on, TLS and routing move from the installer's Traefik to your load bal
 
    The server reads this change when it starts in item 3.
 
-2. Configure the load balancer for `app.example.com`. It terminates TLS and routes by path:
+2. Configure the load balancer for `netbird.example.com`. It terminates TLS and routes by path:
 
    | Path | Backend | Protocol to the backend |
    |---|---|---|
@@ -311,7 +311,7 @@ From here on, TLS and routing move from the installer's Traefik to your load bal
    docker compose up -d
    ```
 
-4. Point `app.example.com` at the load balancer in DNS.
+4. Point `netbird.example.com` at the load balancer in DNS.
 
    Connected devices reconnect by themselves within about 10 minutes, because the NetBird client caches the Management address. The `netbird down` and `netbird up` at the end of Step 5 reconnects them straight away.
 
@@ -330,8 +330,8 @@ Peers learn the Signal URL when they log in, so a device that is connected durin
 
    Setting `signalUri` turns off the server's built-in Signal.
 2. Restart the server: `docker compose restart netbird-server`.
-3. Once the DNS change from Step 4 has spread, run `netbird down` and then `netbird up` on every device that was connected during Steps 4 and 5. Include devices that are always on, such as routing peers, exit nodes and servers. `netbird status -d` then shows `Management: Connected to https://app.example.com:443` and `Signal: Connected to https://signal.example.com:443`.
-4. Remove the `/signalexchange.SignalExchange/*` route from the `app.example.com` load balancer. It carried Signal only until this step.
+3. Once the DNS change from Step 4 has spread, run `netbird down` and then `netbird up` on every device that was connected during Steps 4 and 5. Include devices that are always on, such as routing peers, exit nodes and servers. `netbird status -d` then shows `Management: Connected to https://netbird.example.com:443` and `Signal: Connected to https://signal.example.com:443`.
+4. Remove the `/signalexchange.SignalExchange/*` route from the `netbird.example.com` load balancer. It carried Signal only until this step.
 
 ## Step 6: Add node 2
 
@@ -378,7 +378,7 @@ To add more nodes later, repeat this step. Every node must have an identical `co
 
 ## Step 7: Verify
 
-1. Log in to the dashboard at `https://app.example.com` and confirm your peers are connected.
+1. Log in to the dashboard at `https://netbird.example.com` and confirm your peers are connected.
 2. Make a change that no one depends on, and confirm peers pick it up. For example, rename a test peer on the dashboard's **Peers** page, and check that another peer that can reach it lists the new name in `netbird status -d` within seconds. Then rename it back.
 3. Stop the server on node 1 (`docker compose stop netbird-server dashboard`). The dashboard keeps working, and peers connected through node 1 reconnect through node 2 within seconds. Then start it again (`docker compose start netbird-server dashboard`), and confirm the load balancer's health checks report node 1 as healthy again.
 
@@ -402,7 +402,7 @@ The shell tried to `source` the installer's `.env`, and some values were read wr
 
 The client is still using the old address from its own cache. Its log shows connection errors to the Management service, such as `dial tcp <old address>:443: i/o timeout` once node 1's port 443 is closed, `connect: connection refused`, or `stream terminated by RST_STREAM`. It retries by itself and reconnects once its cache refreshes, which can take 10 minutes. To reconnect one peer immediately, run `netbird down` and `netbird up` on it.
 
-### After Step 5, `netbird status -d` shows Signal on `https://app.example.com:443`
+### After Step 5, `netbird status -d` shows Signal on `https://netbird.example.com:443`
 
 The peer is still using the Signal URL it had before Step 5. The Signal line reads either `Disconnected, reason: signal receive stream stalled` or `Connected`, and the client log repeats `didn't receive a registration header from the Signal server`. Either way, the peer does not recover by itself. Run `netbird down` and then `netbird up` on it.
 
