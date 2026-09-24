@@ -55,7 +55,7 @@ Have these ready before you change anything on node 1:
 4. **A second host with Docker** for node 2.
 5. **A maintenance window for Steps 4 and 5**, if devices are already enrolled. The dashboard and Management are unreachable from the moment Step 4 stops the installer's stack until DNS points at the load balancer. A day ahead, lower the TTL of the `app.example.com` DNS record.
 
-You also deploy relay instances in Step 3, and Signal instances with their own load balancer in Step 5.
+You also deploy relay instances in Step 3, and Signal instances with their own load balancer in Step 5. Build both ahead of the maintenance window: they carry no traffic until `config.yaml` points at them.
 
 Then take backups on node 1. Work in the directory where you ran the installer:
 
@@ -317,9 +317,9 @@ From here on, TLS and routing move from the installer's Traefik to your load bal
 
 ## Step 5: Move Signal to the Signal pool
 
-Deploy the Signal pool and its load balancer at `signal.example.com` as described in [Step 6 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-6-deploy-the-signal-pool). Give the Signal instances the same NATS cluster as the nodes. Confirm `https://signal.example.com` answers with a valid certificate before you continue.
+Deploy the Signal pool and its load balancer at `signal.example.com` as described in [Step 6 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-6-deploy-the-signal-pool). Give the Signal instances the same NATS cluster as the nodes. The Signal load balancer needs no path rules: it sends all traffic to the Signal instances. Skip that step's last part, on pointing Management at the load balancer: item 1 below does it. Confirm `https://signal.example.com` answers with a valid certificate before you continue.
 
-Peers learn the Signal URL when they log in, so a device that is connected during the change keeps the old URL and loses Signal. It does not recover by itself: it stays connected to Management, but it cannot form new connections, even with peers that already use the new Signal. Devices that are offline during the change pick up the new URL when they next start.
+Peers learn the Signal URL when they log in, so a device that is connected during the change keeps the old URL and loses Signal, even if `netbird status` still shows `Signal: Connected`. It does not recover by itself: it stays connected to Management, but it cannot form new connections, even with peers that already use the new Signal. Devices that are offline during the change pick up the new URL when they next start.
 
 1. In `config.yaml`, set `signalUri` to the Signal load balancer:
 
@@ -330,7 +330,7 @@ Peers learn the Signal URL when they log in, so a device that is connected durin
 
    Setting `signalUri` turns off the server's built-in Signal.
 2. Restart the server: `docker compose restart netbird-server`.
-3. Once the DNS change from Step 4 has spread, run `netbird down` and then `netbird up` on every device that was connected during Steps 4 and 5. Include devices that are always on, such as routing peers, exit nodes and servers. `netbird status` then shows `Management: Connected to https://app.example.com:443` and `Signal: Connected to https://signal.example.com:443`.
+3. Once the DNS change from Step 4 has spread, run `netbird down` and then `netbird up` on every device that was connected during Steps 4 and 5. Include devices that are always on, such as routing peers, exit nodes and servers. `netbird status -d` then shows `Management: Connected to https://app.example.com:443` and `Signal: Connected to https://signal.example.com:443`.
 4. Remove the `/signalexchange.SignalExchange/*` route from the `app.example.com` load balancer. It carried Signal only until this step.
 
 ## Step 6: Add node 2
@@ -402,9 +402,9 @@ The shell tried to `source` the installer's `.env`, and some values were read wr
 
 The client is still using the old address from its own cache. Its log shows connection errors to the Management service, such as `dial tcp <old address>:443: i/o timeout` once node 1's port 443 is closed, `connect: connection refused`, or `stream terminated by RST_STREAM`. It retries by itself and reconnects once its cache refreshes, which can take 10 minutes. To reconnect one peer immediately, run `netbird down` and `netbird up` on it.
 
-### Peers show `Signal: Disconnected, reason: signal receive stream stalled`
+### After Step 5, `netbird status -d` shows Signal on `https://app.example.com:443`
 
-The peer is still using the Signal URL it had before Step 5. It does not recover by itself. Run `netbird down` and then `netbird up` on it.
+The peer is still using the Signal URL it had before Step 5. The Signal line reads either `Disconnected, reason: signal receive stream stalled` or `Connected`, and the client log repeats `didn't receive a registration header from the Signal server`. Either way, the peer does not recover by itself. Run `netbird down` and then `netbird up` on it.
 
 ## Recap
 
