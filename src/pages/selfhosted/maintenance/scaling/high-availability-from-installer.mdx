@@ -8,6 +8,8 @@ This guide turns the server the installer built into the first node of a highly 
 
 The [High Availability guide](/selfhosted/maintenance/scaling/high-availability) describes the finished architecture and each shared service in depth. This page is the path from an installer deployment to that architecture, in order.
 
+Convert before you roll NetBird out to users, while only test devices are enrolled. If devices are already enrolled, run Steps 4 and 5 together in one maintenance window, and finish it by running `netbird down` and `netbird up` once on each device.
+
 <Note>
     High availability requires a NetBird Enterprise commercial license.
 </Note>
@@ -51,7 +53,7 @@ Have these ready before you change anything on node 1:
 2. **Redis and a three-node NATS cluster**, as described in [Steps 2 and 3](/selfhosted/maintenance/scaling/high-availability#step-2-set-up-a-redis-ha-endpoint) of the High Availability guide.
 3. **A load balancer** that supports HTTP/2 and gRPC, with a TLS certificate for `app.example.com` that it can serve before DNS points at it: upload one, or use ACME with DNS validation. ACME with HTTP validation fails until Step 4 moves DNS, and by then Traefik is gone.
 4. **A second host with Docker** for node 2.
-5. **A maintenance window for Step 4.** The dashboard and Management are unreachable from the moment Step 4 stops the installer's stack until DNS points at the load balancer and each client refreshes its cached Management address, which can take 10 minutes. A day ahead, lower the TTL of the `app.example.com` DNS record.
+5. **A maintenance window for Steps 4 and 5**, if devices are already enrolled. The dashboard and Management are unreachable from the moment Step 4 stops the installer's stack until DNS points at the load balancer. A day ahead, lower the TTL of the `app.example.com` DNS record.
 
 You also deploy relay instances in Step 3, and Signal instances with their own load balancer in Step 5.
 
@@ -311,13 +313,13 @@ From here on, TLS and routing move from the installer's Traefik to your load bal
 
 4. Point `app.example.com` at the load balancer in DNS.
 
-   Existing peers reconnect by themselves, but not immediately: the NetBird client keeps its own cache of the Management address, and can keep dialling the old address for several minutes.
+   Connected devices reconnect by themselves within about 10 minutes, because the NetBird client caches the Management address. The `netbird down` and `netbird up` at the end of Step 5 reconnects them straight away.
 
 ## Step 5: Move Signal to the Signal pool
 
 Deploy the Signal pool and its load balancer at `signal.example.com` as described in [Step 6 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-6-deploy-the-signal-pool). Give the Signal instances the same NATS cluster as the nodes. Confirm `https://signal.example.com` answers with a valid certificate before you continue.
 
-Plan this step for a maintenance window. Peers learn the Signal URL when they log in, so a peer that is connected during the change keeps using the old URL and loses Signal. It does not recover by itself: it stays connected to Management, but it cannot form new connections, even with peers that already use the new Signal. Devices that are offline during the change pick up the new URL when they next start.
+Peers learn the Signal URL when they log in, so a device that is connected during the change keeps the old URL and loses Signal. It does not recover by itself: it stays connected to Management, but it cannot form new connections, even with peers that already use the new Signal. Devices that are offline during the change pick up the new URL when they next start.
 
 1. In `config.yaml`, set `signalUri` to the Signal load balancer:
 
@@ -328,7 +330,7 @@ Plan this step for a maintenance window. Peers learn the Signal URL when they lo
 
    Setting `signalUri` turns off the server's built-in Signal.
 2. Restart the server: `docker compose restart netbird-server`.
-3. On every device that was connected during the change, run `netbird down` and then `netbird up`. Include devices that are always on, such as routing peers, exit nodes and servers. Each one connects to `signal.example.com` straight away. Check with `netbird status`, which shows `Signal: Connected to https://signal.example.com:443`.
+3. Once the DNS change from Step 4 has spread, run `netbird down` and then `netbird up` on every device that was connected during Steps 4 and 5. Include devices that are always on, such as routing peers, exit nodes and servers. `netbird status` then shows `Management: Connected to https://app.example.com:443` and `Signal: Connected to https://signal.example.com:443`.
 4. Remove the `/signalexchange.SignalExchange/*` route from the `app.example.com` load balancer. It carried Signal only until this step.
 
 ## Step 6: Add node 2
