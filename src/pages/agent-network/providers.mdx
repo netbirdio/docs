@@ -160,3 +160,30 @@ first provider and reachable only over the NetBird overlay.
 Agents send normal provider requests to the endpoint without an API key; which identities
 may reach which providers is governed by [Policies](/agent-network/policies).
 
+### Listing Models from a Shared Gateway
+
+Clients can request `GET /v1/models` from the keyless endpoint to populate their model
+picker. NetBird forwards the request to an authorized provider and filters the response
+using the provider's configured models and the caller's policy model allowlists.
+
+Combining models from multiple records requires the change proposed in
+[netbirdio/netbird#7576](https://github.com/netbirdio/netbird/pull/7576). Deployments
+without that change select one authorized record for discovery and apply only that
+record's model and policy filters. To list all models from a shared gateway on those
+deployments, configure them in one provider record, preserving the intended policy
+restrictions.
+
+With that change, when you split one gateway into several provider records, for example
+one record per model family, the listing includes the models allowed by each matching
+record. The records must use the same upstream URL, authentication header and credential,
+discovery host, and TLS verification setting. Header names are case-insensitive; credentials
+must match exactly. Each contributing record must authorize the caller, and its own policy
+restrictions still apply. When the request identifies an API, such as OpenAI or Anthropic,
+both the selected provider and any additional records must support that API. If no
+compatible record authorizes the caller, NetBird denies the listing request. Inference
+requests continue to route by model as usual.
+
+An authorized catch-all record without a policy model restriction leaves that gateway's
+listing unfiltered. Records using different gateways or credentials are not combined;
+the endpoint does not fetch and merge independent upstream catalogs. Bedrock and Vertex
+AI retain their existing discovery behavior.
