@@ -44,6 +44,18 @@ The script prompts for:
 
 It then generates the deployment files, pulls the required images, starts Postgres, waits for it to become ready, and starts the remaining services.
 
+The stack runs on a dedicated Docker bridge network, `172.30.0.0/24` by default, with the gateway at `172.30.0.1` and Traefik pinned to `172.30.0.10`. If that range is already used on the host, override it before running the script:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/getting-started-enterprise.sh | NETBIRD_DOCKER_SUBNET=10.123.45.0/24 bash
+```
+
+The value must be a `/24` ending in `.0`. The gateway (`.1`) and Traefik's static address (`.10`) are derived from it, and the `reverseProxy.trustedPeers` and `reverseProxy.trustedHTTPProxies` `/32` pins in `config.yaml` are kept in step with that address. `0.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16`, `224.0.0.0` and above, and `100.64.0.0/10` are rejected — the last because NetBird assigns overlay peer addresses from that range.
+
+The subnet and gateway are written to `.env` as `NETBIRD_NETWORK_SUBNET` and `NETBIRD_NETWORK_GATEWAY`, and Traefik's address as `NETBIRD_TRAEFIK_IP`. These must stay in step with the trust pins in `config.yaml`; if you change one by hand, change all of them.
+
+Before writing any files, the script checks the existing Docker networks and aborts with an actionable error if one overlaps the chosen subnet, rather than letting `docker compose up` fail later. Existing networks are never modified.
+
 <Note>
 Enabling traffic flow adds NATS, a flow receiver, and a flow enricher to the stack. Traffic flow is required for traffic event logging and streaming.
 </Note>
@@ -85,6 +97,8 @@ The combined stack:
 | `dashboard` | `ghcr.io/netbirdio/dashboard-cloud:latest` | UI |
 | `postgres` | `postgres:17` | Datastore for management, embedded IdP, traffic events |
 | `netbird-server` | `ghcr.io/netbirdio/netbird-server-cloud:latest` | Management + signal + relay + embedded STUN on UDP/3478 |
+
+Traefik also carries a Docker network alias for your public NetBird domain. `netbird-server` dials that domain over HTTPS to deliver traffic flow events, and on hosts behind NAT the hairpin back to the public address can fail. The alias resolves the domain to Traefik from inside the Compose network, so that request never leaves the host. No DNS or firewall change is needed, and external clients are unaffected.
 
 Enabling traffic flow adds:
 
@@ -253,6 +267,13 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
 - **Cause:** Not a startup-ordering issue on the generated stacks — the server already waits for a healthy Postgres. This usually means Postgres is unhealthy or unreachable: a crash-looping container, a wrong DSN, a `POSTGRES_PASSWORD` that no longer matches the existing `netbird_postgres` volume, or a blocked network path.
 - **Resolution:** Run `docker compose ps`; if `postgres` isn't `healthy`, check `docker compose logs postgres`, then confirm the DSN uses host `postgres` with a matching user, database, and password.
 - **Verification:** `docker compose ps` shows `postgres` as `healthy`; the server connects once on startup with no connection-refused loop.
+
+### Script aborts on a Docker network conflict
+
+- **Symptom:** The script exits before generating any files, reporting either that an existing Docker network overlaps the subnet NetBird would use, or that the `netbird` network left over from a previous install sits on a different subnet.
+- **Cause:** The stack pins a fixed subnet (`172.30.0.0/24` by default) so Traefik gets a stable address the server can trust. The script checks this up front so you get a clear error instead of a `Pool overlaps with other one on this address space` failure during `docker compose up`. A leftover `netbird` network on a different subnet is also fatal, because Compose would reuse it as-is and the generated configuration would no longer match it.
+- **Resolution:** For an overlap with an unrelated network, pick a free `/24` — the conflicting network is never modified: `curl -fsSL https://pkgs.netbird.io/getting-started-enterprise.sh | NETBIRD_DOCKER_SUBNET=10.123.45.0/24 bash`. For a leftover NetBird network, remove it with `docker network rm netbird` and re-run.
+- **Verification:** The script proceeds past the network check; `docker network inspect netbird` reports the subnet you chose, and `docker inspect netbird-traefik` shows Traefik holding the `.10` address in that range.
 
 ### Traefik cannot issue a TLS certificate
 

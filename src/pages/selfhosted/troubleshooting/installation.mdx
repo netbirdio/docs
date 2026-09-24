@@ -53,6 +53,38 @@ A valid response is JSON containing `"issuer"`. Anything else points to where to
 
 **Confirm**: The probe succeeds and the script continues on its own. You can leave it waiting while you debug. To start over instead, stop it with Ctrl+C, run `docker compose down -v`, fix the issue, and re-run.
 
+## Script exits with a Docker network conflict
+
+**Symptom**: The script stops before generating any files, with one of these two errors:
+
+```
+ERROR: the existing Docker network 'some-network' (172.30.0.0/16) overlaps 172.30.0.0/24, the subnet NetBird would use.
+```
+
+```
+ERROR: the Docker network 'netbird_netbird', left over from a previous NetBird install, uses 172.16.0.0/24 instead of 172.30.0.0/24.
+```
+
+**Cause**: NetBird's Compose network defaults to `172.30.0.0/24`. The script checks this up front so you get a clear error here rather than a `Pool overlaps with other one on this address space` failure later in `docker compose up`.
+
+The first error means an unrelated Docker network already covers that range. The second means a network from an earlier NetBird install is still present on a *different* subnet — Compose would reuse it as-is, and the generated configuration would not match it.
+
+**Fix**: For the first error, pick a free `/24` and re-run. The conflicting network belongs to something else, so the script never touches it:
+
+```bash
+NETBIRD_DOCKER_SUBNET=10.123.45.0/24 ./getting-started.sh
+```
+
+For the second error, remove the stale NetBird network and re-run:
+
+```bash
+docker network rm netbird_netbird
+```
+
+The subnet must be a `/24` ending in `.0`. See [Installation Script Variables](/selfhosted/environment-variables#installation-script-variables) for the full list of rejected ranges, including `100.64.0.0/10`, which NetBird uses for overlay peer addresses.
+
+**Confirm**: Re-run the script; it proceeds past the network check and starts provisioning. Verify the result with `docker network inspect <project>_netbird`, which should report the subnet you chose.
+
 ## Script fails on existing installation check
 
 **Symptom**: The script exits immediately with a message about generated files already existing.
