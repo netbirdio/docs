@@ -73,7 +73,29 @@ Metric determines routing peer priority in high availability configurations. Low
 
 A highly available route combines multiple routes with the same network identifier and ranges but different routing peers or peer groups. This provides redundant paths between your peers and external networks.
 
-Connected peers select a routing peer based on connection type and metric priority.
+Among the routing peers a client is connected to, it prefers the lowest metric. With the same metric, it prefers a direct connection over a relayed one, then lower latency.
+
+Clients group routes into one highly available route by the network identifier and the range together. For example, to put `10.10.2.0/24` behind a primary and a standby routing peer, create two routes that both use the network identifier `site-b` and the range `10.10.2.0/24`, with metric `1` on the primary and `2` on the standby.
+
+<Warning>
+If the two routes use different network identifiers, such as `site-b-primary` and `site-b-standby`, clients treat them as two separate routes for the same range rather than one highly available route. The metric is never compared, each client can end up sending traffic through either routing peer, and which one it uses can change whenever the routes are updated. With masquerade off, replies are dropped for every client whose routing peer is not the one the return route points at, so some clients work and others do not, and which ones changes after a route update or restart.
+</Warning>
+
+To check, run `netbird networks ls` on a client that receives the route. A highly available route is listed once, under its shared identifier:
+
+```text
+Available Networks:
+
+  - ID: site-b
+    Network: 10.10.2.0/24
+    Status: Selected
+```
+
+If the same range appears under two different IDs, both marked `Selected`, the routes are not being treated as one highly available route. The network identifier of an existing route cannot be changed in the dashboard. Delete the extra route and add its routing peer to the remaining route through the **High Availability** column instead, as described in [Creating Highly Available Routes](#creating-highly-available-routes), which copies the identifier and the range. You can also rename the route through the [Routes API](/api/resources/routes).
+
+The list shows one line per identifier, so it does not reveal a range mismatch. Confirm in the dashboard that both routes show the same range.
+
+If the two IDs are meant to be separate networks that happen to use the same range, such as two sites, they are not a highly available route. See [Resolving Overlapping Routes](/manage/network-routes/overlapping-routes) instead.
 
 ### DNS Routes
 
