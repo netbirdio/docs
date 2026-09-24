@@ -232,6 +232,8 @@ From here on, TLS and routing move from the installer's Traefik to your load bal
 
    Health-check the nodes with `GET /oauth2/.well-known/openid-configuration` on port 80, which returns `200`. This check only confirms the node is up and serving: it keeps returning `200` while PostgreSQL or Redis is down, so monitor those separately. Set a generous idle timeout, because peers hold long-lived gRPC streams.
 
+   Add the security headers that Traefik added to every response, because the server does not set them itself: `Strict-Transport-Security: max-age=3600; includeSubDomains`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` and `Referrer-Policy: strict-origin-when-cross-origin`. Without them, other sites can embed the login page at `/oauth2/auth/local/login` in a frame, and browsers are not told to insist on HTTPS.
+
    Node 1 keeps serving peers through Traefik meanwhile, because DNS does not point at the load balancer yet. The load balancer reports node 1 as down until item 3 starts it on the new ports.
 
 3. Replace the installer's Compose file. Stop the stack first. This removes the containers but keeps their data volumes:
@@ -395,11 +397,13 @@ The shell tried to `source` the installer's `.env`. Read single values with `gre
 
 ### A peer shows `Management: Disconnected` after the DNS change
 
-The client is still using the old address from its own cache. Its log shows connection errors to the Management service, such as `dial tcp <old address>:443: connect: connection refused` or `stream terminated by RST_STREAM`. It retries by itself and reconnects once its cache refreshes, which took several minutes in testing. To reconnect one peer immediately, run `netbird down` and `netbird up` on it.
+The client is still using the old address from its own cache. Its log shows connection errors to the Management service, such as `dial tcp <old address>:443: i/o timeout` once node 1's port 443 is closed, `connect: connection refused`, or `stream terminated by RST_STREAM`. It retries by itself and reconnects once its cache refreshes, which took several minutes in testing. To reconnect one peer immediately, run `netbird down` and `netbird up` on it.
 
 ### Peers show `Signal: Disconnected, reason: signal receive stream stalled`
 
-`signalUri` points at a different URL from the one peers are connected to, usually because Signal got a new name. Either route the old URL to the Signal pool as in Step 5, or run `netbird down` and `netbird up` on each peer.
+Peers log this once while Step 5 moves Signal, just before they reconnect by themselves within about a minute. That is expected.
+
+If it lasts longer, `signalUri` points at a different URL from the one peers are connected to, usually because Signal got a new name. Either route the old URL to the Signal pool as in Step 5, or run `netbird down` and `netbird up` on each peer.
 
 ## Recap
 
