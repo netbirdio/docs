@@ -48,11 +48,11 @@ Have these ready before you change anything on node 1:
 
 1. **An empty, highly available PostgreSQL service to migrate into, version 17 or later**, with an empty database and a user that owns it. Step 1 moves your data there. The installer runs PostgreSQL 17, and its backup does not restore into an older version. Building a highly available PostgreSQL is outside this guide: use a managed service or your database team's platform, as described in [Step 1 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-1-make-postgre-sql-highly-available).
 2. **Redis and a three-node NATS cluster**, as described in [Steps 2 and 3](/selfhosted/maintenance/scaling/high-availability#step-2-set-up-a-redis-ha-endpoint) of the High Availability guide.
-3. **A load balancer** that supports HTTP/2 and gRPC, with a TLS certificate for `app.example.com` that it can serve before DNS points at it: a certificate you upload, or ACME with DNS validation. ACME with HTTP validation cannot succeed until Step 4 moves DNS to the load balancer, and by then Traefik, which serves the current certificate, is gone.
+3. **A load balancer** that supports HTTP/2 and gRPC, with a TLS certificate for `app.example.com` that it can serve before DNS points at it: upload one, or use ACME with DNS validation. ACME with HTTP validation fails until Step 4 moves DNS, and by then Traefik is gone.
 4. **A second host with Docker** for node 2.
-5. **A maintenance window for Step 4.** The dashboard and Management are unreachable from the moment Step 4 stops the installer's stack until DNS points at the load balancer and each client refreshes its cached Management address, which took several minutes in testing. A day ahead, lower the TTL of the `app.example.com` DNS record, so the change spreads quickly.
+5. **A maintenance window for Step 4.** The dashboard and Management are unreachable from the moment Step 4 stops the installer's stack until DNS points at the load balancer and each client refreshes its cached Management address, which can take 10 minutes. A day ahead, lower the TTL of the `app.example.com` DNS record.
 
-Steps 3 and 5 also have you deploy relay instances and a Signal pool.
+You also deploy relay instances in Step 3 and Signal instances in Step 5.
 
 Then take backups on node 1. Work in the directory where you ran the installer:
 
@@ -62,15 +62,15 @@ cp docker-compose.yml docker-compose.yml.single-node
 cp .env .env.single-node
 ```
 
-Do not go back to `config.yaml.single-node` once Step 1 has started the server on the shared PostgreSQL. From then on, every change is written to the shared PostgreSQL only. The installer's database and `idp.db` stay as they were, so going back silently discards everything since, including new users and their logins. If you have already renamed `idp.db` in Step 1, it is worse: the server creates a new, empty one, and no one can log in, not even you. Past that point, fix forward, or restore the shared PostgreSQL from its own backups.
+Once Step 1 has started the server on the shared PostgreSQL, do not go back to `config.yaml.single-node`. The installer's database and `idp.db` no longer receive changes, so going back silently loses everything since, including new users and their logins. After Step 1 renames `idp.db`, it is worse: the server creates a new, empty one and no one can log in. Fix forward instead, or restore the shared PostgreSQL from its own backups.
 
 <Warning>
-    Do not `source` the installer's `.env` file in your shell. One of its values contains spaces, and the shell stops with `profile: command not found`. Read single values with `grep` instead, as the commands below do.
+    Do not `source` the installer's `.env` file in your shell. One of its values contains spaces, so the shell prints `profile: command not found` and reads the value wrong. Read single values with `grep` instead, as the commands below do.
 </Warning>
 
 ## Step 1: Migrate your data to the shared PostgreSQL
 
-The installer's PostgreSQL runs in a container on node 1, so it goes down with node 1. It holds everything except the embedded identity provider's data: users and login sessions sit in an SQLite file, `idp.db`. This step copies both into the PostgreSQL service you prepared, and points NetBird at it. NetBird is down on node 1 until the step ends, which usually takes a few minutes.
+The installer's PostgreSQL runs in a container on node 1, so it goes down with node 1. It holds everything except the embedded identity provider's login data (passwords, sessions and signing keys), which sits in an SQLite file, `idp.db`. This step copies both into the PostgreSQL service you prepared, and points NetBird at it. NetBird is down on node 1 until the step ends, which usually takes a few minutes.
 
 1. Stop the NetBird server so nothing writes during the copy:
 
@@ -97,7 +97,7 @@ The installer's PostgreSQL runs in a container on node 1, so it goes down with n
 
    `PGSSLMODE=require` makes the copy fail instead of crossing the network unencrypted: without it, the client falls back to plain text when the database does not offer TLS. If your PostgreSQL listens on another port, change `-p` here and `port=` in the DSNs below.
 
-   The command prints a list of `setval` results and ends without an error.
+   The command prints `set_config` and `setval` rows and ends without an error.
 
 4. Point all three stores at the shared PostgreSQL in `config.yaml`. Change the `dsn` of `store` and `activityStore`, and add an `authStore` block with the same DSN. The installer does not write `authStore`, which is why the login data is still in SQLite:
 
@@ -119,7 +119,7 @@ The installer's PostgreSQL runs in a container on node 1, so it goes down with n
 
    Leave `encryptionKey` exactly as the installer wrote it. It encrypts data in the database, and a different value makes that data unreadable. Give `authStore` exactly the same DSN as `store`: the migration tool in the next step copies the login data into the `store` DSN.
 
-   The installer's DSN uses `sslmode=disable`, because its database runs on the same host. Across the network, use `sslmode=require`. It encrypts the connection but does not check the database server's certificate, so it does not protect against someone who can pose as your database server. The modes that do check it, `verify-ca` and `verify-full` with `sslrootcert`, do not work for now: the embedded identity provider ignores `sslrootcert`, and the server stops at startup with `x509: certificate signed by unknown authority`.
+   The installer uses `sslmode=disable` because its database is local. Across the network, use `sslmode=require`: it encrypts the connection but does not verify the database server's certificate. `verify-ca` and `verify-full` do not work yet: the embedded identity provider ignores `sslrootcert`, and the server stops at startup with `x509: certificate signed by unknown authority`.
 
 5. Move the login data from `idp.db` into the shared PostgreSQL. The NetBird image includes a tool for this. Run it once:
 
@@ -168,7 +168,7 @@ Restart the server:
 
 ```bash
 docker compose restart netbird-server
-docker compose logs netbird-server | grep -E 'redis cache|Connected to NATS|license validated'
+docker compose logs --since 2m netbird-server | grep -E 'redis cache|Connected to NATS|license validated'
 ```
 
 You should see `using redis cache at redis://redis.example.com:6379`, `Connected to NATS cluster` and `license validated`.
@@ -225,12 +225,12 @@ From here on, TLS and routing move from the installer's Traefik to your load bal
    |---|---|---|
    | `/signalexchange.SignalExchange/*` | every node, port 80 (Step 5 moves this to the Signal pool) | HTTP/2 without TLS (h2c) |
    | `/management.ManagementService/*` and `/management.ProxyService/*` | every node, port 80 | HTTP/2 without TLS (h2c) |
-   | `/api/*`, `/oauth2/*`, `/ws-proxy/*` and `/relay*` | every node, port 80 | HTTP |
+   | `/api/*`, `/oauth2/*` and `/ws-proxy/*` | every node, port 80 | HTTP, with WebSocket upgrades |
    | everything else | every node, port 8080 (the dashboard) | HTTP |
 
    Give each row a backend pool that skips a node that stops answering. Make sure the specific paths take priority over the catch-all row: depending on your load balancer, that means longest path first or rule order.
 
-   Health-check the nodes with `GET /oauth2/.well-known/openid-configuration` on port 80, which returns `200`. This check only confirms the node is up and serving: it keeps returning `200` while PostgreSQL or Redis is down, so monitor those separately. Set a generous idle timeout, because peers hold long-lived gRPC streams.
+   Health-check the server with `GET /oauth2/.well-known/openid-configuration` on port 80, and the dashboard with `GET /` on port 8080. Both return `200`. The server check only confirms the node is up and serving: it keeps returning `200` while PostgreSQL or Redis is down, so monitor those separately. Set a generous idle timeout, because peers hold long-lived gRPC streams.
 
    Add the security headers that Traefik added to every response, because the server does not set them itself: `Strict-Transport-Security: max-age=3600; includeSubDomains`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` and `Referrer-Policy: strict-origin-when-cross-origin`. Without them, other sites can embed the login page at `/oauth2/auth/local/login` in a frame, and browsers are not told to insist on HTTPS.
 
@@ -318,7 +318,7 @@ Deploy Signal instances as described in [Step 6 of the High Availability guide](
 
 Keep the Signal URL your peers already use, which is `app.example.com`, and change only what serves it:
 
-1. On your existing load balancer, route `/signalexchange.SignalExchange/*` (h2c) and `/ws-proxy/signal*` (HTTP) for `app.example.com` to the Signal instances instead of the nodes. The `/ws-proxy/signal*` route must take priority over the existing `/ws-proxy/*` route, or Signal over WebSocket keeps going to the nodes.
+1. On your existing load balancer, route `/signalexchange.SignalExchange/*` (h2c) and `/ws-proxy/signal*` (HTTP) for `app.example.com` to the Signal instances, on the port they listen on, instead of the nodes. The `/ws-proxy/signal*` route must take priority over the existing `/ws-proxy/*` route, or Signal over WebSocket keeps going to the nodes.
 2. In `config.yaml`, set `signalUri` to the same URL:
 
    ```yaml
@@ -332,7 +332,7 @@ Keep the Signal URL your peers already use, which is `app.example.com`, and chan
 Peers reconnect to Signal at the same URL by themselves, within about a minute.
 
 <Warning>
-    Do not give Signal a new name at this point. Peers learn the Signal URL when they log in, and a peer already connected keeps using the old URL until the client restarts. With a new name, every existing peer loses Signal until someone runs `netbird down` and `netbird up` on it.
+    Do not give Signal a new name at this point. Peers learn the Signal URL when they log in, and a peer already connected keeps using the old one. With a new name, every existing peer loses Signal until someone runs `netbird down` and `netbird up` on it.
 </Warning>
 
 ## Step 6: Add node 2
@@ -398,11 +398,11 @@ The DSNs use `sslmode=verify-ca` or `verify-full` with `sslrootcert`. The embedd
 
 ### `profile: command not found` when reading `.env`
 
-The shell tried to `source` the installer's `.env`. Read single values with `grep` instead, as in Step 1.
+The shell tried to `source` the installer's `.env`, and some values were read wrong. Read single values with `grep` instead, as in Step 1.
 
 ### A peer shows `Management: Disconnected` after the DNS change
 
-The client is still using the old address from its own cache. Its log shows connection errors to the Management service, such as `dial tcp <old address>:443: i/o timeout` once node 1's port 443 is closed, `connect: connection refused`, or `stream terminated by RST_STREAM`. It retries by itself and reconnects once its cache refreshes, which took several minutes in testing. To reconnect one peer immediately, run `netbird down` and `netbird up` on it.
+The client is still using the old address from its own cache. Its log shows connection errors to the Management service, such as `dial tcp <old address>:443: i/o timeout` once node 1's port 443 is closed, `connect: connection refused`, or `stream terminated by RST_STREAM`. It retries by itself and reconnects once its cache refreshes, which can take 10 minutes. To reconnect one peer immediately, run `netbird down` and `netbird up` on it.
 
 ### Peers show `Signal: Disconnected, reason: signal receive stream stalled`
 
@@ -414,4 +414,4 @@ If it lasts longer, `signalUri` points at a different URL from the one peers are
 
 - The installer's host becomes node 1: its data moves to the shared PostgreSQL, its login data follows with `migrate-store`, and its built-in Relay and Signal give way to shared instances.
 - Your load balancer replaces Traefik, and the Signal pool sits behind the same URL peers already use.
-- Every further node is three copied files and `docker compose up -d`.
+- Every further node is three copied files, the same firewall rules, and a place in the load balancer's pools.
