@@ -278,6 +278,91 @@ NetBird uses NATS for coordination between Management and Signal instances. Like
     point of failure.
 </Warning>
 
+### Example: a self-hosted cluster with Docker Compose
+
+This example runs one NATS node per host, on three hosts: `nats-1.example.com`, `nats-2.example.com` and `nats-3.example.com`. A NATS node can share a host with a NetBird node or a Signal instance, but no host may run two NATS nodes.
+
+Generate two passwords, one for NetBird and Signal to connect with and one for the NATS nodes to connect to each other. Use hex, so they are safe inside URLs:
+
+```bash
+openssl rand -hex 24
+```
+
+On each host, create a directory with two files. The first, `nats-server.conf`, differs per host in `server_name` and `client_advertise`:
+
+```text
+server_name: nats-1
+port: 4222
+client_advertise: "nats-1.example.com:4222"
+http_port: 8222
+
+jetstream {
+  store_dir: /data
+}
+
+authorization {
+  user: netbird
+  password: "<client password>"
+}
+
+cluster {
+  name: netbird
+  port: 6222
+  authorization {
+    user: route
+    password: "<route password>"
+  }
+  routes: [
+    "nats-route://route:<route password>@nats-1.example.com:6222"
+    "nats-route://route:<route password>@nats-2.example.com:6222"
+    "nats-route://route:<route password>@nats-3.example.com:6222"
+  ]
+}
+```
+
+`client_advertise` is the address each node gives clients for reconnecting. Without it, a node in a container advertises its Docker-internal address, which NetBird and Signal cannot reach.
+
+The second file, `docker-compose.yml`, is the same on every host:
+
+```yaml
+services:
+  nats:
+    image: nats:2.14
+    container_name: nats
+    restart: unless-stopped
+    command: ["-c", "/etc/nats/nats-server.conf"]
+    ports:
+      - "4222:4222"
+      - "6222:6222"
+      - "127.0.0.1:8222:8222"
+    volumes:
+      - ./nats-server.conf:/etc/nats/nats-server.conf:ro
+      - nats-data:/data
+
+volumes:
+  nats-data:
+```
+
+The configuration holds both passwords, so keep it readable by root only, then start the node:
+
+```bash
+chmod 600 nats-server.conf
+docker compose up -d
+```
+
+Allow port `4222` from the Management and Signal hosts only, and port `6222` between the NATS hosts only. Set these rules on your network firewall or security groups: ports that Docker publishes bypass host firewalls such as UFW and firewalld. The monitoring port `8222` listens on the host itself only.
+
+Once all three nodes run, check each one:
+
+```bash
+curl -s http://127.0.0.1:8222/healthz
+curl -s http://127.0.0.1:8222/jsz | grep -E '"cluster_size"|"leader"'
+```
+
+Each node answers `{"status":"ok"}`, reports `"cluster_size": 3` and names the same leader. Until all three have started, the nodes log `Error trying to connect to route` for the ones that are not up yet.
+
+NetBird and Signal connect as the `netbird` user, so the NATS URLs you give them carry the client password: `nats://netbird:<client password>@nats-1.example.com:4222`. Both write these URLs to their logs at startup, password included. Keep those logs as private as the configuration. The `nats` CLI commands below also need the credentials: add `--user netbird --password "<client password>"`. The `server report` command needs a system account, which this example does not create; use the `curl` checks above instead.
+
 ### Traffic-flow stream
 
 NetBird expects the `traffic-events` JetStream stream to be available for traffic-flow events. Configure it with:
@@ -533,6 +618,8 @@ services:
 | `NB_LICENSE_KEY` | Yes | Enterprise license key. Same value on every Signal instance. |
 | `NATS_ENDPOINTS` | Yes | Comma-separated list of NATS cluster endpoints from Step 3. Identical on every Signal instance. |
 | `SINGLE_NODE_MODE` | Yes | Must be `false`. When unset or set to `true`, Signal runs in single-node mode without NATS coordination. This mode is incompatible with HA. |
+
+When the NATS URLs carry a password, as in the [Step 3 example](#example-a-self-hosted-cluster-with-docker-compose), set `NATS_ENDPOINTS` in a file listed under `env_file`, readable by root only, instead of in `docker-compose.yml`.
 
 Signal gRPC requires TLS. Either terminate TLS at the Signal load balancer and forward plain HTTP/2 (h2c) to backends on port 443, or pass TLS through to the backends. With TLS pass-through, mount certificates into each Signal container and adjust the `--port` or listen address as needed.
 
