@@ -599,6 +599,10 @@ export const docsNavigation = [
                         href: '/selfhosted/maintenance/scaling/high-availability',
                     },
                     {
+                        title: 'Convert an Install to HA',
+                        href: '/selfhosted/maintenance/scaling/high-availability-from-installer',
+                    },
+                    {
                         title: 'Grafana Dashboard',
                         href: '/selfhosted/enterprise/grafana-dashboard',
                     },

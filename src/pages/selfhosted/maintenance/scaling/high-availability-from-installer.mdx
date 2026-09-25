@@ -1,0 +1,455 @@
+# Convert an Enterprise Installation to High Availability
+
+import {Note, Warning} from "@/components/mdx";
+
+The Enterprise installer (`getting-started-enterprise.sh`) builds one self-contained server: NetBird, its dashboard, a PostgreSQL database and a Traefik proxy, all on one host. If that host fails, NetBird stops. Running the installer on a second host does not help: each run creates its own database, its own encryption key and its own secrets, so you get two separate NetBird deployments, not one service on two hosts.
+
+This guide turns the server the installer built into the first node of a highly available deployment, then adds a second node. Your accounts, users, peers and policies carry over, and so do your users' logins.
+
+The [High Availability guide](/selfhosted/maintenance/scaling/high-availability) describes the finished architecture and each shared service in depth. This page is the path from an installer deployment to that architecture, in order.
+
+Convert before you roll NetBird out to users, while only test devices are enrolled. If devices are already enrolled, run Steps 4 and 5 together in one maintenance window, and finish it by running `netbird down` and `netbird up` once on each device.
+
+<Note>
+    High availability requires a NetBird Enterprise commercial license.
+</Note>
+
+<Warning>
+    This guide covers an installation with traffic events left at the installer's default, off. If you enabled traffic events during installation, do not follow this guide: Step 4 removes the containers that collect them, and traffic events stop.
+</Warning>
+
+## How the pieces change
+
+The table compares what the installer set up on one host with what you have at the end of this guide:
+
+| Piece | What the installer set up | At the end of this guide |
+|---|---|---|
+| NetBird server (Management) | One container on node 1 | The same image on every node, with an identical `config.yaml` |
+| Dashboard | One container on node 1 | One on every node |
+| TLS and routing | Traefik on node 1 | Your load balancer, in front of every node |
+| PostgreSQL | A container on node 1 | A highly available PostgreSQL service you prepare before you begin |
+| Login data (embedded identity provider) | An SQLite file on node 1 | The same PostgreSQL service |
+| Signal | Built into the server | A Signal pool behind its own load balancer, at `signal.example.com` |
+| Relay | Built into the server | Separate relay instances, one address each |
+| Redis and NATS | None: one server keeps its cache and messaging in memory | Redis and a three-node NATS cluster you set up before you begin, shared by every node |
+
+The example uses these names. Replace them with your own throughout:
+
+| Name | What it is |
+|---|---|
+| `netbird.example.com` | The domain you gave the installer. Peers and the dashboard keep using it. |
+| `signal.example.com` | The Signal pool's load balancer, new in Step 5 |
+| `pg.example.com` | Your shared, highly available PostgreSQL |
+| `redis.example.com` | Your Redis endpoint |
+| `nats-1.example.com` to `nats-3.example.com` | Your NATS cluster |
+| `us-1.relay.example.com`, `eu-1.relay.example.com` | Your relay instances |
+| `10.0.0.10` | The load balancer's address, as your nodes see it |
+
+## Before you begin
+
+Have these ready before you change anything on node 1:
+
+1. **An empty, highly available PostgreSQL service to migrate into, version 17 or later**, with an empty database and a user that owns it. Step 1 moves your data there. The installer runs PostgreSQL 17, and its backup does not restore into an older version. Building a highly available PostgreSQL is outside this guide: use a managed service or your database team's platform, as described in [Step 1 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-1-make-postgre-sql-highly-available).
+2. **Redis and a three-node NATS cluster**, as described in [Steps 2 and 3](/selfhosted/maintenance/scaling/high-availability#step-2-set-up-a-redis-ha-endpoint) of the High Availability guide.
+3. **A load balancer** that supports HTTP/2 and gRPC, with a TLS certificate for `netbird.example.com` that it can serve before DNS points at it: upload one, or use ACME with DNS validation. ACME with HTTP validation fails until Step 4 moves DNS, and by then Traefik is gone.
+4. **A second host with Docker** for node 2.
+5. **A maintenance window for Steps 4 and 5**, if devices are already enrolled. The dashboard is unreachable from the moment Step 4 stops the installer's stack until DNS points at the load balancer. Devices stay disconnected from Management for up to about 10 minutes longer, until they reconnect by themselves or Step 5 reconnects them. A day ahead, lower the TTL of the `netbird.example.com` DNS record.
+
+You also deploy relay instances in Step 3, and Signal instances with their own load balancer in Step 5. Build both ahead of the maintenance window: they carry no traffic until `config.yaml` points at them.
+
+Then take backups on node 1. Work in the directory where you ran the installer:
+
+```bash
+cp config.yaml config.yaml.single-node
+cp docker-compose.yml docker-compose.yml.single-node
+cp .env .env.single-node
+```
+
+Once Step 1 has started the server on the shared PostgreSQL, do not go back to `config.yaml.single-node`. The installer's database and `idp.db` no longer receive changes, so going back silently loses everything since, including new users and their logins. After Step 1 renames `idp.db`, it is worse: the server creates a new, empty one and no one can log in. Fix forward instead, or restore the shared PostgreSQL from its own backups.
+
+<Warning>
+    Do not `source` the installer's `.env` file in your shell. One of its values contains spaces, so the shell prints `profile: command not found` and reads the value wrong. Read single values with `grep` instead, as the commands below do.
+</Warning>
+
+## Step 1: Migrate your data to the shared PostgreSQL
+
+The installer's PostgreSQL runs in a container on node 1, so it goes down with node 1. It holds everything except the embedded identity provider's login data (passwords, sessions and signing keys), which sits in an SQLite file, `idp.db`. This step copies both into the PostgreSQL service you prepared, and points NetBird at it. NetBird is down on node 1 until the step ends, which usually takes a few minutes.
+
+1. Stop the NetBird server so nothing writes during the copy:
+
+   ```bash
+   docker compose stop netbird-server
+   ```
+
+2. Back up the installer's database. `umask 077` makes the backup file readable by you only, because it holds your whole database:
+
+   ```bash
+   umask 077
+   PGU=$(grep '^POSTGRES_USER=' .env | cut -d= -f2-)
+   PGD=$(grep '^POSTGRES_DB=' .env | cut -d= -f2-)
+   docker compose exec -T postgres pg_dump -U "$PGU" -d "$PGD" --no-owner --no-privileges > netbird.sql
+   ```
+
+3. Restore it into the shared PostgreSQL. The first line reads the database user's password without echoing it:
+
+   ```bash
+   read -rs PGPASSWORD && export PGPASSWORD
+   docker run --rm -i -e PGPASSWORD -e PGSSLMODE=require postgres:17 \
+     psql -q -v ON_ERROR_STOP=1 -h pg.example.com -p 5432 -U netbird -d netbird < netbird.sql
+   ```
+
+   `PGSSLMODE=require` makes the copy fail instead of crossing the network unencrypted: without it, the client falls back to plain text when the database does not offer TLS. If your PostgreSQL listens on another port, change `-p` here and `port=` in the DSNs below.
+
+   The command prints `set_config` and `setval` rows and ends without an error.
+
+4. Point all three stores at the shared PostgreSQL in `config.yaml`. Change the `dsn` of `store` and `activityStore`, and add an `authStore` block with the same DSN. The installer does not write `authStore`, which is why the login data is still in SQLite:
+
+   ```yaml
+   server:
+     store:
+       engine: "postgres"
+       dsn: "host=pg.example.com user=netbird password=<password> dbname=netbird port=5432 sslmode=require"
+       encryptionKey: "<keep the installer's value>"
+
+     activityStore:
+       engine: "postgres"
+       dsn: "host=pg.example.com user=netbird password=<password> dbname=netbird port=5432 sslmode=require"
+
+     authStore:
+       engine: "postgres"
+       dsn: "host=pg.example.com user=netbird password=<password> dbname=netbird port=5432 sslmode=require"
+   ```
+
+   Leave `encryptionKey` exactly as the installer wrote it. It encrypts data in the database, and a different value makes that data unreadable. Give `authStore` exactly the same DSN as `store`: the migration tool in the next step copies the login data into the `store` DSN.
+
+   The installer uses `sslmode=disable` because its database is local. Across the network, use `sslmode=require`: it encrypts the connection but does not verify the database server's certificate. `verify-ca` and `verify-full` do not work yet: the embedded identity provider ignores `sslrootcert`, and the server stops at startup with `x509: certificate signed by unknown authority`.
+
+5. Move the login data from `idp.db` into the shared PostgreSQL. The NetBird image includes a tool for this. Run it once:
+
+   ```bash
+   docker compose run --rm --no-deps netbird-server migrate-store --config /etc/netbird/config.yaml --verify
+   ```
+
+   The output reports `[auth] migrating /var/lib/netbird/idp.db → Postgres`, then one `✓` line per table. Lines saying `store.db`, `events.db` and `integrations.db` are not present are expected: that data was in PostgreSQL already and moved in the previous steps.
+
+6. Start the server and confirm it works:
+
+   ```bash
+   docker compose up -d netbird-server
+   ```
+
+   Log in to the dashboard at `https://netbird.example.com` with your existing account, and check that your peers show as connected.
+
+7. Rename `idp.db`, so the migration tool can never copy from it again, and restart the server:
+
+   ```bash
+   docker compose exec netbird-server mv /var/lib/netbird/idp.db /var/lib/netbird/idp.db.migrated
+   docker compose restart netbird-server
+   ```
+
+   The server does not need the file any more: its login data is in PostgreSQL now.
+
+<Warning>
+    If `migrate-store` runs again while `idp.db` is in place, it replaces all login data in the shared PostgreSQL with the file's old contents. Users added since can no longer log in, and the command still reports success. Once the file is renamed, a second run skips the login data.
+</Warning>
+
+`netbird.sql` contains your whole database. Once the deployment is working, move it somewhere safe or delete it.
+
+## Step 2: Connect node 1 to Redis and NATS
+
+Add the `ha` block to `config.yaml`, next to the stores:
+
+```yaml
+server:
+  ha:
+    enabled: true
+    natsEndpoints: "nats://nats-1.example.com:4222,nats://nats-2.example.com:4222,nats://nats-3.example.com:4222"
+    redisAddr: "redis://redis.example.com:6379"
+```
+
+Restart the server:
+
+```bash
+docker compose restart netbird-server
+docker compose logs --since 2m netbird-server | grep -E 'redis cache|Connected to NATS|license validated'
+```
+
+You should see `using redis cache at redis://redis.example.com:6379`, `Connected to NATS cluster` and `license validated`.
+
+Protect Redis and NATS with authentication, and with TLS if their traffic crosses a network you do not trust. Their credentials go in these two URLs, for NATS in the form `nats://user:password@nats-1.example.com:4222`, as in the High Availability guide's [NATS example](/selfhosted/maintenance/scaling/high-availability#example-a-self-hosted-cluster-with-docker-compose), and the server writes both URLs to its log at startup, credentials included; the command above prints them. Keep the server's logs as private as `config.yaml`.
+
+## Step 3: Move Relay to separate instances
+
+The server's built-in relay cannot be shared between nodes. Deploy relay instances as described in [Step 5 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-5-deploy-the-relay-pool), with one change: set every instance's `NB_AUTH_SECRET` to the `authSecret` value already in node 1's `config.yaml`, so your deployment keeps its existing secret. Apply a changed `NB_AUTH_SECRET` with `docker compose up -d` on the relay host: `docker compose restart` keeps the old value.
+
+A relay accepts only peers whose credentials were signed with its own secret, so these relay instances serve this deployment only. Do not point them at a secret another deployment uses.
+
+Then list the relays and their STUN servers in `config.yaml`, using the same secret:
+
+```yaml
+server:
+  stuns:
+    - uri: "stun:us-1.relay.example.com:3478"
+      proto: "udp"
+    - uri: "stun:eu-1.relay.example.com:3478"
+      proto: "udp"
+  relays:
+    addresses:
+      - "rels://us-1.relay.example.com:443"
+      - "rels://eu-1.relay.example.com:443"
+    secret: "<the authSecret value from this file>"
+    credentialsTTL: "24h"
+```
+
+Restart the server with `docker compose restart netbird-server`. Setting `relays` turns off the built-in relay and its STUN server. That is why `stuns` is required: without it, the server still tells peers to use STUN at `netbird.example.com:3478`, where nothing answers.
+
+## Step 4: Put the load balancer in front of node 1
+
+From here on, TLS and routing move from the installer's Traefik to your load balancer, and every node runs the same small Compose file. Items 1 and 2 prepare the switch while node 1 keeps running. Items 3 and 4 take the dashboard and Management offline: run them back to back in your maintenance window.
+
+1. Tell NetBird to trust forwarded client addresses from your load balancer instead of Traefik. In `config.yaml`, replace the address in both lists of the `reverseProxy` block with the load balancer's:
+
+   ```yaml
+   server:
+     reverseProxy:
+       trustedPeers:
+         - "10.0.0.10/32"
+       trustedHTTPProxies:
+         - "10.0.0.10/32"
+   ```
+
+   If your load balancer connects to the nodes from more than one address, as managed cloud load balancers do, list the subnet it connects from instead, such as `10.0.0.0/24`. Never list `0.0.0.0/0`: anyone who can reach a node could then set their own client address.
+
+   The server reads this change when it starts in item 3.
+
+2. Configure the load balancer for `netbird.example.com`. It terminates TLS and routes by path:
+
+   | Path | Backend | Protocol to the backend |
+   |---|---|---|
+   | `/signalexchange.SignalExchange/*` | every node, port 80 (Step 5 retires this) | HTTP/2 without TLS (h2c) |
+   | `/management.ManagementService/*` and `/management.ProxyService/*` | every node, port 80 | HTTP/2 without TLS (h2c) |
+   | `/api/*`, `/oauth2/*` and `/ws-proxy/*` | every node, port 80 | HTTP, with WebSocket upgrades |
+   | everything else | every node, port 8080 (the dashboard) | HTTP |
+
+   For now, node 1 is the only node in each pool. Node 2 joins them in Step 6.
+
+   Give each row a backend pool that skips a node that stops answering. Make sure the specific paths take priority over the catch-all row: depending on your load balancer, that means longest path first or rule order.
+
+   Health-check the server with `GET /oauth2/.well-known/openid-configuration` on port 80, and the dashboard with `GET /` on port 8080. Both return `200`. The server check only confirms the node is up and serving: it keeps returning `200` while PostgreSQL or Redis is down, so monitor those separately. Set a generous idle timeout, because peers hold long-lived gRPC streams.
+
+   Add the security headers that Traefik added to every response, because the server does not set them itself: `Strict-Transport-Security: max-age=3600; includeSubDomains`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` and `Referrer-Policy: strict-origin-when-cross-origin`. Without them, other sites can embed the login page at `/oauth2/auth/local/login` in a frame, and browsers are not told to insist on HTTPS.
+
+   Node 1 keeps serving peers through Traefik meanwhile, because DNS does not point at the load balancer yet. The load balancer reports node 1 as down until item 3 starts it on the new ports.
+
+3. Replace the installer's Compose file. Stop the stack first. This removes the containers but keeps their data volumes:
+
+   ```bash
+   docker compose down
+   ```
+
+   Then replace `docker-compose.yml` with this file. It is the installer's `dashboard` and `netbird-server` services without Traefik and PostgreSQL, publishing the server on port 80 and the dashboard on port 8080:
+
+   ```yaml
+   x-default: &default
+     restart: unless-stopped
+     logging:
+       driver: json-file
+       options:
+         max-size: '500m'
+         max-file: '2'
+
+   services:
+     dashboard:
+       <<: *default
+       image: ghcr.io/netbirdio/dashboard-cloud:${NETBIRD_DASHBOARD_TAG}
+       container_name: netbird-dashboard
+       ports:
+         - '8080:80'
+       environment:
+         - NETBIRD_MGMT_API_ENDPOINT=https://${NETBIRD_DOMAIN}
+         - NETBIRD_MGMT_GRPC_API_ENDPOINT=https://${NETBIRD_DOMAIN}
+         - AUTH_AUDIENCE=netbird-dashboard
+         - AUTH_CLIENT_ID=netbird-dashboard
+         - AUTH_CLIENT_SECRET=
+         - AUTH_AUTHORITY=https://${NETBIRD_DOMAIN}/oauth2
+         - USE_AUTH0=false
+         - AUTH_SUPPORTED_SCOPES=${NETBIRD_AUTH_SUPPORTED_SCOPES}
+         - AUTH_REDIRECT_URI=/nb-auth
+         - AUTH_SILENT_REDIRECT_URI=/nb-silent-auth
+         - NETBIRD_TOKEN_SOURCE=accessToken
+         - NGINX_SSL_PORT=443
+         - LETSENCRYPT_DOMAIN=
+         - LETSENCRYPT_EMAIL=
+
+     netbird-server:
+       <<: *default
+       image: ghcr.io/netbirdio/netbird-server-cloud:${NETBIRD_SERVER_TAG}
+       container_name: netbird-server
+       ports:
+         - '80:80'
+       volumes:
+         - netbird_data:/var/lib/netbird
+         - ./config.yaml:/etc/netbird/config.yaml
+       command: ["--config", "/etc/netbird/config.yaml"]
+       environment:
+         - NB_LICENSE_KEY=${NETBIRD_LICENSE_KEY}
+
+   volumes:
+     netbird_data:
+   ```
+
+   Keep the installer's `.env` beside it: it supplies the domain, image tags and license key.
+
+   Before you start the node, change its rules at a network firewall or cloud security group:
+
+   - Allow TCP 80 and 8080 from the load balancer only. The server serves its API and login page on port 80 in plain HTTP, so it must not be reachable from anywhere else.
+   - Remove the rules the installer needed: TCP 80 and 443 from the internet, which Traefik used, and UDP 3478, which the built-in STUN server used. STUN now runs on the relay instances.
+
+   A host firewall such as UFW or firewalld does not restrict these ports, because Docker-published ports bypass those rules.
+
+   Then start the node:
+
+   ```bash
+   docker compose up -d
+   ```
+
+4. Point `netbird.example.com` at the load balancer in DNS.
+
+   Connected devices reconnect by themselves within about 10 minutes, because the NetBird client caches the Management address. The `netbird down` and `netbird up` at the end of Step 5 reconnects them straight away.
+
+## Step 5: Move Signal to the Signal pool
+
+If you have not built them yet, deploy the Signal pool and its load balancer at `signal.example.com` as described in [Step 6 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-6-deploy-the-signal-pool). Give the Signal instances the same NATS cluster as the nodes. The Signal load balancer needs no path rules: it sends all traffic to the Signal instances. Health-check the Signal instances on their TCP port, and give this load balancer a generous idle timeout too, as in [Step 4 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-4-configure-the-load-balancers). Skip that step's last part, on pointing Management at the load balancer: item 1 below does it.
+
+Before you continue, check that the Signal load balancer answers with a valid certificate:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://signal.example.com
+```
+
+It prints `405`, which is the expected answer: Signal accepts only gRPC. It prints `000` if the certificate is not valid.
+
+Peers learn the Signal URL when they log in, so a device that is connected during the change keeps the old URL and loses Signal, even if `netbird status` still shows `Signal: Connected`. It does not recover by itself: it stays connected to Management, but it cannot form new connections, even with peers that already use the new Signal. Devices that are offline during the change pick up the new URL when they next start.
+
+1. In `config.yaml`, set `signalUri` to the Signal load balancer:
+
+   ```yaml
+   server:
+     signalUri: "https://signal.example.com:443"
+   ```
+
+   Setting `signalUri` turns off the server's built-in Signal.
+2. Restart the server: `docker compose restart netbird-server`.
+3. Once the DNS change from Step 4 has spread, run `netbird down` and then `netbird up` on every device that was connected during Steps 4 and 5. Include devices that are always on, such as routing peers, exit nodes and servers. Work through them back to back: a device that has run these commands cannot open connections to a device that has not yet. `netbird status -d` then shows `Management: Connected to https://netbird.example.com:443` and `Signal: Connected to https://signal.example.com:443`.
+4. Remove the `/signalexchange.SignalExchange/*` route from the `netbird.example.com` load balancer. It carried Signal only until this step.
+
+## Step 6: Add node 2
+
+Node 2 runs the same three files as node 1, with no installer and no database of its own.
+
+1. On node 1, pin the image versions, so node 2 runs exactly what node 1 runs. The installer's `.env` asks for `latest`, and a new node would pull whatever `latest` is on the day. Read the versions node 1 runs:
+
+   ```bash
+   docker inspect netbird-server netbird-dashboard --format '{{.Name}} {{index .Config.Labels "org.opencontainers.image.version"}}'
+   ```
+
+   The output looks like this:
+
+   ```text
+   /netbird-server 0.79.0+enterprise.2
+   /netbird-dashboard v2.93.0
+   ```
+
+   In node 1's `.env`, set `NETBIRD_SERVER_TAG` and `NETBIRD_DASHBOARD_TAG` to those versions. The server's image tag writes `+` as `-`, so for the output above:
+
+   ```bash
+   NETBIRD_SERVER_TAG=0.79.0-enterprise.2
+   NETBIRD_DASHBOARD_TAG=v2.93.0
+   ```
+
+   Node 1 keeps running: these tags name the images it already runs. It switches to them in item 4.
+
+2. On node 2, create the same directory and copy three files into it from node 1: `config.yaml`, `.env` and `docker-compose.yml`. Two of them hold secrets, so copy them over an encrypted channel, such as `scp` or your configuration management tool's secret store, and keep them readable by root only:
+
+   ```bash
+   chmod 600 config.yaml .env
+   ```
+
+3. Allow ports 80 and 8080 from the load balancer only, as for node 1, then start node 2:
+
+   ```bash
+   docker compose up -d
+   docker compose logs netbird-server | grep -E 'Starting CloudServer|redis cache|Connected to NATS|license validated'
+   ```
+
+4. Add node 2 to the load balancer's backend pools. Then run `docker compose up -d` on node 1, so that its containers also run under the pinned tags. Node 2 carries the traffic while node 1 restarts.
+
+To add more nodes later, repeat this step. Every node must have an identical `config.yaml`. Compare them with `sha256sum config.yaml`.
+
+## Step 7: Verify
+
+1. Log in to the dashboard at `https://netbird.example.com` and confirm your peers are connected.
+2. Make a change that no one depends on, and confirm peers pick it up. For example, rename a test peer on the dashboard's **Peers** page, and check that another peer that can reach it lists the new name in `netbird status -d` within seconds. Then rename it back.
+3. Stop the server on node 2 (`docker compose stop netbird-server dashboard`). Step 6 ended by restarting node 1, so your peers are connected through node 2. The dashboard keeps working, and the peers reconnect through node 1 within seconds. Then start node 2 again (`docker compose start netbird-server dashboard`), and confirm the load balancer's health checks report it as healthy again.
+
+For more failure tests and day-to-day operations, see the [High Availability guide](/selfhosted/maintenance/scaling/high-availability).
+
+## Step 8: Remove the installer's leftovers
+
+Node 1 still holds copies of your data and secrets that nothing uses any more. Remove them once Step 7 passes.
+
+1. On node 1, remove the installer's PostgreSQL and Traefik volumes. List them first, and check that the list shows exactly two volumes:
+
+   ```bash
+   docker volume ls -q | grep -E '_netbird_(postgres|traefik_letsencrypt)$'
+   docker volume ls -q | grep -E '_netbird_(postgres|traefik_letsencrypt)$' | xargs docker volume rm
+   ```
+
+2. On node 1, delete the backups you took before Step 1 and the renamed login data file. They are out of date, and you cannot go back to them, as [Before you begin](#before-you-begin) explains:
+
+   ```bash
+   rm config.yaml.single-node docker-compose.yml.single-node .env.single-node
+   docker compose exec netbird-server rm /var/lib/netbird/idp.db.migrated
+   ```
+
+   If you have not yet moved `netbird.sql` somewhere safe or deleted it, do it now.
+
+3. On every node, cut `.env` down to the five values the Compose file reads. The rest configured the installer's PostgreSQL, Traefik and built-in relay, and some of them are secrets:
+
+   ```bash
+   umask 077
+   grep -E '^(NETBIRD_DOMAIN|NETBIRD_SERVER_TAG|NETBIRD_DASHBOARD_TAG|NETBIRD_LICENSE_KEY|NETBIRD_AUTH_SUPPORTED_SCOPES)=' .env > .env.new
+   mv .env.new .env
+   docker compose up -d
+   ```
+
+   `docker compose up -d` reports both containers as `Running`: the Compose file resolves to the same configuration as before, so nothing restarts.
+
+## Troubleshooting
+
+### The restore fails with `unrecognized configuration parameter "transaction_timeout"`
+
+The shared PostgreSQL runs a version older than 17. The installer's backup comes from PostgreSQL 17 and does not restore into older versions. Use PostgreSQL 17 or later.
+
+### The server stops at startup with `failed to create embedded IDP service` and `x509: certificate signed by unknown authority`
+
+The DSNs use `sslmode=verify-ca` or `verify-full` with `sslrootcert`. The embedded identity provider ignores `sslrootcert` and checks the database's certificate against the system trust store. Use `sslmode=require`, as in Step 1.
+
+### `profile: command not found` when reading `.env`
+
+The shell tried to `source` the installer's `.env`, and some values were read wrong. Read single values with `grep` instead, as in Step 1.
+
+### A peer shows `Management: Disconnected` after the DNS change
+
+The client is still using the old address from its own cache. Its log shows connection errors to the Management service, such as `dial tcp <old address>:443: i/o timeout` once node 1's port 443 is closed, `connect: connection refused`, or `stream terminated by RST_STREAM`. It retries by itself and reconnects once its cache refreshes, which can take 10 minutes. To reconnect one peer immediately, run `netbird down` and `netbird up` on it.
+
+### After Step 5, `netbird status -d` shows Signal on `https://netbird.example.com:443`
+
+The peer is still using the Signal URL it had before Step 5. The Signal line reads either `Disconnected, reason: signal receive stream stalled` or `Connected`, and the client log repeats `didn't receive a registration header from the Signal server`. Either way, the peer does not recover by itself. Run `netbird down` and then `netbird up` on it.
+
+## Recap
+
+- The installer's host becomes node 1: its data moves to the shared PostgreSQL, its login data follows with `migrate-store`, and its built-in Relay and Signal give way to shared instances.
+- Your load balancer replaces Traefik, and the Signal pool gets its own load balancer at `signal.example.com`.
+- Every further node is three copied files, the same firewall rules, and a place in the load balancer's pools.
+- Once it all works, the installer's volumes, backups and unused `.env` values go.
