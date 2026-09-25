@@ -876,6 +876,7 @@ export const docsNavigation = [
         links: [
             { title: 'Desktop App', href: '/client/desktop-app' },
             { title: 'Profiles', href: '/client/profiles' },
+            { title: 'Profile Ownership', href: '/client/profile-ownership' },
             { title: 'gRPC Daemon Socket', href: '/client/grpc-socket' },
             { title: 'HTTP/JSON Daemon Socket', href: '/client/json-socket' },
             { title: 'Environment Variables', href: '/client/environment-variables' },
