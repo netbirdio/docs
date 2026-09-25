@@ -87,27 +87,14 @@ curl --silent --show-error \
   http://localhost/daemon.DaemonService/Status
 ```
 
-### Use a TCP Socket
-
-Pass an address with the `tcp://` scheme to expose the gateway over TCP:
-
-```shell
-sudo netbird service reconfigure \
-  --enable-json-socket \
-  --json-socket tcp://127.0.0.1:8080
-```
+### TCP Sockets (Deprecated)
 
 <Warning>
-  **Security warning:** The gateway does not add authentication or TLS. Keep TCP
-  listeners bound to a trusted interface such as `127.0.0.1` and do not expose
-  them to an untrusted network. The API includes operations that can read or
-  change the local NetBird daemon's state.
-
-  A TCP connection carries no caller identity, so the gateway cannot tell who is
-  calling and every
-  [privileged operation](/client/grpc-socket#privileged-operations) is refused on
-  such a socket, whoever runs the client.
+  TCP sockets are deprecated. A future release removes them.
 </Warning>
+
+A TCP connection does not carry a caller identity. The daemon cannot identify the
+caller, so it refuses every request on a TCP socket. Use a Unix socket.
 
 To disable the gateway again, run:
 
@@ -150,19 +137,6 @@ The response is a JSON representation of the daemon's status response. For examp
 
 The exact fields and values depend on the client version and current connection state.
 
-### Query Status Through a TCP Socket
-
-If the gateway is listening on `tcp://127.0.0.1:8080`, use a normal HTTP request:
-
-```shell
-curl --silent --show-error \
-  --request POST \
-  --header 'Content-Type: application/json' \
-  --data '{}' \
-  --write-out '\n' \
-  http://127.0.0.1:8080/daemon.DaemonService/Status
-```
-
 ### Call the API from an Integration
 
 The following Python example calls the status endpoint over a Unix socket using only the standard library:
@@ -199,8 +173,6 @@ status = load(response)
 print(status["status"])
 connection.close()
 ```
-
-For a TCP listener, any standard HTTP client can call the same path and JSON body without Unix-socket support.
 
 ## Map gRPC Methods to HTTP
 
@@ -260,8 +232,8 @@ The operation is one of the
 client is not root, or not an administrator on Windows. The response body carries a
 `PRIVILEGE_REQUIRED` detail in domain `daemon.netbird.io`, with a summary and the
 command that performs the same operation with the privileges it needs. On a TCP
-gateway socket these operations are always refused.
+gateway socket the daemon refuses every request.
 
-### A TCP Request Cannot Connect
+### A TCP Request Is Refused
 
-Confirm that the host and port in the request match the value passed to `--json-socket`. Prefer `127.0.0.1` over `0.0.0.0` unless remote access is explicitly required and protected by an additional security boundary.
+TCP sockets are deprecated, and the daemon refuses every request on them. Change `--json-socket` to a Unix socket. See [TCP sockets (deprecated)](#tcp-sockets-deprecated).

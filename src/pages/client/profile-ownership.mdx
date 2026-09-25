@@ -1,0 +1,209 @@
+import { Note, Warning } from '@/components/mdx'
+
+export const description =
+  'How the NetBird daemon authorizes local users, how profile ownership works, and how to restrict daemon access.'
+
+# Profile ownership and daemon access
+
+The NetBird daemon runs as root, or as LocalSystem on Windows. Each local user can connect to its socket. Without a check, one user can read or change the profile of another user, or stop that user's connection.
+
+To prevent this, the daemon identifies each caller and gives each profile an owner. A user can use only the profiles that they own. A connection belongs to the user who started it.
+
+## How the daemon identifies a caller
+
+The daemon gets the identity of the caller from the operating system, not from the request. If the daemon cannot identify the caller, it refuses the request.
+
+A TCP socket does not carry an identity, so the daemon refuses every request on it. TCP sockets are deprecated. For more information, see [TCP sockets (deprecated)](/client/grpc-socket#tcp-sockets-deprecated).
+
+## Access levels
+
+The daemon gives each request one of four access levels. Each level can do all the operations of the levels above it in this table.
+
+| Level | Who | Operations |
+| --- | --- | --- |
+| Identified | Any user that the daemon can identify | Read basic status. List your profiles. Add a profile. |
+| Profile owner | The owner of the profile | Read and change the profile configuration. Rename, remove, or deregister the profile. |
+| Session holder | The owner of the active profile and the connection is up | Disconnect. Log in. Switch profiles. Select networks. Read detailed status. Create a debug bundle. |
+| Privileged | Root, an elevated administrator, or the user that the daemon runs as | All operations on all profiles. Claim a profile. |
+
+The daemon lets the user that it runs as act as a privileged user only when the daemon itself is not privileged. An example is a rootless container.
+
+## Profile ownership
+
+Each profile records one owner. On Linux and macOS, the owner is a user ID, for example `uid:1000`. On Windows, the owner is a security identifier (SID), for example `sid:S-1-5-21-...`.
+
+When you add a profile, you become its owner. Root and administrators can see and use all profiles.
+
+<Warning>
+  If you add a profile with `sudo`, root becomes the owner. Run `netbird profile add` as your own user.
+</Warning>
+
+### Commands and required access
+
+| Command | Required level |
+| --- | --- |
+| `netbird status` | Identified. Detailed status requires session holder. |
+| `netbird profile list`, `netbird profile add` | Identified |
+| `netbird profile rename`, `netbird profile remove`, `netbird deregister` | Profile owner |
+| `netbird up`, `netbird down`, `netbird login`, `netbird profile select` | Session holder |
+| `netbird debug bundle` | Session holder |
+| `netbird profile claim` | Privileged |
+
+`netbird profile list` shows only the profiles that you own. To show the owner of each profile, add `--show-owner`:
+
+```shell
+sudo netbird profile list --show-owner
+```
+
+```text
+NAME     ACTIVE  OWNER
+default  *       alice
+work             bob
+lab              unowned
+```
+
+### Connections of other users
+
+When a user connects, the active profile and its connection belong to that user. Other users cannot connect, disconnect, or switch profiles until the connection stops. To stop the connection of another user, run:
+
+```shell
+sudo netbird down
+```
+
+### Claim a profile
+
+To give a profile an owner, run `netbird profile claim` as root or as an administrator:
+
+```shell
+sudo netbird profile claim <profile> --owner <owner>
+```
+
+The `<owner>` value is an account name, a `uid:<id>` value, or a `sid:<SID>` value. The daemon does not check that a `uid` or `sid` value belongs to an existing account.
+
+On Linux and macOS, if you do not set `--owner`, the owner is the user who ran `sudo`. If you run the command in a root shell without `sudo`, `--owner` is required. On Windows, `--owner` is required.
+
+## Restrict daemon access to a group
+
+By default, all local users can connect to the daemon socket. To let only one group connect, set `--allow-group` when you install the service:
+
+```shell
+sudo netbird service install --allow-group netbird-users
+```
+
+The operating system then refuses connections from users outside the group. This restriction also applies to the [HTTP/JSON daemon socket](/client/json-socket).
+
+- On Linux and macOS, you can set only one group. The value is a group name or a group ID.
+- On Windows, you can set a comma-separated list of groups or accounts. LocalSystem, elevated administrators, and the account that the daemon runs as always keep access.
+- The installer resolves group names to IDs, including LDAP, SSSD, and Active Directory groups. If a name does not resolve, the installation stops.
+- `netbird service reconfigure` resolves the names again.
+- To remove the restriction, run `sudo netbird service reconfigure --allow-group ""`.
+
+<Note>
+  A TCP socket cannot carry the restriction. If you set `--allow-group` for a daemon on a TCP socket, the daemon does not start.
+</Note>
+
+### Set allowed groups with MDM
+
+On managed Windows and macOS devices, use the `allowGroups` [MDM policy key](/client/mdm-integration). On Windows, the Group Policy name is **Restrict the daemon sockets**.
+
+- The MDM value replaces the `--allow-group` value. An empty value removes a restriction that the installer set.
+- On macOS, set exactly one group ID, for example `gid:1001`.
+- On Windows, set a comma-separated list of SIDs, for example `sid:S-1-5-21-...`.
+- Use IDs, not names. The daemon reads this value when it starts. It waits a maximum of 5 seconds to resolve names.
+
+<Warning>
+  If the daemon cannot read the MDM policy or resolve the value, it does not start. This behavior prevents an open socket on a device that must be restricted.
+</Warning>
+
+## Environment variables
+
+Set these variables on the daemon. For instructions, see [Client environment variables](/client/environment-variables#setting-environment-variables).
+
+| Variable | Description |
+| --- | --- |
+| `NB_DISABLE_PROFILE_OWNERSHIP` | Set to `true` to turn off profile ownership. All identified users can use all profiles and control all connections. Android and iOS always work this way. |
+| `NB_DISABLE_DEFAULT_PROFILE_CLAIM` | Set to `true` to stop the automatic claim of the default profile. The default profile then has no owner until an administrator claims it. |
+
+<Warning>
+  `NB_DISABLE_PROFILE_OWNERSHIP` removes the isolation between local users. Use it only on a device with one user.
+</Warning>
+
+## Upgrade from an earlier version
+
+Earlier versions kept profiles in one directory for each user, for example `/var/lib/netbird/<username>/`, and recorded no owner. When the new daemon starts for the first time, it migrates these profiles. Your profiles stay in their directories.
+
+The migration does these steps:
+
+1. Gives a new unique ID to profiles that have the same ID in different user directories.
+2. Records the owner of the profiles of the last active user and of the default profile.
+3. Creates the `profiles.v1` directory in the state directory. This directory shows that the migration is complete.
+
+If the migration fails, the daemon writes the error to the log and tries again at the next start. The daemon saves new profiles in the `profiles.v1` directory.
+
+### Automatic claims
+
+After the migration, some profiles can still have no owner. The daemon gives them an owner when a user sends a request:
+
+- **Profiles in a user directory.** The daemon records the user whose name matches the directory as the owner.
+- **Default profile.** The daemon records the first user who is logged in at the console of the device as the owner. A console is a local graphical session, or a local seat on Linux. A user in a remote SSH session is not at the console.
+
+Root and administrators never become owners through an automatic claim.
+
+On a device with no console, for example a server, the default profile keeps no owner. To give it an owner, run:
+
+```shell
+sudo netbird profile claim default --owner <owner>
+```
+
+## Troubleshooting
+
+### Another user has this machine connected
+
+**Symptom:** A command fails with a message that says another user has the machine connected.
+
+**Cause:** Another user started the current connection.
+
+**Fix:** Ask that user to disconnect, or run `sudo netbird down`.
+
+### The profile belongs to another user
+
+**Symptom:** A command fails with a message that says the profile belongs to another user.
+
+**Cause:** You do not own the profile.
+
+**Fix:** Use a profile that you own. Or, ask an administrator to run `sudo netbird profile claim <profile> --owner <your-user>`.
+
+### The profile has no owner on record
+
+**Symptom:** A command fails with a message that says the profile has no owner on record.
+
+**Cause:** The profile was not claimed. This is usual on a device with no console, or when you connect over SSH.
+
+**Fix:** Run the `netbird profile claim` command that the error message shows.
+
+### A profile is missing from the profile list
+
+**Cause:** `netbird profile list` shows only the profiles that you own.
+
+**Fix:** To see all profiles and their owners, run `sudo netbird profile list --show-owner`.
+
+### Detailed status is unavailable
+
+**Symptom:** `netbird status` shows `Detailed status is unavailable: the connection belongs to another user.`
+
+**Cause:** Another user holds the connection. You can see only the daemon status.
+
+### The daemon does not start after you set allowed groups
+
+**Possible causes:**
+
+- A group name does not resolve.
+- You set more than one group on Linux or macOS.
+- The daemon or the JSON socket uses a TCP socket.
+- The daemon cannot read the MDM policy.
+
+**Fix:** Read the daemon log. The log shows which of these causes stopped the daemon.
+
+### Collect information for support
+
+A debug bundle includes `profiles.txt` and `active_profile.json`. These files show each profile, its owner, and the active profile. For instructions, see [Troubleshooting client issues](/help/troubleshooting-client).
