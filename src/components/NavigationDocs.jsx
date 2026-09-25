@@ -599,6 +599,10 @@ export const docsNavigation = [
                         href: '/selfhosted/maintenance/scaling/high-availability',
                     },
                     {
+                        title: 'External Relays (Licensed)',
+                        href: '/selfhosted/enterprise/external-relays',
+                    },
+                    {
                         title: 'Grafana Dashboard',
                         href: '/selfhosted/enterprise/grafana-dashboard',
                     },

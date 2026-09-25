@@ -1,0 +1,541 @@
+export const description = 'Move relay and STUN off your NetBird Enterprise server onto dedicated hosts, step by step, without breaking traffic event logging.'
+
+# External Relays on a Commercial License
+
+import {Note, Warning} from "@/components/mdx";
+
+Your NetBird Enterprise server runs management, signal, relay and STUN in one `netbird-server` container. That works until relayed traffic starts competing with the control plane for the same host, or until users in another region relay through a server on the wrong continent. This guide moves the relay and STUN services onto dedicated hosts and points your server at them.
+
+One thing makes Enterprise different, and it is the reason this page exists rather than the [community guide](/selfhosted/maintenance/scaling/set-up-external-relays). When traffic flow is enabled, your deployment has a single shared secret doing **two** jobs: authenticating peers to the relay, and authenticating peers to the traffic-flow receiver. That is true however the deployment was built, whether installed fresh or migrated up from the community edition. Generate a new secret while following a guide that only knows about the first job, and your peers keep working perfectly while traffic event logging silently stops. Step 2 is where that is handled.
+
+## Before you start
+
+For each relay server you need:
+
+- A Linux VM with at least **1 CPU** and **1 GB RAM**
+- A public IP address
+- A domain name pointing at it, for example `relay-us.example.com`
+- Docker and the Compose plugin installed
+- These inbound ports open: **443/tcp** and **443/udp** (relay), **3478/udp** (STUN)
+
+<Note>
+**No inbound port 80 is needed.** A relay proves its domain to Let's Encrypt over 443 itself, using the TLS-ALPN-01 challenge. Your main NetBird server is different and does still need 80, and so may a proxy in front of the relay.
+
+**Both 443 rules matter.** The relay serves two transports on that port: WebSocket over TCP and QUIC over UDP. Clients race both and keep whichever answers first. With 443/udp closed the QUIC attempt runs until it times out, WebSocket carries the connection, and nothing reports an error, so the missing rule is easy to overlook.
+</Note>
+
+On the main server you need shell access to your deployment directory, which this guide calls `~/netbird-enterprise`, and the ability to restart containers there.
+
+This guide uses two relay servers, `relay-us.example.com` and `relay-eu.example.com`, and a main server at `netbird.example.com`. Substitute your own names throughout. One relay works fine; two is the smallest setup that shows the failover behavior.
+
+### Which names your deployment uses
+
+A deployment installed fresh with `getting-started-enterprise.sh` and one migrated up from the community edition with `migrate-to-enterprise.sh` use different names for the same things, and traffic flow is optional in both. On the main server, run:
+
+```bash
+cd ~/netbird-enterprise
+ls config.yaml.enterprise
+docker compose config --services | grep -E '^(receiver|flow-receiver)$'
+```
+
+| | Fresh install | Migrated from the community edition |
+|---|---|---|
+| Server configuration | `config.yaml` | `config.yaml.enterprise` if `ls` lists it, otherwise `config.yaml` |
+| Traffic-flow receiver service | `receiver` | `flow-receiver` |
+| Receiver container | `netbird-receiver` | `netbird-flow-receiver` |
+| Relay secret in `.env` | `NETBIRD_RELAY_AUTH_SECRET` | `NB_FLOW_AUTH_SECRET`, only if traffic flow was enabled |
+
+The commands on this page use the fresh-install names. On a migrated deployment, use the names from the second column instead. The configuration file matters most. `migrate-to-enterprise.sh` writes `config.yaml.enterprise` whenever it moves storage to PostgreSQL or enables traffic flow, and starts the server with that file instead of `config.yaml`. On such a deployment an edit to `config.yaml` has no effect.
+
+If the `grep` prints nothing, your deployment has no traffic-flow receiver. Skip the traffic event check in Step 1, all of Step 8, and the receiver commands in [Rotating to a new secret](#rotating-to-a-new-secret). Everything else on this page applies unchanged.
+
+## Step 1: Before you change anything
+
+**This is a cutover, not a gradual migration.** The moment you restart the server with the new configuration, the embedded relay stops and every peer that was using it reconnects to the external relays. There is no window where both are serving. So build and test the relay hosts completely, through the end of Step 5, before you touch the main server's configuration in Step 6.
+
+**Record whether traffic events are working now.** Step 8 checks that they survived the change, and that check can only tell you something if you know the answer beforehand. Generate a little traffic between two peers, for example `ping` one peer's NetBird IP from another, wait about 90 seconds, then on the main server run:
+
+```bash
+cd ~/netbird-enterprise
+docker compose logs --since 120s receiver | grep -c 'sending event'
+```
+
+Use `flow-receiver` on a migrated deployment, and skip this check if your deployment has no receiver ([Which names your deployment uses](#which-names-your-deployment-uses)).
+
+If it is `0` and the receiver still logs at its default level (`NB_FLOW_LOG_LEVEL` unset or `debug`), traffic events are not flowing **yet**, and that has nothing to do with relays. Traffic event logging is disabled by default at the account level even when the installer enabled traffic flow on the server: in the dashboard, go to `Settings > Networks` and turn on `Enable Traffic Events` under the Experimental section. See [Traffic Events Logging](/manage/activity/traffic-events-logging). Either enable it and re-run the check, or accept that Step 8 will have nothing to compare against.
+
+## Step 2: Read your existing shared secret
+
+**Do not generate a new secret.** Your deployment already has one, and the traffic-flow receiver, if you have one, uses the same value. Read it from the server configuration on the main server. The first line below picks `config.yaml.enterprise` when a migration created it, because that is the file the server reads, and the two files stop matching as soon as the secret is rotated:
+
+```bash
+cd ~/netbird-enterprise
+CONFIG=config.yaml; [ -f config.yaml.enterprise ] && CONFIG=config.yaml.enterprise
+grep 'authSecret:' "$CONFIG"
+```
+
+Read it from the server configuration and not from `.env`. The server configuration carries this value on every deployment. `.env` does not: a deployment created by `getting-started-enterprise.sh` has it there as `NETBIRD_RELAY_AUTH_SECRET`, one migrated up from the community edition with traffic flow has `NB_FLOW_AUTH_SECRET` instead, and one migrated without traffic flow has neither, because the community installer never wrote the relay secret to `.env` in the first place.
+
+That value goes in two places later: `NB_AUTH_SECRET` on every relay host in Step 3, and `relays.secret` on the main server in Step 6.
+
+<Note>
+`config.yaml` and `.env` are mode `600` and hold every secret in your deployment. Read the single line you need rather than opening the whole file, and keep the value out of shared terminal history.
+</Note>
+
+If your policy requires a fresh secret, that works too, but it has more places to change than you would expect. Use [Rotating to a new secret](#rotating-to-a-new-secret) at the end of this page rather than improvising here.
+
+## Step 3: Create the relay configuration
+
+Do this on each relay server.
+
+```bash
+mkdir -p ~/netbird-relay
+cd ~/netbird-relay
+```
+
+Create `relay.env`. The relay can obtain and renew its own TLS certificate through Let's Encrypt:
+
+```bash
+NB_LOG_LEVEL=info
+NB_LISTEN_ADDRESS=:443
+NB_EXPOSED_ADDRESS=rels://relay-us.example.com:443
+NB_AUTH_SECRET=the-value-from-step-2
+
+# TLS via Let's Encrypt
+NB_LETSENCRYPT_DOMAINS=relay-us.example.com
+NB_LETSENCRYPT_EMAIL=admin@example.com
+NB_LETSENCRYPT_DATA_DIR=/data/letsencrypt
+
+# Embedded STUN (comma-separated for multiple ports, e.g. 3478,3479)
+NB_ENABLE_STUN=true
+NB_STUN_PORTS=3478
+```
+
+Replace `relay-us.example.com` with this host's own domain and `the-value-from-step-2` with the secret you read. The file holds that secret, so make it readable by root only:
+
+```bash
+chmod 600 relay.env
+```
+
+The relay reads `relay.env` when its container is created. If you change the file later on a running relay, apply it with `docker compose up -d`. `docker compose restart` keeps the old values.
+
+Create `docker-compose.yml`:
+
+```yaml
+services:
+  relay:
+    image: netbirdio/relay:latest
+    container_name: netbird-relay
+    restart: unless-stopped
+    ports:
+      # Both transports. Docker reads a bare '443:443' as TCP only,
+      # so the UDP line is required for QUIC.
+      - '443:443/tcp'
+      - '443:443/udp'
+      # Expose every port listed in NB_STUN_PORTS
+      - '3478:3478/udp'
+    env_file:
+      - relay.env
+    volumes:
+      - relay_data:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "500m"
+        max-file: "2"
+
+volumes:
+  relay_data:
+```
+
+The relay image is the open source `netbirdio/relay`. A relay host takes no license key.
+
+### If you already have TLS certificates
+
+To use your own certificate instead of Let's Encrypt, delete the three `NB_LETSENCRYPT_*` lines from `relay.env` and add:
+
+```bash
+NB_TLS_CERT_FILE=/certs/fullchain.pem
+NB_TLS_KEY_FILE=/certs/privkey.pem
+```
+
+Then replace the relay service's `volumes:` list in `docker-compose.yml` with this one. Do not add it as a second `volumes:` key, which makes the file invalid:
+
+```yaml
+    volumes:
+      - /path/to/certs:/certs:ro
+      - relay_data:/data
+```
+
+`fullchain.pem` is your certificate followed by any intermediates, and the certificate must cover the relay's domain. Four things catch people out:
+
+- **Set both variables, and remove every `NB_LETSENCRYPT_*` line.** If a Let's Encrypt line remains, the relay uses Let's Encrypt and ignores your files. If only one `NB_TLS_*` variable is set, the relay starts with no TLS at all. Either way, the sign is a missing QUIC line in Step 4.
+- **Nothing in the startup log names your certificate.** Step 5's `curl -v` is how you confirm it is the one being served.
+- **The files are read once, at startup.** Restart the relay after every renewal: `docker compose restart relay`.
+- **A private CA must be trusted by every peer.** NetBird checks the relay's certificate against each device's operating-system trust store, and has no setting for a separate CA. A device that does not trust yours reports the relay as `Unavailable` with `x509: certificate signed by unknown authority`, and cannot relay to other peers. Distribute the CA to every device before you switch.
+
+### If a load balancer or proxy sits in front of the relay
+
+In this shape your proxy holds the certificate and the relay serves plain HTTP behind it.
+
+Use this shape only because a load balancer or proxy is already in front of your relays. Do not add one just to terminate TLS on the relay host: the relay already does that itself, and a proxy in front of it costs you QUIC.
+
+**On the relay host**, `relay.env` has no `NB_LETSENCRYPT_*` lines, listens on an internal port, and names the proxy's address:
+
+```bash
+NB_LOG_LEVEL=info
+NB_LISTEN_ADDRESS=:8080
+NB_EXPOSED_ADDRESS=rels://relay-us.example.com:443
+NB_AUTH_SECRET=the-value-from-step-2
+NB_TRUSTED_PROXIES=10.20.0.10
+NB_ENABLE_STUN=true
+NB_STUN_PORTS=3478
+```
+
+Keep `rels://` written out in `NB_EXPOSED_ADDRESS`. With no TLS of its own, the relay would otherwise advertise `rel://`.
+
+In `docker-compose.yml`, remove the two `443` port lines and keep `3478:3478/udp` for STUN. Make port 8080 reachable from the proxy and nothing else. If the proxy is on another machine, publish the port with `'8080:8080/tcp'` and allow it at your firewall from the proxy's address only.
+
+**Your proxy must:**
+
+- hold a certificate for the relay's domain, and accept connections on 443/tcp;
+- forward WebSocket upgrades over HTTP/1.1 to the relay's port 8080;
+- set both `X-Real-Ip` and `X-Real-Port` to the address and source port of the connection it received, overwriting anything the client sent.
+
+The relay uses those two headers only when the connection comes from an address in `NB_TRUSTED_PROXIES`, and only when both are present. A proxy that sets only `X-Real-Ip` gets its own address logged for every peer. A proxy that passes the client's headers through lets any client write the address of its choice into your relay logs.
+
+`NB_TRUSTED_PROXIES` is the address the relay sees the proxy's connections come from, which is not always the proxy's public address. When the proxy and relay share a Docker network, it is the proxy container's address on that network. When the proxy is another machine on the same private network, it is that machine's private address: a published Docker port keeps the original source address.
+
+<Warning>
+Trust only the smallest proxy ranges you control. Never `0.0.0.0/0`, `::/0`, or a shared network where an untrusted system could reach the relay directly and forge these headers. Entries are IP addresses or CIDRs separated by commas. Hostnames are rejected, and a prefix such as `10.20.0.10/24` trusts the whole `/24`.
+</Warning>
+
+These headers decide only which client address the relay records, including in the `invalid signature` lines used for troubleshooting. Authentication does not depend on them.
+
+Apply a change to `NB_TRUSTED_PROXIES` with `docker compose up -d relay`. An invalid entry stops the relay: it exits with `failed to parse trusted proxies: ...` and restarts in a loop until you fix it. To confirm the setting works, check that the relay logs your peers' addresses rather than the proxy's:
+
+```bash
+docker compose logs relay | grep 'WS client connected from'
+```
+
+The CLI equivalent of `NB_TRUSTED_PROXIES` is `--trusted-proxies`, available since **v0.75.0**.
+
+At startup the relay reports that it cannot serve QUIC:
+
+```
+WARN relay/server/server.go:78: Not starting QUIC listener: valid TLS config is required for QUIC listener
+```
+
+That is expected here. Peers connect over WebSocket, so neither the proxy nor the relay host needs 443/udp. The proxy needs 443/tcp, plus whatever it uses to obtain its own certificate, often 80/tcp. The relay host needs 3478/udp for STUN.
+
+## Step 4: Start each relay
+
+```bash
+docker compose up -d
+docker compose logs -f
+```
+
+You should see the relay announce its address, both listeners, and the STUN server:
+
+```
+INFO relay/cmd/root.go:242: server will be available on: rels://relay-us.example.com:443
+INFO relay/server/listener/ws/listener.go:51: WS server listening address: :443
+INFO relay/server/listener/quic/listener.go:39: QUIC server listening on address: :443
+INFO [component: stun] stun/server.go:71: STUN server listening on [::]:3478
+```
+
+Other lines appear alongside these, including the Let's Encrypt setup, the health check server and the metrics server. The order changes from one start to the next, because the listeners come up concurrently. What matters is that all four lines are present, not where they sit.
+
+A missing QUIC line means the relay has no TLS configuration of its own, which is expected only behind a TLS-terminating proxy.
+
+## Step 5: Check each relay from outside
+
+Certificates are issued lazily on the first request, so this both provisions and verifies:
+
+```bash
+curl -v https://relay-us.example.com/
+```
+
+A `404 page not found` is the correct response. What matters is that the TLS handshake succeeded:
+
+```
+* Server certificate:
+*  subject: CN=relay-us.example.com
+*  issuer: C=US; O=Let's Encrypt; CN=E8
+*  SSL certificate verify ok.
+```
+
+The issuer's `CN` names whichever intermediate signed your certificate, so yours will often differ.
+
+Two things can go wrong here, and they look different. If the first attempt fails with a TLS error such as `SSL_ERROR_SYSCALL`, wait a few seconds and run it again: that first request is what triggers issuance, and it can time out while that happens.
+
+If instead the command hangs with no output and no error, issuance is stuck rather than slow. The relay reports the reason and `curl` cannot:
+
+```bash
+docker compose logs relay | grep -i acme
+```
+
+A rate limit is the likeliest cause if you have rebuilt the same relay host several times. Let's Encrypt allows five certificates per week for one exact set of domain names, and the error names the time it frees up again.
+
+Repeat Steps 3 to 5 on every relay server, using the **same** `NB_AUTH_SECRET` and that host's own domain name.
+
+Do not continue until every relay answers. Step 6 is the cutover.
+
+## Step 6: Point the main server at the relays
+
+On the main server, take a copy of the current configuration first, then edit it:
+
+```bash
+cd ~/netbird-enterprise
+cp config.yaml config.yaml.bak
+nano config.yaml
+```
+
+On a migrated deployment that has `config.yaml.enterprise`, copy and edit that file instead. It is the one the server reads, and changes made to `config.yaml` never reach it.
+
+The backup matters because a mistake here does not announce itself: the deployment keeps working and only traffic event logging stops.
+
+Add `stuns` and `relays` inside the existing `server:` block, at the same indentation as the keys already there. Anywhere inside that block works; the example below puts them after `authSecret` to keep the relay settings together. Everything else already under `server:` stays exactly as it is, including the `auth`, `reverseProxy`, `store`, `activityStore` and `trafficFlow` sections a `getting-started-enterprise.sh` deployment carries. Setting `relays.addresses` is what turns the embedded relay off, and it turns the embedded STUN server off too, which is why `stuns` is required:
+
+```yaml
+server:
+  listenAddress: ":80"
+  exposedAddress: "https://netbird.example.com:443"
+
+  # Leave authSecret exactly as it is. relays.addresses below is what
+  # disables the embedded relay.
+  authSecret: "your-existing-secret"
+
+  # External STUN servers, one per relay host
+  stuns:
+    - uri: "stun:relay-us.example.com:3478"
+      proto: "udp"
+    - uri: "stun:relay-eu.example.com:3478"
+      proto: "udp"
+
+  # External relay servers
+  relays:
+    addresses:
+      - "rels://relay-us.example.com:443"
+      - "rels://relay-eu.example.com:443"
+    secret: "the-value-from-step-2"
+    credentialsTTL: "24h"
+
+  # ... the rest of your existing configuration is unchanged
+```
+
+<Warning>
+`relays.secret` must be the value you read in Step 2. It must match `NB_AUTH_SECRET` on every relay host and, if your deployment has a traffic-flow receiver, the receiver's `NB_FLOW_AUTH_SECRET`. The two mismatches fail differently:
+
+- **With a relay:** that relay rejects peers, and its log says `invalid signature` (see [Troubleshooting](#troubleshooting)).
+- **With the receiver:** relaying keeps working, and traffic events stop. Only the receiver's log shows it. Step 8 checks for exactly this.
+</Warning>
+
+Leave `server.authSecret` in place. It is required only when the embedded relay is running, and removing it gains you nothing.
+
+`stuns` and `relays` are available since **v0.65.0**.
+
+## Step 7: Restart the server
+
+`config.yaml` is a bind mount, so editing it changes nothing Docker Compose compares. `docker compose up -d` reports the service as already up to date and keeps serving the old configuration. Restart it explicitly:
+
+```bash
+cd ~/netbird-enterprise
+docker compose restart netbird-server
+```
+
+<Warning>
+Do not run `docker compose down` to apply this change. On an Enterprise deployment that also stops Traefik, PostgreSQL, NATS and the traffic-flow services. Restarting the one container you changed is enough.
+</Warning>
+
+Confirm the embedded relay is off and your addresses are reaching clients:
+
+```bash
+docker compose logs --tail 400 netbird-server | grep -E 'Relay:|Relay addresses' | tail -3
+```
+
+If the server has been restarted before, its log holds a block like this for every restart. The `tail` keeps you looking at the most recent one, which is the only one that reflects the change you just made.
+
+```
+INFO combined/cmd/root.go:691:   Relay: false (log level: )
+INFO combined/cmd/root.go:731:     Relay addresses: [rels://relay-us.example.com:443 rels://relay-eu.example.com:443]
+INFO combined/cmd/config.go:806: Relay addresses: [rels://relay-us.example.com:443 rels://relay-eu.example.com:443]
+```
+
+The address list is logged twice, from two different places in the server. That is normal.
+
+
+Then check a peer:
+
+```bash
+netbird status -d
+```
+
+```
+Relays:
+  [stun:relay-us.example.com:3478] is Available
+  [stun:relay-eu.example.com:3478] is Available
+  [rels://relay-eu.example.com:443] is Available via ws
+```
+
+Every STUN server you configured appears. Relays behave differently: the client dials them in parallel and keeps the first to answer, normally the nearest, and that one becomes its **home relay**. A second `rels://` line is also normal, because a client connects to another peer's home relay when that peer picked a different one.
+
+The suffix names the transport that won the race, and it is `ws` or `quic` depending on which answered first. Both are normal, the winner can differ between two peers on the same deployment, and neither is a sign of a problem. What 443/udp buys you is that the QUIC attempt can win or lose on merit rather than sitting until it times out.
+
+## Step 8: Confirm traffic events survived
+
+**Do not skip this.** It is the check that belongs to Enterprise, and the failure it catches is invisible everywhere else: peers stay connected, the dashboard shows no error, and only the traffic event stream stops.
+
+It applies only to a deployment with a traffic-flow receiver. Without one there are no traffic events to lose, and you are done.
+
+Generate a little traffic between two peers again, `ping` being enough, wait about 90 seconds for the client's reporting interval, then look for rejected tokens on the main server:
+
+```bash
+cd ~/netbird-enterprise
+docker compose logs --since 120s receiver | grep -c 'invalid signature'
+```
+
+On a migrated deployment the service is `flow-receiver`, here and in the next command.
+
+This must be `0`.
+
+If it is not, `relays.secret` and the receiver's `NB_FLOW_AUTH_SECRET` do not match. Either side can be the stale one:
+
+- **`relays.secret` is wrong.** Go back to Step 2, re-read the value from the server configuration, and correct `relays.secret` and `NB_AUTH_SECRET` on every relay host to match it.
+- **The receiver still holds an old value**, typically after a rotation applied with `restart`. Check the receiver's value as shown in [Rotating to a new secret](#rotating-to-a-new-secret). Make sure `.env` holds the same value as `relays.secret`, then recreate the receiver with `docker compose up -d receiver` (`flow-receiver` on a migrated deployment).
+
+While they differ, the receiver log shows:
+
+```
+ERRO server/auth.go:127: invalid token validation: invalid signature
+```
+
+and your peers retry in a log nobody watches:
+
+```
+ERRO flow/client/client.go:287: flow receiver sent no headers
+ERRO flow/client/client.go:143: failed to establish flow stream, retrying: check header: should have headers
+ERRO client/internal/netflow/manager.go:228: failed to send flow event to server: stream not initialized
+```
+
+For a positive signal, count the events the receiver accepted:
+
+```bash
+docker compose logs --since 120s receiver | grep -c 'sending event'
+```
+
+Greater than zero confirms events are arriving. The two checks answer different questions. `0` for `invalid signature` proves the secret is right, which is the part this page can break, but not that events arrive: the receiver can stop accepting them for other reasons. Only a count above zero proves that. The receiver logs these lines at debug level, which is its default (`NB_FLOW_LOG_LEVEL`). If you have raised its log level, this count stays at `0` even when events arrive, so the check is not complete until the events show up on the Traffic Events page in the dashboard.
+
+<Note>
+Check the receiver's log rather than the Traffic Events page in the dashboard. Events pass through the enricher and PostgreSQL before they appear there, so the dashboard lags well behind and cannot tell you whether events are arriving right now.
+</Note>
+
+## Testing failover
+
+Stop the relay a peer is actually using, which is the one on its `rels://` line, otherwise nothing observable changes. Then check that peer again:
+
+```bash
+netbird status -d
+```
+
+**Read the `rels://` line, not the `stun:` lines.** It is the one that shows failover working: the stopped relay drops out of it and the surviving relay carries the traffic.
+
+```
+  [rels://relay-eu.example.com:443] is Available via ws
+```
+
+The `stun:` entries are not a dependable failover signal. Depending on circumstances they either report the stopped server as `Unavailable` with a reason, or sit at `Checking...` for every configured STUN server, including ones that are perfectly healthy, without clearing on their own or after a client restart. Both have been observed. Either way they return to `Available` once the stopped relay is back, so do not read `Checking...` as a second failure.
+
+To prove relayed traffic end to end, force a peer to relay instead of connecting directly:
+
+```bash
+sudo netbird service reconfigure --service-env NB_FORCE_RELAY=true
+```
+
+Test connectivity to another peer, then put it back:
+
+```bash
+sudo netbird service reconfigure --service-env NB_FORCE_RELAY=false
+```
+
+## Rotating to a new secret
+
+If you would rather not reuse the existing secret, generate one and set it **everywhere that value appears**, not only where the relay needs it:
+
+```bash
+openssl rand -base64 32
+```
+
+1. `NB_AUTH_SECRET` in `relay.env` on every relay host.
+2. `relays.secret` in the server configuration on the main server (`config.yaml`, or `config.yaml.enterprise` on a migrated deployment that has it).
+3. `server.authSecret` in the same file.
+4. In `.env` on the main server, under whichever name your deployment uses: `NETBIRD_RELAY_AUTH_SECRET` on a fresh install, `NB_FLOW_AUTH_SECRET` on one migrated from the community edition with traffic flow. That is the value that reaches the traffic-flow receiver. A migrated deployment without traffic flow has no entry here.
+
+All four must end up holding the same value. Relaying needs 1 and 2 to match, and traffic events need 2 and 4 to match. Entry 3 is not used by either, but the product's own migration tooling treats `server.authSecret` as the value the receiver's secret must equal, so leaving it stale stores up a failure for a later upgrade.
+
+Then apply the change. On every relay host:
+
+```bash
+cd ~/netbird-relay
+docker compose up -d
+```
+
+and on the main server, before re-running Step 8:
+
+```bash
+cd ~/netbird-enterprise
+docker compose restart netbird-server
+docker compose up -d receiver
+```
+
+Use `flow-receiver` on a migrated deployment. With no receiver, the first command is all you need.
+
+The main server's two commands differ on purpose. `netbird-server` reads `config.yaml` through a bind mount, so restarting it is enough. The receiver takes its secret from `.env`, and a container's environment is fixed when the container is created, exactly as the relay's `relay.env` is: `docker compose restart receiver` brings back the **old** value and reports nothing wrong. Only `up -d`, which recreates the container, picks up the new one.
+
+Get that second command wrong and the symptom is exactly the one Step 8 is designed to catch, which will send you back to re-check four values that are already correct. If Step 8 still shows `invalid signature` after a rotation, confirm the receiver really took the new value:
+
+```bash
+docker exec netbird-receiver env | grep NB_FLOW_AUTH_SECRET
+```
+
+On a migrated deployment the container is `netbird-flow-receiver`.
+
+Miss the fourth entry, or apply it with `restart`, and you are back to silently losing traffic events.
+
+## Troubleshooting
+
+**A relay shows as `Unavailable` on a peer.** The reason string tells you which problem you have.
+
+```
+[rels://relay-us.example.com:443] is Unavailable, reason: failed to get reader: failed to read frame header: EOF
+```
+
+That one is a secret mismatch. Over QUIC the same rejection reads `reason: closed by server` instead, and you will see it on a peer only once every relay is rejecting: a peer lists only the relays it is using, so one bad relay among several is simply absent from the list rather than shown as failed. The relay host says so outright either way, in `docker compose logs relay`:
+
+```
+ERRO relay/server/relay.go:141: failed to handshake: validate sha-... (203.0.113.10:50907): invalid signature
+```
+
+Make `relays.secret` and every host's `NB_AUTH_SECRET` identical. If the relay logs no connection attempt at all, the problem is reachability instead: confirm the domain resolves, test with `nc -zv relay-us.example.com 443`, and check the certificate is valid.
+
+Other reason strings point away from the secret and towards reachability or the certificate. `relay client not connected` and `connect to relay server: context deadline exceeded` both mean the peer never completed a TLS session with the relay, so check Step 5 again on that host before touching any secret.
+
+`x509: certificate signed by unknown authority` in the reason means the peer does not trust the relay's certificate, which happens with a private CA the device has not been given. See [If you already have TLS certificates](#if-you-already-have-tls-certificates).
+
+When every relay is failing, each relay's entry can carry the errors of all of them, so a reason quoting one host's error may appear against another. The relay host's own log is the reliable record of which host rejected what.
+
+Either way the `stun:` entry for the same host stays `Available`, because STUN is unauthenticated, so it cannot tell you anything here.
+
+**STUN is not working.** Confirm 3478/udp is open and that `NB_ENABLE_STUN=true` is set. Some networks block outbound UDP, so try from a different network before changing the relay.
+
+**Traffic events stopped.** That is the secret mismatch in Step 8, not a relay fault.
+
+## When not to do this
+
+Splitting relays out costs hosts to patch, certificates to renew, and a secret to keep in step across machines. Do it when relayed traffic is loading your server, or when users are far enough away that a nearer relay is a real improvement. Do not do it just to make the deployment look tidier.
+
+If your aim is surviving the loss of the main server rather than spreading relay load, external relays do not get you there: management and signal are still on one host. That is what [Running a Highly Available Self-Hosted Deployment](/selfhosted/maintenance/scaling/high-availability) is for.
+
+## Summary
+
+Read the secret your deployment already has, build each relay host with it, prove every relay answers from outside, then point the server configuration at them and restart `netbird-server` alone. Finally, if your deployment has a traffic-flow receiver, check that it is still accepting flow events, because your peers will look perfectly healthy even when it is not.
