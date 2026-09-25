@@ -66,11 +66,12 @@ If it is `0` and the receiver still logs at its default level (`NB_FLOW_LOG_LEVE
 
 ## Step 2: Read your existing shared secret
 
-**Do not generate a new secret.** Your deployment already has one, and the traffic-flow receiver, if you have one, uses the same value. Read it from the server configuration on the main server, which is `config.yaml.enterprise` on a migrated deployment that has that file:
+**Do not generate a new secret.** Your deployment already has one, and the traffic-flow receiver, if you have one, uses the same value. Read it from the server configuration on the main server. The first line below picks `config.yaml.enterprise` when a migration created it, because that is the file the server reads, and the two files stop matching as soon as the secret is rotated:
 
 ```bash
 cd ~/netbird-enterprise
-grep 'authSecret:' config.yaml
+CONFIG=config.yaml; [ -f config.yaml.enterprise ] && CONFIG=config.yaml.enterprise
+grep 'authSecret:' "$CONFIG"
 ```
 
 Read it from the server configuration and not from `.env`. The server configuration carries this value on every deployment. `.env` does not: a deployment created by `getting-started-enterprise.sh` has it there as `NETBIRD_RELAY_AUTH_SECRET`, one migrated up from the community edition with traffic flow has `NB_FLOW_AUTH_SECRET` instead, and one migrated without traffic flow has neither, because the community installer never wrote the relay secret to `.env` in the first place.
@@ -398,7 +399,12 @@ On a migrated deployment the service is `flow-receiver`, here and in the next co
 
 This must be `0`.
 
-If it is not, `relays.secret` does not match what the receiver expects. Go back to Step 2, re-read the value from the server configuration, and correct `relays.secret` and `NB_AUTH_SECRET` on every relay host to match it. While it is wrong, the receiver log shows:
+If it is not, `relays.secret` and the receiver's `NB_FLOW_AUTH_SECRET` do not match. Either side can be the stale one:
+
+- **`relays.secret` is wrong.** Go back to Step 2, re-read the value from the server configuration, and correct `relays.secret` and `NB_AUTH_SECRET` on every relay host to match it.
+- **The receiver still holds an old value**, typically after a rotation applied with `restart`. Check the receiver's value as shown in [Rotating to a new secret](#rotating-to-a-new-secret). Make sure `.env` holds the same value as `relays.secret`, then recreate the receiver with `docker compose up -d receiver` (`flow-receiver` on a migrated deployment).
+
+While they differ, the receiver log shows:
 
 ```
 ERRO server/auth.go:127: invalid token validation: invalid signature
@@ -418,7 +424,7 @@ For a positive signal, count the events the receiver accepted:
 docker compose logs --since 120s receiver | grep -c 'sending event'
 ```
 
-Greater than zero confirms events are arriving. The receiver logs these lines at debug level, which is its default (`NB_FLOW_LOG_LEVEL`). If you have raised its log level, an empty result is not by itself a failure. The `invalid signature` check is the conclusive one, because it is logged as an error.
+Greater than zero confirms events are arriving. The two checks answer different questions. `0` for `invalid signature` proves the secret is right, which is the part this page can break, but not that events arrive: the receiver can stop accepting them for other reasons. Only a count above zero proves that. The receiver logs these lines at debug level, which is its default (`NB_FLOW_LOG_LEVEL`). If you have raised its log level, this count stays at `0` even when events arrive, so the check is not complete until the events show up on the Traffic Events page in the dashboard.
 
 <Note>
 Check the receiver's log rather than the Traffic Events page in the dashboard. Events pass through the enricher and PostgreSQL before they appear there, so the dashboard lags well behind and cannot tell you whether events are arriving right now.
