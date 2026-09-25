@@ -6,7 +6,7 @@ import {Note, Warning} from "@/components/mdx";
 
 Your NetBird Enterprise server runs management, signal, relay and STUN in one `netbird-server` container. That works until relayed traffic starts competing with the control plane for the same host, or until users in another region relay through a server on the wrong continent. This guide moves the relay and STUN services onto dedicated hosts and points your server at them.
 
-One thing makes Enterprise different, and it is the reason this page exists rather than the [community guide](/selfhosted/maintenance/scaling/set-up-external-relays). Your deployment has a single shared secret doing **two** jobs: authenticating peers to the relay, and authenticating peers to the traffic-flow receiver. That is true however the deployment was built, whether installed fresh or migrated up from the community edition. Generate a new secret while following a guide that only knows about the first job, and your peers keep working perfectly while traffic event logging silently stops. Step 2 is where that is handled.
+One thing makes Enterprise different, and it is the reason this page exists rather than the [community guide](/selfhosted/maintenance/scaling/set-up-external-relays). When traffic flow is enabled, your deployment has a single shared secret doing **two** jobs: authenticating peers to the relay, and authenticating peers to the traffic-flow receiver. That is true however the deployment was built, whether installed fresh or migrated up from the community edition. Generate a new secret while following a guide that only knows about the first job, and your peers keep working perfectly while traffic event logging silently stops. Step 2 is where that is handled.
 
 ## Before you start
 
@@ -28,6 +28,27 @@ On the main server you need shell access to your deployment directory, which thi
 
 This guide uses two relay servers, `relay-us.example.com` and `relay-eu.example.com`, and a main server at `netbird.example.com`. Substitute your own names throughout. One relay works fine; two is the smallest setup that shows the failover behavior.
 
+### Which names your deployment uses
+
+A deployment installed fresh with `getting-started-enterprise.sh` and one migrated up from the community edition with `migrate-to-enterprise.sh` use different names for the same things, and traffic flow is optional in both. On the main server, run:
+
+```bash
+cd ~/netbird-enterprise
+ls config.yaml.enterprise
+docker compose config --services | grep -E '^(receiver|flow-receiver)$'
+```
+
+| | Fresh install | Migrated from the community edition |
+|---|---|---|
+| Server configuration | `config.yaml` | `config.yaml.enterprise` if `ls` lists it, otherwise `config.yaml` |
+| Traffic-flow receiver service | `receiver` | `flow-receiver` |
+| Receiver container | `netbird-receiver` | `netbird-flow-receiver` |
+| Relay secret in `.env` | `NETBIRD_RELAY_AUTH_SECRET` | `NB_FLOW_AUTH_SECRET`, only if traffic flow was enabled |
+
+The commands on this page use the fresh-install names. On a migrated deployment, use the names from the second column instead. The configuration file matters most. `migrate-to-enterprise.sh` writes `config.yaml.enterprise` whenever it moves storage to PostgreSQL or enables traffic flow, and starts the server with that file instead of `config.yaml`. On such a deployment an edit to `config.yaml` has no effect.
+
+If the `grep` prints nothing, your deployment has no traffic-flow receiver. Skip the traffic event check in Step 1, all of Step 8, and the receiver commands in [Rotating to a new secret](#rotating-to-a-new-secret). Everything else on this page applies unchanged.
+
 ## Step 1: Before you change anything
 
 **This is a cutover, not a gradual migration.** The moment you restart the server with the new configuration, the embedded relay stops and every peer that was using it reconnects to the external relays. There is no window where both are serving. So build and test the relay hosts completely, through the end of Step 5, before you touch the main server's configuration in Step 6.
@@ -39,18 +60,20 @@ cd ~/netbird-enterprise
 docker compose logs --since 120s receiver | grep -c 'sending event'
 ```
 
+Use `flow-receiver` on a migrated deployment, and skip this check if your deployment has no receiver ([Which names your deployment uses](#which-names-your-deployment-uses)).
+
 If it is `0` and the receiver still logs at its default level (`NB_FLOW_LOG_LEVEL` unset or `debug`), traffic events are not flowing **yet**, and that has nothing to do with relays. Traffic event logging is disabled by default at the account level even when the installer enabled traffic flow on the server: in the dashboard, go to `Settings > Networks` and turn on `Enable Traffic Events` under the Experimental section. See [Traffic Events Logging](/manage/activity/traffic-events-logging). Either enable it and re-run the check, or accept that Step 8 will have nothing to compare against.
 
 ## Step 2: Read your existing shared secret
 
-**Do not generate a new secret.** Your deployment already has one, and the traffic-flow receiver uses the same value. Read it from `config.yaml` on the main server:
+**Do not generate a new secret.** Your deployment already has one, and the traffic-flow receiver, if you have one, uses the same value. Read it from the server configuration on the main server, which is `config.yaml.enterprise` on a migrated deployment that has that file:
 
 ```bash
 cd ~/netbird-enterprise
 grep 'authSecret:' config.yaml
 ```
 
-Read it from `config.yaml` and not from `.env`. `config.yaml` carries this value on every deployment. `.env` does not: a deployment created by `getting-started-enterprise.sh` has it there as `NETBIRD_RELAY_AUTH_SECRET`, while one migrated up from the community edition has `NB_FLOW_AUTH_SECRET` instead, because the community installer never wrote the relay secret to `.env` in the first place.
+Read it from the server configuration and not from `.env`. The server configuration carries this value on every deployment. `.env` does not: a deployment created by `getting-started-enterprise.sh` has it there as `NETBIRD_RELAY_AUTH_SECRET`, one migrated up from the community edition with traffic flow has `NB_FLOW_AUTH_SECRET` instead, and one migrated without traffic flow has neither, because the community installer never wrote the relay secret to `.env` in the first place.
 
 That value goes in two places later: `NB_AUTH_SECRET` on every relay host in Step 3, and `relays.secret` on the main server in Step 6.
 
@@ -267,6 +290,8 @@ cp config.yaml config.yaml.bak
 nano config.yaml
 ```
 
+On a migrated deployment that has `config.yaml.enterprise`, copy and edit that file instead. It is the one the server reads, and changes made to `config.yaml` never reach it.
+
 The backup matters because a mistake here does not announce itself: the deployment keeps working and only traffic event logging stops.
 
 Add `stuns` and `relays` inside the existing `server:` block, at the same indentation as the keys already there. Anywhere inside that block works; the example below puts them after `authSecret` to keep the relay settings together. Everything else already under `server:` stays exactly as it is, including the `auth`, `reverseProxy`, `store`, `activityStore` and `trafficFlow` sections a `getting-started-enterprise.sh` deployment carries. Setting `relays.addresses` is what turns the embedded relay off, and it turns the embedded STUN server off too, which is why `stuns` is required:
@@ -299,7 +324,10 @@ server:
 ```
 
 <Warning>
-`relays.secret` must be the value you read in Step 2, and it must match `NB_AUTH_SECRET` on every relay host. If it does not match, peers will connect normally and traffic event logging will stop. Step 8 checks for exactly this.
+`relays.secret` must be the value you read in Step 2. It must match `NB_AUTH_SECRET` on every relay host and, if your deployment has a traffic-flow receiver, the receiver's `NB_FLOW_AUTH_SECRET`. The two mismatches fail differently:
+
+- **With a relay:** that relay rejects peers, and its log says `invalid signature` (see [Troubleshooting](#troubleshooting)).
+- **With the receiver:** relaying keeps working, and traffic events stop. Only the receiver's log shows it. Step 8 checks for exactly this.
 </Warning>
 
 Leave `server.authSecret` in place. It is required only when the embedded relay is running, and removing it gains you nothing.
@@ -357,6 +385,8 @@ The suffix names the transport that won the race, and it is `ws` or `quic` depen
 
 **Do not skip this.** It is the check that belongs to Enterprise, and the failure it catches is invisible everywhere else: peers stay connected, the dashboard shows no error, and only the traffic event stream stops.
 
+It applies only to a deployment with a traffic-flow receiver. Without one there are no traffic events to lose, and you are done.
+
 Generate a little traffic between two peers again, `ping` being enough, wait about 90 seconds for the client's reporting interval, then look for rejected tokens on the main server:
 
 ```bash
@@ -364,9 +394,11 @@ cd ~/netbird-enterprise
 docker compose logs --since 120s receiver | grep -c 'invalid signature'
 ```
 
+On a migrated deployment the service is `flow-receiver`, here and in the next command.
+
 This must be `0`.
 
-If it is not, `relays.secret` does not match what the receiver expects. Go back to Step 2, re-read the value from `config.yaml`, and correct `relays.secret` and `NB_AUTH_SECRET` on every relay host to match it. While it is wrong, the receiver log shows:
+If it is not, `relays.secret` does not match what the receiver expects. Go back to Step 2, re-read the value from the server configuration, and correct `relays.secret` and `NB_AUTH_SECRET` on every relay host to match it. While it is wrong, the receiver log shows:
 
 ```
 ERRO server/auth.go:127: invalid token validation: invalid signature
@@ -429,9 +461,9 @@ openssl rand -base64 32
 ```
 
 1. `NB_AUTH_SECRET` in `relay.env` on every relay host.
-2. `relays.secret` in `config.yaml` on the main server.
-3. `server.authSecret` in `config.yaml` on the main server.
-4. In `.env` on the main server, under whichever name your deployment uses: `NETBIRD_RELAY_AUTH_SECRET` on a fresh install, `NB_FLOW_AUTH_SECRET` on one migrated from the community edition. That is the value that reaches the traffic-flow receiver.
+2. `relays.secret` in the server configuration on the main server (`config.yaml`, or `config.yaml.enterprise` on a migrated deployment that has it).
+3. `server.authSecret` in the same file.
+4. In `.env` on the main server, under whichever name your deployment uses: `NETBIRD_RELAY_AUTH_SECRET` on a fresh install, `NB_FLOW_AUTH_SECRET` on one migrated from the community edition with traffic flow. That is the value that reaches the traffic-flow receiver. A migrated deployment without traffic flow has no entry here.
 
 All four must end up holding the same value. Relaying needs 1 and 2 to match, and traffic events need 2 and 4 to match. Entry 3 is not used by either, but the product's own migration tooling treats `server.authSecret` as the value the receiver's secret must equal, so leaving it stale stores up a failure for a later upgrade.
 
@@ -450,6 +482,8 @@ docker compose restart netbird-server
 docker compose up -d receiver
 ```
 
+Use `flow-receiver` on a migrated deployment. With no receiver, the first command is all you need.
+
 The main server's two commands differ on purpose. `netbird-server` reads `config.yaml` through a bind mount, so restarting it is enough. The receiver takes its secret from `.env`, and a container's environment is fixed when the container is created, exactly as the relay's `relay.env` is: `docker compose restart receiver` brings back the **old** value and reports nothing wrong. Only `up -d`, which recreates the container, picks up the new one.
 
 Get that second command wrong and the symptom is exactly the one Step 8 is designed to catch, which will send you back to re-check four values that are already correct. If Step 8 still shows `invalid signature` after a rotation, confirm the receiver really took the new value:
@@ -457,6 +491,8 @@ Get that second command wrong and the symptom is exactly the one Step 8 is desig
 ```bash
 docker exec netbird-receiver env | grep NB_FLOW_AUTH_SECRET
 ```
+
+On a migrated deployment the container is `netbird-flow-receiver`.
 
 Miss the fourth entry, or apply it with `restart`, and you are back to silently losing traffic events.
 
@@ -496,4 +532,4 @@ If your aim is surviving the loss of the main server rather than spreading relay
 
 ## Summary
 
-Read the secret your deployment already has, build each relay host with it, prove every relay answers from outside, then point `config.yaml` at them and restart `netbird-server` alone. Finally check that the receiver is still accepting flow events, because your peers will look perfectly healthy even when it is not.
+Read the secret your deployment already has, build each relay host with it, prove every relay answers from outside, then point the server configuration at them and restart `netbird-server` alone. Finally, if your deployment has a traffic-flow receiver, check that it is still accepting flow events, because your peers will look perfectly healthy even when it is not.
