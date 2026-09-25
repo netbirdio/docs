@@ -53,7 +53,7 @@ Have these ready before you change anything on node 1:
 2. **Redis and a three-node NATS cluster**, as described in [Steps 2 and 3](/selfhosted/maintenance/scaling/high-availability#step-2-set-up-a-redis-ha-endpoint) of the High Availability guide.
 3. **A load balancer** that supports HTTP/2 and gRPC, with a TLS certificate for `netbird.example.com` that it can serve before DNS points at it: upload one, or use ACME with DNS validation. ACME with HTTP validation fails until Step 4 moves DNS, and by then Traefik is gone.
 4. **A second host with Docker** for node 2.
-5. **A maintenance window for Steps 4 and 5**, if devices are already enrolled. The dashboard and Management are unreachable from the moment Step 4 stops the installer's stack until DNS points at the load balancer. A day ahead, lower the TTL of the `netbird.example.com` DNS record.
+5. **A maintenance window for Steps 4 and 5**, if devices are already enrolled. The dashboard is unreachable from the moment Step 4 stops the installer's stack until DNS points at the load balancer. Devices stay disconnected from Management for up to about 10 minutes longer, until they reconnect by themselves or Step 5 reconnects them. A day ahead, lower the TTL of the `netbird.example.com` DNS record.
 
 You also deploy relay instances in Step 3, and Signal instances with their own load balancer in Step 5. Build both ahead of the maintenance window: they carry no traffic until `config.yaml` points at them.
 
@@ -176,7 +176,7 @@ docker compose logs --since 2m netbird-server | grep -E 'redis cache|Connected t
 
 You should see `using redis cache at redis://redis.example.com:6379`, `Connected to NATS cluster` and `license validated`.
 
-Protect Redis and NATS with authentication, and with TLS if their traffic crosses a network you do not trust. Their credentials go in these two URLs, and the server writes both URLs to its log at startup, credentials included; the command above prints them. Keep the server's logs as private as `config.yaml`.
+Protect Redis and NATS with authentication, and with TLS if their traffic crosses a network you do not trust. Their credentials go in these two URLs, for NATS in the form `nats://user:password@nats-1.example.com:4222`, as in the High Availability guide's [NATS example](/selfhosted/maintenance/scaling/high-availability#example-a-self-hosted-cluster-with-docker-compose), and the server writes both URLs to its log at startup, credentials included; the command above prints them. Keep the server's logs as private as `config.yaml`.
 
 ## Step 3: Move Relay to separate instances
 
@@ -230,6 +230,8 @@ From here on, TLS and routing move from the installer's Traefik to your load bal
    | `/management.ManagementService/*` and `/management.ProxyService/*` | every node, port 80 | HTTP/2 without TLS (h2c) |
    | `/api/*`, `/oauth2/*` and `/ws-proxy/*` | every node, port 80 | HTTP, with WebSocket upgrades |
    | everything else | every node, port 8080 (the dashboard) | HTTP |
+
+   For now, node 1 is the only node in each pool. Node 2 joins them in Step 6.
 
    Give each row a backend pool that skips a node that stops answering. Make sure the specific paths take priority over the catch-all row: depending on your load balancer, that means longest path first or rule order.
 
@@ -317,7 +319,15 @@ From here on, TLS and routing move from the installer's Traefik to your load bal
 
 ## Step 5: Move Signal to the Signal pool
 
-Deploy the Signal pool and its load balancer at `signal.example.com` as described in [Step 6 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-6-deploy-the-signal-pool). Give the Signal instances the same NATS cluster as the nodes. The Signal load balancer needs no path rules: it sends all traffic to the Signal instances. Skip that step's last part, on pointing Management at the load balancer: item 1 below does it. Confirm `https://signal.example.com` answers with a valid certificate before you continue.
+If you have not built them yet, deploy the Signal pool and its load balancer at `signal.example.com` as described in [Step 6 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-6-deploy-the-signal-pool). Give the Signal instances the same NATS cluster as the nodes. The Signal load balancer needs no path rules: it sends all traffic to the Signal instances. Health-check the Signal instances on their TCP port, and give this load balancer a generous idle timeout too, as in [Step 4 of the High Availability guide](/selfhosted/maintenance/scaling/high-availability#step-4-configure-the-load-balancers). Skip that step's last part, on pointing Management at the load balancer: item 1 below does it.
+
+Before you continue, check that the Signal load balancer answers with a valid certificate:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://signal.example.com
+```
+
+It prints `405`, which is the expected answer: Signal accepts only gRPC. It prints `000` if the certificate is not valid.
 
 Peers learn the Signal URL when they log in, so a device that is connected during the change keeps the old URL and loses Signal, even if `netbird status` still shows `Signal: Connected`. It does not recover by itself: it stays connected to Management, but it cannot form new connections, even with peers that already use the new Signal. Devices that are offline during the change pick up the new URL when they next start.
 
@@ -330,7 +340,7 @@ Peers learn the Signal URL when they log in, so a device that is connected durin
 
    Setting `signalUri` turns off the server's built-in Signal.
 2. Restart the server: `docker compose restart netbird-server`.
-3. Once the DNS change from Step 4 has spread, run `netbird down` and then `netbird up` on every device that was connected during Steps 4 and 5. Include devices that are always on, such as routing peers, exit nodes and servers. `netbird status -d` then shows `Management: Connected to https://netbird.example.com:443` and `Signal: Connected to https://signal.example.com:443`.
+3. Once the DNS change from Step 4 has spread, run `netbird down` and then `netbird up` on every device that was connected during Steps 4 and 5. Include devices that are always on, such as routing peers, exit nodes and servers. Work through them back to back: a device that has run these commands cannot open connections to a device that has not yet. `netbird status -d` then shows `Management: Connected to https://netbird.example.com:443` and `Signal: Connected to https://signal.example.com:443`.
 4. Remove the `/signalexchange.SignalExchange/*` route from the `netbird.example.com` load balancer. It carried Signal only until this step.
 
 ## Step 6: Add node 2
@@ -380,9 +390,40 @@ To add more nodes later, repeat this step. Every node must have an identical `co
 
 1. Log in to the dashboard at `https://netbird.example.com` and confirm your peers are connected.
 2. Make a change that no one depends on, and confirm peers pick it up. For example, rename a test peer on the dashboard's **Peers** page, and check that another peer that can reach it lists the new name in `netbird status -d` within seconds. Then rename it back.
-3. Stop the server on node 1 (`docker compose stop netbird-server dashboard`). The dashboard keeps working, and peers connected through node 1 reconnect through node 2 within seconds. Then start it again (`docker compose start netbird-server dashboard`), and confirm the load balancer's health checks report node 1 as healthy again.
+3. Stop the server on node 2 (`docker compose stop netbird-server dashboard`). Step 6 ended by restarting node 1, so your peers are connected through node 2. The dashboard keeps working, and the peers reconnect through node 1 within seconds. Then start node 2 again (`docker compose start netbird-server dashboard`), and confirm the load balancer's health checks report it as healthy again.
 
 For more failure tests and day-to-day operations, see the [High Availability guide](/selfhosted/maintenance/scaling/high-availability).
+
+## Step 8: Remove the installer's leftovers
+
+Node 1 still holds copies of your data and secrets that nothing uses any more. Remove them once Step 7 passes.
+
+1. On node 1, remove the installer's PostgreSQL and Traefik volumes. List them first, and check that the list shows exactly two volumes:
+
+   ```bash
+   docker volume ls -q | grep -E '_netbird_(postgres|traefik_letsencrypt)$'
+   docker volume ls -q | grep -E '_netbird_(postgres|traefik_letsencrypt)$' | xargs docker volume rm
+   ```
+
+2. On node 1, delete the backups you took before Step 1 and the renamed login data file. They are out of date, and you cannot go back to them, as [Before you begin](#before-you-begin) explains:
+
+   ```bash
+   rm config.yaml.single-node docker-compose.yml.single-node .env.single-node
+   docker compose exec netbird-server rm /var/lib/netbird/idp.db.migrated
+   ```
+
+   If you have not yet moved `netbird.sql` somewhere safe or deleted it, do it now.
+
+3. On every node, cut `.env` down to the five values the Compose file reads. The rest configured the installer's PostgreSQL, Traefik and built-in relay, and some of them are secrets:
+
+   ```bash
+   umask 077
+   grep -E '^(NETBIRD_DOMAIN|NETBIRD_SERVER_TAG|NETBIRD_DASHBOARD_TAG|NETBIRD_LICENSE_KEY|NETBIRD_AUTH_SUPPORTED_SCOPES)=' .env > .env.new
+   mv .env.new .env
+   docker compose up -d
+   ```
+
+   `docker compose up -d` reports both containers as `Running`: the Compose file resolves to the same configuration as before, so nothing restarts.
 
 ## Troubleshooting
 
@@ -411,3 +452,4 @@ The peer is still using the Signal URL it had before Step 5. The Signal line rea
 - The installer's host becomes node 1: its data moves to the shared PostgreSQL, its login data follows with `migrate-store`, and its built-in Relay and Signal give way to shared instances.
 - Your load balancer replaces Traefik, and the Signal pool gets its own load balancer at `signal.example.com`.
 - Every further node is three copied files, the same firewall rules, and a place in the load balancer's pools.
+- Once it all works, the installer's volumes, backups and unused `.env` values go.
