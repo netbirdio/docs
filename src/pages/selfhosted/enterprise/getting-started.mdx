@@ -39,6 +39,7 @@ curl -fsSL https://pkgs.netbird.io/getting-started-enterprise.sh | bash
 The script prompts for:
 
 - Whether to enable traffic flow — required for traffic event logging and streaming.
+- Whether to enable the [NetBird Proxy](/manage/reverse-proxy), and optionally [CrowdSec](/selfhosted/maintenance/crowdsec).
 - The public NetBird domain.
 - A single license key (used for all enabled products and features).
 
@@ -46,6 +47,10 @@ It then generates the deployment files, pulls the required images, starts Postgr
 
 <Note>
 Enabling traffic flow adds NATS, a flow receiver, and a flow enricher to the stack. Traffic flow is required for traffic event logging and streaming.
+</Note>
+
+<Note>
+The NetBird Proxy needs a wildcard DNS record for your service domains (for example `*.netbird.example.com`) pointing at the host.
 </Note>
 
 ### 1.3 Generated files
@@ -57,8 +62,9 @@ The script writes the generated files into the current directory:
 | `.env` | Runtime configuration, license key, and generated secrets | `600` |
 | `docker-compose.yml` | Compose stack for the NetBird server and optional traffic-flow services | `644` |
 | `config.yaml` | NetBird server configuration (YAML) | `600` |
+| `traefik/` | Traefik dynamic configuration, including the proxy's `proxy.yaml` | `755` |
 
-Reverse proxy and automatic HTTPS are configured through Traefik labels and command flags inside `docker-compose.yml`, so there is no separate proxy configuration file.
+Reverse proxy and automatic HTTPS are configured through Traefik labels and command flags inside `docker-compose.yml`.
 
 The script aborts if generated files already exist in the directory. This avoids overwriting secrets or replacing an existing deployment by accident.
 
@@ -93,6 +99,24 @@ Enabling traffic flow adds:
 | `nats` | `nats:2` | JetStream for traffic events |
 | `receiver` | `ghcr.io/netbirdio/flow-receiver-cloud:latest` | Traffic flow ingest |
 | `enricher` | `ghcr.io/netbirdio/flow-enricher-cloud:latest` | Traffic flow enrichment |
+
+Enabling the NetBird Proxy adds:
+
+| Service | Image | Notes |
+| --- | --- | --- |
+| `proxy` | `ghcr.io/netbirdio/reverse-proxy:latest` | NetBird Proxy |
+| `crowdsec` | `crowdsecurity/crowdsec:v1.7.7` | Only when CrowdSec is enabled |
+
+### 1.7 Enable features on an existing installation
+
+Run the script with a flag from the installation directory:
+
+```bash
+curl -fsSL https://pkgs.netbird.io/getting-started-enterprise.sh | bash -s -- --enable-traffic-events
+curl -fsSL https://pkgs.netbird.io/getting-started-enterprise.sh | bash -s -- --enable-proxy
+```
+
+The script shows the changes to `docker-compose.yml` and asks before applying them. If a step fails, it restores the previous files. After `--enable-traffic-events`, turn on traffic events in the dashboard settings.
 
 ## 2. Connect Identity Providers
 
@@ -134,6 +158,8 @@ We recommend using SCIM provisioning where possible. In the following setup guid
 ## 3. Migrate an Existing Community Combined Deployment
 
 Use `migrate-to-enterprise.sh` to convert an existing community combined-server deployment to the enterprise images. The same script also migrates SQLite data to Postgres and enables traffic flow, so no manual Compose or `config.yaml` edits are required for the supported migration path.
+
+For installations created with `getting-started-enterprise.sh`, use [1.7 Enable features on an existing installation](#1-7-enable-features-on-an-existing-installation) instead.
 
 The script targets an existing combined-server deployment that has a `docker-compose.yml`, a bind-mounted `config.yaml`, and a persistent `/var/lib/netbird` data volume.
 
@@ -268,7 +294,7 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
 - **Resolution:** Sign in with the existing owner credentials if available. To start over from scratch:
   ```bash
   docker compose down --volumes   # removes containers and the postgres/embedded-IdP data
-  rm -f .env docker-compose.yml config.yaml
+  rm -rf .env docker-compose.yml config.yaml traefik
   curl -fsSL https://pkgs.netbird.io/getting-started-enterprise.sh | bash
   ```
 - **Verification:** `curl -s https://<your-domain>/api/instance | jq .` returns `setupRequired: true`; the dashboard now shows the owner-setup flow on first visit.
@@ -316,6 +342,8 @@ tls:
 If your Traefik already has a file provider, add this `tls` block to its existing dynamic configuration and skip the **Enable the file provider** edit below, because `providers.file.directory` and `providers.file.filename` are mutually exclusive.
 
 ### Update `docker-compose.yml`
+
+Installations created by the current script already have the file provider and the `./traefik` mount, so only add the certificate mount and remove ACME.
 
 **Enable the file provider.** Add this to the `traefik` service's `command:` list:
 
@@ -372,4 +400,5 @@ echo | openssl s_client -connect <your-domain>:443 -servername <your-domain> 2>/
 - **If the certificate is signed by a private CA, every peer must trust the issuing CA.** Install the CA bundle in each peer's system trust store. A peer that does not trust it fails to connect at all, logging `x509: certificate signed by unknown authority`.
 - **Renewals.** Replace both files at the same paths, then `touch traefik/dynamic.yaml`. Traefik watches the dynamic configuration, not the certificates it references, so replacing them alone has no effect. Touching it reloads them with no container restart.
 - You can leave the `netbird_traefik_letsencrypt` volume in place. With no resolver configured, the stored certificate is inert.
+- `--enable-proxy` and `--enable-traffic-events` keep this setup.
 - Dropping the `80:80` mapping does not affect certificates: this deployment validates over TLS-ALPN-01 on port 443 and never uses port 80 for ACME. You do lose the HTTP→HTTPS redirect.
