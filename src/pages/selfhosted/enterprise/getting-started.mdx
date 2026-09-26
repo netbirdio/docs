@@ -370,6 +370,25 @@ echo | openssl s_client -connect <your-domain>:443 -servername <your-domain> 2>/
 
 - The certificate must cover `NETBIRD_DOMAIN` from `.env`. A wildcard like `*.example.com` works for `netbird.example.com`.
 - **If the certificate is signed by a private CA, every peer must trust the issuing CA.** Install the CA bundle in each peer's system trust store. A peer that does not trust it fails to connect at all, logging `x509: certificate signed by unknown authority`.
+
+  The NetBird Proxy container is a peer too. Without the CA it still registers as online, but it cannot connect to the Signal service, so requests to its services fail.
+
+  Give the proxy a CA bundle that holds the host's public roots and your CA. Add it in `docker-compose.override.yml`, not `docker-compose.yml`: running `getting-started-enterprise.sh --enable-proxy` or `--enable-traffic-events` regenerates `docker-compose.yml`, so a hand edit there does not survive. On Debian and Ubuntu hosts:
+
+  ```bash
+  cat /etc/ssl/certs/ca-certificates.crt /path/to/your-ca.pem | sudo tee /etc/netbird/certs/proxy-ca-bundle.pem > /dev/null
+  ```
+
+  ```yaml
+  services:
+    proxy:
+      environment:
+        - SSL_CERT_FILE=/etc/ssl/netbird/ca-bundle.pem
+      volumes:
+        - /etc/netbird/certs/proxy-ca-bundle.pem:/etc/ssl/netbird/ca-bundle.pem:ro
+  ```
+
+  Then run `docker compose up -d proxy`.
 - **Renewals.** Replace both files at the same paths, then `touch traefik/dynamic.yaml`. Traefik watches the dynamic configuration, not the certificates it references, so replacing them alone has no effect. Touching it reloads them with no container restart.
 - You can leave the `netbird_traefik_letsencrypt` volume in place. With no resolver configured, the stored certificate is inert.
 - Dropping the `80:80` mapping does not affect certificates: this deployment validates over TLS-ALPN-01 on port 443 and never uses port 80 for ACME. You do lose the HTTP→HTTPS redirect.
