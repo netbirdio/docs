@@ -57,6 +57,8 @@ A highly available deployment has three service pools. They have different conne
 - **Signal pool:** Enterprise Signal replicas serve the Signal gRPC API. Peers connect to one Signal instance through the load balancer. The NATS cluster reconciles cross-instance peer signaling, so any Signal instance can deliver a message to any peer regardless of its connected instance. This makes Signal active-active in the Enterprise build. See [How active-active Signal works](#how-active-active-signal-works).
 - **Relay pool:** Relay instances carry traffic for peers that cannot reach each other directly. Unlike Management and Signal, Relay does not go behind a load balancer. Relay instances share no state, so two peers can be relayed to each other only when each can reach the other's instance by that instance's own address. Every instance therefore has its own URL, and a peer that loses its relay moves to another instance by itself. See [Step 5](#step-5-deploy-the-relay-pool).
 
+If you use traffic events, two more services run alongside the Management pool: a flow receiver and a flow enricher. See [Deploy the flow receiver and enricher](#deploy-the-flow-receiver-and-enricher).
+
 The pools depend on the following shared infrastructure:
 
 - **NATS cluster:** Routes cross-instance Signal messages, distributes dynamic configuration (log level and rate limits), and carries the traffic-flow event stream. Quorum is mandatory. Loss of quorum stalls cross-instance signaling.
@@ -395,6 +397,8 @@ nats --server nats://nats-1.example.com:4222 \
   --defaults
 ```
 
+The flow receiver publishes to `netbird.flow.events` by default, a subject this stream does not match. Step 7 sets it to one under `traffic-events.`; see [Deploy the flow receiver and enricher](#deploy-the-flow-receiver-and-enricher).
+
 If your NATS platform manages streams declaratively, apply the same settings through that platform instead. If the stream already exists with one replica, update it to three replicas:
 
 ```bash
@@ -662,12 +666,26 @@ The full Management `config.yaml` is assembled in [Step 7](#step-7-configure-and
 
 Now configure the Management replicas to point at everything you've set up: Postgres, Redis, NATS, the Relay instances, and the Signal LB URL. Every replica runs the Enterprise combined server image, `ghcr.io/netbirdio/netbird-server-cloud`, which the Enterprise installer also deploys. Distribute the same `config.yaml` to every replica.
 
+Keep the `auth:` block from your existing deployment's `config.yaml`. Without it the server exits at startup with `failed to create embedded IDP service: issuer is required`.
+
 `server.signalUri` takes **one URL**, the Signal load balancer's, which distributes traffic across the Signal instances. `server.relays.addresses` takes every Relay instance's URL with option 1, or only the geo-DNS name with option 2. See [Step 5](#step-5-deploy-the-relay-pool).
 
 ```yaml
 server:
   exposedAddress: "https://netbird.example.com:443"
   dataDir: "/var/lib/netbird/"
+
+  # Embedded identity provider: keep the block from your existing config.yaml
+  auth:
+    issuer: "https://netbird.example.com/oauth2"
+    localAuthDisabled: false
+    signKeyRefreshEnabled: false
+    sessionCookieEncryptionKey: "<preserved from existing deployment; identical on every replica>"
+    dashboardRedirectURIs:
+      - "https://netbird.example.com/nb-auth"
+      - "https://netbird.example.com/nb-silent-auth"
+    cliRedirectURIs:
+      - "http://localhost:53000/"
 
   # External STUN: one entry per Relay instance, see Step 5
   stuns:
@@ -735,6 +753,68 @@ Bring up replicas one at a time and register each in the Management LB once heal
 4. **Register replica 1** in the Management LB. Confirm the dashboard is reachable via `https://netbird.example.com/`.
 5. **Start replica 2**, verify health, register in the LB.
 6. **Repeat for any additional replicas.**
+
+### Deploy the flow receiver and enricher
+
+The `trafficFlow` block above tells peers to send their traffic events to `https://netbird.example.com:443`. The Management server does not receive them. Two Enterprise services do:
+
+- The **flow receiver** (`ghcr.io/netbirdio/flow-receiver-cloud`) accepts the events from peers over gRPC and publishes them to the `traffic-events` stream in NATS.
+- The **flow enricher** (`ghcr.io/netbirdio/flow-enricher-cloud`) reads the stream and writes the events to PostgreSQL, where the dashboard reads them.
+
+Without them, peers keep connecting normally, but no traffic events ever appear and the client log repeats `flow receiver sent no headers`.
+
+Run one receiver and one enricher next to each Management replica. If one host fails, peers send their events through the receiver on another host, and the enrichers share the stream without storing an event twice.
+
+```yaml
+services:
+  receiver:
+    image: ghcr.io/netbirdio/flow-receiver-cloud:latest
+    restart: unless-stopped
+    ports:
+      - "8084:8084"
+    environment:
+      - NB_LICENSE_KEY=<your enterprise license key>
+      - NB_FLOW_LISTEN_PORT=8084
+      - NB_FLOW_ADAPTER_TYPE=nats
+      - NB_FLOW_NATS_ENDPOINTS=nats://netbird:<client password>@nats-1.example.com:4222,nats://netbird:<client password>@nats-2.example.com:4222,nats://netbird:<client password>@nats-3.example.com:4222
+      - NB_FLOW_NATS_STREAM=traffic-events
+      - NB_FLOW_NATS_SUBJECT=traffic-events.flow
+      - NB_FLOW_AUTH_SECRET=<server.relays.secret from config.yaml>
+
+  enricher:
+    image: ghcr.io/netbirdio/flow-enricher-cloud:latest
+    restart: unless-stopped
+    volumes:
+      - netbird_enricher:/var/lib/netbird
+    environment:
+      - NB_LICENSE_KEY=<your enterprise license key>
+      - NB_DATADIR=/var/lib/netbird
+      - NB_MANAGEMENT_STORE_ENGINE=postgres
+      - NB_MANAGEMENT_POSTGRES_DSN=host=pg.example.com user=netbird password=*** dbname=netbird port=5432 sslmode=require
+      - NETBIRD_STORE_ENGINE_POSTGRES_DSN=host=pg.example.com user=netbird password=*** dbname=netbird port=5432 sslmode=require
+      - NB_TRAFFIC_EVENT_STORE_ENGINE=postgres
+      - NB_TRAFFIC_EVENT_POSTGRES_DSN=host=pg.example.com user=netbird password=*** dbname=netbird port=5432 sslmode=require
+      - NB_MANAGEMENT_STORE_KEY=<server.store.encryptionKey from config.yaml>
+      - NB_FLOW_ADAPTER_TYPE=nats
+      - NB_FLOW_NATS_ENDPOINTS=nats://netbird:<client password>@nats-1.example.com:4222,nats://netbird:<client password>@nats-2.example.com:4222,nats://netbird:<client password>@nats-3.example.com:4222
+      - NB_FLOW_NATS_STREAM=traffic-events
+      - NB_METRICS_PORT=9091
+      - NB_PERSISTENCE_RETENTION_PERIOD=168h
+
+volumes:
+  netbird_enricher:
+```
+
+Two values must match what you configured earlier. Each one fails silently when it does not:
+
+| Setting | Must be | If it is not |
+|---|---|---|
+| `NB_FLOW_NATS_SUBJECT` | A subject under `traffic-events.`, the stream's subjects from [Step 3](#traffic-flow-stream) | The default, `netbird.flow.events`, matches no stream. Every publish fails and the receiver logs `failed to publish message to nats: nats: no response from stream`. |
+| `NB_FLOW_AUTH_SECRET` | The same value as `server.relays.secret` | Management signs the peers' flow tokens with the relay secret. The receiver rejects every peer with `invalid token validation: invalid signature`. |
+
+Then route the events to the receivers. On the Management load balancer, send the path prefix `/flow.FlowService/` on `netbird.example.com` to port 8084 on every receiver, over HTTP/2 like the other gRPC paths. Without that route, the events never reach a receiver.
+
+To verify, generate traffic between two peers in a group with traffic events enabled. `nats stream info traffic-events` shows the message count rising, and `GET /api/events/network-traffic` returns the events.
 
 ## Step 8: Verify HA end to end
 
