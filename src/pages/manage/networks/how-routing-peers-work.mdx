@@ -98,19 +98,45 @@ The routing peer must have direct network reachability to the resources it serve
 
 ## High availability
 
-Multiple routing peers can serve the same network or route. Behavior depends on the **metric** you assign each routing peer in the dashboard. There are no tunable thresholds — the metric is the only high availability control.
+Multiple routing peers can serve the same network or route. Each peer that uses the network (a user's laptop, for example) picks one of those routing peers and sends all of that network's traffic through it until something makes it switch. The **metric** you assign each routing peer in the dashboard is the main control. There are no tunable thresholds.
+
+### How a peer picks a routing peer
+
+A peer compares the routing peers it is connected to, in this order:
+
+1. **Metric.** The lowest metric wins, whatever the connection type or latency.
+2. **Connection type.** Among equal metrics, a direct (peer-to-peer) connection beats a relayed one.
+3. **Latency.** Among equal metrics and the same connection type, the lowest latency wins. To prevent flapping, a peer only moves to a routing peer whose latency is at least 10 ms lower than its current one.
+
+Latency is measured once, when the connection to a routing peer is set up, and is not re-measured while that connection stays up.
+
+### What makes a peer switch
+
+A peer repeats this comparison whenever a routing peer's connection state changes or the network's configuration is updated. In practice it switches when:
+
+- **Its routing peer goes offline.** The peer moves to the next routing peer in the order above, normally within seconds.
+- **A routing peer with a lower metric comes back online.** The peer moves back as soon as that routing peer reconnects, even while its connection is still relayed.
+- **Its routing peer's connection falls back from direct to relayed.** If another routing peer with the same metric still has a direct connection, the peer moves to it, although nothing went offline. With different metrics this does not happen, because metric outranks connection type.
+
+### What a switch does to open connections
+
+With masquerade on (the default), every switch resets established TCP connections through the network, whatever caused it: a failover, a failback, or a fallback to relayed. The new routing peer translates the traffic to a different source address, so applications such as SSH must reconnect. Expect the connection to stall for several seconds before the reset, while the peer notices the change. With masquerade off, connections are not translated and behave differently: see [High availability with masquerade off](/manage/networks/masquerade#high-availability-with-masquerade-off).
+
+If users report dropped connections while no routing peer went offline, check whether the routing peers share a metric and whether their connections fall back to relayed. [Troubleshooting relayed connections](/help/troubleshooting-relayed-connections) covers why a connection is relayed.
 
 ### Primary / failover (different metrics)
 
-The lower-metric peer carries all traffic. The higher-metric peer is held in reserve and only takes over when the primary becomes unreachable. Failover is automatic: clients start sending traffic through the standby once the primary is seen as unreachable, normally within seconds. When the primary comes back online, clients switch back to it. With masquerade on, the default, established TCP connections through the previous peer reset and applications must reconnect, because the standby translates them to a different source address. With masquerade off they are not translated, and behave differently: see [High availability with masquerade off](/manage/networks/masquerade#high-availability-with-masquerade-off).
+Use different metrics when you want every peer on one known routing peer, with the others in reserve. Peers stay on the primary even when its connection falls back to relayed, but they fail back to it as soon as it returns, which resets connections a second time with masquerade on. To give routing peers different metrics, add them to the Network individually; routing peers added as a group share one metric.
 
-**Example.** Routing Peer A has a lower metric than Routing Peer B. When Peer A goes down, all traffic fails over to Peer B. When Peer A comes back online, all traffic switches back to Peer A.
+**Example.** Routing Peer A has a lower metric than Routing Peer B. Traffic uses Peer A, including while its connection is relayed. When Peer A goes down, traffic fails over to Peer B, and moves back as soon as Peer A reconnects.
 
-### Latency switching (equal metrics)
+### Nearest routing peer (equal metrics)
 
-When two routing peers share the same metric, each client picks the one with lower latency. A switch only happens when the latency difference exceeds **20 ms**, which prevents flapping between peers that are roughly equivalent.
+Use equal metrics when routing peers are spread across regions and you want each peer to use the closest one: for example, an EU-based and a US-based routing peer serving the same network, with users on both continents. Each peer picks the lowest-latency routing peer when it connects, though a direct connection still beats a relayed one whatever the latency. It does not move to another routing peer later just because latency changes, and routing peers within 10 ms of each other are effectively tied. The trade-off: a fallback to relayed can move peers to another routing peer and reset their connections.
 
-Useful when routing peers are geographically distributed and you want each client to land on the closest one automatically — for example, an EU-based peer and a US-based peer serving the same network, with users on both continents.
+### Finding switches in the client log
+
+The client logs each switch at the default log level as `New chosen route is …`, followed by the chosen routing peer's WireGuard public key and its score. The comparison behind the decision, including the score of the routing peer it kept, is logged only at the debug level.
 
 ### Failure domains
 
