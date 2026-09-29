@@ -141,7 +141,7 @@ Switching to the **Run the Proxy** tab automatically generates a one-time, accou
 
 ```shell
 docker run -d \
- -v /var/lib/certs:/certs \
+ -v proxy_certs:/certs \
  -e NB_PROXY_CERTIFICATE_DIRECTORY=/certs \
  -e NB_PROXY_ALLOW_INSECURE=true \
  -e NB_PROXY_MANAGEMENT_ADDRESS=https://api.netbird.io \
@@ -149,6 +149,8 @@ docker run -d \
  -e NB_PROXY_DOMAIN=proxy.company.com \
  -e NB_PROXY_LOG_LEVEL=info \
  -e NB_PROXY_TOKEN=nbx_... \
+ -e NB_PROXY_PRIVATE=true \
+ -e NB_PROXY_ADDRESS=:443 \
  -p 80:80 -p 443:443 \
  netbirdio/reverse-proxy:latest
 ```
@@ -165,6 +167,10 @@ The wizard substitutes `NB_PROXY_MANAGEMENT_ADDRESS` based on the dashboard's co
 
 <Note>
     The `-p 80:80` mapping is only needed if you switch to the `http-01` ACME challenge (see [TLS configuration](#tls-configuration)). With the default `tls-alpn-01` challenge you can drop it and publish only `-p 443:443`.
+</Note>
+
+<Note>
+    Keep `NB_PROXY_ADDRESS=:443`. The `netbirdio/reverse-proxy` image listens on port `8443` by default, so without this variable nothing answers on the published port `443`. The certificates go in a named volume because the proxy runs as an unprivileged user (uid `1000`). If you bind-mount a host directory instead, make it writable by that user first (`sudo chown 1000:1000 /var/lib/certs`); otherwise the proxy cannot write to it and logs `permission denied`.
 </Note>
 
 Run the command on your server. The container will:
@@ -200,6 +206,52 @@ Once the cluster is connected, your BYOP domain shows up in the service creation
 3. Configure targets, authentication, and access restrictions as you would for any other reverse proxy service. See [Reverse Proxy overview](/manage/reverse-proxy) for service mode, target, and authentication details.
 
 Traffic to `subdomain.proxy.company.com` is now received by your BYOP proxy, terminated locally with a Let's Encrypt certificate, and forwarded over WireGuard to the target peer or network resource.
+
+## Expose TCP and UDP services
+
+HTTP services, and TLS services on port `443`, share the proxy's main port, so the command above is all they need. Every other listen port is different. When you create a TCP, UDP or TLS service on a port other than `443`, the proxy opens a listener on that port inside its container, and clients cannot reach it until Docker publishes the port: TCP connections to it are refused.
+
+For every such listen port:
+
+1. Allow the port through the firewall or security group in front of the server.
+2. Publish it on the container: `-p 5432:5432` for TCP, `-p 5353:5353/udp` for UDP.
+
+Docker fixes a container's published ports when it creates the container, so publishing another port means recreating it (`docker rm -f` and `docker run` again, or `docker compose up -d` after editing `ports:`). A recreate briefly interrupts every service on the proxy, not only the new one. Publishing ports this way is the default, and it keeps Docker as a second filter in front of the proxy. If you add L4 services often, there are two ways to avoid a recreate for each one.
+
+**Publish a range up front.** For example, add `-p 20000-20099:20000-20099 -p 20000-20099:20000-20099/udp` and choose listen ports inside that range. Ranges cost memory: with Docker's default userland proxy, Docker starts helper processes for every published port and protocol, and a 100-port range for TCP and UDP uses about 500 MB. Keep the range as small as your plans allow, and in the firewall still open only the ports you use.
+
+**Run the proxy on the host network.** This suits a server dedicated to the proxy, because it needs a host-wide setting (below) and leaves the firewall as the only filter. The proxy then binds each listen port on the server itself, so a new TCP or UDP service is reachable as soon as you create it, with no change to the container and no interruption to other services. The firewall becomes the only thing that decides which ports are reachable, so keep it closed by default and open each listen port as you add its service.
+
+The image runs as an unprivileged user, and on the host network an unprivileged process cannot bind ports below `1024`. `NB_PROXY_ADDRESS=:443` then fails with `bind: permission denied`, and `--cap-add NET_BIND_SERVICE` does not change that. Before you start the proxy, lower the host's unprivileged port floor to the lowest port you need:
+
+```shell
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=443
+echo 'net.ipv4.ip_unprivileged_port_start=443' | sudo tee /etc/sysctl.d/90-netbird-proxy.conf
+```
+
+This setting applies to every process on the server, so give the proxy a host of its own. Then start it with the wizard's command, replacing the `-p` flags with `--network host`:
+
+```shell
+docker run -d \
+ --network host \
+ -v proxy_certs:/certs \
+ -e NB_PROXY_CERTIFICATE_DIRECTORY=/certs \
+ -e NB_PROXY_ALLOW_INSECURE=true \
+ -e NB_PROXY_MANAGEMENT_ADDRESS=https://api.netbird.io \
+ -e NB_PROXY_ACME_CERTIFICATES=true \
+ -e NB_PROXY_DOMAIN=proxy.company.com \
+ -e NB_PROXY_LOG_LEVEL=info \
+ -e NB_PROXY_TOKEN=nbx_... \
+ -e NB_PROXY_PRIVATE=true \
+ -e NB_PROXY_ADDRESS=:443 \
+ netbirdio/reverse-proxy:latest
+```
+
+An L4 service on a port below the floor still fails to bind: its status becomes `error`, and the proxy logs `bind: permission denied` for that port.
+
+<Warning>
+    Do not run the container as root (`--user 0:0`) to get around the port limit. As root, the proxy's embedded NetBird client does not connect to management, and HTTP services return `504`.
+</Warning>
 
 ## Private services (NetBird-Only Access)
 
@@ -283,12 +335,13 @@ curl -X POST <MANAGEMENT_URL>/api/reverse-proxies/proxy-tokens \
 
 ```shell
 docker run -d \
- -v /var/lib/certs:/certs \
+ -v proxy_certs:/certs \
  -e NB_PROXY_CERTIFICATE_DIRECTORY=/certs \
  -e NB_PROXY_MANAGEMENT_ADDRESS=<MANAGEMENT_URL> \
  -e NB_PROXY_ACME_CERTIFICATES=true \
  -e NB_PROXY_DOMAIN=proxy.company.com \
  -e NB_PROXY_TOKEN=<plain_token_from_step_1> \
+ -e NB_PROXY_ADDRESS=:443 \
  -p 80:80 -p 443:443 \
  netbirdio/reverse-proxy:latest
 ```
