@@ -15,7 +15,17 @@ export function HeroPattern() {
             [7, 3],
             [10, 6],
           ]}
-          className="absolute inset-x-0 inset-y-[-50%] h-[200%] w-full skew-y-[-18deg] fill-black/40 stroke-black/50 mix-blend-overlay dark:fill-white/2.5 dark:stroke-white/5"
+          className="absolute
+            inset-x-0
+            inset-y-[-50%]
+            h-[200%]
+            w-full
+            skew-y-[-18deg]
+            supports-[(-moz-appearance:none)]:skew-y-0
+            fill-black/40
+            stroke-black/50
+            mix-blend-overlay
+            dark:fill-white/2.5 dark:stroke-white/5"
         />
       </div>
       <div className="absolute inset-x-0 top-0 h-[25rem] dark:[mask-image:linear-gradient(white,transparent)] pointer-events-none z-10">
