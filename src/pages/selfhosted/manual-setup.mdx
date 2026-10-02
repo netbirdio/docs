@@ -1,0 +1,397 @@
+import {Warning} from "@/components/mdx"
+
+export const description =
+  "Manually deploy self-hosted NetBird with Docker Compose, the combined server, embedded identity provider, and Traefik TLS."
+
+# Manually install NetBird with Docker Compose
+
+This guide deploys self-hosted NetBird without running `getting-started.sh`. You create and review each configuration file before starting the Dashboard, the combined NetBird server, and a Traefik reverse proxy on one Linux host.
+
+The resulting deployment uses the embedded identity provider for local users, SQLite for storage, an embedded Signal service, Relay, and STUN. It does not enable the optional [NetBird Proxy](/manage/reverse-proxy), CrowdSec, an external database, or high availability.
+
+This is the recommended manual starting point: the combined server and embedded identity provider keep the NetBird core together, while Traefik obtains and renews the public TLS certificate. If you are still choosing an architecture, read [Plan a manual NetBird deployment](/selfhosted/manual-setup/planning) first. External identity providers, databases, other reverse proxies, and scaling services can be integrated later without replacing the combined server.
+
+This is the current **combined-container** flow and includes a complete Traefik deployment. To use another proxy, prepare `config.yaml` and `dashboard.env` here, then follow the matching combined-layout guide:
+
+- [Nginx](/selfhosted/manual-setup/reverse-proxies/nginx#combined-container-layout)
+- [Caddy](/selfhosted/manual-setup/reverse-proxies/caddy#combined-container-layout)
+- [Nginx Proxy Manager](/selfhosted/manual-setup/reverse-proxies/nginx-proxy-manager#combined-container-layout)
+- [Traefik with an existing instance](/selfhosted/manual-setup/reverse-proxies/traefik#combined-container-layout)
+
+If you maintain separate Management, Signal, Relay, and Dashboard containers, use [Manual multi-container setup](/selfhosted/manual-setup/multi-container) instead.
+
+## Prerequisites
+
+- A public Linux server with at least 1 CPU. A small deployment can run with 1 GB of memory when swap is available; 2 GB or more is recommended for image pulls, upgrades, and diagnostics.
+- A public domain such as `netbird.example.com` whose A record resolves to the server's public IPv4 address. If the name has an AAAA record, it must also reach this server over IPv6.
+- Inbound TCP ports 80 and 443 and inbound UDP port 3478 allowed by every provider, network, and host firewall in front of the server.
+- [Docker Engine with Docker Compose version 2 or later](https://docs.docker.com/engine/install/).
+- `curl` and `openssl` installed on the server.
+- Shell access to an account that can run Docker commands.
+
+If your DNS provider can proxy HTTP traffic, configure this hostname as DNS-only. All NetBird clients must be able to reach the hostname directly.
+
+| Port | Protocol | Purpose |
+|---|---|---|
+| `80` | TCP | Redirects HTTP to HTTPS. |
+| `443` | TCP | Serves the Dashboard, REST API, embedded identity provider, Management gRPC, Signal, and Relay. Traefik also uses this port for the TLS-ALPN certificate challenge. |
+| `3478` | UDP | Serves the embedded STUN service for NAT discovery. |
+
+<Warning>
+**Security warning:** Docker-published ports can bypass rules managed only through `ufw` or `firewalld`. Permit the required ports in your hosting provider or network firewall as well, and do not publish the Dashboard or NetBird server's internal HTTP ports directly. See [Docker's firewall limitations](https://docs.docker.com/engine/install/ubuntu/#firewall-limitations).
+</Warning>
+
+The examples use `netbird.example.com`. Replace it with your actual hostname before running any command. Do not use the example hostname in a real deployment.
+
+## 1. Verify DNS and Docker
+
+Run these commands on the server. Set `NETBIRD_DOMAIN` to your actual hostname for the DNS check.
+
+```bash
+NETBIRD_DOMAIN="netbird.example.com"
+
+getent ahostsv4 "$NETBIRD_DOMAIN"
+docker --version
+docker compose version
+```
+
+The DNS result must contain this server's public IPv4 address. If you publish an AAAA record, also verify it:
+
+```bash
+getent ahostsv6 "$NETBIRD_DOMAIN"
+```
+
+Do not continue until DNS points to the server and the required ports are allowed. Certificate issuance will fail if the hostname resolves elsewhere or TCP 443 is blocked.
+
+For example, a host using `ufw` can add the required host rules with:
+
+```bash
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw allow 3478/udp
+sudo ufw status
+```
+
+These rules do not replace your hosting provider or network firewall configuration.
+
+## 2. Create the deployment directory
+
+Create a private directory for the Compose and NetBird configuration files:
+
+```bash
+install -d -m 700 "$HOME/netbird"
+cd "$HOME/netbird"
+umask 077
+```
+
+All remaining commands in this guide run from this directory.
+
+Create `.env` with your actual NetBird hostname and an email address for Let's Encrypt certificate notices:
+
+```bash
+cat > .env <<'EOF'
+NETBIRD_DOMAIN=netbird.example.com
+LETSENCRYPT_EMAIL=admin@example.com
+EOF
+
+chmod 600 .env
+```
+
+Edit both values before continuing. Docker Compose automatically reads this file and substitutes the values into `docker-compose.yml`.
+
+## 3. Create the NetBird server configuration
+
+The combined `netbird-server` container runs Management, Signal, Relay, STUN, and the embedded identity provider. The following command generates separate random values for Relay authentication and encryption of sensitive values in the SQLite store, then writes `config.yaml`.
+
+```bash
+set -a
+. ./.env
+set +a
+
+NETBIRD_RELAY_AUTH_SECRET="$(openssl rand -base64 32 | tr -d '=')"
+NETBIRD_STORE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+
+cat > config.yaml <<EOF
+server:
+  listenAddress: ":80"
+  exposedAddress: "https://${NETBIRD_DOMAIN}:443"
+  stunPorts:
+    - 3478
+  metricsPort: 9090
+  healthcheckAddress: ":9000"
+  logLevel: "info"
+  logFile: "console"
+
+  authSecret: "${NETBIRD_RELAY_AUTH_SECRET}"
+  dataDir: "/var/lib/netbird"
+
+  auth:
+    issuer: "https://${NETBIRD_DOMAIN}/oauth2"
+    signKeyRefreshEnabled: true
+    dashboardRedirectURIs:
+      - "https://${NETBIRD_DOMAIN}/nb-auth"
+      - "https://${NETBIRD_DOMAIN}/nb-silent-auth"
+    cliRedirectURIs:
+      - "http://localhost:53000/"
+
+  reverseProxy:
+    trustedHTTPProxies:
+      - "172.30.0.10/32"
+    trustedPeers:
+      - "172.30.0.10/32"
+
+  store:
+    engine: "sqlite"
+    encryptionKey: "${NETBIRD_STORE_ENCRYPTION_KEY}"
+EOF
+
+unset NETBIRD_RELAY_AUTH_SECRET NETBIRD_STORE_ENCRYPTION_KEY
+chmod 600 config.yaml
+```
+
+`trustedHTTPProxies` and `trustedPeers` trust only Traefik's fixed address on the private Compose network. If `172.30.0.0/24` overlaps an existing Docker or host network, choose an unused subnet and update both settings and the network configuration in `docker-compose.yml`.
+
+<Warning>
+**Data-loss warning:** Keep `config.yaml` and `server.store.encryptionKey` secure and backed up. NetBird uses the encryption key to protect setup keys, API tokens, and other sensitive stored values. Losing it requires those encrypted credentials to be regenerated.
+</Warning>
+
+## 4. Create the Dashboard configuration
+
+Create `dashboard.env` with endpoints that match the issuer and redirect URIs in `config.yaml`:
+
+```bash
+set -a
+. ./.env
+set +a
+
+cat > dashboard.env <<EOF
+NETBIRD_MGMT_API_ENDPOINT=https://${NETBIRD_DOMAIN}
+NETBIRD_MGMT_GRPC_API_ENDPOINT=https://${NETBIRD_DOMAIN}
+AUTH_AUDIENCE=netbird-dashboard
+AUTH_CLIENT_ID=netbird-dashboard
+AUTH_CLIENT_SECRET=
+AUTH_AUTHORITY=https://${NETBIRD_DOMAIN}/oauth2
+USE_AUTH0=false
+AUTH_SUPPORTED_SCOPES=openid profile email groups
+AUTH_REDIRECT_URI=/nb-auth
+AUTH_SILENT_REDIRECT_URI=/nb-silent-auth
+NGINX_SSL_PORT=443
+LETSENCRYPT_DOMAIN=none
+EOF
+
+chmod 600 dashboard.env
+```
+
+`LETSENCRYPT_DOMAIN=none` disables certificate management in the Dashboard container because Traefik terminates TLS.
+
+## 5. Create the Compose file
+
+Create `docker-compose.yml` with the following content. The `latest` tags match the standard quickstart deployment and resolve to the current images when you run `docker compose pull`.
+
+```bash
+cat > docker-compose.yml <<'YAML'
+services:
+  traefik:
+    image: traefik:v3.6
+    container_name: netbird-traefik
+    restart: unless-stopped
+    networks:
+      netbird:
+        ipv4_address: 172.30.0.10
+    command:
+      - "--log.level=INFO"
+      - "--accesslog=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=netbird"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.allowACMEByPass=true"
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=0"
+      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=0"
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=0"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.email=${LETSENCRYPT_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--serverstransport.forwardingtimeouts.responseheadertimeout=0s"
+      - "--serverstransport.forwardingtimeouts.idleconntimeout=0s"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - netbird_traefik_letsencrypt:/letsencrypt
+    logging:
+      driver: json-file
+      options:
+        max-size: 500m
+        max-file: "2"
+
+  dashboard:
+    image: netbirdio/dashboard:latest
+    container_name: netbird-dashboard
+    restart: unless-stopped
+    networks: [netbird]
+    env_file:
+      - ./dashboard.env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.netbird-dashboard.rule=Host(`${NETBIRD_DOMAIN}`)"
+      - "traefik.http.routers.netbird-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.netbird-dashboard.tls=true"
+      - "traefik.http.routers.netbird-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.netbird-dashboard.service=dashboard"
+      - "traefik.http.routers.netbird-dashboard.priority=1"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=80"
+    logging:
+      driver: json-file
+      options:
+        max-size: 500m
+        max-file: "2"
+
+  netbird-server:
+    image: netbirdio/netbird-server:latest
+    container_name: netbird-server
+    restart: unless-stopped
+    networks: [netbird]
+    ports:
+      - "3478:3478/udp"
+    volumes:
+      - netbird_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml:ro
+    command: ["--config", "/etc/netbird/config.yaml"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.netbird-grpc.rule=Host(`${NETBIRD_DOMAIN}`) && (PathPrefix(`/signalexchange.SignalExchange/`) || PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))"
+      - "traefik.http.routers.netbird-grpc.entrypoints=websecure"
+      - "traefik.http.routers.netbird-grpc.tls=true"
+      - "traefik.http.routers.netbird-grpc.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.netbird-grpc.service=netbird-server-h2c"
+      - "traefik.http.routers.netbird-grpc.priority=100"
+      - "traefik.http.routers.netbird-backend.rule=Host(`${NETBIRD_DOMAIN}`) && (PathPrefix(`/relay`) || PathPrefix(`/ws-proxy/`) || PathPrefix(`/api`) || PathPrefix(`/oauth2`))"
+      - "traefik.http.routers.netbird-backend.entrypoints=websecure"
+      - "traefik.http.routers.netbird-backend.tls=true"
+      - "traefik.http.routers.netbird-backend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.netbird-backend.service=netbird-server"
+      - "traefik.http.routers.netbird-backend.priority=100"
+      - "traefik.http.services.netbird-server.loadbalancer.server.port=80"
+      - "traefik.http.services.netbird-server-h2c.loadbalancer.server.port=80"
+      - "traefik.http.services.netbird-server-h2c.loadbalancer.server.scheme=h2c"
+    logging:
+      driver: json-file
+      options:
+        max-size: 500m
+        max-file: "2"
+
+volumes:
+  netbird_data:
+  netbird_traefik_letsencrypt:
+
+networks:
+  netbird:
+    name: netbird
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
+YAML
+
+chmod 600 docker-compose.yml
+```
+
+The only public container ports are TCP 80 and 443 on Traefik and UDP 3478 on `netbird-server`. The Dashboard and the server's internal HTTP listener remain reachable only through the private `netbird` Docker network.
+
+Traefik sends gRPC paths to the server over h2c and sends the REST API, embedded identity provider, Relay, and WebSocket paths over HTTP. The Dashboard router has the lowest priority and handles all remaining paths.
+
+## 6. Validate and start NetBird
+
+Ask Docker Compose to parse and interpolate the configuration before pulling images:
+
+```bash
+docker compose config --quiet
+```
+
+The command exits without output when the Compose file is valid. If it reports that `NETBIRD_DOMAIN` or `LETSENCRYPT_EMAIL` is missing, check `.env` and run the command again.
+
+Pull the current images, create the private network and persistent volumes, and start the deployment:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Check the container state:
+
+```bash
+docker compose ps
+```
+
+The `traefik`, `dashboard`, and `netbird-server` services must all show `Up`. If a service is restarting or has exited, inspect only that service first:
+
+```bash
+docker compose logs --tail=100 traefik
+docker compose logs --tail=100 dashboard
+docker compose logs --tail=100 netbird-server
+```
+
+Logs can contain hostnames, addresses, user details, and tokens. Review and redact them before sharing.
+
+## 7. Verify HTTPS and the NetBird endpoints
+
+Load the domain from `.env`, then test the public HTTPS path from the server:
+
+```bash
+set -a
+. ./.env
+set +a
+
+curl -fsS "https://${NETBIRD_DOMAIN}/oauth2/.well-known/openid-configuration" > /dev/null
+curl -fsSI "https://${NETBIRD_DOMAIN}/setup"
+```
+
+The first command exits successfully when Traefik can route to the embedded identity provider. The second command should return an HTTP `200` response before the first user is created.
+
+Also open `https://netbird.example.com/setup` from a different network and replace the hostname with your actual domain. This external test confirms that public DNS, the network firewall, Traefik, and the Dashboard path work together; a successful test from the server alone does not prove outside clients can connect.
+
+If HTTPS presents a default or untrusted certificate, do not bypass the warning. Confirm that the A and optional AAAA records point to this server, TCP 443 is publicly reachable, and Traefik's recent logs show successful ACME certificate issuance.
+
+## 8. Create the first owner user
+
+The first visit to `/setup` displays **Create the first admin account to get started**.
+
+1. Open `https://netbird.example.com/setup` with your actual hostname.
+2. Enter the owner's name and email address.
+3. Enter and confirm a password of at least eight characters. Use a long, unique password.
+4. Click **Create Admin Account**.
+
+The setup page is available only while the deployment has no users. After NetBird creates the first owner, `/setup` redirects to the regular login page.
+
+For non-interactive provisioning, use [Automated setup with a Personal Access Token](/selfhosted/automated-setup) instead of exposing credentials in shell history or deployment files.
+
+## Stop or resume the deployment
+
+Stop and remove the containers and private network while preserving the data and certificate volumes:
+
+```bash
+docker compose down
+```
+
+Start the same deployment again with:
+
+```bash
+docker compose up -d
+```
+
+Do not add `--volumes` unless you intend to permanently delete the NetBird database and Traefik certificates. Before upgrades or configuration changes, follow the [backup guide](/selfhosted/maintenance/backup), then review the [upgrade procedure](/selfhosted/maintenance/upgrade).
+
+## Next steps
+
+- Compare all [supported reverse proxy configurations](/selfhosted/external-reverse-proxy), including combined-container and multi-container layouts.
+- Use [Manual multi-container setup](/selfhosted/manual-setup/multi-container) when separate Management, Signal, and Relay services better fit your operational requirements.
+- Review the [configuration files reference](/selfhosted/maintenance/configuration-files) before changing server, authentication, storage, or reverse proxy settings.
+- Connect an external identity provider through [Authentication and IdPs](/selfhosted/identity-providers).
+- Add the optional [NetBird Proxy](/selfhosted/migration/enable-reverse-proxy) when you need to publish selected NetBird resources.
+- Use [self-hosted installation troubleshooting](/selfhosted/troubleshooting/installation) if the containers, certificate, or setup page do not reach the expected state.
