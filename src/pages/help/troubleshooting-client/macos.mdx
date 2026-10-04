@@ -19,3 +19,40 @@ sudo netbird service start
 ## Host-based firewall
 
 The built-in macOS application firewall or third-party endpoint security software can block NetBird traffic before it leaves the machine. If connectivity works with that software temporarily disabled, add an exception for the NetBird process. See [Ports & Firewalls: Host-based firewalls](/about-netbird/ports-and-firewalls#host-based-firewalls) for the general approach.
+
+## TUN 代理和 Fake-IP DNS
+
+使用 Clash、Mihomo 或类似 TUN 代理时，NetBird 的 Management 和 Signal 可能显示 `Connected`，但 Relay 连接超时，对端持续显示 `Connecting`，没有 WireGuard 握手或传输。故障既可能出现在首次连接，也可能出现在已有连接断开后的自动重连。
+
+Fake-IP DNS 返回的是代理内部使用的合成地址，并非服务器的真实地址。macOS 上的 NetBird 高级路由会将自身连接绑定到物理出口以避免 VPN 路由环路。如果 DNS 仍返回只能通过代理 TUN 访问的地址，物理出口上的连接就可能超时。代理配置中常见的 Fake-IP 范围为 `198.18.0.0/16`，也可能使用其他范围；应核对实际配置。
+
+### 检查 DNS 和路由
+
+1. 在 `netbird status -d` 中检查具体对端、Relay 可用性和最近 WireGuard 握手。Management 与 Signal 已连接，并不保证对端数据通路可用。
+2. 选择状态中列出的服务域名。以下示例使用 `relay.example.com`，必须替换为实际 Relay 域名；Management、Signal、Relay 可能使用不同域名。
+
+```shell
+dscacheutil -q host -a name relay.example.com
+```
+
+若返回地址属于代理配置的 Fake-IP 范围，再查看其路由。以下地址只是示例，必须替换为查询结果：
+
+```shell
+route -n get 198.18.0.10
+```
+
+`dscacheutil` 查询 macOS 主机解析路径；`dig` 的结果可能与系统解析及 `/etc/hosts` 不同。
+
+3. 保存当前 DNS 和路由结果后，按下面的方法排除相关服务域名。检查系统解析、对端握手及实际资源访问是否恢复。浏览器或 `curl` 使用的默认路径可能仍经过代理 TUN；即使 HTTPS 成功，也不能单独证明 NetBird 绑定物理出口的连接、STUN、QUIC 或 WireGuard 正常。
+
+### 排除 Fake-IP 并验证恢复
+
+在代理的持久配置中，将实际 Management、Signal 和 Relay 域名排除出 Fake-IP DNS，保留已有条目。Mihomo 的配置方式取决于 [`fake-ip-filter` 与 `fake-ip-filter-mode`](https://wiki.metacubex.one/en/config/dns/#fake-ip-filter)；使用订阅配置时，应通过客户端支持的持久覆盖方式添加例外，避免下次更新覆盖修改。
+
+代理路由中的 `DIRECT` 规则和 macOS 系统代理例外，并不等同于 Fake-IP DNS 例外。应用修改后，再用 `dscacheutil` 确认服务域名已经返回真实地址。
+
+若自托管服务使用固定地址，可以备份 `/etc/hosts` 后临时添加管理员确认的域名映射。保持域名和 TLS 证书验证；服务地址变化时更新或撤销该映射。不要为动态 NetBird Cloud 或 Relay 地址设置长期固定映射。
+
+等待自动重连，检查 `netbird status -d` 中具体对端已连接、WireGuard 握手刷新，并测试实际资源访问。必要时在可以中断远程连接的情况下断开并重新连接客户端，然后持续观察是否恢复。单次 Ping 或 HTTPS 成功并不能证明持续连接稳定；这一检查也不能确定最初断线的触发原因。
+
+若仍失败，收集[匿名调试包](/help/troubleshooting-client#debug-bundle)，提供 NetBird 和代理版本、DNS 结果及接口对照结果，在 [Issue Triage](https://github.com/netbirdio/netbird/discussions/categories/issue-triage) 中反馈。分享前复查调试包及命令输出中的域名、IP 和节点标识；同类现象见 [Discussion #7599](https://github.com/netbirdio/netbird/discussions/7599)。
