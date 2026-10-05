@@ -1,579 +1,264 @@
 import { Note, Warning } from "@/components/mdx";
 
 export const description =
-  "Enforce NetBird client configuration through your MDM channel (Intune, Jamf, Kandji, Mosyle, Workspace ONE, JumpCloud, Group Policy). Push management URL, kill switches, and other settings to a fleet of Windows, macOS, and iOS devices.";
+  "Enforce NetBird client settings on a fleet of Windows, macOS, and iOS devices through your MDM (Intune, Jamf, Kandji, Mosyle, Workspace ONE, JumpCloud, Group Policy): how a policy is applied and locked, and what every policy key does, grouped by the job it solves.";
 
 # MDM Integration
 
-NetBird's client honors policies pushed by your Mobile Device Management
-(MDM) channel, so an administrator can enforce configuration across a
-fleet of devices instead of touching each machine. On every supported
-platform the daemon reads from the **OS-native managed-configuration
-store** that your MDM already writes to. No extra NetBird software sits between
-you and the MDM provider; whatever you can push to that store (manually,
-via Group Policy, via a Configuration Profile, via your MDM console)
-becomes effective NetBird policy.
+Installing NetBird on a few hundred laptops is the easy half of a rollout. The hard half is everything that happens afterwards: a user points the client at a different server, creates a second profile, turns on an SSH server, or switches off a setting your security posture depends on. Fixing that one machine at a time does not scale, and asking users nicely is not a control.
 
-This page covers Windows, macOS, and iOS (including tvOS). Android
-support is on the roadmap.
+The NetBird client solves this by honoring **MDM policy**: settings your device management tool writes to the operating system's own managed-configuration store. The client reads that store, applies what it finds on top of every other setting, and locks those settings so nobody on the device can change them. NetBird adds no agent or connector of its own. If your MDM can write to the store, it can manage NetBird.
 
-## At a glance
+This page covers three things, in order:
 
-| Platform | Where NetBird reads policy | How an admin writes it |
+1. [How the client applies a policy](#how-the-client-applies-a-policy): the mental model, and what a user sees on a managed device.
+2. [Policy keys reference](#policy-keys-reference): every key, grouped by the job it does, starting with the ones nearly every rollout needs.
+3. [Verifying enforcement](#verifying-enforcement) and [troubleshooting](#troubleshooting).
+
+How to deliver a policy is specific to each operating system, so it has its own page:
+
+| Platform | Where NetBird reads policy | How to deliver it |
 | --- | --- | --- |
-| Windows | `HKLM\Software\Policies\NetBird` (registry) | Group Policy (ADMX) · Intune ADMX ingestion or OMA-URI · `reg import` · MDM-vendor scripts |
-| macOS | `/Library/Managed Preferences/io.netbird.client.plist` | Configuration Profile (`.mobileconfig`) pushed by your MDM, targeting bundle id `io.netbird.client` |
-| iOS / tvOS | Managed App Configuration delivered to the app, bundle id `io.netbird.app` (tvOS: `io.netbird.app.tv`) | App configuration payload pushed by your MDM alongside the managed app — see [iOS](#i-os) for the current scope |
+| Windows | Registry, `HKLM\Software\Policies\NetBird` | [Enforce settings on Windows](/manage/peers/mdm-deployment/windows-mdm-policy): Intune, Group Policy, `.reg` import, JumpCloud |
+| macOS | `/Library/Managed Preferences/io.netbird.client.plist` | [Enforce settings on macOS](/manage/peers/mdm-deployment/macos-mdm-policy): a configuration profile for bundle id `io.netbird.client` |
+| iOS and tvOS | Managed App Configuration for bundle id `io.netbird.app` (tvOS: `io.netbird.app.tv`) | [Enforce settings on iOS](/manage/peers/mdm-deployment/ios-mdm-policy): an app configuration sent with the managed app |
 
-Each backend is the de-facto convention for its platform (the registry
-and managed-preferences shapes are what Chrome, Edge, Firefox, Zoom,
-Tailscale, and Citrix Workspace use; Managed App Configuration is
-Apple's standard channel for managed apps). Any MDM that supports the
-platform also supports NetBird — there is no NetBird-specific
-integration to build.
+Linux and Android have no MDM channel today. See [When not to use MDM policy](#when-not-to-use-mdm-policy).
 
-## How enforcement works
+## The running example
 
-When NetBird starts, and every minute while it runs, the daemon:
+This page follows one rollout from start to finish. Acme is running a NetBird proof of concept on 200 company laptops, a mix of Windows and macOS, against its self-hosted management server at `https://netbird.example.com:443`. The security team has three requirements:
 
-1. Reads the platform-native managed-configuration store.
-2. Merges the values **on top of every other configuration layer**
-   (defaults → on-disk profile → environment variables → CLI/UI input →
-   **MDM**). MDM always wins.
-3. Locks any field that came from the MDM source. Attempts to change
-   that field from the GUI, the CLI (`netbird up --flag=...`, `netbird
-   login --flag=...`) or via direct gRPC are rejected with a clear
-   error listing the locked fields. The client UI greys these fields
-   out and tags them with **(MDM)** so the user knows they cannot
-   change them.
-4. If the MDM payload changes (admin pushes new values), the change
-   takes effect within ~1 minute on the device — no client restart
-   needed.
+- Every laptop talks to Acme's server and nothing else.
+- Users can connect and disconnect, but cannot change NetBird's settings.
+- Nobody can add a second profile to reach another NetBird account from a company device.
+
+Each requirement maps to one policy key, so Acme's baseline policy is three keys long:
+
+| Key | Value | Requirement it meets |
+| --- | --- | --- |
+| `managementURL` | `https://netbird.example.com:443` | Talks to Acme's server only |
+| `disableUpdateSettings` | `true` | Settings are read-only |
+| `disableProfiles` | `true` | No second profile |
+
+We come back to this baseline after the reference to see what Acme adds for laptops that should never accept inbound connections.
+
+## How the client applies a policy
+
+Think of a policy as **a set of pinned switches**. Every key in the payload pins one setting to the value you chose and takes it out of the user's reach. Every key you leave out stays an ordinary setting that the user, the CLI, or the dashboard controls as usual. Most mistakes come from forgetting the second half of that sentence, so it is worth stating twice: **a key that is absent is not pinned, and a key that is present is pinned, whatever its value.**
 
 <Note>
-MDM is **authoritative**. When a key is present in the MDM payload, the
-MDM value wins regardless of whether it is `true` or `false`. An admin
-pushing `disableNetworks=false` via MDM re-enables the feature even on a
-host that was installed with `--disable-networks`. The MDM payload is
-the source of truth as long as the policy is in place. MDM-supplied
-values are also never written back to the on-disk profile, so removing
-the policy at the MDM side takes effect on the next reload with no
-stale residue on the device.
+**Pushing `false` is not the same as leaving a key out.** `allowServerSSH: false` pins the SSH server off: no user, CLI flag, or dashboard setting can turn it on while the policy stands. Leaving `allowServerSSH` out of the payload leaves the SSH server to whoever controls the device. Only include the keys you mean to pin.
 </Note>
+
+On Windows and macOS, the client daemon reads the policy at startup and again every minute. Each time:
+
+1. **It applies the policy on top of every other configuration layer.** Defaults, the on-disk profile, environment variables, and CLI or app input all apply first; the policy is applied last and wins. A policy also overrides the service-install flags `--disable-update-settings`, `--disable-profiles`, and `--disable-networks`: pushing `disableNetworks: false` re-enables network selection even on a device installed with `--disable-networks`. One exception: the `NB_LAZY_CONN` environment variable takes precedence over the `lazyConnection` key.
+2. **It locks every pinned setting.** A request that tries to change a pinned setting to a different value, from the desktop app, the CLI (`netbird up --flag`, `netbird login --flag`) or the daemon API, is rejected as a whole with `fields managed by MDM cannot be modified: [<keys>]`. None of its other fields are applied either. A request that repeats the pinned value is accepted, because it changes nothing.
+3. **It never writes policy values to disk.** The on-disk profile keeps the device's own settings. When you remove a key from the policy, the setting falls back to that on-disk value on the next reload and becomes editable again, with nothing left behind.
+
+When a reload finds that the policy has changed, the client restarts its connection to apply it. Expect a brief interruption of a few seconds on every policy change, and plan larger changes outside working hours. The desktop app then shows a notification: **NetBird settings updated**, "Your NetBird configuration was updated by your IT policy."
+
+On iOS the timing is different: the app passes the policy to the tunnel only while the app is running. See [Enforce settings on iOS](/manage/peers/mdm-deployment/ios-mdm-policy#when-a-policy-takes-effect).
+
+### What a user sees
+
+Since NetBird v0.75.0, the desktop app **hides** the controls for pinned settings rather than greying them out. On Acme's laptops, the server address field is gone, and read-only mode removes the **Network**, **Security**, **SSH**, and **Advanced** settings tabs, while `disableProfiles` removes the **Profiles** tab. **General**, **Troubleshooting**, and **About** remain, and the **Connect** button still works. On the CLI, changing a pinned setting fails with the error above, and the [`disableUpdateSettings`](#disableUpdateSettings), [`disableProfiles`](#disableProfiles), and [`disableNetworks`](#disableNetworks) gates have errors of their own, listed under [Troubleshooting](#troubleshooting).
+
+### What a policy does not do
+
+A policy pins the client's configuration. It does not make the tunnel mandatory: a user can still disconnect with `netbird down` or the **Disconnect** button, and anyone with administrator rights on the device can stop the service, uninstall the client, or edit the registry or the managed-preferences file. NetBird has no always-on mode. Enforce that layer with the operating system: give users standard accounts, manage the NetBird service with your MDM, and write your [access policies](/manage/access-control) so that disconnecting from NetBird costs a user access to company resources rather than freeing them from restrictions.
 
 ## Policy keys reference
 
-The 23 keys below are recognized on every platform. A few of them have
-no surface on some platforms; those are parsed and ignored there, so a
-single cross-platform payload is always safe to ship. Names are
-camelCase in the managed-configuration payload; the Windows ADMX
-template renders the PascalCase variant in the Group Policy Editor —
-both are recognized.
+The client recognizes 23 keys. They are grouped below by the job they do, starting with the ones nearly every rollout needs. A key that has no meaning on a platform (for example `allowServerSSH` on iOS) is ignored there, so one payload is safe to send to every platform.
 
-| Key | Type | Description |
+Key names are camelCase in plist and app-configuration payloads. On Windows, the registry value names and the Group Policy templates use PascalCase (`ManagementURL`, `BlockInbound`); both forms are recognized, and names are matched without regard to case. In the Group Policy editor, each policy is named after its key in plain words, such as **Block inbound** for `blockInbound`.
+
+Value types:
+
+- **boolean**: a native boolean, an integer (`0` is false, anything else is true), or one of the strings `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`.
+- **string**: a string. An empty string counts as not set.
+- **integer**: an integer, or a string of decimal digits.
+
+The registry type for each key on Windows is on [Enforce settings on Windows](/manage/peers/mdm-deployment/windows-mdm-policy#registry-value-types).
+
+### Point the client at your server
+
+Nearly every rollout sets `managementURL`. The other two keys decide whether NetBird connects, and whether its app opens, on their own.
+
+| Key | Type | What it does |
 | --- | --- | --- |
-| `managementURL` | string | Override the management server URL (e.g. `https://api.netbird.io:443` or a self-hosted URL). |
-| `preSharedKey` | string | WireGuard pre-shared key. Treated as secret and redacted in logs. |
-| `wireguardPort` | integer | UDP port the local WireGuard interface binds to. Range `1–65535`. |
-| `allowServerSSH` | boolean | Allow the embedded NetBird SSH server on this peer. |
-| `disableAutoConnect` | boolean | Skip auto-connecting on startup; require an explicit `netbird up`. |
-| <span id="disableAutostart"></span>`disableAutostart` | boolean | Prevent the GUI from registering itself as an OS autostart entry on fresh installs, and — when enabled at any later point — remove an existing registration on the next GUI launch (Windows Registry `Run` key, macOS Login Item, Linux `.desktop`). Desktop GUIs only; no-op on iOS/Android. Once the admin lifts the policy, the setting stays off until the user re-enables it in Settings. |
-| `lazyConnection` | boolean | Local override for lazy connections. `true` forces lazy connections on, `false` forces them off, and an absent key defers to the Management setting. `NB_LAZY_CONN` takes precedence when both are configured. |
-| `rosenpassEnabled` | boolean | Turn on the post-quantum Rosenpass key exchange. |
-| `rosenpassPermissive` | boolean | Permissive mode for Rosenpass (interop with non-Rosenpass peers). |
-| `blockInbound` | boolean | Drop all inbound traffic except established/related — kill-switch style. |
-| `disableClientRoutes` | boolean | This peer does not route traffic to other peers. |
-| `disableServerRoutes` | boolean | This peer is not a router for others. |
-| `disableMetricsCollection` | boolean | Disable anonymous usage telemetry. |
-| `enableLocalMetrics` | boolean | Expose the client's local Prometheus `/metrics` endpoint. |
-| `localMetricsAddress` | string | Listen address of the local `/metrics` endpoint (default `127.0.0.1:9191`). |
-| `disableUpdateSettings` | boolean | Block every configuration change from UI or CLI on this device (read-only mode). |
-| `disableProfiles` | boolean | Hide the profile menu in the GUI and reject profile CRUD via CLI. |
-| `disableNetworks` | boolean | Hide the Networks / Exit Node menus in the GUI and reject the related RPCs. |
-| `disableAdvancedView` | boolean | Hide the advanced section of the client UI. UI-only: it is not part of the daemon configuration, so nothing is rejected on its account — the client just stops offering the section. |
-| `allowRemoteJobs` | boolean | Allow management-requested remote jobs (e.g. debug bundles) on this peer. Off by default; equivalent to `--allow-remote-jobs`. |
-| `debugBundleUploadURL` | string | Override the upload service used for debug bundles produced by remote jobs, taking precedence over the value requested by Management. Must be an `https` URL with a host. |
-| `splitTunnelMode` | string | `allow` or `disallow` — split-tunnel policy mode (Android only at the client level; harmless on desktop). |
-| `splitTunnelApps` | string | Comma-separated list of package names that the split-tunnel mode applies to (Android only). |
+| <span id="managementURL"></span>`managementURL` | string | The management server the client connects to, for example `https://api.netbird.io:443` for NetBird Cloud or `https://netbird.example.com:443` for a self-hosted server. Must start with `http://` or `https://`; a URL without a port gets `:443` (or `:80`) added. An invalid URL is logged and ignored, and the client keeps its previous server. |
+| <span id="disableAutoConnect"></span>`disableAutoConnect` | boolean | `true`: the client does not connect when its service starts, so the user has to click **Connect** or run `netbird up`. `false`: pins [Connect on Startup](/client/connect-on-startup) on, so the client always connects at boot. |
+| <span id="disableAutostart"></span>`disableAutostart` | boolean | `true`: the desktop app does not open itself at login. The app removes its login entry (Windows `Run` registry key, macOS Login Item, Linux `.desktop` file) every time it starts, and never creates one on a fresh install. The background service is not affected. Desktop app only. |
 
-### Notes on a few keys
+- **`managementURL` pins the server, not the account.** NetBird Cloud serves every customer's account from `https://api.netbird.io:443`, so on Cloud this key stops a user from pointing the client at a different server, but not from signing in to a different Cloud account. To keep company devices in your account, also set `disableProfiles`, and use your identity provider to decide who can sign in.
+- **`disableAutostart` only acts when the app starts.** The **Launch NetBird UI at Login** switch in the app's settings stays usable. A user who turns it back on gets the app at their next login, and the app removes the entry again as soon as it opens. Pushing `false` does not turn launch-at-login on; it only stops the app from removing the entry.
 
-- `disableUpdateSettings` and `disableProfiles` overlap with the
-  service-install CLI flags `--disable-update-settings` and
-  `--disable-profiles`. Either source can disable the feature; the MDM
-  value wins when present.
-- `disableUpdateSettings` keeps the Settings view in the GUI visible
-  (so users can inspect current values) but rejects every attempt to
-  save changes. Use it for read-only fleets.
-- `disableNetworks` combined with an exit node that has Auto Apply
-  enabled pins a device to that exit node: the exit node applies
-  automatically and the daemon rejects every attempt to deselect it.
-  See [Enforcing the Exit Node on Managed Devices](/use-cases/remote-access/exit-nodes#enforcing-the-exit-node-on-managed-devices)
-  for the full recipe, including why the policy must be deployed
-  before users touch the exit node switch.
-- `splitTunnelMode` and `splitTunnelApps` are wired into Android's
-  `VpnService.Builder.addAllowedApplication()` flow; on Windows and
-  macOS the daemon parses the keys but ignores them. They are safe to
-  ship in a cross-platform payload.
-- `disableAutostart` only affects the desktop GUI's OS autostart entry
-  (Windows Registry `Run` key, macOS Login Item, Linux `.desktop`).
-  iOS and Android have no equivalent user-space autostart mechanism —
-  the daemon runs as a system service — so the key is parsed and
-  ignored there. Safe to ship in cross-platform payloads.
-- The `disableMetricsCollection` key is reserved for an upcoming
-  metrics integration; the client recognizes it today but no metrics
-  pipeline is shipped yet. It is unrelated to `enableLocalMetrics`,
-  which exposes the client's own Prometheus endpoint.
-- `disableAdvancedView` is UI-only: unlike the keys above it is not
-  stored in the daemon configuration and never causes a request to be
-  rejected. The daemon reports it to the client, which hides the
-  advanced section. Pushing it as `false` explicitly re-enables the
-  section on a client that hid it for another reason.
-- `allowRemoteJobs` locks the corresponding client toggle whenever the
-  key is present, including when its value is `false` — so an admin can
-  pin remote jobs off and keep users from turning them on.
+### Lock the client app
 
-## Windows
+These keys decide how much of the app a user can touch. Acme's baseline uses the first two.
 
-The NetBird daemon reads policies from
-`HKLM\Software\Policies\NetBird`. Anything that ends up under that
-registry key — through whichever delivery channel — becomes policy.
-The shapes are:
-
-| Value name | Registry type | Example |
+| Key | Type | What it does |
 | --- | --- | --- |
-| `ManagementURL`, `PreSharedKey`, `SplitTunnelMode`, `SplitTunnelApps` | `REG_SZ` | `"https://api.netbird.io:443"` |
-| All `Disable*` flags, `AllowServerSSH`, `RosenpassEnabled`, `RosenpassPermissive` | `REG_DWORD` (0 / 1) | `0x00000001` |
-| `WireguardPort` | `REG_DWORD` | `0x0000ca6c` (51820 decimal) |
-
-Choose one of the delivery channels below. All four converge on the
-same registry key.
-
-### Group Policy (on-prem AD / local gpedit)
-
-For a full end-to-end walkthrough — domain Central Store, GPO creation, silent MSI install, and troubleshooting — see [Deploying NetBird with Group Policy (GPO)](/manage/peers/mdm-deployment/windows-gpo-deployment). The steps below cover the minimal local setup.
-
-1. Copy the ADMX/ADML files into the system Policy Definitions store:
-   - Place `netbird.admx` in `C:\Windows\PolicyDefinitions\`.
-   - Place `netbird.adml` in `C:\Windows\PolicyDefinitions\en-US\`.
-2. Open `gpedit.msc` (or the AD Group Policy Management Editor).
-3. Navigate to **Computer Configuration → Administrative Templates →
-   NetBird**.
-4. Edit any policy (e.g. **Management URL**), set it to **Enabled**
-   with the desired value, and click **OK**.
-5. Run `gpupdate /force` on each target device (or wait for the
-   periodic refresh).
-6. Verify with `reg query HKLM\Software\Policies\NetBird` — the values
-   you set should appear there.
-
-Download the templates: <a href="/docs-static/files/netbird.admx" download>netbird.admx</a> / <a href="/docs-static/files/netbird.adml" download>netbird.adml</a>.
-
-### Microsoft Intune (ADMX ingestion)
-
-Recommended for cloud-managed Windows fleets.
-
-1. In the Intune admin center, go to **Devices → Configuration → Import
-   ADMX**, upload `netbird.admx` together with `netbird.adml`. Wait for
-   the **Available** status.
-2. Create a new **Configuration Profile → Templates → Imported
-   Administrative templates → NetBird**.
-3. Configure the policies you want to enforce.
-4. Assign the profile to your device group(s) and save.
-
-Devices pick up the policy on the next Intune sync (typically within
-8 hours, sooner if you trigger a manual sync from the device). The
-values end up in `HKLM\Software\Policies\NetBird`.
-
-### Microsoft Intune (custom OMA-URI)
-
-If you cannot ingest the ADMX template, you can push individual values
-via OMA-URI under
-`./Device/Vendor/MSFT/Policy/ConfigOperations/ADMXInstall/...` or via
-the Registry CSP at
-`./Device/Vendor/MSFT/Registry/HKEY_LOCAL_MACHINE/Software/Policies/NetBird/<ValueName>`.
-ADMX ingestion is simpler and gives admins the same UI as on-prem GPO,
-so prefer that.
-
-### `.reg` import (single source of truth)
-
-For fleets without an MDM, or as a quick-test path, you can carry the
-whole policy in a single `.reg` file:
-
-1. Configure the policy values on a reference machine (via `gpedit` or
-   `reg add`).
-2. Export the key:
-   ```
-   reg export "HKLM\Software\Policies\NetBird" netbird-policy.reg /y
-   ```
-3. Distribute the resulting file and apply with:
-   ```
-   reg import netbird-policy.reg
-   ```
-
-Download a sample: <a href="/docs-static/files/netbird-policy.reg" download>netbird-policy.reg</a>.
-
-### JumpCloud
-
-NetBird ships a JumpCloud companion script: <a href="/docs-static/files/netbird-policy.reg.ps1" download>netbird-policy.reg.ps1</a>. To use it:
-
-1. In the JumpCloud admin console, go to **Device Management →
-   Commands → +**.
-2. Type: **Windows PowerShell**. Run as: **SYSTEM**.
-3. Paste `netbird-policy.reg.ps1` verbatim into the command body.
-4. In the same command, attach the `netbird-policy.reg` file you
-   produced above. JumpCloud copies attached files into the command's
-   working directory before invoking the script.
-5. Bind the command to the target system group and run it.
-
-The script wipes the existing `HKLM\Software\Policies\NetBird` key
-before importing the `.reg`, so the `.reg` is the **single source of
-truth** for that device. To unset all policy, attach an empty (header-
-only) `.reg`; the daemon will pick up the absence on the next reload.
-
-## macOS
-
-The NetBird daemon reads policy from
-`/Library/Managed Preferences/io.netbird.client.plist`. macOS writes
-that file when an MDM provider pushes a Configuration Profile whose
-`com.apple.ManagedClient.preferences` payload targets the bundle id
-`io.netbird.client`.
-
-<Warning>
-macOS wipes the contents of `/Library/Managed Preferences/` on every
-boot if the device is not MDM-enrolled. Manual `defaults write` works
-for a quick test but does not survive a reboot on an un-enrolled Mac.
-Use a real MDM channel for production rollouts.
-</Warning>
-
-### Custom Configuration Profile (recommended)
-
-This is the canonical macOS path and works with every MDM
-(Jamf, Kandji, Mosyle, Microsoft Intune for Mac, Workspace ONE,
-JumpCloud, Apple Configurator 2, etc.).
-
-1. Start from the template <a href="/docs-static/files/netbird-macos.mobileconfig" download>netbird-macos.mobileconfig</a>. Open it in your editor (or in
-   [iMazing Profile Editor](https://imazing.com/profile-editor) /
-   [ProfileCreator](https://github.com/ProfileCreator/ProfileCreator)).
-2. Inside the `mcx_preference_settings` dictionary, set the keys you
-   want to enforce. Keep the bundle id `io.netbird.client` as the
-   preference domain.
-3. Replace the placeholder `PayloadUUID` values with freshly generated
-   UUIDs (`uuidgen` on macOS) so each deployment has unique ids.
-4. Upload the resulting `.mobileconfig` to your MDM as a **Custom
-   Configuration Profile** and scope it to the target device group.
-
-Profiles delivered through an MDM are signed by the MDM channel itself,
-so there is nothing to sign by hand for a managed rollout. A profile you
-hand out some other way — Apple Configurator, or a double-click install —
-installs unsigned and asks the user for an extra confirmation on recent
-macOS releases. To avoid that, sign it as a CMS message:
-
-```bash
-security cms -S -N "<signing identity>" -i netbird-macos.mobileconfig -o signed.mobileconfig
-```
-
-Use an identity the target Macs already trust. Note that configuration
-profiles are **not** signed with `productsign`, which handles installer
-packages, nor with an Apple Developer ID certificate.
-
-Verify on a target device with:
-
-```bash
-sudo defaults read "/Library/Managed Preferences/io.netbird.client"
-```
-
-The output should match the keys you set in the profile.
-
-### MDM-specific notes
-
-- **Jamf Pro**: upload as **Computers → Configuration Profiles → New →
-  Application & Custom Settings → External Applications → Upload File
-  (Plist file)** for the preference domain `io.netbird.client`.
-- **Kandji**: use the **Custom Profile** assignment library item.
-- **Mosyle**: **Profiles → Add new profile → Custom Settings** with
-  domain `io.netbird.client`.
-- **Microsoft Intune (for Mac)**: **Devices → Configuration → Create
-  profile → macOS → Templates → Custom**, upload the `.mobileconfig`.
-- **Apple Configurator 2** (no MDM, ideal for testing on a tethered
-  device): drag the `.mobileconfig` onto the device in Configurator and
-  push.
-
-### JumpCloud
-
-JumpCloud supports two delivery channels for the NetBird policy on
-macOS. Pick whichever fits how your fleet is enrolled.
-
-#### MDM Custom Configuration Profile (recommended for MDM-enrolled fleets)
-
-If your Macs are MDM-enrolled with JumpCloud, push the policy as a
-managed-preferences plist:
-
-1. In the JumpCloud admin console, open **Policy Management →
-   Policies → +** and choose the **Mac** platform.
-2. Pick the **MDM Custom Configuration Profile** policy template.
-3. Upload <a href="/docs-static/files/io.netbird.client.plist" download>io.netbird.client.plist</a>
-   as the plist payload. Edit the file before upload to enable just
-   the keys you want to enforce — leave the rest commented out.
-4. Bind the policy to the target Device Group and save.
-
-Notes:
-
-- JumpCloud's **MDM Custom Configuration Profile** accepts a bare
-  managed-preferences plist (the inner Apple managed-prefs dictionary)
-  — **not** a full `.mobileconfig` envelope. Uploading
-  `netbird-macos.mobileconfig` will be rejected. Use the bare
-  `io.netbird.client.plist` for this code path; reserve
-  `netbird-macos.mobileconfig` for other MDMs that expect the full
-  Configuration Profile shape.
-- Keep the filename as `io.netbird.client.plist`. The Apple
-  convention for managed-preferences plists is
-  `<bundle.id>.plist` (this is how macOS materializes the file at
-  `/Library/Managed Preferences/<bundle.id>.plist`), and JumpCloud's
-  policy form does not currently expose a separate bundle-identifier
-  field — keeping the canonical filename is the safest path. If your
-  JumpCloud console version surfaces a bundle-id / preference-domain
-  field elsewhere in the policy wizard, set it to `io.netbird.client`
-  too.
-
-JumpCloud wraps the plist into an Apple Configuration Profile and
-pushes it via the MDM channel. The OS materializes the file at
-`/Library/Managed Preferences/io.netbird.client.plist`, where the
-NetBird daemon picks it up within the next 1-minute reload tick.
-Removing the policy from JumpCloud removes the file on the next sync,
-which un-locks the corresponding fields on the client.
-
-#### Shell Command (no MDM enrollment required)
-
-If your fleet is JumpCloud-managed but not MDM-enrolled, NetBird ships
-a companion script: <a href="/docs-static/files/netbird-macos.sh" download>netbird-macos.sh</a>. It is the macOS
-counterpart of the Windows `.reg.ps1` script — same fleet, different
-backend:
-
-1. Edit the `### POLICY VALUES ###` block at the top of the script;
-   set the variables for the keys you want to enforce and leave the
-   rest at `$NULL`.
-2. In the JumpCloud admin console, go to **Device Management →
-   Commands → +**. Type: **Mac, Shell**. Run as: **root**.
-3. Paste the edited script verbatim into the command body.
-4. Bind to the target system group and run.
-
-The script writes
-`/Library/Managed Preferences/io.netbird.client.plist`, sets ownership
-to `root:wheel` with mode `644`, and kicks the NetBird daemon so the
-change applies immediately. On MDM-enrolled devices the file survives
-reboots; on un-enrolled devices the file is wiped at the next reboot
-(macOS-imposed). Prefer the Custom Mac Application Settings policy
-above when the fleet is enrolled.
-
-## iOS
-
-On iOS and tvOS there is no filesystem location for policy. Apple's
-channel for a managed app is **Managed App Configuration**: the MDM
-sends a dictionary together with the managed app, and iOS hands it to
-that app only. NetBird reads it from the app's own preferences, so the
-payload must target the NetBird app's bundle id — `io.netbird.app` on
-iOS and iPadOS, `io.netbird.app.tv` on tvOS.
-
-The app must be installed **as a managed app** by the same MDM that
-sends the configuration. A copy the user installed from the App Store
-themselves cannot receive an app configuration, and NetBird will run
-with no policy on such a device.
-
-### Pushing the payload
-
-The payload is a plain property-list dictionary with the same key names
-used on desktop:
-
-```xml
-<dict>
-    <key>managementURL</key>
-    <string>https://api.netbird.io:443</string>
-    <key>disableProfiles</key>
-    <true/>
-    <key>disableUpdateSettings</key>
-    <true/>
-</dict>
-```
-
-Start from <a href="/docs-static/files/netbird-ios-appconfig.plist" download>netbird-ios-appconfig.plist</a> and delete the keys you do not want to
-enforce. Where to put it, by provider:
-
-- **Microsoft Intune**: **Apps → App configuration policies → Add →
-  Managed devices**, platform **iOS/iPadOS**, pick the NetBird app, then
-  **Configuration settings format → Enter XML data** and paste the
-  dictionary.
-- **Jamf Pro**: **Devices → Mobile Device Apps → NetBird → App
-  Configuration**, paste the dictionary.
-- **Kandji**, **Mosyle**, **Workspace ONE**, **JumpCloud**: the same
-  field exists on the managed-app assignment, usually labelled *App
-  Configuration* or *Application Configuration*.
-
-Booleans may be written as `<true/>`/`<false/>` or as `<integer>1</integer>`/`<integer>0</integer>`;
-both are accepted. Integers and strings behave as on desktop.
-
-### When a policy takes effect
-
-Every key that applies to the platform is enforced on iOS: the ones that
-reshape the interface, and the ones the engine applies to the connection
-itself. (A handful have no iOS surface at all and are listed at the end
-of this section.) Getting there takes one extra step that is worth
-understanding, because it decides *when* a change lands.
-
-iOS delivers the configuration to the NetBird app. The tunnel, though,
-runs in a Network Extension — a separate process the system starts when
-the tunnel comes up and stops when it goes down, and which Apple's
-app-configuration channel does not deliver to. The app therefore passes
-the configuration on to the extension, and does so whenever it is
-running: on activation, when a settings screen appears, and on a timer
-roughly every 30 seconds. When the policy has changed, the engine
-restarts on its own and the user is told their IT policy was applied.
-
-<Note>
-**A policy lands while the app is open.** With NetBird in the
-foreground, a change pushed from your MDM reaches the tunnel within
-about 30 seconds, or immediately when the user switches back to the
-app. Nothing needs to be restarted by hand.
-
-**While the app is closed or backgrounded, iOS suspends it**, and a
-policy pushed in that window — or withdrawn in it — reaches the tunnel
-only the next time the app is opened. This matters most with VPN On
-Demand or the widget, where the tunnel can come up without the app ever
-appearing: it then runs on the last policy the app saw. Plan rollouts
-accordingly, and treat "applied" as "applied once the user next opens
-the app".
-</Note>
-
-<Warning>
-**On tvOS only the interface is enforced.** The hand-off described above
-relies on a shared app group, which does not work between the tvOS app
-and its extension, so the tvOS engine runs without the policy. Keys that
-lock or hide controls behave as described; the ones the engine applies
-to the connection — `managementURL`, `preSharedKey`, `rosenpassEnabled`,
-`rosenpassPermissive`, `blockInbound`, `wireguardPort`, `lazyConnection`
-— do not reach the tunnel there yet.
-</Warning>
-
-| Key | Effect in the iOS / tvOS app |
-| --- | --- |
-| `managementURL` | Hides Settings → Connection and the onboarding server step; the profile-creation sheet shows and submits the enforced URL |
-| `preSharedKey` | The key row reads *Configured* and is locked — no Save, no Remove. The value itself never crosses the bridge |
-| `rosenpassEnabled` / `rosenpassPermissive` | Locks its own toggle and shows the enforced value |
-| `disableClientRoutes` | Hides the exit-node selector; the resource list explains why instead of listing |
-| `disableAutoConnect` | VPN On Demand becomes read-only |
-| `disableProfiles` | Hides the Profiles section — no create, switch, or remove |
-| `disableNetworks` | Removes the Resources tab |
-| `disableAdvancedView` | Hides Advanced (on tvOS, the whole section) |
-| `disableUpdateSettings` | Read-only mode: nothing is hidden, every configuration control is locked |
-
-The table above is what the user sees. A second group of keys has no
-control to lock, because the engine applies them straight to the
-connection: `blockInbound`, `wireguardPort`, `lazyConnection`,
-`allowRemoteJobs`, and `debugBundleUploadURL` when a remote job produces
-a bundle. **On iOS** they are enforced just the same — a peer whose policy
-withholds `allowRemoteJobs` refuses those jobs — there is simply nothing
-on screen to mark. On tvOS none of them reach the engine, for the reason
-in the warning above.
-
-The rest do not apply to the platform and are parsed and ignored:
-`allowServerSSH` (no SSH server on iOS), `disableServerRoutes` (an iOS
-peer does not route for others), `disableAutostart` (desktop GUI only),
-`disableMetricsCollection`, `enableLocalMetrics` and
-`localMetricsAddress` (the local endpoint is not reachable on iOS), and
-`splitTunnelMode` / `splitTunnelApps` (Android). They are safe to leave
-in a payload shared with desktop devices.
-
-### Verifying on a device
-
-There is no CLI on iOS. A managed setting shows a lock and a **Managed
-by your organization** note in the app; a gated section disappears
-altogether. If neither happens, the app did not receive the
-configuration — check that it is installed as a managed app, that the
-app-configuration payload is assigned to the same device group, and that
-the bundle id matches (`io.netbird.app`, or `io.netbird.app.tv` on
-tvOS).
-
-That covers delivery to the app. To confirm a change reached the
-*tunnel*, change a policy while the tunnel is connected and bring
-NetBird to the foreground: the engine restarts and the device shows
-"NetBird configuration was updated by your IT policy". That notice comes
-from the extension, so seeing it means the engine applied the new
-policy.
+| <span id="disableUpdateSettings"></span>`disableUpdateSettings` | boolean | Read-only mode. Every request that would change a setting is rejected, from the app or the CLI (`netbird up --flag`, `netbird login --flag`). Connecting, disconnecting, and signing in again still work, because they change no settings. |
+| <span id="disableProfiles"></span>`disableProfiles` | boolean | Hides the profile menu and rejects creating, renaming, removing, or switching [profiles](/client/profiles). The device stays on its current profile. |
+| <span id="disableNetworks"></span>`disableNetworks` | boolean | Hides the Networks and Exit Node menus and rejects listing, selecting, or deselecting networks and exit nodes. The user cannot opt out of the routes the dashboard assigns to the device. |
+| <span id="disableAdvancedView"></span>`disableAdvancedView` | boolean | Hides the advanced view of the desktop app (on iOS, the Advanced section). It only changes what the app shows: no setting is locked, and no request is rejected because of it. Pushing `false` keeps the advanced view available even where the app would otherwise hide it. |
+
+- **`disableUpdateSettings` covers settings no key names.** The DNS, firewall, interface, and SSH sub-options have no key of their own, so the only way to stop users changing them is read-only mode. On a device with `disableUpdateSettings: true`, an administrator who needs to change one of those settings has to lift the policy first.
+- **`disableNetworks` plus an exit node pins the device to that exit node.** With an exit node that has **Auto Apply** enabled, the exit node is applied automatically and the user cannot deselect it. See [Enforcing the exit node on managed devices](/use-cases/remote-access/exit-nodes#enforcing-the-exit-node-on-managed-devices) for the full recipe, including why the policy has to reach the devices before users touch the exit node switch.
+
+### Control what the device exposes
+
+These keys decide what reaches the device, and what the device passes on. Each pins a client-side setting that also exists in the app and the CLI, and each one wins over what the dashboard configures: routes, routing-peer assignments, SSH, and access policies.
+
+| Key | Type | What it does |
+| --- | --- | --- |
+| <span id="blockInbound"></span>`blockInbound` | boolean | `true`: drops every inbound connection from other peers to this device and to any network it routes, whatever your access policies allow. Also stops the SSH server and stops the device acting as a routing peer. Outbound connections from the device are not affected. See [Block Inbound Connections](/client/block-inbound-connections). |
+| <span id="allowServerSSH"></span>`allowServerSSH` | boolean | `false`: the [NetBird SSH server](/manage/peers/ssh) never runs on this device, even if SSH is enabled for the peer in the dashboard. `true`: lets it run, but only once SSH is also enabled for the peer in the dashboard and `blockInbound` is off. |
+| <span id="disableServerRoutes"></span>`disableServerRoutes` | boolean | `true`: the device never acts as a [routing peer](/manage/networks/how-routing-peers-work). It does not forward traffic to the networks, resources, or exit node it is assigned to serve. |
+| <span id="disableClientRoutes"></span>`disableClientRoutes` | boolean | `true`: the device ignores the routes it receives. It does not install routes to network resources reached through a routing peer, and it cannot use an exit node. It can still reach other peers directly. |
+
+- **The two route keys are easy to mix up.** "Client" and "server" describe the device's role in a route, not the direction of the traffic. `disableClientRoutes` stops the device *using* routes, which is what an end-user laptop does. `disableServerRoutes` stops the device *providing* routes, which is what a routing peer does. On a laptop, `disableClientRoutes: true` cuts it off from every network resource and exit node, which is rarely what you want. `disableServerRoutes: true` is the safe choice for laptops, because it stops a laptop that has been wrongly assigned as a routing peer from carrying other peers' traffic.
+- **Do not send `blockInbound` or `disableServerRoutes` to routing peers.** A routing peer with either key set stops forwarding. If it is the only routing peer for a network, that network becomes unreachable for everyone. Scope these keys to a device group that excludes routing peers and servers.
+- **`blockInbound` is not a kill switch.** It blocks connections *to* the device, not traffic *from* it, and it does not keep the tunnel up. Use it for devices that only ever consume resources, such as most end-user laptops, and never for a device other peers need to reach.
+
+### Encrypt the tunnel
+
+These keys change how connections are encrypted. Each one has to match on both ends of a connection, so a key sent to only part of a fleet can cut that part off from the rest.
+
+| Key | Type | What it does |
+| --- | --- | --- |
+| <span id="preSharedKey"></span>`preSharedKey` | string | A WireGuard pre-shared key mixed into every connection this device makes. Only peers configured with the **same** key can connect to each other. Redacted in logs, and never returned by the client API. |
+| <span id="rosenpassEnabled"></span>`rosenpassEnabled` | boolean | Turns on [Rosenpass](/client/post-quantum-cryptography), a post-quantum key exchange that rotates a fresh pre-shared key every two minutes. Experimental. A device with Rosenpass on cannot connect to a peer without it unless `rosenpassPermissive` is also on. |
+| <span id="rosenpassPermissive"></span>`rosenpassPermissive` | boolean | With Rosenpass on, lets this device fall back to a standard WireGuard connection with a peer that does not run Rosenpass, and keeps using Rosenpass with the peers that do. |
+
+- **A pre-shared key splits your network in two.** Devices that have the key and devices that do not cannot connect to each other. If Acme pushed a `preSharedKey` to its laptops, the laptops would lose every routing peer and server that does not carry the same key. Only use it when every peer, including routing peers and servers, gets the same key.
+- **The pre-shared key is not hidden from local users.** By default, standard users can read `HKLM\Software\Policies` on Windows, and the macOS managed-preferences file is readable by every user. Treat the key as an extra layer of protection, never as a credential that only administrators know.
+- **To roll out Rosenpass, start in permissive mode.** Push `rosenpassEnabled: true` with `rosenpassPermissive: true`, so devices that do not have Rosenpass yet can still connect. Remove permissive mode once every peer runs Rosenpass.
+
+### Support and monitoring
+
+These keys turn on remote diagnostics and local metrics. Both expose information about the device, so the safe default is to leave them off and pin them on only where you need them.
+
+| Key | Type | What it does |
+| --- | --- | --- |
+| <span id="allowRemoteJobs"></span>`allowRemoteJobs` | boolean | `true`: lets the management server run [remote jobs](/manage/peers/remote-jobs) on this device, such as collecting a debug bundle. Off by default. `false`: pins remote jobs off, so a user cannot turn them on. |
+| <span id="debugBundleUploadURL"></span>`debugBundleUploadURL` | string | Where debug bundles produced by remote jobs are uploaded, overriding the location the management server asks for. Must be an `https` URL with a host; any other value is ignored. Treated as a secret and never logged, because the URL can carry credentials or a signed token. |
+| <span id="enableLocalMetrics"></span>`enableLocalMetrics` | boolean | Turns on the client's [local Prometheus `/metrics` endpoint](/client/local-metrics), which reports peer connection state, latency, and whether each connection is direct or relayed. |
+| <span id="localMetricsAddress"></span>`localMetricsAddress` | string | The address the `/metrics` endpoint listens on. Default `127.0.0.1:9191`. |
+
+- **Pin the upload URL wherever you allow remote jobs.** A debug bundle holds peer names, IP addresses, and logs. Setting `debugBundleUploadURL` to an upload server you run keeps bundles on infrastructure you control.
+- **Keep the metrics endpoint on loopback.** The endpoint has no authentication. A user can only bind it to a loopback address unless they are root, but a policy value is applied exactly as written. A non-loopback `localMetricsAddress` publishes peer names and connection state to anything that can reach the port.
+
+### Tune the connection
+
+Most fleets never need these keys.
+
+| Key | Type | What it does |
+| --- | --- | --- |
+| <span id="lazyConnection"></span>`lazyConnection` | boolean | Overrides the account's [lazy connections](/manage/peers/lazy-connection) setting on this device. `true` forces lazy connections on, `false` forces them off, and leaving the key out uses the setting from the management server. The `NB_LAZY_CONN` environment variable, if set on the device, takes precedence over this key. |
+| <span id="wireguardPort"></span>`wireguardPort` | integer | The local UDP port the WireGuard interface listens on. Default `51820`. Values outside `1` to `65535` are ignored, and the client keeps its previous port. |
+
+Set `wireguardPort` only when another program on the device needs the default port, or your firewall rules expect a specific one.
+
+### Keys with no effect yet
+
+The client recognizes these keys, so they do no harm in a payload, but none of them changes anything today.
+
+| Key | Type | Status |
+| --- | --- | --- |
+| <span id="splitTunnelMode"></span>`splitTunnelMode` | string | `allow` or `disallow`. Intended for per-app split tunneling on Android, which has no MDM channel yet. Ignored on every other platform. |
+| <span id="splitTunnelApps"></span>`splitTunnelApps` | string | A comma-separated list of Android package names for `splitTunnelMode`. Same status. |
+| <span id="disableMetricsCollection"></span>`disableMetricsCollection` | boolean | Reserved for a future client telemetry feature. Unrelated to `enableLocalMetrics`. |
+
+## Back to the example
+
+Acme's baseline pinned the server, made settings read-only, and removed profiles. With the reference in hand, the security team adds two keys for laptops, which only ever consume resources:
+
+| Key | Value | Why |
+| --- | --- | --- |
+| `managementURL` | `https://netbird.example.com:443` | Baseline |
+| `disableUpdateSettings` | `true` | Baseline |
+| `disableProfiles` | `true` | Baseline |
+| `disableServerRoutes` | `true` | A laptop that is wrongly assigned as a routing peer never carries other peers' traffic |
+| `blockInbound` | `true` | No peer can open a connection to a laptop, whatever the access policies say |
+
+Acme sends this policy to the device group **Laptops** only. Its routing peers and servers are not in that group, so they keep forwarding traffic and accepting connections. Acme also leaves `preSharedKey` and `disableClientRoutes` out: a pre-shared key would cut the laptops off from the routing peers, and `disableClientRoutes` would cut them off from every network resource.
+
+If your laptops need to accept connections, for example to let IT reach them over [NetBird SSH](/manage/peers/ssh), leave `blockInbound` out and control inbound access with access policies instead.
 
 ## Verifying enforcement
 
-On Windows and macOS, the cleanest verification is the daemon's own
-debug dump:
+On Windows and macOS, ask the daemon what it is enforcing:
 
 ```bash
 netbird debug config
 ```
 
-The response includes a `mDMManagedFields` array that lists every key
-the daemon is currently honoring from the MDM source. If a key you
-expected to be locked is missing from that array, the MDM payload did
-not reach the device (or used a value name the daemon does not
-recognize).
+This prints the daemon's resolved configuration as JSON, after every layer including the policy. Its `mDMManagedFields` array lists every key the daemon is enforcing from the policy right now. On one of Acme's laptops it reads:
 
-The client UI mirrors the same state: any submenu item, settings field,
-or kill switch driven by MDM appears greyed out with a **(MDM)** tag
-next to its label.
+```json
+"mDMManagedFields": [
+  "blockInbound",
+  "disableProfiles",
+  "disableServerRoutes",
+  "disableUpdateSettings",
+  "managementURL"
+]
+```
 
-Daemon logs (`/var/log/netbird/client.log` on Linux/macOS,
-`%ProgramData%\Netbird\` on Windows) contain a one-line
-`MDM enrolled with N managed key(s): [...]` entry on every reload, plus
-one `MDM override <key> = <value>` line per applied key. Secrets are
-redacted.
+If a key you sent is missing from the array, the policy did not reach the device, or it used a name the client does not recognize. The client log records the same information on every reload: one `MDM enrolled with N managed key(s): [...]` line, and one `MDM override <key> = <value>` line for each key it applied, with secrets redacted. The log is `/var/log/netbird/client.log` on macOS and `C:\ProgramData\Netbird\client.log` on Windows.
+
+On iOS there is no CLI. See [Verifying on a device](/manage/peers/mdm-deployment/ios-mdm-policy#verifying-on-a-device).
 
 ## Troubleshooting
 
-**The policy did not apply at all.**
-Check that the daemon can see the source.
+Problems specific to one delivery channel, such as a Group Policy that never reaches the registry or a macOS profile that disappears after a reboot, are covered on the [Windows](/manage/peers/mdm-deployment/windows-mdm-policy#troubleshooting), [macOS](/manage/peers/mdm-deployment/macos-mdm-policy#troubleshooting), and [iOS](/manage/peers/mdm-deployment/ios-mdm-policy#troubleshooting) pages. The problems below look the same on every platform.
 
-- Windows: `reg query HKLM\Software\Policies\NetBird` — if empty, the
-  delivery channel did not write the values. Check `gpresult /h` for
-  GPO failures or the Intune sync status in **Settings → Accounts →
-  Access work or school → Info → Sync**.
-- macOS:
-  `sudo defaults read /Library/Managed\ Preferences/io.netbird.client`
-  — if the file is missing, the MDM payload was not pushed or the
-  bundle id in the profile does not match `io.netbird.client`.
-- iOS / tvOS: nothing is locked in the app. The app configuration only
-  reaches an app the MDM itself installed, so confirm NetBird is a
-  managed app on that device, that the app-configuration payload is
-  assigned to the same group, and that its bundle id is
-  `io.netbird.app` (`io.netbird.app.tv` on tvOS).
+**`mDMManagedFields` is empty or missing keys.**
+Start at the source. Confirm the values are in the registry or the managed-preferences file, using the commands on the platform page. If they are, look for `MDM ignoring unknown` in the client log: the value name does not match any key in the [reference](#policy-keys-reference). Names are matched without regard to case, but must otherwise be exact. `WireGuardPort`, for example, matches; `WgPort` does not.
 
-**The key shows up in the registry / plist but not in `netbird debug
-config` `mDMManagedFields`.**
-The value name is misspelled. Names are case-insensitive but must match
-one of the keys in the reference table above. The daemon log emits an
-`MDM ignoring unknown <key>` warning when this happens.
+**A key is listed in `mDMManagedFields` but the setting did not change.**
+The value is the wrong type or out of range. The key still counts as managed, so users cannot change the setting, but the client keeps its previous value. The client log has a warning such as `MDM management URL "..." invalid` or `MDM wireguard port ... out of range`. On Windows, check that the value has the [registry type](/manage/peers/mdm-deployment/windows-mdm-policy#registry-value-types) the key expects. A `managementURL` stored as a `REG_DWORD`, for example, is ignored.
 
-**The user can still change the field from the GUI / CLI.**
-The change is being rejected by the daemon but the UI may not have
-caught up yet. The UI refreshes within a couple of seconds after a
-config change; try closing and reopening the Settings window. If the
-change actually sticks, double-check that the MDM payload is still
-present on the device — it may have been removed by another policy.
+**A user gets `fields managed by MDM cannot be modified: [...]`.**
+The policy is working: the user, or a script, tried to change a pinned setting. The keys in the brackets are the pinned settings involved. Change those settings through your MDM instead.
 
-**On macOS, the file disappears after a reboot.**
-The device is not MDM-enrolled. macOS protects
-`/Library/Managed Preferences/` by wiping it at boot if no MDM
-controls the directory. Enroll the device with a real MDM provider for
-persistent rollouts.
+**A user gets `update settings are disabled, you cannot use this feature without update settings enabled`.**
+`disableUpdateSettings` is on, or the service was installed with `--disable-update-settings`. Every settings change is rejected, including changes to settings no key names. Lift the policy to make the change.
 
-**On iOS, a policy change has not reached the tunnel.**
-The app passes the configuration to the engine only while it is running.
-Open NetBird and leave it in the foreground for half a minute; the
-engine restarts and reports that the policy was applied. On tvOS the
-engine does not receive the policy at all — see [When a policy takes
-effect](#when-a-policy-takes-effect).
+**A user gets `profiles are disabled, you cannot use this feature without profiles enabled`.**
+`disableProfiles` is on, or the service was installed with `--disable-profiles`. The device stays on its current profile.
 
-**My MDM provider is not in the list above.**
-Any MDM that can push a Configuration Profile on macOS, write a
-registry value on Windows, or send an app configuration on iOS works.
-The mechanism is OS-native, not
-NetBird-specific. If you hit a quirk specific to your provider, please
-open an issue at
-https://github.com/netbirdio/netbird/issues with the provider name and
-what you observed.
+**A user gets `network selection is disabled by the administrator`.**
+`disableNetworks` is on, or the service was installed with `--disable-networks`.
+
+**Lazy connections do not follow the policy.**
+The `NB_LAZY_CONN` environment variable is set on the device, and it takes precedence over `lazyConnection`. Remove it from the service environment.
+
+**Laptops lost access to network resources after a policy change.**
+Check for `disableClientRoutes: true` or a `preSharedKey` in the policy. The first stops the device using routes; the second stops it connecting to any peer that does not have the same key. See [Control what the device exposes](#control-what-the-device-exposes) and [Encrypt the tunnel](#encrypt-the-tunnel).
+
+**A network became unreachable for everyone after a policy change.**
+A routing peer received `blockInbound: true` or `disableServerRoutes: true`, and stopped forwarding. Take routing peers out of the policy's scope.
+
+**My MDM is not mentioned on these pages.**
+Any MDM that can write a registry value on Windows, push a configuration profile on macOS, or send an app configuration on iOS works, because the mechanism belongs to the operating system, not to NetBird. If you run into a problem specific to your MDM, open an issue at https://github.com/netbirdio/netbird/issues with the MDM's name and what you observed.
+
+## When not to use MDM policy
+
+- **Linux and Android devices.** Neither has an MDM channel in NetBird today. On Linux, set the same options with `netbird up` flags or the service-install flags (`netbird service install --disable-update-settings --disable-profiles --disable-networks`), or [bootstrap the client from a config file](/manage/peers/bootstrap-via-config-file).
+- **One device, one change.** To change a setting on a single machine you manage by hand, use the app or the CLI. A policy is for settings that must hold across a fleet and must not drift.
+- **Access control.** A policy configures the client on one device. Which peers can reach which resources belongs in [access policies](/manage/access-control), which apply to every device and do not depend on an MDM.
+
+## Recap
+
+In one breath, using Acme's laptops:
+
+- **A policy pins switches.** `managementURL`, `disableUpdateSettings`, and `disableProfiles` hold Acme's laptops to one server, read-only settings, and one profile; every key left out stays the user's.
+- **Present means pinned, even as `false`.** The client applies the policy last, locks what it pins, re-reads it every minute, and restarts the connection briefly when it changes.
+- **Pick keys by job.** `blockInbound` and `disableServerRoutes` suit laptops that only consume resources; never send them, or a lone `preSharedKey`, to routing peers.
+- **Verify with `netbird debug config`.** `mDMManagedFields` is the list of keys the device actually enforces.
