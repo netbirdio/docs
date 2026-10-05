@@ -189,7 +189,15 @@ Compared with API responses, streamed events do not include the user's name or e
 
 ### Streaming delivery
 
-Each traffic event is saved to the traffic events store before it is streamed, so an event that fails to stream is still visible in the Dashboard and API. Every step before streaming is retried. The NetBird client keeps each event in memory and resends it until the NetBird servers acknowledge it. The servers acknowledge an event only after queueing it, and remove it from the queue only after saving it. If processing falls behind, events wait in the queue and are delivered late rather than dropped. Events the client has not yet sent are lost if the client restarts.
+Each traffic event is saved to the traffic events store before it is streamed, so an event that fails to stream is still visible in the Dashboard and API. Every step up to that save is retried. The NetBird client keeps each event in memory and resends it until the NetBird servers acknowledge it. The servers acknowledge an event only after queueing it, and remove it from the queue only after saving it. If server processing falls behind, events wait in the queue and arrive late rather than being dropped.
+
+The client records connection starts, connection ends and blocked packets, and combines them into traffic events at the end of each aggregation window. Some of this data is lost before it reaches the servers:
+
+* **Bursts of activity.** When records arrive faster than the client can process them, for example during a burst of new connections or blocked packets, the client discards the excess. Discarded records are not counted in any traffic event.
+* **Client restart.** Events the servers have not acknowledged, and records from the current aggregation window, are lost when the client restarts.
+* **Logging turned off.** Records from the current aggregation window are lost when traffic events logging is turned off for the peer.
+
+Lost data never appears in the Dashboard, API, or stream.
 
 In rare cases, such as a server restart while an event is being processed, the same event can be streamed twice. Deduplicate on the event ID.
 
