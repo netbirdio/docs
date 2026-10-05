@@ -41,7 +41,7 @@ Each requirement maps to one policy key, so Acme's baseline policy is three keys
 | `disableUpdateSettings` | `true` | Settings are read-only |
 | `disableProfiles` | `true` | No second profile |
 
-We come back to this baseline after the reference to see what Acme adds for laptops that should never accept inbound connections.
+We come back to this baseline in [Recommended policies](#recommended-policies), to see what Acme adds for laptops that should never accept inbound connections.
 
 ## How the client applies a policy
 
@@ -176,21 +176,37 @@ The client recognizes these keys, so they do no harm in a payload, but none of t
 | <span id="splitTunnelApps"></span>`splitTunnelApps` | string | A comma-separated list of Android package names for `splitTunnelMode`. Same status. |
 | <span id="disableMetricsCollection"></span>`disableMetricsCollection` | boolean | Reserved for a future client telemetry feature. Unrelated to `enableLocalMetrics`. |
 
-## Back to the example
+## Recommended policies
 
-Acme's baseline pinned the server, made settings read-only, and removed profiles. With the reference in hand, the security team adds two keys for laptops, which only ever consume resources:
+Start from the column that matches the device group, then add or remove keys for your own posture. Send each policy to one device group, and keep routing peers out of every group that gets `blockInbound` or `disableServerRoutes`.
 
-| Key | Value | Why |
-| --- | --- | --- |
-| `managementURL` | `https://netbird.example.com:443` | Baseline |
-| `disableUpdateSettings` | `true` | Baseline |
-| `disableProfiles` | `true` | Baseline |
-| `disableServerRoutes` | `true` | A laptop that is wrongly assigned as a routing peer never carries other peers' traffic |
-| `blockInbound` | `true` | No peer can open a connection to a laptop, whatever the access policies say |
+| Key | End-user laptops | Shared or kiosk devices | Routing peers and servers |
+| --- | --- | --- | --- |
+| `managementURL` | ✓ | ✓ | ✓ |
+| `disableUpdateSettings` | ✓ | ✓ | ✓ |
+| `disableProfiles` | ✓ | ✓ | ✓ |
+| `disableServerRoutes` | ✓ | ✓ | never |
+| `blockInbound` | optional | ✓ | never |
+| `allowRemoteJobs` | optional, with `debugBundleUploadURL` | `false` | `false` |
+| `disableNetworks` | | ✓ | |
+| `disableAdvancedView` | | ✓ | |
+| `disableAutoConnect: false` (always connect at boot) | | ✓ | ✓ |
 
-Acme sends this policy to the device group **Laptops** only. Its routing peers and servers are not in that group, so they keep forwarding traffic and accepting connections. Acme also leaves `preSharedKey` and `disableClientRoutes` out: a pre-shared key would cut the laptops off from the routing peers, and `disableClientRoutes` would cut them off from every network resource.
+Why each column looks the way it does:
 
-If your laptops need to accept connections, for example to let IT reach them over [NetBird SSH](/manage/peers/ssh), leave `blockInbound` out and control inbound access with access policies instead.
+- **End-user laptops** consume resources and never serve them, so `disableServerRoutes` stops one that is wrongly assigned as a routing peer from carrying other peers' traffic. Add `blockInbound` if nothing ever needs to reach a laptop. Leave it out if IT reaches laptops over [NetBird SSH](/manage/peers/ssh), and control inbound access with access policies instead. Turn on `allowRemoteJobs` if your support team collects [debug bundles](/manage/peers/remote-jobs) remotely, and pin `debugBundleUploadURL` with it so bundles go to an upload server you control.
+- **Shared or kiosk devices** need the least the user can change: no network or exit node choice, no advanced view, and a connection at every boot.
+- **Routing peers and servers** must keep forwarding traffic and accepting connections, so they never get `blockInbound` or `disableServerRoutes`. This column only applies to Windows and macOS machines; Linux has no MDM channel, so configure Linux routing peers with [CLI flags](#when-not-to-use-mdm-policy).
+
+Leave these keys out unless you have a specific reason:
+
+- `preSharedKey`, `rosenpassEnabled`, `rosenpassPermissive`: each has to match on every peer, or devices lose their connections. See [Encrypt the tunnel](#encrypt-the-tunnel).
+- `disableClientRoutes`: cuts a device off from every network resource and exit node.
+- `wireguardPort`, `lazyConnection`: the defaults suit almost every fleet.
+- `enableLocalMetrics`, `localMetricsAddress`: only for devices you scrape with Prometheus.
+- `splitTunnelMode`, `splitTunnelApps`, `disableMetricsCollection`: no effect yet.
+
+Acme uses the laptops column and adds `blockInbound`, because nothing needs to reach its laptops. Its five-key policy goes to the device group **Laptops** only, so its routing peers and servers keep forwarding traffic and accepting connections.
 
 ## Verifying enforcement
 
