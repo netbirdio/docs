@@ -45,7 +45,7 @@ We come back to this baseline after the reference to see what Acme adds for lapt
 
 ## How the client applies a policy
 
-Think of a policy as **a set of pinned switches**. Every key in the payload pins one setting to the value you chose and takes it out of the user's reach. Every key you leave out stays an ordinary setting that the user, the CLI, or the dashboard controls as usual. Most mistakes come from forgetting the second half of that sentence, so it is worth stating twice: **a key that is absent is not pinned, and a key that is present is pinned, whatever its value.**
+Think of a policy as **a set of pinned switches**. Every key in the payload pins one setting to the value you chose and takes it out of the user's reach. Every key you leave out stays an ordinary setting that the user, the CLI, or the dashboard controls as usual. **A key that is absent is not pinned, and a key that is present is pinned, whatever its value.**
 
 <Note>
 **Pushing `false` is not the same as leaving a key out.** `allowServerSSH: false` pins the SSH server off: no user, CLI flag, or dashboard setting can turn it on while the policy stands. Leaving `allowServerSSH` out of the payload leaves the SSH server to whoever controls the device. Only include the keys you mean to pin.
@@ -54,16 +54,18 @@ Think of a policy as **a set of pinned switches**. Every key in the payload pins
 On Windows and macOS, the client daemon reads the policy at startup and again every minute. Each time:
 
 1. **It applies the policy on top of every other configuration layer.** Defaults, the on-disk profile, environment variables, and CLI or app input all apply first; the policy is applied last and wins. A policy also overrides the service-install flags `--disable-update-settings`, `--disable-profiles`, and `--disable-networks`: pushing `disableNetworks: false` re-enables network selection even on a device installed with `--disable-networks`. One exception: the `NB_LAZY_CONN` environment variable takes precedence over the `lazyConnection` key.
-2. **It locks every pinned setting.** A request that tries to change a pinned setting to a different value, from the desktop app, the CLI (`netbird up --flag`, `netbird login --flag`) or the daemon API, is rejected as a whole with `fields managed by MDM cannot be modified: [<keys>]`. None of its other fields are applied either. A request that repeats the pinned value is accepted, because it changes nothing.
+2. **It locks the pinned settings.** A request that tries to change a pinned setting to a different value, from the desktop app, the CLI (`netbird up --flag`, `netbird login --flag`) or the daemon API, is rejected as a whole with `fields managed by MDM cannot be modified: [<keys>]`. None of its other fields are applied either. A request that repeats the pinned value is accepted, because it changes nothing. Two keys only change what the desktop app does and lock nothing: [`disableAutostart`](#disableAutostart) and [`disableAdvancedView`](#disableAdvancedView).
 3. **It never writes policy values to disk.** The on-disk profile keeps the device's own settings. When you remove a key from the policy, the setting falls back to that on-disk value on the next reload and becomes editable again, with nothing left behind.
 
-When a reload finds that the policy has changed, the client restarts its connection to apply it. Expect a brief interruption of a few seconds on every policy change, and plan larger changes outside working hours. The desktop app then shows a notification: **NetBird settings updated**, "Your NetBird configuration was updated by your IT policy."
+When a reload finds that the policy has changed, the client restarts its connection to apply it. Expect a brief interruption on every policy change, and plan larger changes outside working hours. The desktop app then shows a notification: **NetBird settings updated**, "Your NetBird configuration was updated by your IT policy."
 
 On iOS the timing is different: the app passes the policy to the tunnel only while the app is running. See [Enforce settings on iOS](/manage/peers/mdm-deployment/ios-mdm-policy#when-a-policy-takes-effect).
 
 ### What a user sees
 
-Since NetBird v0.75.0, the desktop app **hides** the controls for pinned settings rather than greying them out. On Acme's laptops, the server address field is gone, and read-only mode removes the **Network**, **Security**, **SSH**, and **Advanced** settings tabs, while `disableProfiles` removes the **Profiles** tab. **General**, **Troubleshooting**, and **About** remain, and the **Connect** button still works. On the CLI, changing a pinned setting fails with the error above, and the [`disableUpdateSettings`](#disableUpdateSettings), [`disableProfiles`](#disableProfiles), and [`disableNetworks`](#disableNetworks) gates have errors of their own, listed under [Troubleshooting](#troubleshooting).
+Since NetBird v0.75.0, the desktop app **hides** the controls for pinned settings rather than greying them out. On Acme's laptops, the server address field is gone. Read-only mode removes the **Network**, **Security**, **SSH**, and **Advanced** settings tabs, and `disableProfiles` removes the **Profiles** tab. **General**, **Troubleshooting**, and **About** remain, and the **Connect** button still works.
+
+On the CLI, changing a pinned setting fails with the error above. The [`disableUpdateSettings`](#disableUpdateSettings), [`disableProfiles`](#disableProfiles), and [`disableNetworks`](#disableNetworks) keys have errors of their own, listed under [Troubleshooting](#troubleshooting).
 
 ### What a policy does not do
 
@@ -77,7 +79,7 @@ Key names are camelCase in plist and app-configuration payloads. On Windows, the
 
 Value types:
 
-- **boolean**: a native boolean, an integer (`0` is false, anything else is true), or one of the strings `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`.
+- **boolean**: a native boolean (`<true/>` or `<false/>` in a plist), or one of the strings `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`. An integer (`0` is false, anything else is true) also works on Windows (`REG_DWORD`) and iOS, but **not on macOS**: there, a boolean written as `<integer>` is listed as managed but has no effect.
 - **string**: a string. An empty string counts as not set.
 - **integer**: an integer, or a string of decimal digits.
 
@@ -93,7 +95,7 @@ Nearly every rollout sets `managementURL`. The other two keys decide whether Net
 | <span id="disableAutoConnect"></span>`disableAutoConnect` | boolean | `true`: the client does not connect when its service starts, so the user has to click **Connect** or run `netbird up`. `false`: pins [Connect on Startup](/client/connect-on-startup) on, so the client always connects at boot. |
 | <span id="disableAutostart"></span>`disableAutostart` | boolean | `true`: the desktop app does not open itself at login. The app removes its login entry (Windows `Run` registry key, macOS Login Item, Linux `.desktop` file) every time it starts, and never creates one on a fresh install. The background service is not affected. Desktop app only. |
 
-- **`managementURL` pins the server, not the account.** NetBird Cloud serves every customer's account from `https://api.netbird.io:443`, so on Cloud this key stops a user from pointing the client at a different server, but not from signing in to a different Cloud account. To keep company devices in your account, also set `disableProfiles`, and use your identity provider to decide who can sign in.
+- **`managementURL` pins the server, not the account.** NetBird Cloud serves every account from `https://api.netbird.io:443`, so on Cloud this key stops a user from pointing the client at another server, but not from signing in to another Cloud account. No key pins the account. A device signed in to another account has no access to your resources, because your access policies do not apply to it.
 - **`disableAutostart` only acts when the app starts.** The **Launch NetBird UI at Login** switch in the app's settings stays usable. A user who turns it back on gets the app at their next login, and the app removes the entry again as soon as it opens. Pushing `false` does not turn launch-at-login on; it only stops the app from removing the entry.
 
 ### Lock the client app
@@ -105,7 +107,7 @@ These keys decide how much of the app a user can touch. Acme's baseline uses the
 | <span id="disableUpdateSettings"></span>`disableUpdateSettings` | boolean | Read-only mode. Every request that would change a setting is rejected, from the app or the CLI (`netbird up --flag`, `netbird login --flag`). Connecting, disconnecting, and signing in again still work, because they change no settings. |
 | <span id="disableProfiles"></span>`disableProfiles` | boolean | Hides the profile menu and rejects creating, renaming, removing, or switching [profiles](/client/profiles). The device stays on its current profile. |
 | <span id="disableNetworks"></span>`disableNetworks` | boolean | Hides the Networks and Exit Node menus and rejects listing, selecting, or deselecting networks and exit nodes. The user cannot opt out of the routes the dashboard assigns to the device. |
-| <span id="disableAdvancedView"></span>`disableAdvancedView` | boolean | Hides the advanced view of the desktop app (on iOS, the Advanced section). It only changes what the app shows: no setting is locked, and no request is rejected because of it. Pushing `false` keeps the advanced view available even where the app would otherwise hide it. |
+| <span id="disableAdvancedView"></span>`disableAdvancedView` | boolean | Hides the advanced view of the desktop app (on iOS, the Advanced section). It only changes what the app shows: no setting is locked, and no request is rejected because of it. |
 
 - **`disableUpdateSettings` covers settings no key names.** The DNS, firewall, interface, and SSH sub-options have no key of their own, so the only way to stop users changing them is read-only mode. On a device with `disableUpdateSettings: true`, an administrator who needs to change one of those settings has to lift the policy first.
 - **`disableNetworks` plus an exit node pins the device to that exit node.** With an exit node that has **Auto Apply** enabled, the exit node is applied automatically and the user cannot deselect it. See [Enforcing the exit node on managed devices](/use-cases/remote-access/exit-nodes#enforcing-the-exit-node-on-managed-devices) for the full recipe, including why the policy has to reach the devices before users touch the exit node switch.
@@ -210,7 +212,7 @@ This prints the daemon's resolved configuration as JSON, after every layer inclu
 ]
 ```
 
-If a key you sent is missing from the array, the policy did not reach the device, or it used a name the client does not recognize. The client log records the same information on every reload: one `MDM enrolled with N managed key(s): [...]` line, and one `MDM override <key> = <value>` line for each key it applied, with secrets redacted. The log is `/var/log/netbird/client.log` on macOS and `C:\ProgramData\Netbird\client.log` on Windows.
+If a key you sent is missing from the array, the policy did not reach the device, or it used a name the client does not recognize. The client log records the same information on every reload: one `MDM enrolled with N managed key(s): [...]` line, and one `MDM override <key> = <value>` line for each setting it overrode, with secrets redacted. The log is `/var/log/netbird/client.log` on macOS and `C:\ProgramData\Netbird\client.log` on Windows.
 
 On iOS there is no CLI. See [Verifying on a device](/manage/peers/mdm-deployment/ios-mdm-policy#verifying-on-a-device).
 
@@ -260,5 +262,5 @@ In one breath, using Acme's laptops:
 
 - **A policy pins switches.** `managementURL`, `disableUpdateSettings`, and `disableProfiles` hold Acme's laptops to one server, read-only settings, and one profile; every key left out stays the user's.
 - **Present means pinned, even as `false`.** The client applies the policy last, locks what it pins, re-reads it every minute, and restarts the connection briefly when it changes.
-- **Pick keys by job.** `blockInbound` and `disableServerRoutes` suit laptops that only consume resources; never send them, or a lone `preSharedKey`, to routing peers.
+- **Pick keys by job.** `blockInbound` and `disableServerRoutes` suit laptops that only consume resources, never routing peers. A `preSharedKey` goes to every peer or none.
 - **Verify with `netbird debug config`.** `mDMManagedFields` is the list of keys the device actually enforces.
