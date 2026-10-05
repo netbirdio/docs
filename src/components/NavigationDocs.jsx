@@ -951,6 +951,10 @@ export const docsNavigation = [
                         href: '/use-cases/remote-access/exit-nodes',
                     },
                     {
+                        title: 'NVIDIA DGX Spark',
+                        href: '/use-cases/remote-access/dgx-spark',
+                    },
+                    {
                         title: 'Overlapping IPs for Resources',
                         href: '/use-cases/remote-access/overlapping-ips-for-resources',
                     },
