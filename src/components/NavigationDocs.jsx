@@ -111,6 +111,10 @@ export const docsNavigation = [
                         isOpen: false,
                         links: [
                             {
+                                title: 'MDM Integration',
+                                href: '/client/mdm-integration',
+                            },
+                            {
                                 title: 'Enforce Settings on Windows',
                                 href: '/manage/peers/mdm-deployment/windows-mdm-policy',
                             },
