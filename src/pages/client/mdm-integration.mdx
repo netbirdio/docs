@@ -54,10 +54,10 @@ Think of a policy as **a set of pinned switches**. Every key in the payload pins
 On Windows and macOS, the client daemon reads the policy at startup and again every minute. Each time:
 
 1. **It applies the policy on top of every other configuration layer.** Defaults, the on-disk profile, environment variables, and CLI or app input all apply first; the policy is applied last and wins. A policy also overrides the service-install flags `--disable-update-settings`, `--disable-profiles`, and `--disable-networks`: pushing `disableNetworks: false` re-enables network selection even on a device installed with `--disable-networks`. One exception: the `NB_LAZY_CONN` environment variable takes precedence over the `lazyConnection` key.
-2. **It locks the pinned settings.** A request that tries to change a pinned setting to a different value, from the desktop app, the CLI (`netbird up --flag`, `netbird login --flag`) or the daemon API, is rejected as a whole with `fields managed by MDM cannot be modified: [<keys>]`. None of its other fields are applied either. A request that repeats the pinned value is accepted, because it changes nothing. Two keys only change what the app shows or does, and lock nothing: [`disableAutostart`](#disableAutostart) and [`disableAdvancedView`](#disableAdvancedView).
+2. **It locks the pinned settings.** A request that tries to change a pinned setting to a different value, from the desktop app, the CLI (`netbird login --flag`, or `netbird up --flag` on a disconnected client) or the daemon API, is rejected as a whole with `fields managed by MDM cannot be modified: [<keys>]`. None of its other fields are applied either. A request that repeats the pinned value is accepted, because it changes nothing. These locks read the policy file on every request, so they apply as soon as the file changes; the `disableUpdateSettings`, `disableProfiles`, and `disableNetworks` gates apply at the next reload. Two keys only change what the app shows or does, and lock nothing: [`disableAutostart`](#disableAutostart) and [`disableAdvancedView`](#disableAdvancedView).
 3. **It never writes policy values to disk.** The on-disk profile keeps the device's own settings. When you remove a key from the policy, the setting falls back to that on-disk value on the next reload and becomes editable again, with nothing left behind.
 
-When a reload finds that the policy has changed, the client restarts its connection to apply it. Expect a brief interruption on every policy change, and plan larger changes outside working hours. The desktop app then shows a notification: **NetBird settings updated**, "Your NetBird configuration was updated by your IT policy."
+When a reload finds that the policy has changed, the client restarts its connection to apply it. Expect a brief interruption on every policy change (typically a second or two), and plan larger changes outside working hours. The desktop app then shows a notification: **NetBird settings updated**, "Your NetBird configuration was updated by your IT policy."
 
 On iOS the timing is different: the app passes the policy to the tunnel only while the app is running. See [Enforce settings on iOS](/manage/peers/mdm-deployment/ios-mdm-policy#when-a-policy-takes-effect).
 
@@ -104,7 +104,7 @@ These keys decide how much of the app a user can touch. Acme's baseline uses the
 
 | Key | Type | What it does |
 | --- | --- | --- |
-| <span id="disableUpdateSettings"></span>`disableUpdateSettings` | boolean | Read-only mode. Every request that would change a setting is rejected, from the app or the CLI (`netbird up --flag`, `netbird login --flag`). Connecting, disconnecting, and signing in again still work, because they change no settings. |
+| <span id="disableUpdateSettings"></span>`disableUpdateSettings` | boolean | Read-only mode. Every request that would change a setting is rejected, from the app or the CLI (`netbird login --flag`, or `netbird up --flag` on a disconnected client). Connecting, disconnecting, and signing in again still work, because they change no settings. |
 | <span id="disableProfiles"></span>`disableProfiles` | boolean | Hides profile management in the app and rejects creating, renaming, removing, or switching [profiles](/client/profiles). The device stays on its current profile. |
 | <span id="disableNetworks"></span>`disableNetworks` | boolean | Stops the user changing which networks and exit node the device uses. Networks and exit nodes **keep working**: the device still reaches the resources and exit node the dashboard assigns to it. Only the choice is taken away. The app hides the exit node switcher and the **Resources** tab, and `netbird networks list`, `select`, and `deselect` are rejected. The device keeps whatever selection it had when the policy arrived. |
 | <span id="disableAdvancedView"></span>`disableAdvancedView` | boolean | Removes **Advanced View** from the desktop app's menu, along with its **Peers** and **Resources** tabs: the list of peers this device can see, with each connection's details, and the list of network resources. A user already in that view is switched back to the simple view. On iOS it hides the Advanced section. It only changes what the app shows: no setting is locked, and no request is rejected because of it. |
@@ -218,7 +218,7 @@ On Windows and macOS, ask the daemon what it is enforcing:
 netbird debug config
 ```
 
-This prints the daemon's resolved configuration as JSON, after every layer including the policy. Its `mDMManagedFields` array lists every key the daemon is enforcing from the policy right now. On one of Acme's laptops it reads:
+This prints the resolved configuration as JSON, after every layer including the policy. Its `mDMManagedFields` array lists every key in the policy the client reads. On one of Acme's laptops it reads:
 
 ```json
 "mDMManagedFields": [
@@ -230,7 +230,9 @@ This prints the daemon's resolved configuration as JSON, after every layer inclu
 ]
 ```
 
-If a key you sent is missing from the array, the policy did not reach the device, or it used a name the client does not recognize. The client log records the same information on every reload: one `MDM enrolled with N managed key(s): [...]` line, and one `MDM override <key> = <value>` line for each setting it overrode, with secrets redacted. The log is `/var/log/netbird/client.log` on macOS and `C:\ProgramData\Netbird\client.log` on Windows.
+If a key you sent is missing from the array, the policy did not reach the device, or it used a name the client does not recognize.
+
+`netbird debug config` reads the policy file at the moment you run it, so it shows a change straight away. The daemon applies the change at its next reload, within a minute, and logs it: `MDM policy changed: added=[...] removed=[...] changed=[...]`, followed by `MDM policy changed; restarting engine to apply new configuration`. That pair of lines is the confirmation that the policy is enforced, not just delivered. The client log records the same information on every reload: one `MDM enrolled with N managed key(s): [...]` line, and one `MDM override <key> = <value>` line for each setting it overrode, with secrets redacted. The log is `/var/log/netbird/client.log` on macOS and `C:\ProgramData\Netbird\client.log` on Windows.
 
 On iOS there is no CLI. See [Verifying on a device](/manage/peers/mdm-deployment/ios-mdm-policy#verifying-on-a-device).
 
@@ -246,6 +248,9 @@ The value is the wrong type or out of range. The key still counts as managed, so
 
 **A user gets `fields managed by MDM cannot be modified: [...]`.**
 The policy is working: the user, or a script, tried to change a pinned setting. The keys in the brackets are the pinned settings involved. Change those settings through your MDM instead.
+
+**`netbird up --flag` prints `Already connected` and changes nothing.**
+On a connected client, `netbird up` ignores its flags, whether or not a policy is in place. Run `netbird down` first. On a managed device, the change is then rejected if the policy pins that setting.
 
 **A user gets `update settings are disabled, you cannot use this feature without update settings enabled`.**
 `disableUpdateSettings` is on, or the service was installed with `--disable-update-settings`. Every settings change is rejected, including changes to settings no key names. Lift the policy to make the change.
