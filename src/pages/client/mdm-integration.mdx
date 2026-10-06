@@ -12,7 +12,7 @@ The NetBird client solves this by honoring **MDM policy**: settings your device 
 This page is in four parts:
 
 1. [What you can achieve](#what-you-can-achieve): the goals you can reach with a policy, and the setting for each.
-2. [Recommended policies](#recommended-policies): a starting policy for laptops, shared devices, and routing peers.
+2. [Recommended policies](#recommended-policies): a starting policy for user devices, shared devices, and routing peers.
 3. [How the client applies a policy](#how-the-client-applies-a-policy): the mental model, and what a user sees on a managed device.
 4. [Policy keys reference](#policy-keys-reference), then [verifying enforcement](#verifying-enforcement) and [troubleshooting](#troubleshooting).
 
@@ -90,7 +90,7 @@ None of these settings stops a user from disconnecting NetBird. See [What a poli
 
 Start from the column that matches the device group, then add or remove keys for your own posture. Send each policy to one device group, and keep routing peers out of every group that gets `blockInbound` or `disableServerRoutes`.
 
-| Key | End-user laptops | Shared or kiosk devices | Routing peers and servers |
+| Key | User devices | Shared or kiosk devices | Routing peers and servers |
 | --- | --- | --- | --- |
 | `managementURL` | ✓ | ✓ | ✓ |
 | `disableUpdateSettings` | ✓ | ✓ | ✓ |
@@ -104,7 +104,7 @@ Start from the column that matches the device group, then add or remove keys for
 
 Why each column looks the way it does:
 
-- **End-user laptops** consume resources and never serve them, so `disableServerRoutes` stops one that is wrongly assigned as a routing peer from carrying other peers' traffic. Add `blockInbound` if nothing ever needs to reach a laptop. Leave it out if IT reaches laptops over [NetBird SSH](/manage/peers/ssh), and control inbound access with access policies instead. Add `disableNetworks` to stop users choosing networks and exit nodes (the ones the dashboard assigns keep working), and `disableAdvancedView` to hide the **Peers** and **Resources** lists.
+- **User devices**, such as laptops and desktops, consume resources and never serve them, so `disableServerRoutes` stops one that is wrongly assigned as a routing peer from carrying other peers' traffic. Add `blockInbound` if nothing ever needs to reach these devices. Leave it out if IT reaches them over [NetBird SSH](/manage/peers/ssh), and control inbound access with access policies instead. Add `disableNetworks` to stop users choosing networks and exit nodes (the ones the dashboard assigns keep working), and `disableAdvancedView` to hide the **Peers** and **Resources** lists.
 - **Shared or kiosk devices** should leave the user as little as possible to change: no network or exit node choice, no advanced view, and a connection at every boot.
 - **Routing peers and servers** must keep forwarding traffic and accepting connections, so they never get `blockInbound` or `disableServerRoutes`. This column only applies to Windows and macOS machines; Linux has no MDM channel, so configure Linux routing peers with [CLI flags](#when-not-to-use-mdm-policy).
 - **Remote jobs** are optional in every column. Turn on `allowRemoteJobs` wherever your support team collects [debug bundles](/manage/peers/remote-jobs) remotely, and always pin `debugBundleUploadURL` with it, so bundles go to an upload server you control. Routing peers are often the first place to look when a resource is unreachable or relayed.
@@ -118,13 +118,13 @@ Leave these keys out unless you have a specific reason:
 - `enableLocalMetrics`, `localMetricsAddress`: only for devices you scrape with Prometheus.
 - `splitTunnelMode`, `splitTunnelApps`, `disableMetricsCollection`: no effect yet.
 
-### The laptop baseline
+### The user device baseline
 
 The three keys every column above shares make the usual starting policy, and the platform pages use it as their example. With a self-hosted management server:
 
 | Key | Value | What it does |
 | --- | --- | --- |
-| `managementURL` | `https://netbird.example.com:443` | Every laptop talks to your server and nothing else |
+| `managementURL` | `https://netbird.example.com:443` | Every device talks to your server and nothing else |
 | `disableUpdateSettings` | `true` | Users can connect and disconnect, but cannot change settings |
 | `disableProfiles` | `true` | Users cannot add a second profile |
 
@@ -150,7 +150,7 @@ On iOS the timing is different: the app passes the policy to the tunnel only whi
 
 ### What a user sees
 
-Since NetBird v0.75.0, the desktop app **hides** the controls for pinned settings rather than greying them out. With the laptop baseline, the server address field is gone. Read-only mode removes the **Network**, **Security**, **SSH**, and **Advanced** settings tabs, and `disableProfiles` removes the **Profiles** tab. **General**, **Troubleshooting**, and **About** remain, and the **Connect** button still works.
+Since NetBird v0.75.0, the desktop app **hides** the controls for pinned settings rather than greying them out. With the user device baseline, the server address field is gone. Read-only mode removes the **Network**, **Security**, **SSH**, and **Advanced** settings tabs, and `disableProfiles` removes the **Profiles** tab. **General**, **Troubleshooting**, and **About** remain, and the **Connect** button still works.
 
 On the CLI, changing a pinned setting fails with the error above. The [`disableUpdateSettings`](#disableUpdateSettings), [`disableProfiles`](#disableProfiles), and [`disableNetworks`](#disableNetworks) keys have errors of their own, listed under [Troubleshooting](#troubleshooting).
 
@@ -187,7 +187,7 @@ Nearly every rollout sets `managementURL`. The other two keys decide whether Net
 
 ### Client app keys
 
-These keys decide how much of the app a user can touch. The laptop baseline uses the first two.
+These keys decide how much of the app a user can touch. The user device baseline uses the first two.
 
 | Key | Type | What it does |
 | --- | --- | --- |
@@ -271,7 +271,7 @@ On Windows and macOS, ask the daemon what it is enforcing:
 netbird debug config
 ```
 
-This prints the resolved configuration as JSON, after every layer including the policy. Its `mDMManagedFields` array lists every key in the policy the client reads. For the laptop baseline it reads:
+This prints the resolved configuration as JSON, after every layer including the policy. Its `mDMManagedFields` array lists every key in the policy the client reads. For the user device baseline it reads:
 
 ```json
 "mDMManagedFields": [
@@ -315,7 +315,7 @@ On a connected client, `netbird up` ignores its flags, whether or not a policy i
 **Lazy connections do not follow the policy.**
 The `NB_LAZY_CONN` environment variable is set on the device, and it takes precedence over `lazyConnection`. Remove it from the service environment.
 
-**Laptops lost access to network resources after a policy change.**
+**Devices lost access to network resources after a policy change.**
 Check for `disableClientRoutes: true` or a `preSharedKey` in the policy. The first stops the device using routes; the second stops it connecting to any peer that does not have the same key. See [Device exposure keys](#device-exposure-keys) and [Encryption keys](#encryption-keys).
 
 **A network became unreachable for everyone after a policy change.**
@@ -332,7 +332,7 @@ Any MDM that can write a registry value on Windows, push a configuration profile
 
 ## TL;DR
 
-- **Find the goal, set the key.** [What you can achieve](#what-you-can-achieve) maps each goal to a setting, and [the laptop baseline](#the-laptop-baseline) (`managementURL`, `disableUpdateSettings`, `disableProfiles`) is the usual start.
+- **Find the goal, set the key.** [What you can achieve](#what-you-can-achieve) maps each goal to a setting, and [the user device baseline](#the-user-device-baseline) (`managementURL`, `disableUpdateSettings`, `disableProfiles`) is the usual start.
 - **Present means pinned, even as `false`.** Every key you leave out stays the user's. The client applies the policy last, locks what it pins, re-reads it every minute, and restarts the connection briefly when it changes.
 - **Keep routing peers out of the wrong policy.** Never send them `blockInbound` or `disableServerRoutes`, and send a `preSharedKey` to every peer or none.
 - **Verify with `netbird debug config`, then the log.** `mDMManagedFields` shows the policy the client reads; the `MDM policy changed` log line confirms it is enforced.
