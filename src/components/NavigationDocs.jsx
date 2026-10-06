@@ -111,6 +111,22 @@ export const docsNavigation = [
                         isOpen: false,
                         links: [
                             {
+                                title: 'MDM Integration',
+                                href: '/client/mdm-integration',
+                            },
+                            {
+                                title: 'Enforce Settings on Windows',
+                                href: '/manage/peers/mdm-deployment/windows-mdm-policy',
+                            },
+                            {
+                                title: 'Enforce Settings on macOS',
+                                href: '/manage/peers/mdm-deployment/macos-mdm-policy',
+                            },
+                            {
+                                title: 'Enforce Settings on iOS',
+                                href: '/manage/peers/mdm-deployment/ios-mdm-policy',
+                            },
+                            {
                                 title: 'Deploy with Group Policy (GPO)',
                                 href: '/manage/peers/mdm-deployment/windows-gpo-deployment',
                             },
