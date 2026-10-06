@@ -53,9 +53,9 @@ set -euo pipefail
 #   docs/netbird.admx + .adml (Windows ADMX schema)
 #
 NULL='__UNSET__'
-managementURL='https://api.netbird.io:443'
+managementURL="$NULL"
 preSharedKey="$NULL"                       # secret; redacted in log
-allowServerSSH='true'
+allowServerSSH="$NULL"
 blockInbound="$NULL"
 disableAutoConnect="$NULL"
 disableAutostart="$NULL"
@@ -69,10 +69,10 @@ disableAdvancedView="$NULL"                # UI-only: hides the advanced section
 rosenpassEnabled="$NULL"
 rosenpassPermissive="$NULL"
 lazyConnection="$NULL"                     # "true"/"false"; absent defers to the Management setting
-wireguardPort='51820'
+wireguardPort="$NULL"
 allowRemoteJobs="$NULL"                    # present at any value locks the client toggle
 debugBundleUploadURL="$NULL"               # https URL with a host
-enableLocalMetrics="$NULL"                 # local Prometheus endpoint; not the usage telemetry switch
+enableLocalMetrics="$NULL"                 # local Prometheus endpoint; unrelated to disableMetricsCollection
 localMetricsAddress="$NULL"                # default 127.0.0.1:9191
 splitTunnelMode="$NULL"                    # "allow" or "disallow", Android-only at the daemon level
 splitTunnelApps="$NULL"                    # comma-separated app IDs, Android-only
