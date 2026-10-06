@@ -98,6 +98,15 @@ Nearly every rollout sets `managementURL`. The other two keys decide whether Net
 - **`managementURL` pins the server, not the account.** NetBird Cloud serves every account from `https://api.netbird.io:443`, so on Cloud this key stops a user from pointing the client at another server, but not from signing in to another Cloud account. No key pins the account: even with `managementURL`, `disableProfiles`, and `disableUpdateSettings` all pinned, `netbird logout` followed by `netbird up --setup-key <key>` moves the device to another account on the same server. A device signed in to another account has no access to your resources, because your access policies do not apply to it.
 - **`disableAutostart` only acts when the app starts.** The **Launch NetBird UI at Login** switch in the app's settings stays usable. A user who turns it back on gets the app at their next login, and the app removes the entry again as soon as it opens. Pushing `false` does not turn launch-at-login on; it only stops the app from removing the entry.
 
+#### What you can achieve with these settings
+
+| You want to | Set | What to know |
+| --- | --- | --- |
+| Make every device use your management server | `managementURL` to your server's URL | Pins the server, not the account: users can still sign out and in to another account on that server. |
+| Make devices connect automatically at boot | `disableAutoConnect` to `false` | Users can still disconnect by hand. |
+| Make users connect by hand | `disableAutoConnect` to `true` | The client starts disconnected; the user clicks **Connect** or runs `netbird up`. |
+| Stop the NetBird app opening at login | `disableAutostart` to `true` | The background service still runs. A user can switch launch-at-login back on, but the app turns it off again the next time it starts. |
+
 ### Lock the client app
 
 These keys decide how much of the app a user can touch. Acme's baseline uses the first two.
@@ -114,13 +123,13 @@ These keys decide how much of the app a user can touch. Acme's baseline uses the
 
 #### What you can achieve with these settings
 
-| You want to | Turn on | What users can still do |
+| You want to | Set | What users can still do |
 | --- | --- | --- |
-| Stop users changing NetBird's settings | `disableUpdateSettings` | Connect, disconnect, and sign in. Every settings change, in the app or on the command line, is refused. |
-| Stop users adding a second profile, for example to reach a personal NetBird account | `disableProfiles` | Use their current profile as normal. They can still sign out and sign in to a different account; see the [`managementURL`](#managementURL) note. |
-| Make sure users keep the networks and exit node you assign | `disableNetworks` | Use the assigned networks and exit node. They cannot turn them off. To send all internet traffic through an exit node, also enable **Auto Apply** on it in the dashboard. |
-| Give non-technical users a simpler app | `disableAdvancedView` | Everything except the **Peers** and **Resources** lists. |
-| Lock the app down completely, for example on shared or kiosk devices | all four | Connect and disconnect. |
+| Stop users changing NetBird's settings | `disableUpdateSettings` to `true` | Connect, disconnect, and sign in. Every settings change, in the app or on the command line, is refused. |
+| Stop users adding a second profile, for example to reach a personal NetBird account | `disableProfiles` to `true` | Use their current profile as normal. They can still sign out and sign in to a different account; see the [`managementURL`](#managementURL) note. |
+| Make sure users keep the networks and exit node you assign | `disableNetworks` to `true` | Use the assigned networks and exit node. They cannot turn them off. To send all internet traffic through an exit node, also enable **Auto Apply** on it in the dashboard. |
+| Give non-technical users a simpler app | `disableAdvancedView` to `true` | Everything except the **Peers** and **Resources** lists. |
+| Lock the app down completely, for example on shared or kiosk devices | all four to `true` | Connect and disconnect. |
 
 None of these settings stops a user from disconnecting NetBird. See [What a policy does not do](#what-a-policy-does-not-do).
 
@@ -139,6 +148,16 @@ These keys decide what reaches the device, and what the device passes on. Each p
 - **Do not send `blockInbound` or `disableServerRoutes` to routing peers.** A routing peer with either key set stops forwarding. If it is the only routing peer for a network, that network becomes unreachable for everyone. Scope these keys to a device group that excludes routing peers and servers.
 - **`blockInbound` is not a kill switch.** It blocks connections *to* the device, not traffic *from* it, and it does not keep the tunnel up. Use it for devices that only ever consume resources, such as most end-user laptops, and never for a device other peers need to reach.
 
+#### What you can achieve with these settings
+
+| You want to | Set | What to know |
+| --- | --- | --- |
+| Stop other peers opening connections to a device | `blockInbound` to `true` | Outbound connections still work. It also stops the device's SSH server and its routing. Never use it on a routing peer. |
+| Make sure no NetBird SSH server runs on a device | `allowServerSSH` to `false` | Wins even when SSH is enabled for the peer in the dashboard. |
+| Allow the NetBird SSH server on a device | `allowServerSSH` to `true` | SSH must also be enabled for the peer in the dashboard, and `blockInbound` must be off. |
+| Stop a laptop from carrying other peers' traffic | `disableServerRoutes` to `true` | Protects against a laptop wrongly assigned as a routing peer. Never use it on a real routing peer. |
+| Stop a device using routed networks and exit nodes | `disableClientRoutes` to `true` | Cuts the device off from every network resource and exit node, so it is rarely what you want on a laptop. |
+
 ### Encrypt the tunnel
 
 These keys change how connections are encrypted. A pre-shared key, and Rosenpass outside permissive mode, have to match on both ends of a connection, so a key sent to only part of a fleet can cut that part off from the rest.
@@ -152,6 +171,13 @@ These keys change how connections are encrypted. A pre-shared key, and Rosenpass
 - **A pre-shared key splits your network in two.** Devices that have the key and devices that do not cannot connect to each other. If Acme pushed a `preSharedKey` to its laptops, the laptops would lose every routing peer and server that does not carry the same key. Only use it when every peer, including routing peers and servers, gets the same key.
 - **The pre-shared key is not hidden from local users.** By default, standard users can read the NetBird policy key on Windows, and the macOS managed-preferences file is readable by every user. Treat the key as an extra layer of protection, never as a credential that only administrators know.
 - **To roll out Rosenpass, start in permissive mode.** Push `rosenpassEnabled: true` with `rosenpassPermissive: true`, so devices that do not have Rosenpass yet can still connect. Remove permissive mode once every peer runs Rosenpass.
+
+#### What you can achieve with these settings
+
+| You want to | Set | What to know |
+| --- | --- | --- |
+| Add a shared secret to every connection | `preSharedKey` | Every peer, including routing peers and servers, needs the same key, or they cannot connect to each other. Local users can read the key. |
+| Add post-quantum protection | `rosenpassEnabled` and `rosenpassPermissive` to `true` | Permissive mode lets peers without Rosenpass still connect. Remove it once every peer runs Rosenpass. |
 
 ### Support and monitoring
 
@@ -167,6 +193,14 @@ These keys turn on remote diagnostics and local metrics. Both features expose in
 - **Pin the upload URL wherever you allow remote jobs.** A debug bundle holds peer names, IP addresses, and logs. Setting `debugBundleUploadURL` to an upload server you run keeps bundles on infrastructure you control.
 - **Keep the metrics endpoint on loopback.** The endpoint has no authentication. A user without administrator rights can only bind it to a loopback address, but a policy value is applied exactly as written. A non-loopback `localMetricsAddress` publishes peer names and connection state to anything that can reach the port.
 
+#### What you can achieve with these settings
+
+| You want to | Set | What to know |
+| --- | --- | --- |
+| Let support collect debug bundles remotely | `allowRemoteJobs` to `true`, and `debugBundleUploadURL` to your upload server | Bundles hold peer names, IP addresses, and logs; the upload URL keeps them on infrastructure you control. |
+| Make sure remote jobs never run on a device | `allowRemoteJobs` to `false` | Remote jobs are off by default; pinning `false` stops anyone turning them on. |
+| Scrape connection state with Prometheus | `enableLocalMetrics` to `true` | Listens on `127.0.0.1:9191` by default. Keep `localMetricsAddress` on loopback: the endpoint has no authentication. |
+
 ### Tune the connection
 
 Most fleets never need these keys.
@@ -177,6 +211,14 @@ Most fleets never need these keys.
 | <span id="wireguardPort"></span>`wireguardPort` | integer | The local UDP port the WireGuard interface listens on. Default `51820`. Values outside `1` to `65535` are ignored, and the client keeps its previous port. |
 
 Set `wireguardPort` only when another program on the device needs the default port, or your firewall rules expect a specific one.
+
+#### What you can achieve with these settings
+
+| You want to | Set | What to know |
+| --- | --- | --- |
+| Keep every connection open on a device | `lazyConnection` to `false` | Overrides the account setting for that device. `NB_LAZY_CONN` on the device beats this key. |
+| Force lazy connections on a device | `lazyConnection` to `true` | Same precedence as above. |
+| Use a fixed WireGuard port | `wireguardPort` | Only when another program needs the default port or your firewall rules expect a specific one. |
 
 ### Keys with no effect yet
 
