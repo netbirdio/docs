@@ -1,4 +1,4 @@
-import clsx from 'clsx'
+import { useLayoutEffect, useRef } from 'react'
 import Link from 'next/link'
 
 import { useAnnouncements } from '@/components/announcement-banner/AnnouncementBannerProvider'
@@ -36,19 +36,34 @@ function CloseIcon(props) {
 
 function AnnouncementItem({ announcement, onClose }) {
   const announcementLink = useCustomQueryURL(announcement.link || '')
+  const bannerRef = useRef(null)
+  const { setBannerHeight } = useAnnouncements()
+
+  useLayoutEffect(() => {
+    const banner = bannerRef.current
+    // Text wrapping and viewport changes can make the banner taller on phones.
+    const updateHeight = () => setBannerHeight(banner.getBoundingClientRect().height)
+    updateHeight()
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(banner)
+
+    return () => {
+      observer.disconnect()
+      setBannerHeight(0)
+    }
+  }, [setBannerHeight])
 
   return (
     <div
       id="announcement-banner"
-      className={clsx(
-        'sticky top-0 z-50 flex w-full items-center justify-center border-b border-zinc-800 bg-netbird/95 px-4 py-1.5 text-[11px] font-medium text-black shadow-sm backdrop-blur'
-      )}
+      ref={bannerRef}
+      className="fixed inset-x-0 top-0 z-50 flex w-full items-center justify-center border-b border-zinc-800 bg-netbird/95 px-4 py-1.5 text-[11px] font-medium text-black shadow-sm backdrop-blur"
     >
-      <div className="flex flex-col items-start gap-1 pr-8 leading-snug md:flex-row md:items-center">
+      <div className="pr-8 leading-relaxed md:flex md:items-center md:gap-1 md:leading-snug">
         {announcement.tag ? (
-          <div className="mr-2 inline rounded-md bg-black/70 px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.18em] text-white">
+          <span className="mr-2 inline-block whitespace-nowrap rounded-md bg-black/70 px-2 py-1 align-middle text-[9px] font-semibold uppercase tracking-[0.18em] text-white">
             {announcement.tag}
-          </div>
+          </span>
         ) : null}
         <span className="mr-2 text-[12px] md:text-[13px]">
           {announcement.text}

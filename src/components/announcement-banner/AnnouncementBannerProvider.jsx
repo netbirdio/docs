@@ -12,10 +12,10 @@ const ANNOUNCEMENTS_URL =
   'https://raw.githubusercontent.com/netbirdio/dashboard/main/announcements.json'
 const STORAGE_KEY = 'netbird-announcements'
 const CACHE_DURATION_MS = 30 * 60 * 1000
-const BANNER_HEIGHT = 33
 
 const AnnouncementContext = createContext({
   bannerHeight: 0,
+  setBannerHeight: () => {},
   announcements: undefined,
   closeAnnouncement: () => {},
 })
@@ -83,6 +83,7 @@ const saveAnnouncements = (closedAnnouncements) => {
 
 export function AnnouncementBannerProvider({ children }) {
   const [announcements, setAnnouncements] = useState(undefined)
+  const [bannerHeight, setBannerHeight] = useState(0)
   const fetchingRef = useRef(false)
 
   useEffect(() => {
@@ -108,12 +109,11 @@ export function AnnouncementBannerProvider({ children }) {
     [announcements]
   )
 
-  const bannerHeight = announcements?.some((a) => a.isOpen) ? BANNER_HEIGHT : 0
-
   return (
     <AnnouncementContext.Provider
       value={{
         bannerHeight,
+        setBannerHeight,
         announcements,
         closeAnnouncement,
       }}

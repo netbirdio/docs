@@ -48,9 +48,13 @@ module.exports = ({ theme }) => ({
 
       // Layout
       '> *': {
-        maxWidth: theme('maxWidth.2xl'),
-        marginLeft: 10,
+        maxWidth: '100%',
+        marginLeft: 0,
         marginRight: 'auto',
+        '@screen md': {
+          maxWidth: theme('maxWidth.2xl'),
+          marginLeft: 10,
+        },
         '@screen lg': {
           maxWidth: theme('maxWidth.3xl'),
           marginLeft: 10,
