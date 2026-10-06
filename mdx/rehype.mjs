@@ -54,7 +54,7 @@ function rehypeInsertLastUpdated() {
       type: 'element',
       tagName: 'p',
       properties: {
-        className: ['not-prose', 'text-sm', 'text-slate-400', 'dark:text-zinc-500', 'mt-0', 'mb-8', 'ml-2.5'],
+        className: ['not-prose', 'text-sm', 'text-slate-400', 'dark:text-zinc-500', 'mt-0', 'mb-8', 'md:ml-2.5'],
       },
       children: [
         { type: 'text', value: 'Updated ' },
