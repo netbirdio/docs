@@ -28,8 +28,8 @@ We use the baseline policy from that page as the running example: Acme pins its 
 
 Download the template that matches your MDM:
 
-- <a href="/docs-static/files/netbird-macos.mobileconfig" download>netbird-macos.mobileconfig</a>: a complete configuration profile. Use it with Jamf Pro, Kandji, Mosyle, Intune, Workspace ONE, and Apple Configurator.
-- <a href="/docs-static/files/io.netbird.client.plist" download>io.netbird.client.plist</a>: the bare managed-preferences dictionary, without the profile wrapper. Use it with JumpCloud.
+- <a href="/docs-static/files/netbird-macos.mobileconfig" download>netbird-macos.mobileconfig</a>: a complete configuration profile. Use it with Kandji, Mosyle, Intune, Workspace ONE, JumpCloud, and Apple Configurator.
+- <a href="/docs-static/files/io.netbird.client.plist" download>io.netbird.client.plist</a>: the bare managed-preferences dictionary, without the profile wrapper. Use it with Jamf Pro's Application & Custom Settings payload.
 - <a href="/docs-static/files/netbird-macos.sh" download>netbird-macos.sh</a>: a script that writes the policy file directly, for JumpCloud fleets that are not MDM-enrolled.
 
 Each template lists every key. Delete the keys you do not want to pin: a key that is present is pinned, even when its value is `false`.
@@ -52,7 +52,7 @@ Use an identity the target Macs already trust. Configuration profiles are **not*
 
 ## Deliver it with your MDM
 
-- **Jamf Pro**: **Computers → Configuration Profiles → New → Application & Custom Settings → External Applications → Upload File (Plist file)**, with the preference domain `io.netbird.client`.
+- **Jamf Pro**: **Computers → Configuration Profiles → New → Application & Custom Settings → External Applications → Upload File (Plist file)**, with the preference domain `io.netbird.client`, and upload the edited `io.netbird.client.plist`. Jamf can also take the whole `.mobileconfig` through **Computers → Configuration Profiles → Upload**, but it may drop payload keys it does not recognize from an unsigned profile, so sign the profile first if you use that route.
 - **Kandji**: add a **Custom Profile** library item and upload the `.mobileconfig`.
 - **Mosyle**: **Profiles → Add new profile → Custom Settings**, with the domain `io.netbird.client`.
 - **Microsoft Intune**: **Devices → Configuration → Create profile → macOS → Templates → Custom**, and upload the `.mobileconfig`.
@@ -67,12 +67,10 @@ JumpCloud can deliver the policy two ways. Use the first if your Macs are MDM-en
 
 1. In the JumpCloud admin console, open **Policy Management → Policies → +** and choose the **Mac** platform.
 2. Pick the **MDM Custom Configuration Profile** policy template.
-3. Edit <a href="/docs-static/files/io.netbird.client.plist" download>io.netbird.client.plist</a> to keep only the keys you want to pin, and upload it as the plist payload.
+3. Under **Settings**, upload your edited `netbird-macos.mobileconfig` (see [Build the configuration profile](#build-the-configuration-profile)).
 4. Bind the policy to the target device group and save.
 
-This JumpCloud policy expects the **bare** managed-preferences plist, not a complete `.mobileconfig`: uploading `netbird-macos.mobileconfig` is rejected. Keep the file name `io.netbird.client.plist`. JumpCloud's form has no separate field for the preference domain, and macOS names the managed-preferences file after the bundle id. If your version of the JumpCloud console does show a preference-domain field, set it to `io.netbird.client`.
-
-JumpCloud wraps the plist in a configuration profile and delivers it through MDM. Removing the policy in JumpCloud removes the file at the next sync, which unpins the settings on the client.
+JumpCloud delivers the profile through MDM. Removing the policy in JumpCloud removes the file at the next sync, which unpins the settings on the client.
 
 #### Shell command (Macs not enrolled in MDM)
 
@@ -119,14 +117,11 @@ Check the file's permissions with `ls -l "/Library/Managed Preferences/io.netbir
 **A key is listed in `mDMManagedFields`, but the setting did not change.**
 Check the value's type. A boolean must be `<true/>` or `<false/>`; written as an `<integer>`, it is listed as managed and locked, but never applied. The client logs no warning for it.
 
-**JumpCloud rejects the upload.**
-The **MDM Custom Configuration Profile** policy accepts only the bare `io.netbird.client.plist`, not a `.mobileconfig`.
-
 For problems that look the same on every platform, see [Troubleshooting](/client/mdm-integration#troubleshooting) on the MDM Integration page.
 
 ## Recap
 
 - The client reads `/Library/Managed Preferences/io.netbird.client.plist`, which macOS writes from a configuration profile for `io.netbird.client`.
 - Acme's baseline is three keys: `managementURL`, `disableUpdateSettings`, and `disableProfiles`.
-- Upload `netbird-macos.mobileconfig` to most MDMs, and the bare `io.netbird.client.plist` to JumpCloud.
+- Upload `netbird-macos.mobileconfig` to most MDMs, JumpCloud included; Jamf Pro's Application & Custom Settings takes the bare `io.netbird.client.plist`.
 - Confirm with `sudo defaults read`, then `netbird debug config`.
