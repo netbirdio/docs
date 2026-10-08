@@ -1,70 +1,68 @@
 import { Note, Warning } from "@/components/mdx";
+import { Tiles } from "@/components/Tiles";
 
 export const description =
   "Roll NetBird out to hundreds of company laptops with your MDM: install the client, have users sign in with SSO, pin the client's settings so they cannot drift, and keep the fleet updated. Includes an end-to-end Microsoft Intune example for Windows and macOS.";
 
 # Roll Out NetBird Across Your Organization with MDM
 
-Installing NetBird on your own laptop takes a minute. Installing it on 500 company laptops, making sure every one of them connects to the right server as the right user, and keeping their settings the way your security team signed off on, is a different job. This guide shows how to do that job with the device management (MDM) tool you already use, and walks through a complete rollout with Microsoft Intune.
+Installing NetBird on your own laptop takes a minute. Installing it on 500 company laptops, making sure every one of them connects to the right server as the right user, and keeping their settings the way your security team signed off on, is a different job.
+
+This guide shows how to do that with the MDM you already use, and walks through a complete rollout with Microsoft Intune.
 
 <Note>
-**TL;DR**: a fleet rollout is four jobs, and each one has a single owner. Your MDM **installs** the client and **pins its settings** with a policy, your users **sign in with SSO** on first launch, and you pick **one owner for updates**. Start with a pilot group, then widen the assignment. The [Intune example](#example-roll-out-with-microsoft-intune) shows every step.
+**TL;DR**: a fleet rollout is four jobs with one owner each. Your MDM **installs** the client and **pins its settings**, users **sign in with SSO** once, and you pick **one owner for updates**. Start with a pilot group, then widen. Jump to the [Intune example](#example-roll-out-with-microsoft-intune) if you are ready to build.
 </Note>
 
 ## One device, by hand
 
-On a single machine, getting NetBird running looks like this:
+On a single machine:
 
-1. Download the installer for the platform: an EXE or MSI on [Windows](/get-started/install/windows), a PKG on [macOS](/get-started/install/macos).
+1. Download the installer: EXE or MSI on [Windows](/get-started/install/windows), PKG on [macOS](/get-started/install/macos).
 2. Run it with administrator rights.
-3. Open the NetBird app and choose the management server: NetBird Cloud, or the URL of your self-hosted deployment.
-4. Click **Connect** and sign in through the browser with your identity provider (IdP). The device joins your account as a peer, under your user.
+3. Open NetBird and choose the management server: NetBird Cloud, or self-hosted.
+4. Click **Connect** and sign in through the browser with your identity provider (IdP). The device joins as a peer under your user.
 
-That is all an individual needs. But look at what the device's owner controls once it is done: they can point the client at another server, add a second profile for a personal NetBird account, turn on the SSH server, or switch off a setting your security posture depends on. On one machine, nobody minds. On a fleet, every one of those is a support ticket or a gap nobody notices.
+That is enough for one person. Afterward the device's owner still controls the server URL, profiles, SSH, and every setting your security posture depends on. On one machine, nobody minds. On a fleet, each of those is a support ticket or a gap nobody notices.
 
 ## Why it does not scale
 
-Repeat those four steps across an organization and each one turns into a problem of its own:
+Repeat those four steps across an organization and each one turns into its own problem:
 
-- **Installing needs administrator rights.** Most users do not have them, and should not. Someone with rights has to touch every device, or every device has to come with NetBird already on it.
-- **Users get the server wrong.** Step 3 asks a non-technical user to type a URL or pick between options they do not understand. Some will pick NetBird Cloud when you self-host, or the reverse, and land in an account that is not yours.
-- **Shortcuts break identity.** The tempting fix for unattended enrollment is one reusable setup key baked into a script. A peer enrolled with a setup key has no user behind it, so user-based access policies, login expiration, and offboarding do not apply to it. Setup keys are for servers, not for laptops: see [Bootstrap peers via config file](/manage/peers/bootstrap-via-config-file).
-- **Settings drift.** Whatever you configured on day one is the user's to change on day two. Nothing tells you when it changed.
-- **Versions drift.** Without an owner for updates, a fleet ends up running every release of the past year.
-- **Unmanaged devices look the same as managed ones.** A user who installs NetBird on a personal laptop and signs in with valid credentials gets the same access as their company laptop.
+- **Installing needs administrator rights** most users do not have (and should not).
+- **Users get the server wrong** and land in an account that is not yours.
+- **Setup keys break identity.** A peer enrolled with a setup key has no user behind it, so user-based policies, login expiration, and offboarding do not apply. Setup keys are for servers, not laptops: see [Bootstrap peers via config file](/manage/peers/bootstrap-via-config-file).
+- **Settings and versions drift** with no owner to pin them.
+- **Unmanaged devices look the same as managed ones** once someone signs in with valid credentials.
 
-## The approach: install, enroll, enforce, update
-
-Split the rollout into four jobs and give each one to the tool built for it:
+## The rollout model
 
 | Job | Owner | What it uses |
 | --- | --- | --- |
-| **Install** the client | Your MDM | The standard installer, with no arguments: the MSI on Windows and the PKG on macOS |
-| **Enroll** the device | The user, once | SSO on first launch. The device joins your account under the user's identity, and [IdP group sync](/manage/team/idp-sync) puts it in the right groups |
+| **Install** the client | Your MDM | The standard installer, with no arguments: MSI on Windows, PKG on macOS |
+| **Enroll** the device | The user, once | SSO on first launch. The peer joins under the user's identity; [IdP group sync](/manage/team/idp-sync) places it |
 | **Enforce** the settings | Your MDM | An [MDM policy](/client/mdm-integration) that pins the management server and locks the settings you choose |
-| **Update** the client | NetBird **or** your MDM, never both | [Automatic Updates](/manage/peers/auto-update) in the NetBird dashboard, or a new installer version in your MDM |
+| **Update** the client | NetBird **or** your MDM, never both | [Automatic Updates](/manage/peers/auto-update), or a new installer version in your MDM |
 
-Two properties of NetBird make this split work:
+Two properties make this split work:
 
-- **The installer carries no configuration, and the policy carries all of it.** You never build a custom package or pass install-time properties. The same MSI or PKG goes to every device, and the policy decides what the client does. Change the policy at any time and the client applies it within a minute, with no reinstall.
-- **The policy removes the hard step for users.** When the policy pins the management server, the desktop app skips the server question on first launch. The user opens NetBird, clicks **Connect**, and signs in with the account they use for everything else.
+- **The installer carries no configuration; the policy carries all of it.** Same MSI or PKG everywhere. Change the policy anytime and the client applies it within a minute, with no reinstall.
+- **The policy removes the hard step for users.** When it pins the management server, the app skips the server question. The user opens NetBird, clicks **Connect**, and signs in with the account they already use.
 
-Two more jobs are optional and build on the same tools:
+Optional jobs on the same tools:
 
-- **Gate access on compliance.** NetBird can check each device against your MDM and keep non-compliant or unmanaged devices off the network. See [Only let compliant devices in](#step-7-optional-only-let-compliant-devices-in).
-- **Enroll devices that have no user**, such as kiosks, meeting-room PCs, or servers, with a [setup key](/manage/peers/register-machines-using-setup-keys) in a script your MDM runs. Keep those devices in their own group with their own policy.
+- **Gate access on compliance** with your MDM's [NetBird integration](/manage/access-control/endpoint-detection-and-response). See [Step 7](#step-7-optional-only-let-compliant-devices-in).
+- **Enroll devices with no user** (kiosks, meeting-room PCs, servers) with a [setup key](/manage/peers/register-machines-using-setup-keys). Keep them in their own group with their own policy.
 
-## What an MDM does for NetBird
+<Note>
+**Skip this guide when it does not match the job.** A handful of laptops is faster by hand. A Linux-only fleet has no MDM policy channel today: use [service-install flags or a config file](/client/mdm-integration#when-not-to-use-mdm-policy). Headless devices belong on setup keys, not this SSO path.
+</Note>
 
-A mobile device management (MDM) tool, also called unified endpoint management (UEM), is how an IT team manages company devices remotely: it enrolls them, installs and updates software, pushes configuration, and reports whether each device meets the organization's security requirements. The device trusts the MDM because it was enrolled into it, usually at setup time through Windows Autopilot or Apple Business Manager.
+## Supported MDMs
 
-NetBird uses three things an MDM provides, and adds no agent of its own:
+NetBird uses three MDM capabilities and adds no agent of its own: app deployment, a managed-configuration channel (`HKLM\Software\Policies` on Windows, managed preferences on macOS), and an optional compliance signal.
 
-- **App deployment**, to install the NetBird client silently and as a system service, without the user needing administrator rights.
-- **A managed-configuration channel** that the operating system protects from the user: the `HKLM\Software\Policies` registry key on Windows and managed preferences on macOS. NetBird reads its [policy](/client/mdm-integration) from there.
-- **A compliance signal** that NetBird can query, for MDMs that have a [NetBird integration](/manage/access-control/endpoint-detection-and-response).
-
-Any MDM that can install a package and write to those channels works with NetBird. These have dedicated guides:
+Any MDM that can install a package and write to those channels works. These have dedicated guides:
 
 | MDM | Install the client | Enforce settings |
 | --- | --- | --- |
@@ -79,39 +77,43 @@ This guide covers Windows and macOS. Linux has no MDM channel in NetBird today: 
 
 ## Example: roll out with Microsoft Intune
 
-This example rolls NetBird out to the Windows and macOS laptops of a company that uses Microsoft Entra ID for identity and Intune for device management. Users sign in to NetBird with their Entra ID accounts, and the laptops get the [user device policy](/client/mdm-integration#recommended-policies) recommended for end-user machines.
+This example rolls NetBird out to Windows and macOS laptops at a company that uses Microsoft Entra ID for identity and Intune for device management. Users sign in with their Entra ID accounts. Laptops get the [user device policy](/client/mdm-integration#recommended-policies) recommended for end-user machines.
 
 The examples use a self-hosted management server at `https://netbird.example.com:443`. On NetBird Cloud, use `https://api.netbird.io:443` instead.
 
 ### Before you start
 
-- NetBird SSO with Microsoft Entra ID, so users can sign in with their work accounts. On NetBird Cloud, [Microsoft sign-in](/manage/team/single-sign-on#google-microsoft-and-git-hub) works with no extra setup; for a self-hosted deployment, see [Microsoft Entra ID](/selfhosted/identity-providers/managed/microsoft-entra-id).
+- NetBird SSO with Microsoft Entra ID. On NetBird Cloud, [Microsoft sign-in](/manage/team/single-sign-on#google-microsoft-and-git-hub) works with no extra setup; for self-hosted, see [Microsoft Entra ID](/selfhosted/identity-providers/managed/microsoft-entra-id).
 - Recommended: [Entra ID group sync](/manage/team/idp-sync/microsoft-entra-id-sync), so each new peer lands in its user's groups and your [access policies](/manage/access-control) apply from the first connection.
 - An Intune admin with at least the **Policy and Profile Manager** role, and Windows and macOS devices enrolled in Intune.
-- Two Entra ID **device** groups: `NetBird Pilot`, with a handful of IT-owned laptops, and `NetBird Laptops`, with every end-user laptop. Keep routing peers and servers out of both: the policy below stops a device from routing other peers' traffic.
+- Two Entra ID **device** groups: `NetBird Pilot` (a handful of IT-owned laptops) and `NetBird Laptops` (every end-user laptop). Keep routing peers and servers out of both: the policy below stops a device from routing other peers' traffic.
 - The installers: the [Windows MSI](https://pkgs.netbird.io/windows/msi/x64), and the macOS PKG for [Apple Silicon](https://pkgs.netbird.io/macos/arm64) and [Intel](https://pkgs.netbird.io/macos/amd64).
 - The policy templates: <a href="/docs-static/files/netbird.admx" download>netbird.admx</a> and <a href="/docs-static/files/netbird.adml" download>netbird.adml</a> for Windows, and <a href="/docs-static/files/netbird-macos.mobileconfig" download>netbird-macos.mobileconfig</a> for macOS.
 
 <Warning>
-**Find laptops where users already installed NetBird themselves.** On Windows, the EXE and the MSI do not detect each other: pushing the MSI to a laptop that has the EXE install produces two overlapping installations instead of an upgrade. Uninstall the EXE version first, or deploy the EXE with Intune instead of the MSI. Either way, the peer's registration in `C:\ProgramData\Netbird` survives the uninstall, so the user does not have to enroll again.
+**Find laptops where users already installed NetBird themselves.** On Windows, the EXE and the MSI do not detect each other: pushing the MSI onto a laptop that has the EXE produces two overlapping installations instead of an upgrade. Uninstall the EXE first, or deploy the EXE with Intune instead. Either way, the peer's registration in `C:\ProgramData\Netbird` survives the uninstall, so the user does not have to enroll again.
 </Warning>
 
 ### Step 1: Define the policy
 
-Decide what to pin before you deploy anything. For end-user laptops, start from four keys, with your server URL, such as `https://netbird.example.com:443`, as the management URL:
+Decide what to pin before you deploy anything. For end-user laptops, start from four keys with your server URL (for example `https://netbird.example.com:443`) as the management URL:
 
 | Key | Value | Why |
 | --- | --- | --- |
-| `managementURL` | Your server URL | Every laptop talks to your server, and the app skips the server question on first launch |
+| `managementURL` | Your server URL | Every laptop talks to your server; the app skips the server question on first launch |
 | `disableUpdateSettings` | `true` | Users can connect, disconnect, and sign in, but cannot change settings |
-| `disableProfiles` | `true` | Users cannot add a second profile, for example for a personal NetBird account |
+| `disableProfiles` | `true` | Users cannot add a second profile (for example a personal NetBird account) |
 | `disableServerRoutes` | `true` | A laptop wrongly assigned as a routing peer does not carry other peers' traffic |
 
-Leave every other key out. A key in the policy is pinned even when its value is `false`, and a key you leave out stays the user's to change. To adapt the policy, for example to block inbound connections or let support collect debug bundles, see [What you can achieve](/client/mdm-integration#what-you-can-achieve).
+Leave every other key out. A key in the policy is pinned even when its value is `false`; a key you leave out stays the user's to change. To adapt the policy, see [What you can achieve](/client/mdm-integration#what-you-can-achieve).
+
+<Note>
+**On NetBird Cloud, `managementURL` pins the server, not the account.** Every Cloud account shares `https://api.netbird.io:443`, so this key stops a user from pointing the client at another server, but not from signing out and into a different Cloud account. `disableProfiles` still blocks a second profile on the device. A peer that leaves your account loses access because your policies no longer apply to it.
+</Note>
 
 ### Step 2: Deliver the policy
 
-Create the policy first and assign it **together with, or before,** the app. The desktop app decides whether to ask the user for a server when it opens for the first time; if the policy has not arrived by then, the user sees the question you meant to remove.
+Create the policy first and assign it **together with, or before,** the app. The desktop app decides whether to ask for a server when it opens for the first time; if the policy has not arrived by then, the user sees the question you meant to remove.
 
 **Windows**: an Imported Administrative templates profile.
 
@@ -120,7 +122,7 @@ Create the policy first and assign it **together with, or before,** the app. The
 3. Under **NetBird**, set **Management URL** to **Enabled** with your URL, and **Disable update settings**, **Disable profiles**, and **Disable server routes** to **Enabled**. Leave everything else **Not configured**: **Disabled** pins the setting to `false`.
 4. Assign the profile to the `NetBird Pilot` device group.
 
-[Enforce NetBird Settings on Windows](/manage/peers/mdm-deployment/windows-mdm-policy#enforce-settings-with-intune) has every step in detail, and an OMA-URI alternative for tenants that cannot import templates.
+[Enforce NetBird Settings on Windows](/manage/peers/mdm-deployment/windows-mdm-policy#enforce-settings-with-intune) has every step in detail, plus an OMA-URI alternative for tenants that cannot import templates.
 
 **macOS**: a custom configuration profile.
 
@@ -159,7 +161,7 @@ See [Enforce NetBird Settings on macOS](/manage/peers/mdm-deployment/macos-mdm-p
 **macOS**: the PKG as a macOS app.
 
 1. **Apps → macOS → Create**, app type **macOS app (PKG)**, and upload the PKG. Apple Silicon and Intel Macs need different packages: add each as its own app, and assign each to a group that holds only Macs of that type.
-2. The app's bundle ID is `io.netbird.client`. Set **Ignore app version** according to [Step 5](#step-5-pick-one-owner-for-updates).
+2. The bundle ID is `io.netbird.client`. Set **Ignore app version** as shown in [Step 5](#step-5-pick-one-owner-for-updates).
 3. Assign it as **Required** to the `NetBird Pilot` device group.
 
 For a Win32 package with custom detection rules and supersedence, see [Deploy with Intune](/manage/peers/mdm-deployment/intune-netbird-integration#deploying-net-bird-as-a-win32-app).
@@ -177,16 +179,20 @@ Because the policy pins the server, the app skips the server question. The user 
     <img src="/docs-static/img/client/desktop-app/default-view.png" alt="NetBird desktop app showing the Connected state after the user signs in" className="imagewrapper"/>
 </p>
 
-A short message is enough, for example: "NetBird is now installed on your laptop. Open NetBird, click Connect, and sign in with your work account. You only need to do this once."
+A short message is enough:
+
+> NetBird is now installed on your laptop. Open NetBird, click Connect, and sign in with your work account. You only need to do this once.
 
 ### Step 5: Pick one owner for updates
 
 The client can be updated by NetBird or by Intune. Choose one: when both try, they work against each other.
 
-- **NetBird updates the client.** Enable [Automatic Updates](/manage/peers/auto-update) under **Settings → Clients**, and **Force Automatic Updates** to install without prompting users. Set **Ignore app version** to **Yes** on the Intune apps, so Intune only checks that NetBird is installed. Otherwise Intune sees the self-updated version as a different app and tries to reinstall the older one, which the MSI refuses and Intune reports as a failure.
-- **Intune updates the client.** Leave Automatic Updates disabled in NetBird, set **Ignore app version** to **No**, and upload each new MSI and PKG to Intune when you are ready to roll it out.
+| Owner | What to do |
+| --- | --- |
+| **NetBird** updates the client | Enable [Automatic Updates](/manage/peers/auto-update) under **Settings → Clients**, and **Force Automatic Updates** to install without prompting. Set **Ignore app version** to **Yes** on the Intune apps so Intune only checks that NetBird is installed. Otherwise Intune sees the self-updated version as a different app, tries to reinstall the older one, and the MSI refuses. |
+| **Intune** updates the client | Leave Automatic Updates disabled in NetBird, set **Ignore app version** to **No**, and upload each new MSI and PKG when you are ready to roll it out. |
 
-Letting NetBird update the client is less work and keeps clients close to your management server's version. Letting Intune do it gives you change windows and staged rings. To hold the fleet on a specific version with NetBird, set Automatic Updates to a **Custom Version**.
+Letting NetBird update is less work and keeps clients close to your management server's version. Letting Intune do it gives you change windows and staged rings. To hold the fleet on a specific version with NetBird, set Automatic Updates to a **Custom Version**.
 
 ### Step 6: Verify the pilot, then widen
 
@@ -216,7 +222,7 @@ Check each layer, from Intune down to the device:
 4. **In the NetBird dashboard**, each pilot device appears under **Peers** with its user's name and groups.
 5. **As a user**, open the app: the **Network**, **Security**, **SSH**, **Advanced**, and **Profiles** settings tabs are gone, and **Connect** still works.
 
-When the pilot looks right, add the `NetBird Laptops` group to the assignments of both apps and both profiles. Devices pick them up at their next Intune check-in. If something is off, [Verifying enforcement](/client/mdm-integration#verifying-enforcement) and [Troubleshooting](/client/mdm-integration#troubleshooting) cover what each symptom means.
+When the pilot looks right, add the `NetBird Laptops` group to the assignments of both apps and both profiles. Devices pick them up at their next Intune check-in. If something is off, see [Verifying enforcement](/client/mdm-integration#verifying-enforcement) and [Troubleshooting](/client/mdm-integration#troubleshooting).
 
 ### Step 7 (optional): Only let compliant devices in
 
@@ -236,20 +242,40 @@ A device that fails the check shows **Approval required** in the peers list unti
 
 ## Rollout checklist
 
-- [ ] SSO works with your IdP, and groups sync into NetBird.
-- [ ] Access policies use the synced groups.
-- [ ] Laptops with a user-installed NetBird EXE are cleaned up, or you deploy the EXE.
-- [ ] The policy holds only the keys you mean to pin.
-- [ ] The policy is assigned together with, or before, the app.
-- [ ] One owner for updates, with **Ignore app version** set to match.
-- [ ] Users know to open NetBird, click **Connect**, and sign in once.
-- [ ] The pilot group checks out in Intune, on the device, and in the dashboard.
-- [ ] Routing peers and servers are outside the laptop groups.
-- [ ] Optional: the Intune integration gates access on compliance.
+- SSO works with your IdP, and groups sync into NetBird
+- Access policies use the synced groups
+- Laptops with a user-installed NetBird EXE are cleaned up, or you deploy the EXE
+- The policy holds only the keys you mean to pin
+- The policy is assigned together with, or before, the app
+- One owner for updates, with **Ignore app version** set to match
+- Users know to open NetBird, click **Connect**, and sign in once
+- The pilot group checks out in Intune, on the device, and in the dashboard
+- Routing peers and servers are outside the laptop groups
+- Optional: the Intune integration gates access on compliance
 
-## Related
-
-- [MDM Integration](/client/mdm-integration): every policy key, how the client applies and locks a policy, and troubleshooting.
-- [Deploy with Intune](/manage/peers/mdm-deployment/intune-netbird-integration): the full Intune app deployment, including Win32 packages.
-- [Automatic Updates](/manage/peers/auto-update): how NetBird updates its clients.
-- [Implement Zero Trust](/use-cases/security/implement-zero-trust): groups, access policies, and posture checks for the network your fleet joins.
+<Tiles
+    title="Related"
+    description="Reference pages this rollout builds on"
+    items={[
+        {
+            href: '/client/mdm-integration',
+            name: 'MDM Integration',
+            description: 'Every policy key, how the client applies and locks a policy, and troubleshooting',
+        },
+        {
+            href: '/manage/peers/mdm-deployment/intune-netbird-integration',
+            name: 'Deploy with Intune',
+            description: 'Full Intune app deployment, including Win32 packages',
+        },
+        {
+            href: '/manage/peers/auto-update',
+            name: 'Automatic Updates',
+            description: 'How NetBird updates its clients across the fleet',
+        },
+        {
+            href: '/use-cases/security/implement-zero-trust',
+            name: 'Implement Zero Trust',
+            description: 'Groups, access policies, and posture checks for the network your fleet joins',
+        },
+    ]}
+/>
