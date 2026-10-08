@@ -69,6 +69,7 @@ export const docsNavigation = [
                     { title: 'Proxmox VE', href: '/get-started/install/proxmox-ve' },
                     { title: 'Synology', href: '/get-started/install/synology' },
                     { title: 'TrueNAS', href: '/get-started/install/truenas' },
+                    { title: 'Unraid', href: '/get-started/install/unraid' },
                     { title: 'pfSense', href: '/get-started/install/pfsense' },
                     { title: 'OPNsense', href: '/get-started/install/opnsense' },
                     { title: 'OpenWrt', href: '/get-started/install/openwrt' },
