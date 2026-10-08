@@ -1053,6 +1053,7 @@ export const docsNavigation = [
                     },
                 ],
             },
+            { title: 'Roll Out with MDM', href: '/use-cases/mdm-rollout' },
             { title: 'Homelab', href: '/use-cases/homelab' },
         ],
     },
