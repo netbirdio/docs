@@ -243,6 +243,19 @@ A known malicious probe should return `403`:
 curl -ks -A 'Mozilla/5.0 NetBirdDashboardCheck' -o /dev/null -w '%{http_code}\n' "https://$NETBIRD_DOMAIN/.env"
 ```
 
+<Warning>
+  Avoid sending other malicious probes from the address you administer
+  NetBird from. The `crowdsecurity/appsec-virtual-patching` collection
+  includes the `crowdsecurity/appsec-vpatch` scenario, which bans the source
+  IP for 4 hours when requests from it match two different AppSec rules
+  within about a minute. For example, probing `/.env` and then `/.git/config`
+  triggers the ban, which blocks the dashboard, `/api`, and `/oauth2` for that
+  address. Repeating the `/.env` and `/api/.env` probes in this guide matches
+  a single rule and does not trigger it. If you are banned, remove the
+  decision over SSH as described in [Recovering from a dashboard
+  lockout](#recovering-from-a-dashboard-lockout).
+</Warning>
+
 Check AppSec metrics and bouncer registration:
 
 ```bash
@@ -348,7 +361,7 @@ First identify which of the two mechanisms is blocking you, because they are han
 docker compose exec crowdsec cscli decisions list
 ```
 
-If your address is listed, an **IP decision** is blocking you. If it is not, the block is an **AppSec** match on the request itself: AppSec inspects requests and does not create decisions, so `cscli decisions delete` has no effect in that case. Confirm with `cscli metrics show appsec` and `cscli alerts list`, where AppSec matches appear with `kind` set to `waf`.
+If your address is listed, an **IP decision** is blocking you. This includes bans created by the `crowdsecurity/appsec-vpatch` scenario after repeated AppSec matches, which appear with that reason. If it is not, the block is an **AppSec** match on the request itself: an individual AppSec match does not create a decision, so `cscli decisions delete` has no effect in that case. Confirm with `cscli metrics show appsec` and `cscli alerts list`, where AppSec matches appear with `kind` set to `waf`.
 
 Allowlisting the address resolves both cases. `cscli allowlists add` fails with `allowlist '<name>' not found` if the list does not already exist, so create it first if you have not set one up:
 
