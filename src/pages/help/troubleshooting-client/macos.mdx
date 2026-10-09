@@ -1,5 +1,5 @@
 export const description =
-  "macOS-specific NetBird client troubleshooting: setting the debug log level and host-based firewalls."
+  "macOS-specific NetBird client troubleshooting: debug logs, host-based firewalls, and TUN/Fake-IP proxies."
 
 # NetBird client on macOS
 
@@ -19,3 +19,40 @@ sudo netbird service start
 ## Host-based firewall
 
 The built-in macOS application firewall or third-party endpoint security software can block NetBird traffic before it leaves the machine. If connectivity works with that software temporarily disabled, add an exception for the NetBird process. See [Ports & Firewalls: Host-based firewalls](/about-netbird/ports-and-firewalls#host-based-firewalls) for the general approach.
+
+## TUN proxies and Fake-IP DNS
+
+When using Clash, Mihomo, or a similar TUN proxy, Management and Signal can show `Connected` while relay connections time out and peers remain `Connecting`, with no WireGuard handshake or traffic. This can affect both initial connections and reconnection after an existing connection drops.
+
+Fake-IP DNS returns synthetic addresses used internally by the proxy, rather than the server's real addresses. With advanced routing enabled on macOS, NetBird binds its own connections to a physical egress interface to avoid VPN routing loops. If DNS returns an address that is only reachable through the proxy's TUN interface, those connections can time out. A common Fake-IP range is `198.18.0.0/16`, but check your proxy configuration for the actual range.
+
+### Check DNS and routing
+
+1. Run `netbird status -d` and check the affected peer, relay availability, and the latest WireGuard handshake. Connected Management and Signal services do not guarantee that the peer's data path works.
+2. Check the actual service hostname from the status output or your deployment configuration. Replace `relay.example.com` below with the relay hostname; Management, Signal, and Relay may use different hostnames.
+
+```shell
+dscacheutil -q host -a name relay.example.com
+```
+
+If the resolved address is in your proxy's Fake-IP range, check its route. Replace the example address below with the address returned by the lookup:
+
+```shell
+route -n get 198.18.0.10
+```
+
+`dscacheutil` queries the macOS host resolution path. Results from `dig` may differ from system resolution, including `/etc/hosts` mappings.
+
+3. Save the DNS and route results, then exclude the service hostnames from Fake-IP as described below. Check whether system resolution, peer handshakes, and access to the affected resource recover. A browser or `curl` may still use the proxy's TUN path, so a successful HTTPS request alone does not verify NetBird's interface-bound connections, STUN, QUIC, or WireGuard traffic.
+
+### Exclude Fake-IP and verify recovery
+
+Exclude the actual Management, Signal, and Relay hostnames from Fake-IP DNS in the proxy's persistent configuration, preserving existing entries. For Mihomo, the configuration depends on [`fake-ip-filter` and `fake-ip-filter-mode`](https://wiki.metacubex.one/en/config/dns/#fake-ip-filter). If you use a subscription profile, add the exclusions through your client's persistent override mechanism so that profile updates do not remove them.
+
+A `DIRECT` routing rule or a macOS system proxy bypass is not the same as a Fake-IP DNS exclusion. After applying the change, use `dscacheutil` again to confirm that the service hostnames resolve to real addresses.
+
+For a self-hosted service with a static address, an administrator-confirmed `/etc/hosts` mapping can be a temporary workaround. Back up the file first, keep using the hostname with TLS certificate verification enabled, and update or remove the mapping if the address changes. Do not pin dynamic NetBird Cloud or relay addresses in a permanent mapping.
+
+Allow NetBird to reconnect, check that the affected peer is connected and its WireGuard handshake updates in `netbird status -d`, then test access to the actual resource. If needed, disconnect and reconnect the client only when interrupting remote sessions is acceptable. Observe the connection over time: a single ping or HTTPS request does not establish sustained connectivity. These checks also do not establish why the original connection dropped.
+
+If the issue persists, collect an [anonymized debug bundle](/help/troubleshooting-client#debug-bundle) and report the NetBird and proxy versions, DNS results, and observed interface routes in [Issue Triage](https://github.com/netbirdio/netbird/discussions/categories/issue-triage). Review the bundle and command output for hostnames, IP addresses, and peer identifiers before sharing. See [Discussion #7599](https://github.com/netbirdio/netbird/discussions/7599) for a similar report.
