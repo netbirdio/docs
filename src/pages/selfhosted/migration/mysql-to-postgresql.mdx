@@ -1,0 +1,131 @@
+import {Note} from "@/components/mdx"
+
+export const description = 'Move a self-hosted NetBird deployment from MySQL to PostgreSQL before MySQL support is removed.'
+
+# Migrate from MySQL to PostgreSQL
+
+MySQL support for the Management store is deprecated and will be removed in an upcoming release. This guide moves an existing MySQL deployment to PostgreSQL with the `netbird-mysql-migrate` tool.
+
+The tool copies the following into PostgreSQL:
+- the Management store, from MySQL
+- the activity events (`events.db`) and embedded IdP (`idp.db`) stores, from their SQLite files
+
+The tool only reads your MySQL database and doesn't change it.
+
+## Before You Begin
+
+- Upgrade NetBird to `vX.Y.Z` and start it once on MySQL, so the database schema is current. Use the tool from the same release.
+- Prepare an empty PostgreSQL database. To run one in Docker, see [Set Up PostgreSQL](/selfhosted/maintenance/scaling/migrate-sqlite-to-postgresql#set-up-postgre-sql).
+- Run the tool on a machine that can reach both MySQL and PostgreSQL.
+
+## Step 1: Get the Migration Tool
+
+```bash
+VERSION=X.Y.Z  # your NetBird version
+curl -L -o netbird-mysql-migrate.tar.gz \
+  https://github.com/netbirdio/netbird/releases/download/v${VERSION}/netbird-mysql-migrate_${VERSION}_linux_amd64.tar.gz
+tar xzf netbird-mysql-migrate.tar.gz
+chmod +x netbird-mysql-migrate
+```
+
+Available architectures: `linux_amd64`, `linux_arm64`, `linux_arm`.
+
+## Step 2: Stop NetBird and Back Up
+
+Stop the server and copy its data directory, which holds `events.db` and `idp.db`:
+
+```bash
+docker compose stop netbird-server
+mkdir backup
+docker compose cp -a netbird-server:/var/lib/netbird/. backup/
+```
+
+On the older multi-container setup, use the `management` service instead of `netbird-server`.
+
+Back up MySQL as well:
+
+```bash
+mysqldump -h <MYSQL_HOST> -u <MYSQL_USER> -p <MYSQL_DB> > backup/netbird-mysql.sql
+```
+
+## Step 3: Run the Migration
+
+```bash
+./netbird-mysql-migrate \
+  --mysql-dsn '<MYSQL_USER>:<MYSQL_PASSWORD>@tcp(<MYSQL_HOST>:3306)/<MYSQL_DB>' \
+  --postgres-dsn 'host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable' \
+  --events-db backup/events.db \
+  --auth-db backup/idp.db
+```
+
+When it finishes, you see:
+
+```
+management: 1520 rows from 39 tables
+activity: 8230 rows from 2 tables
+auth: 41 rows from 12 tables
+Done. Point the store, activity and auth store settings at Postgres before starting the server.
+```
+
+<Note>
+- All stores go into the database given by `--postgres-dsn`. To keep the activity or auth store in a separate database, add `--events-postgres-dsn` or `--auth-postgres-dsn`.
+- A missing `events.db` or `idp.db` is skipped. For example, deployments on an external IdP have no `idp.db`.
+- MySQL timestamps are read as UTC. If your NetBird server runs in another time zone, for example with `TZ` set on the container, add `--mysql-timezone`, such as `--mysql-timezone Europe/Berlin`.
+- The tool stops if the PostgreSQL database already holds NetBird data.
+</Note>
+
+## Step 4: Point NetBird at PostgreSQL
+
+### Combined setup (config.yaml)
+
+Set all three stores to PostgreSQL in `config.yaml`, using the DSNs you migrated into:
+
+```yaml
+server:
+  store:
+    engine: "postgres"
+    dsn: "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable"
+  activityStore:
+    engine: "postgres"
+    dsn: "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable"
+  authStore:
+    engine: "postgres"
+    dsn: "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable"
+```
+
+Remove any `NETBIRD_STORE_ENGINE_MYSQL_DSN` or `NB_STORE_ENGINE_MYSQL_DSN` variable from `docker-compose.yml`.
+
+### Older multi-container setup (management.json)
+
+In `management.json`, set the store engine and, if the file has an `EmbeddedIdP` section, its storage:
+
+```json
+"StoreConfig": {
+    "Engine": "postgres"
+},
+"EmbeddedIdP": {
+    "Storage": {
+        "Type": "postgres",
+        "Config": {
+            "DSN": "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable"
+        }
+    }
+}
+```
+
+Then, on the `management` service in `docker-compose.yml`, replace `NETBIRD_STORE_ENGINE_MYSQL_DSN` with:
+
+```yaml
+environment:
+  - NETBIRD_STORE_ENGINE_POSTGRES_DSN=host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable
+  - NB_ACTIVITY_EVENT_STORE_ENGINE=postgres
+  - NB_ACTIVITY_EVENT_POSTGRES_DSN=host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable
+```
+
+## Step 5: Start and Verify
+
+```bash
+docker compose up -d
+```
+
+Log in to the dashboard and confirm that your peers, users, and activity events are there.

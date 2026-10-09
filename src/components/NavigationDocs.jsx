@@ -896,6 +896,10 @@ export const docsNavigation = [
                         title: 'External IdP to Embedded IdP',
                         href: '/selfhosted/migration/external-to-embedded-idp',
                     },
+                    {
+                        title: 'MySQL to PostgreSQL',
+                        href: '/selfhosted/migration/mysql-to-postgresql',
+                    },
                 ],
             },
         ],
