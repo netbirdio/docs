@@ -62,7 +62,7 @@ The script runs through four phases automatically:
 
 The script operates in one of two modes depending on your detected reverse proxy:
 
-**Automatic (embedded Caddy setups).** If your old deployment uses the embedded Caddy proxy (the default from `configure.sh` or `getting-started.sh`), the script performs the full migration end-to-end. It stops old containers, generates a Traefik-based `docker-compose.yml`, and starts the new stack. The generated compose file creates a Docker network (`172.30.0.0/24`) with Traefik at `172.30.0.10`, and reuses your existing management volume if detected.
+**Automatic (embedded Caddy setups).** If your old deployment uses the embedded Caddy proxy (the default from `configure.sh` or `getting-started.sh`), the script performs the full migration end-to-end. It stops old containers, generates a Traefik-based `docker-compose.yml`, and starts the new stack. The generated compose file creates a Docker network — `172.30.0.0/24` by default, with Traefik at `172.30.0.10` — and reuses your existing management volume if detected. Set [`NETBIRD_DOCKER_SUBNET`](#environment-variables) if that range is already in use on your host.
 
 **Manual (external proxy setups).** If your deployment uses a custom or external reverse proxy (Nginx, HAProxy, etc.), the script generates the configuration files but does **not** stop or start any containers. You must handle the cutover yourself, including updating your proxy routing rules.
 
@@ -174,6 +174,22 @@ curl -sk -o /dev/null -w '%{http_code}' https://your-domain/api/accounts
 | `--non-interactive` | Skip all confirmation prompts. Useful for automation and CI pipelines. |
 | `-h`, `--help` | Display usage information and exit. |
 
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `NETBIRD_DOCKER_SUBNET` | `172.30.0.0/24` | The `/24` used for the generated Docker network. Traefik takes `.10` and the gateway `.1`. Must end in `.0`; `0.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16`, `224.0.0.0` and above, and `100.64.0.0/10` are rejected. |
+
+```bash
+NETBIRD_DOCKER_SUBNET=10.123.45.0/24 ./migrate.sh --install-dir /opt/netbird
+```
+
+Validation runs during preflight, so an invalid value fails before anything on the host is touched. The overlap check against existing Docker networks runs after the old containers are stopped, since `compose down` releases the old deployment's own network first.
+
+<Note>
+The migration script carries the `reverseProxy` trust pins over from your old `management.json` unchanged. If that configuration already pinned an address inside `172.30.0.0/24`, overriding the subnet will not rewrite the pin — review `config.yaml` after the migration.
+</Note>
+
 ## Troubleshooting
 
 ### Script exits with "External IdP detected"
@@ -186,6 +202,28 @@ This means the installation directory already contains a `config.yaml` file, whi
 
 ```bash
 mv config.yaml config.yaml.bak
+```
+
+### Script exits with a Docker network conflict
+
+The script stops if an existing Docker network overlaps the subnet it is about to use, or if a leftover NetBird network sits on a different subnet than the one being generated. Both checks happen before the new `docker-compose.yml` is written.
+
+Because this check runs after the old containers are stopped, the old deployment is down at that point. The error output includes the rollback command to bring it back:
+
+```bash
+bash <backup-dir>/rollback.sh
+```
+
+Then either pick a free `/24` and re-run:
+
+```bash
+NETBIRD_DOCKER_SUBNET=10.123.45.0/24 ./migrate.sh --install-dir /opt/netbird
+```
+
+Or, if the reported network belongs to the old NetBird deployment and is no longer in use, remove it and re-run:
+
+```bash
+docker network rm <network-name>
 ```
 
 ### Script cannot detect the installation directory
