@@ -1,11 +1,11 @@
 import {Note, Warning} from "@/components/mdx"
 
 export const description =
-    'Configure SSO, password, PIN, and header authentication methods, plus IP and country access restrictions, for NetBird Reverse Proxy services.'
+    'Configure service authentication, per-target access actions, and IP, country, and reputation restrictions for NetBird Reverse Proxy services.'
 
 # Reverse Proxy Authentication and Access Restrictions
 
-NetBird Reverse Proxy supports multiple authentication methods and connection-level access restrictions to control who can access your exposed services. You can enable one or more methods on each service, or leave a service completely public. Authentication and access restrictions are configured per service in the **Authentication** tab when creating or editing a service.
+NetBird Reverse Proxy supports multiple authentication methods and connection-level access restrictions to control who can access your exposed services. You can enable one or more methods on each service, leave a service completely public, or choose a different authentication action for an individual HTTP target path. Authentication and access restrictions are configured when creating or editing a service.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/authentication/reverse-proxy-add-service-auth.png" alt="Authentication tab showing all available authentication methods" className="imagewrapper"/>
@@ -175,6 +175,26 @@ Services can also be configured without any authentication. When no authenticati
 
 **Best for:** Public-facing websites, APIs that handle their own authentication internally, or services that are intentionally open to the internet.
 
+## Per-target access actions
+
+HTTP targets can override the service authentication behavior for their matching path. Open or add a target, expand **Optional Settings**, and choose **Access**:
+
+| Action | Behavior |
+|--------|----------|
+| **Use service authentication** | Apply the authentication configured on the service. This is the default. |
+| **Bypass authentication** | Skip SSO, password, PIN, and header authentication for requests routed to this target. Service-level access restrictions still apply. |
+| **Block access** | Return `403` for requests routed to this target without contacting its backend. |
+
+For example, a service can require SSO on its `/` target, use **Bypass authentication** for `/public/`, and use **Block access** for `/admin/`. Target selection uses the longest matching, case-sensitive literal prefix. It does not support glob patterns or regular expressions. See [Path-based routing](/manage/reverse-proxy#path-based-routing) for matching examples and forwarding behavior.
+
+The action only controls reverse proxy authentication for the selected target. **Bypass authentication** does not bypass CIDR, country, or CrowdSec restrictions configured on the service. It also does not change path rewriting; the existing **Preserve Full Path** setting continues to control whether the matched prefix is sent to the backend.
+
+Targets that override the default are marked in target lists. Hover the access indicator to see its action.
+
+<Note>
+    Per-target access actions are available only for HTTP services. Upgrade all proxy instances in the selected cluster before using them. Older proxies ignore these actions and continue applying the service's authentication settings. **Bypass authentication** is unavailable for NetBird-Only services and Agent Network targets.
+</Note>
+
 ## Combining authentication methods
 
 You can enable multiple **operator auth methods** on a single service simultaneously. When more than one is active, users authenticate using **any** of the enabled methods — they choose which one to use when accessing the service.
@@ -200,6 +220,8 @@ Common combinations include:
 Access restrictions control which connections are allowed to reach your service based on the client's IP address, geographic location, or IP reputation. Unlike authentication methods, access restrictions operate at the connection level and work for both HTTP and L4 services.
 
 Access restrictions are evaluated **before** authentication. If a connection is blocked by an access restriction rule, it is rejected immediately without any authentication check.
+
+These restrictions also apply to targets set to **Bypass authentication**. A target action cannot relax a service-level CIDR, country, or CrowdSec denial.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/authentication/access-restrictions-geo-ip.png" alt="Authentication tab showing all available authentication methods" className="imagewrapper"/>
