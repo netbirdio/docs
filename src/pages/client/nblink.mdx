@@ -1,0 +1,204 @@
+import { Note, Warning } from '@/components/mdx'
+
+export const description =
+  'Forward local ports into your NetBird network from an unprivileged process, without installing the agent or granting root.'
+
+# nblink
+
+`nblink` forwards local ports into your NetBird network from an ordinary,
+unprivileged process. It runs the client in userspace mode, so there is no TUN
+device to create and no root to grant.
+
+That makes it useful where the regular agent cannot run:
+
+- Managed laptops where you cannot install software that needs administrator rights.
+- Rootless containers, including OpenShift and Podman.
+- Short-lived environments such as CI jobs, where installing an agent is not worth it.
+
+Names on the upstream side of a forward are resolved inside the tunnel, so
+`/etc/resolv.conf` is never modified.
+
+<Note>
+  `nblink` forwards HTTP. Support for raw TCP, UDP and SOCKS5 is planned, and
+  the way a forward is written will not change when they arrive.
+</Note>
+
+## Use cases
+
+### An MCP server or local AI agent reaching an internal API
+
+AI agents increasingly run in containers or restricted sandboxes where
+installing a client is not an option, and the consumer is code rather than a
+person, so opening a browser is not a substitute.
+
+```shell
+nblink --forward 'http://3000=https://tickets.internal' --state-dir ~/.nblink
+```
+
+Point the MCP server at `http://localhost:3000`. The agent carries a real peer
+identity, so what it can reach is decided by your policies rather than by
+whatever the agent was told to do.
+
+### Agent Network access without installing a client
+
+An [Agent Network](/agent-network) endpoint only answers when you are connected
+to your network and authenticated through your IdP, which normally means
+installing the client and therefore having root.
+
+```shell
+nblink --forward 'http://8080=https://mirror.netbird.ai'
+```
+
+Set the agent's base URL to `http://localhost:8080`. It still gets identity,
+spending limits and the models you approved, and no API key is handed to the
+agent itself.
+
+### A sidecar for an app you cannot modify
+
+A vendor or legacy application hardcodes an HTTP endpoint and ignores proxy
+settings, so pointing it somewhere else is not possible. Running `nblink`
+beside it gives it `localhost:8080` without touching the application, on
+platforms that forbid privileged containers and assign an arbitrary UID at run
+time.
+
+## Install
+
+Download the archive for your platform from the
+[releases page](https://github.com/netbirdio/netbird/releases), extract it, and
+run the binary. There is no installer and no service to register.
+
+```shell
+tar -xzf nblink_<version>_linux_amd64.tar.gz
+./nblink --help
+```
+
+## Forward a port
+
+A forward is a single argument, and the flag repeats:
+
+```shell
+nblink --forward 'http://8080=https://grafana.internal'
+```
+
+The scheme on the left selects the listener type. The right side is the
+upstream reached over your network. Giving only a port binds loopback, so the
+command above listens on `127.0.0.1:8080`.
+
+With no setup key, `nblink` opens your browser to log in. It always prints the
+login URL as well, so the same command works over SSH.
+
+Forward several services from one session and one login:
+
+```shell
+nblink --forward 'http://8080=https://grafana.internal' \
+       --forward 'http://9090=https://prometheus.internal'
+```
+
+Use `0` as the port to let the operating system pick a free one. The address
+actually bound is printed when the forward starts.
+
+Check a configuration without connecting to anything:
+
+```shell
+nblink --forward 'http://8080=https://grafana.internal' --check
+```
+
+## Run without a browser
+
+Pass a [setup key](/manage/peers/register-machines-using-setup-keys) to log in
+without any interaction:
+
+```shell
+nblink --forward 'http://8080=https://grafana.internal' --setup-key "$NB_SETUP_KEY"
+```
+
+## Run in a container
+
+Every flag has a matching `NB_`-prefixed environment variable, which is how the
+image is configured. `NB_FORWARD` accepts a comma separated list.
+
+```shell
+docker run --rm -p 8080:8080 \
+  --mount type=bind,src="$(pwd)/nb_setup_key",dst=/run/secrets/nb_setup_key,readonly \
+  -e NB_SETUP_KEY=file:/run/secrets/nb_setup_key \
+  -e NB_FORWARD='http://0.0.0.0:8080=https://grafana.internal' \
+  -e NB_ALLOW_PUBLIC_BIND=true \
+  netbirdio/nblink
+```
+
+The image needs no `--privileged`, no `--cap-add NET_ADMIN`, no
+`--device /dev/net/tun` and no host networking. It runs as a non-root user and
+works on platforms that assign an arbitrary UID at run time.
+
+<Warning>
+  The key file must exist before the run and be readable by the container user,
+  UID 65532. A bind mount keeps the host file's owner and mode, so a key
+  written with the usual `chmod 600` is not readable and startup fails. If the
+  source path does not exist, the runtime creates a directory there instead.
+</Warning>
+
+Inside a container the listener usually binds `0.0.0.0`, because the container
+boundary is what restricts access and the published port is explicit. That
+still requires `NB_ALLOW_PUBLIC_BIND`, so exposing a forward is always
+something you wrote down.
+
+Mount a writable volume and set `NB_STATE_DIR` to keep the peer identity across
+restarts. Without it, each start registers a new peer.
+
+<Warning>
+  A value given as `file:/path` is read from that file. Prefer it for setup
+  keys in containers, so the secret is not visible to anything that can read
+  the process environment.
+</Warning>
+
+## Configuration
+
+| Flag | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `--forward` | `NB_FORWARD` | | Forward spec, repeatable. Comma separated in the environment. |
+| `--setup-key` | `NB_SETUP_KEY` | | Log in without a browser. Accepts a `file:` prefix. |
+| `--management-url` | `NB_MANAGEMENT_URL` | NetBird cloud | Management server URL. |
+| `--hostname` | `NB_HOSTNAME` | host name | Peer name in your network. |
+| `--state-dir` | `NB_STATE_DIR` | memory | Directory for identity and state. |
+| `--log-level` | `NB_LOG_LEVEL` | `info` | Log level. |
+| `--allow-public-bind` | `NB_ALLOW_PUBLIC_BIND` | `false` | Required to bind an address other than loopback. |
+| `--no-browser` | `NB_NO_BROWSER` | `false` | Print the login URL instead of opening a browser. |
+| `--check` | `NB_CHECK` | `false` | Validate the configuration, print the forwards and exit. |
+
+## Access control
+
+A peer created by `nblink` is a peer like any other. It appears in your peer
+list and reaches only what your
+[access control policies](/manage/access-control) allow.
+
+`nblink` only dials out. It refuses inbound connections and does not reach the
+network of the machine it runs on, so the peer cannot be used as a way into
+that machine.
+
+A loopback forward answers only requests whose `Host` names the loopback
+interface, and refuses any request a browser marks as belonging to another
+page, through either a cross-origin `Origin` or a cross-site `Sec-Fetch-Site`.
+A web page you visit can point its own hostname at `127.0.0.1` or embed the
+address directly, and without those checks your browser could reach the
+upstream through the listener under your identity. Ordinary callers send
+neither header and are unaffected.
+
+A browser too old to send `Sec-Fetch-Site`, which browsers have sent since
+2020, can still reach a loopback forward with an embedded no-cors GET.
+
+<Warning>
+  Forwards bind `127.0.0.1` unless you pass `--allow-public-bind`. A forward on
+  a public address lets anything that can reach the port use your network, so
+  enable it only when the surrounding environment restricts access.
+</Warning>
+
+## Limits
+
+Userspace mode carries TCP, UDP and ping only. An `nblink` peer cannot:
+
+- act as a [routing peer](/manage/networks/how-routing-peers-work) or an exit node,
+- take over system DNS for the machine,
+- bind privileged ports below 1024.
+
+If you need any of those, install the
+[NetBird client](/get-started/install) instead.
