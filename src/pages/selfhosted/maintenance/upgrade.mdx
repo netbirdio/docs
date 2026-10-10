@@ -133,6 +133,8 @@ Full version tags such as `traefik:v3.7.14` and `crowdsecurity/crowdsec:v1.8.1` 
 
 Change one component at a time so you can identify regressions. Edit that service's `image:` in `docker-compose.yml` to the version or digest you selected, preserving its existing environment, labels, networks, and volume mounts. If the image is supplied through a Compose variable, update that variable instead.
 
+For Traefik, also check [header handling](#traefik-header-handling) and the [Docker network setting](#traefik-docker-network) before recreating the container.
+
 Validate the configuration before applying it:
 
 ```bash
@@ -185,6 +187,43 @@ Restore the previous image digest or full version tag and any configuration chan
 If the release migrated stored data or configuration in a way the older version cannot read, stop the affected service and [restore its pre-upgrade backup](/selfhosted/maintenance/backup) before starting the older image. Changing an image tag does not undo a database migration.
 
 ## Migration Notes
+
+### Traefik header handling
+
+Traefik v3.7.12 introduced `aliasHeadersStrategy` and warns when it is unset. When upgrading to the validated `v3.7.14` version, add these settings to the existing `services.traefik.command` list in `docker-compose.yml`:
+
+```yaml
+      - '--entrypoints.web.http.aliasHeadersStrategy=delete'
+      - '--entrypoints.websecure.http.aliasHeadersStrategy=delete'
+```
+
+These settings apply to HTTP traffic on both entry points, whether or not CrowdSec is enabled. Replace any existing `underscoreHeadersStrategy` flags with these settings. The `delete` strategy helps prevent header spoofing by removing request headers whose names contain characters other than letters, digits, and hyphens. It also removes legitimate headers such as `X_Request_Id`, so check custom integrations before enabling it. See [Traefik's header handling documentation](https://doc.traefik.io/traefik/reference/install-configuration/entrypoints/#aliasheadersstrategy).
+
+### Traefik Docker network
+
+Some installer-generated Compose files set `--providers.docker.network=netbird`, while Compose creates a network named `<project>_netbird`. Traefik then warns and falls back to another network. This usually works with one shared network but can select the wrong one when containers have several.
+
+Check the networks attached to the bundled Traefik container:
+
+```bash
+docker inspect netbird-traefik --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}'
+```
+
+Replace the existing `--providers.docker.network` value with the shared network's actual name. For example, if the command prints `netbird_netbird`:
+
+```yaml
+      - '--providers.docker.network=netbird_netbird'
+```
+
+The name depends on the Compose project. An explicitly named network, such as `netbird` in the enterprise installer, does not receive a project prefix. Keep that name if it already matches. See [Docker's network naming documentation](https://docs.docker.com/reference/compose-file/networks/#name).
+
+After changing either Traefik setting, validate the Compose file and recreate Traefik:
+
+```bash
+docker compose config --quiet
+docker compose up -d --no-deps traefik
+docker compose logs --tail=100 traefik
+```
 
 ### Set `reverseProxy.trustedPeers` on older deployments
 
