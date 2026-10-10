@@ -1,5 +1,7 @@
 # Upgrade Your Self-Hosted NetBird Installation
 
+This guide covers NetBird upgrades and [updating Traefik and CrowdSec](#upgrading-traefik-and-crowd-sec), including deployments created from marketplace images. Run the commands from the directory containing your `docker-compose.yml` (`/opt/netbird` on [Vultr](/selfhosted/marketplaces/vultr)).
+
 ## Check for Updates
 
 The NetBird Dashboard displays an update indicator at the bottom of the left navigation menu when a new version is available:
@@ -27,6 +29,8 @@ Example response:
 }
 ```
 
+The dashboard indicator and version API cover NetBird components. They do not report updates for Traefik, CrowdSec, or the optional Traefik CrowdSec bouncer plugin. Check those projects' releases separately, as described below.
+
 ## Check Release Notes
 
 Before upgrading, review the release notes for any breaking changes or migration steps:
@@ -44,7 +48,8 @@ To upgrade NetBird to the latest version:
 
 1. Run the backup steps described in the [backup](/selfhosted/maintenance/backup) section.
 2. Review the release notes (see above) for any breaking changes.
-3. Pull the latest NetBird docker images:
+3. Check the `image:` entries in `docker-compose.yml`. If you use explicit version tags, change them to the releases you want to deploy before pulling. `docker compose pull` downloads the configured tags; it does not change them. With `:latest`, it fetches the image currently published under that tag.
+4. Pull the configured NetBird images:
     ```bash
     docker compose pull netbird-server dashboard
     ```
@@ -52,7 +57,7 @@ To upgrade NetBird to the latest version:
     ```bash
     docker compose pull proxy
     ```
-4. Restart the NetBird containers with the new images:
+5. Restart the NetBird containers with the new images:
     ```bash
     docker compose up -d --force-recreate netbird-server dashboard
     ```
@@ -72,10 +77,153 @@ Compare it with the `management_current_version` field returned by `GET /api/ins
 </Note>
 
 <Note>
-For upgrades from older versions (pre-v0.26.0), see the [Legacy upgrade notes](#legacy-self-hosting-with-zitadel-idp) below.
+For upgrades from older versions (pre-v0.26.0), see the [legacy upgrade notes](/selfhosted/selfhosted-guide#upgrade).
 </Note>
 
+## Upgrading Traefik and CrowdSec
+
+Traefik and CrowdSec have their own release cycles. Upgrading NetBird does not update their version tags or apply changes from newer installation scripts to your existing Compose file. Use your existing configuration for upgrades; rerunning `getting-started.sh` is not an upgrade procedure.
+
+### Choosing versions
+
+The following dependency versions have been validated for self-hosted NetBird as of **October 9, 2026**:
+
+| Component | Validated version |
+| --- | --- |
+| Bundled Traefik | `traefik:v3.7.14` |
+| CrowdSec | `crowdsecurity/crowdsec:v1.8.1` |
+| Traefik CrowdSec bouncer plugin | `v1.7.1` |
+
+Installer defaults can differ from these versions. Check the image tags in your `docker-compose.yml`; the bouncer plugin is configured separately in the [dashboard AppSec guide](/selfhosted/maintenance/crowdsec-dashboard#update-docker-compose-yml). Before adopting a newer release, review its migration requirements and verify it with your NetBird configuration in a test deployment.
+
+- **Traefik:** check the [releases](https://github.com/traefik/traefik/releases), [support policy](https://doc.traefik.io/traefik/deprecation/releases/), and [v3 migration notes](https://doc.traefik.io/traefik/migrate/v3/). Configuration changes can be required within the same major version.
+- **CrowdSec:** check the [releases](https://github.com/crowdsecurity/crowdsec/releases) and [Docker documentation](https://docs.crowdsec.net/u/getting_started/installation/docker/).
+- **Dashboard AppSec:** also check the [Traefik bouncer plugin releases](https://github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin/releases). The plugin version is set by `--experimental.plugins.bouncer.version` in Traefik's `command:` list. Changing the CrowdSec image does not update it.
+
+You can subscribe to release notifications on each GitHub repository using **Watch → Custom → Releases**. Check security advisories and upstream support status as well as the installer defaults when planning updates.
+
+Full version tags such as `traefik:v3.7.14` and `crowdsecurity/crowdsec:v1.8.1` select specific releases. A minor-version tag such as `traefik:v3.6` can fetch a newer patch image without a Compose edit. For controlled rollouts, use full version tags for all images, or image digests when you need immutable references, and update them deliberately after validation.
+
+### Before changing a version
+
+1. Record the configured images and the images currently in use:
+
+   ```bash
+   docker compose config --images
+   docker compose images
+   docker compose exec traefik traefik version
+   ```
+
+   If CrowdSec is enabled, also run:
+
+   ```bash
+   docker compose exec crowdsec cscli version
+   ```
+
+   Record the current plugin version if you use dashboard AppSec. For each image, save its digest for rollback; use an image ID from `docker compose images`:
+
+   ```bash
+   docker image inspect <image-id> --format '{{json .RepoDigests}}'
+   ```
+
+2. [Back up the deployment](/selfhosted/maintenance/backup), including the Compose file, environment files, Traefik dynamic configuration, CrowdSec configuration and database, and certificate volumes. If you enabled dashboard AppSec, also back up the Compose project `.env` file containing its bouncer key and the `crowdsec/acquis.d/` configuration.
+3. Review release notes for every version you are skipping, then test the candidate versions with the [checks below](#verify-the-upgrade). Keep SSH access available independently of the dashboard and proxy while testing blocks or restarting services.
+
+### Apply the update
+
+Change one component at a time so you can identify regressions. Edit that service's `image:` in `docker-compose.yml` to the version or digest you selected, preserving its existing environment, labels, networks, and volume mounts. If the image is supplied through a Compose variable, update that variable instead.
+
+For Traefik, also check [header handling](#traefik-header-handling) and the [Docker network setting](#traefik-docker-network) before recreating the container.
+
+Validate the configuration before applying it:
+
+```bash
+docker compose config --quiet
+```
+
+For CrowdSec, pull and recreate only its service:
+
+```bash
+docker compose pull crowdsec
+docker compose up -d --no-deps crowdsec
+docker compose ps crowdsec
+docker compose logs --tail=100 crowdsec
+```
+
+Confirm CrowdSec is healthy and repeat the blocking checks below before continuing. AppSec-protected requests can be denied while CrowdSec is unavailable.
+
+For Traefik, pull and recreate its service after editing its image:
+
+```bash
+docker compose pull traefik
+docker compose up -d --no-deps traefik
+docker compose logs --tail=100 traefik
+```
+
+If you change only the bouncer plugin version, apply the updated Traefik `command:` with `docker compose up -d --no-deps traefik`. A plain `docker compose restart` does not apply Compose configuration changes.
+
+These restarts briefly interrupt the affected services. Preserve the existing CrowdSec database, bouncer keys, and certificate volumes; do not use `docker compose down -v` during an upgrade.
+
+### Verify the upgrade
+
+A running container alone does not confirm that routing, certificate issuance, or blocking works. Check the features enabled in your deployment:
+
+| Area | What to verify |
+| --- | --- |
+| Dashboard and peers | Sign in, load peers and policies, connect an existing peer, enroll a test peer, and verify peer connectivity and relay fallback. |
+| Reverse proxy | Reach an existing service and create a test service. Exercise the protocols, authentication methods, and access restrictions you use, including HTTP, WebSockets, TCP/UDP/TLS services, and Traefik TLS passthrough where configured. |
+| Certificates | Check trusted HTTPS on the dashboard and proxied domains without disabling certificate verification. Use a new test hostname to verify certificate issuance, and check ACME logs for failures. An existing valid certificate alone does not verify issuance or renewal; exercise renewal in the test deployment and monitor it after rollout. See [Certificate troubleshooting](/selfhosted/troubleshooting/certificates). |
+| Client IPs | Confirm proxy access logs contain the original client IP, so IP restrictions and CrowdSec decisions apply to the correct address. |
+| CrowdSec IP reputation | Follow [Testing the integration](/selfhosted/maintenance/crowdsec#testing-the-integration): confirm the bouncer syncs, a temporary decision blocks in enforce mode, observe mode allows and logs the verdict, and access returns after removing the decision. |
+| Dashboard AppSec | If configured, repeat [Verify protection](/selfhosted/maintenance/crowdsec-dashboard#verify-protection) and [the middleware checks](/selfhosted/maintenance/crowdsec-dashboard#verifying-the-middleware-stays-attached). Normal dashboard and OIDC requests should succeed; `/.env` and `/api/.env` probes should return `403`, with AppSec metrics confirming inspection. Test dashboard IP blocking separately. |
+| Persistence | Restart the updated services and repeat the checks. Confirm certificates, CrowdSec enrollment, bouncer authentication, and AppSec configuration survive the restart. |
+
+Record the exact image versions or digests, plugin version, and test results with your deployment configuration so the next upgrade has a known working starting point.
+
+### Roll back a dependency update
+
+Restore the previous image digest or full version tag and any configuration changed for that component, including the bouncer plugin version. Recreate the affected service with `docker compose up -d --no-deps <service>` and repeat the verification checks. Restoring a moving tag such as `v3.6` or `latest` may fetch the upgraded image again; use the recorded digest to recover the exact previous image.
+
+If the release migrated stored data or configuration in a way the older version cannot read, stop the affected service and [restore its pre-upgrade backup](/selfhosted/maintenance/backup) before starting the older image. Changing an image tag does not undo a database migration.
+
 ## Migration Notes
+
+### Traefik header handling
+
+Traefik v3.7.12 introduced `aliasHeadersStrategy` and warns when it is unset. When upgrading to the validated `v3.7.14` version, add these settings to the existing `services.traefik.command` list in `docker-compose.yml`:
+
+```yaml
+      - '--entrypoints.web.http.aliasHeadersStrategy=delete'
+      - '--entrypoints.websecure.http.aliasHeadersStrategy=delete'
+```
+
+These settings apply to HTTP traffic on both entry points, whether or not CrowdSec is enabled. Replace any existing `underscoreHeadersStrategy` flags with these settings. The `delete` strategy helps prevent header spoofing by removing request headers whose names contain characters other than letters, digits, and hyphens. It also removes legitimate headers such as `X_Request_Id`, so check custom integrations before enabling it. See [Traefik's header handling documentation](https://doc.traefik.io/traefik/reference/install-configuration/entrypoints/#aliasheadersstrategy).
+
+### Traefik Docker network
+
+Some installer-generated Compose files set `--providers.docker.network=netbird`, while Compose creates a network named `<project>_netbird`. Traefik then warns and falls back to another network. This usually works with one shared network but can select the wrong one when containers have several.
+
+Check the networks attached to the bundled Traefik container:
+
+```bash
+docker inspect netbird-traefik --format '{{range $name, $_ := .NetworkSettings.Networks}}{{println $name}}{{end}}'
+```
+
+Replace the existing `--providers.docker.network` value with the shared network's actual name. For example, if the command prints `netbird_netbird`:
+
+```yaml
+      - '--providers.docker.network=netbird_netbird'
+```
+
+The name depends on the Compose project. An explicitly named network, such as `netbird` in the enterprise installer, does not receive a project prefix. Keep that name if it already matches. See [Docker's network naming documentation](https://docs.docker.com/reference/compose-file/networks/#name).
+
+After changing either Traefik setting, validate the Compose file and recreate Traefik:
+
+```bash
+docker compose config --quiet
+docker compose up -d --no-deps traefik
+docker compose logs --tail=100 traefik
+```
 
 ### Set `reverseProxy.trustedPeers` on older deployments
 
