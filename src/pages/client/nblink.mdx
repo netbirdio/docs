@@ -118,7 +118,7 @@ Every flag has a matching `NB_`-prefixed environment variable, which is how the
 image is configured. `NB_FORWARD` accepts a comma separated list.
 
 ```shell
-docker run --rm -p 8080:8080 \
+docker run --rm -p 127.0.0.1:8080:8080 \
   --mount type=bind,src="$(pwd)/nb_setup_key",dst=/run/secrets/nb_setup_key,readonly \
   -e NB_SETUP_KEY=file:/run/secrets/nb_setup_key \
   -e NB_FORWARD='http://0.0.0.0:8080=https://grafana.internal' \
@@ -130,20 +130,50 @@ The image needs no `--privileged`, no `--cap-add NET_ADMIN`, no
 `--device /dev/net/tun` and no host networking. It runs as a non-root user and
 works on platforms that assign an arbitrary UID at run time.
 
-<Warning>
-  The key file must exist before the run and be readable by the container user,
-  UID 65532. A bind mount keeps the host file's owner and mode, so a key
-  written with the usual `chmod 600` is not readable and startup fails. If the
-  source path does not exist, the runtime creates a directory there instead.
-</Warning>
-
-Inside a container the listener usually binds `0.0.0.0`, because the container
-boundary is what restricts access and the published port is explicit. That
+Inside a container the listener has to bind `0.0.0.0`, because a published
+port arrives on the container's own interface rather than its loopback. That
 still requires `NB_ALLOW_PUBLIC_BIND`, so exposing a forward is always
 something you wrote down.
 
-Mount a writable volume and set `NB_STATE_DIR` to keep the peer identity across
-restarts. Without it, each start registers a new peer.
+<Warning>
+  Publish the port on the host's loopback, as above. A bare `-p 8080:8080`
+  publishes it on every host interface, and anything that can reach the host
+  can then use the forward under the peer's identity. Publish on another
+  address only when the network around the host restricts who can reach it.
+</Warning>
+
+A forward on a public address accepts requests addressed to `localhost` or to
+an IP address. A name that other machines use to reach it, such as a DNS name
+or a Kubernetes Service name, has to be listed with `--allowed-host`
+(`NB_ALLOWED_HOST`); an unlisted name is answered with `421`. See
+[Access control](#access-control) for what listing a name trusts.
+
+<Warning>
+  The key file must exist before the run and be readable by the container user,
+  UID 65532 in group 0. A bind mount keeps the host file's owner and mode, so a
+  root-owned key written with the usual `chmod 600` is not readable and startup
+  fails with `permission denied`. Either give the file to that UID
+  (`chown 65532`) or keep it mode `640` in group 0 (`chgrp 0`). If the source
+  path does not exist, `--mount` refuses to start the container; the older `-v`
+  form creates a directory there instead.
+</Warning>
+
+The image keeps its state in memory, so it runs on a read-only root filesystem
+and each start registers a new peer. To keep one identity across restarts, set
+`NB_STATE_DIR` and mount a writable volume there:
+
+```shell
+docker run --rm --read-only -p 127.0.0.1:8080:8080 \
+  -v nblink-state:/var/lib/nblink -e NB_STATE_DIR=/var/lib/nblink \
+  ...
+```
+
+Without a state directory, use an ephemeral setup key so the peers left behind
+by earlier starts are removed once they go offline.
+
+A kept identity is not yet a kept login. Without a setup key every start runs
+the browser flow, even when the peer's session is still valid. Give a restart
+that has to be unattended a setup key.
 
 <Warning>
   A value given as `file:/path` is read from that file. Prefer it for setup
@@ -162,6 +192,7 @@ restarts. Without it, each start registers a new peer.
 | `--state-dir` | `NB_STATE_DIR` | memory | Directory for identity and state. |
 | `--log-level` | `NB_LOG_LEVEL` | `info` | Log level. |
 | `--allow-public-bind` | `NB_ALLOW_PUBLIC_BIND` | `false` | Required to bind an address other than loopback. |
+| `--allowed-host` | `NB_ALLOWED_HOST` | | Name a request may arrive under, beyond loopback names and addresses. Repeatable. Comma separated in the environment. |
 | `--no-browser` | `NB_NO_BROWSER` | `false` | Print the login URL instead of opening a browser. |
 | `--check` | `NB_CHECK` | `false` | Validate the configuration, print the forwards and exit. |
 
@@ -176,8 +207,9 @@ network of the machine it runs on, so the peer cannot be used as a way into
 that machine.
 
 A loopback forward answers only requests whose `Host` names the loopback
-interface, and refuses any request a browser marks as belonging to another
-page, through either a cross-origin `Origin` or a cross-site `Sec-Fetch-Site`.
+interface or a name listed with `--allowed-host`, and refuses any request a
+browser marks as belonging to another page, through either a cross-origin
+`Origin` or a cross-site `Sec-Fetch-Site`.
 A web page you visit can point its own hostname at `127.0.0.1` or embed the
 address directly, and without those checks your browser could reach the
 upstream through the listener under your identity. Ordinary callers send
@@ -185,6 +217,17 @@ neither header and are unaffected.
 
 A browser too old to send `Sec-Fetch-Site`, which browsers have sent since
 2020, can still reach a loopback forward with an embedded no-cors GET.
+
+A forward on a public address applies the same checks and also accepts any IP
+address in `Host`, since a page cannot rebind an address it does not control.
+
+A name listed with `--allowed-host` is trusted rather than merely permitted,
+and the list applies to every forward in the process, loopback ones included.
+`Host` is the one signal a rebound page cannot forge, and listing a name gives
+that up for it: a page served on that name can resolve it to the listener and
+send a matching `Host` and `Origin`. List only names you control, and prefer a
+fully qualified one, since a single-label name can be answered by anything on
+the local network.
 
 <Warning>
   Forwards bind `127.0.0.1` unless you pass `--allow-public-bind`. A forward on
