@@ -11,11 +11,11 @@ Database and migration problems on a self-hosted deployment. For other areas, st
 
 **Likely causes and fixes** (most common first):
 
-1. **A failed schema migration.** Check `docker compose logs netbird-server` for migration errors. This is the usual cause and the logs name the failing step.
+1. **A failed schema migration.** Check `docker compose logs netbird-server` (`docker compose logs management` on installs from before v0.65.0) for migration errors. This is the usual cause and the logs name the failing step.
 2. **A skipped intermediate version.** Major version jumps may require stepping through intermediate releases. Follow the [upgrade path](/selfhosted/maintenance/upgrade) for your version.
 3. **A corrupt or partially-migrated database.** If the migration can't be completed, restore from a pre-upgrade backup and retry the upgrade.
 
-**Confirm**: `docker compose ps` shows `netbird-server` as `Up`, and its logs end with the service listening rather than a migration error.
+**Confirm**: `docker compose ps` shows `netbird-server` (or `management`) as `Up`, and its logs end with the service listening rather than a migration error.
 
 ## Data corruption after power loss
 
@@ -26,11 +26,11 @@ Database and migration problems on a self-hosted deployment. For other areas, st
 1. **An interrupted write.** Review all service logs to find which store is failing. With the default SQLite store, the files are `store.db`, `events.db`, and `idp.db` in the `netbird_data` volume (`/var/lib/netbird` inside the container). The netbird-server image doesn't include `sqlite3`, so stop the stack with `docker compose down` and check the files from a throwaway container. Find the volume name with `docker volume ls` (it ends in `netbird_data`), then run:
 
 ```bash
-docker run --rm -v VOLUME_NAME:/data alpine sh -c \
-  "apk add -q sqlite && for f in store.db events.db idp.db; do echo \$f; sqlite3 /data/\$f 'PRAGMA integrity_check;'; done"
+docker run --rm -v VOLUME_NAME:/data:ro alpine sh -c \
+  "apk add -q sqlite && for f in store.db events.db idp.db; do echo \$f; if [ -f /data/\$f ]; then sqlite3 -readonly /data/\$f 'PRAGMA integrity_check;'; else echo MISSING; fi; done"
 ```
 
-A healthy file prints `ok`.
+A healthy file prints `ok`. The volume is mounted read-only so the check can't change or create files; `MISSING` means that store doesn't exist in the volume.
 2. **An unrecoverable file.** If the store can't be repaired, restore from the most recent backup.
 
 **Confirm**: All services report `Up` in `docker compose ps`, and peers reconnect with `netbird status` showing `Management: Connected`.
