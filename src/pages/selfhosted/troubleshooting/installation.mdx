@@ -9,7 +9,14 @@ Problems running the self-hosted `getting-started.sh` script. For other areas, s
 
 **Symptom**: The `getting-started.sh` script stays on the wait line for several minutes, even though netbird-server looks healthy in `docker ps`.
 
-The wait check probes the OIDC endpoint through your reverse proxy, so a healthy server alone isn't enough. Something on the path from the public internet to netbird-server is broken. Check these likely causes in order, most common first:
+What the wait checks depends on the reverse proxy option you picked:
+
+- **Options 0 and 1 (Traefik)**: the script probes the OIDC endpoint at your public hostname through your reverse proxy, so a healthy server alone isn't enough. Something on the path to netbird-server is broken. The probe runs from the installation host itself, so first run the `curl` in step 5 below from both that host and a machine outside your network. If only the host fails, the host can't reach its own public address (some NAT setups don't support this), and external clients may be fine. Otherwise, work through the causes below.
+- **Options 2 to 5 (Nginx, Nginx Proxy Manager, Caddy, other)**: the script probes netbird-server directly on `http://127.0.0.1:8081`, with no proxy in the path. A hang here means netbird-server itself isn't healthy, so start with `docker compose logs netbird-server`.
+
+After about two minutes of waiting, the script prints `Taking too long. Checking logs...` followed by the last 20 log lines from netbird-server, and from Traefik when the script can find its container. Read that output first; it often names the problem.
+
+Check these likely causes in order, most common first:
 
 **1. DNS doesn't point at the host**
 
@@ -27,7 +34,7 @@ For options 0 (built-in Traefik) and 1 (existing Traefik), check that a real cer
 curl -vI https://netbird.example.com 2>&1 | grep -E "subject|issuer"
 ```
 
-A self-signed or default cert means ACME hasn't completed. Check Traefik logs for ACME errors. Common causes: port 80 not reachable from the internet, DNS not propagated yet, or a Let's Encrypt rate limit.
+A self-signed or default cert means ACME hasn't completed. Check Traefik logs for ACME errors. Common causes: TCP/443 not reachable from the internet, DNS not propagated yet, or a Let's Encrypt rate limit. The built-in Traefik (option 0) validates with the TLS-ALPN-01 challenge on port 443, so port 80 doesn't affect issuance. With option 1, the challenge depends on your Traefik's certificate resolver.
 
 **3. Traefik can't read the Docker socket (option 1 only)**
 
@@ -51,7 +58,7 @@ curl -k https://netbird.example.com/oauth2/.well-known/openid-configuration
 
 A valid response is JSON containing `"issuer"`. Anything else points to where to dig: 502 means Traefik can't reach netbird-server, 404 means the labels aren't matched, connection refused means you're not hitting Traefik at all.
 
-**Confirm**: The probe succeeds and the script continues on its own. You can leave it waiting while you debug. To start over instead, stop it with Ctrl+C, run `docker compose down -v`, fix the issue, and re-run.
+**Confirm**: The probe succeeds and the script continues on its own. You can leave it waiting while you debug. To start over instead, stop it with Ctrl+C, remove the generated files as shown in [Script fails on existing installation check](#script-fails-on-existing-installation-check), fix the issue, and re-run. `docker compose down -v` on its own leaves `config.yaml` behind, and the script refuses to run while that file exists.
 
 ## Script fails on existing installation check
 
@@ -66,6 +73,7 @@ docker compose down --volumes
 rm -f docker-compose.yml dashboard.env config.yaml proxy.env \
       traefik-dynamic.yaml nginx-netbird.conf caddyfile-netbird.txt \
       npm-advanced-config.txt
+rm -rf crowdsec/
 ```
 
 **Confirm**: Re-run the script; it proceeds past the existing-installation check and starts provisioning.

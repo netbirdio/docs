@@ -7,15 +7,15 @@ Database and migration problems on a self-hosted deployment. For other areas, st
 
 ## Management service won't start after upgrade
 
-**Symptom**: After an upgrade, the Management container fails to start or crash-loops.
+**Symptom**: After an upgrade, the netbird-server container (`management` on installs from before v0.65.0) fails to start or crash-loops.
 
 **Likely causes and fixes** (most common first):
 
-1. **A failed schema migration.** Check `docker compose logs management` for migration errors. This is the usual cause and the logs name the failing step.
+1. **A failed schema migration.** Check `docker compose logs netbird-server` (`docker compose logs management` on installs from before v0.65.0) for migration errors. This is the usual cause and the logs name the failing step.
 2. **A skipped intermediate version.** Major version jumps may require stepping through intermediate releases. Follow the [upgrade path](/selfhosted/maintenance/upgrade) for your version.
 3. **A corrupt or partially-migrated database.** If the migration can't be completed, restore from a pre-upgrade backup and retry the upgrade.
 
-**Confirm**: `docker compose ps` shows `management` as `Up`, and its logs end with the service listening rather than a migration error.
+**Confirm**: `docker compose ps` shows `netbird-server` (or `management`) as `Up`, and its logs end with the service listening rather than a migration error.
 
 ## Data corruption after power loss
 
@@ -23,8 +23,15 @@ Database and migration problems on a self-hosted deployment. For other areas, st
 
 **Likely causes and fixes** (most common first):
 
-1. **A stale lock file.** Check for and remove a leftover database lock if the process that held it is gone.
-2. **An interrupted write.** Review all service logs to find which store is failing. For SQLite, run an integrity check on the database file.
-3. **An unrecoverable file.** If the store can't be repaired, restore from the most recent backup.
+1. **An interrupted write.** Review all service logs to find which store is failing. With the default SQLite store, the files are `store.db`, `events.db`, and `idp.db` in the `netbird_data` volume (`/var/lib/netbird` inside the container). The netbird-server image doesn't include `sqlite3`, so stop the stack with `docker compose down` and check the files from a throwaway container. Find the volume name with `docker volume ls` (it ends in `netbird_data`), then run:
+
+   ```bash
+   docker run --rm -v VOLUME_NAME:/data:ro alpine sh -c \
+     "apk add -q sqlite && for f in store.db events.db idp.db; do echo \$f; if [ -f /data/\$f ]; then cp /data/\$f* /tmp/ && sqlite3 /tmp/\$f 'PRAGMA integrity_check;'; else echo MISSING; fi; done"
+   ```
+
+   A healthy file prints `ok`. The check runs on copies inside the throwaway container, so the volume isn't changed. If the interrupted write left a `-journal` file next to a store, the check applies it to the copy, the same way netbird-server does when it starts. `MISSING` means that store doesn't exist in the volume. Start the stack again with `docker compose up -d` when you're done.
+
+2. **An unrecoverable file.** If the store can't be repaired, restore from the most recent backup.
 
 **Confirm**: All services report `Up` in `docker compose ps`, and peers reconnect with `netbird status` showing `Management: Connected`.
