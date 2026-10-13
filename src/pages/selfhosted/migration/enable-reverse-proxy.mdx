@@ -297,6 +297,39 @@ traefik:
 
 Apply both with `docker compose up -d proxy traefik`. The proxy's main port stays `8443`, which an unprivileged process can bind on the host. An L4 listen port below `1024` needs the host's unprivileged port floor lowered first; see [Bring Your Own Proxy](/manage/reverse-proxy/bring-your-own-proxy#expose-tcp-and-udp-services).
 
+### Enabling peer-to-peer connectivity
+
+The proxy runs an embedded NetBird client to reach your peers. When the proxy runs in a container or behind NAT, it only knows its internal address and a random WireGuard port, so peers usually cannot reach it directly and fall back to a relay. To let peers establish direct peer-to-peer connections to the proxy:
+
+1. Set a fixed WireGuard port with `NB_PROXY_WG_PORT`.
+2. Forward that UDP port on your NAT or firewall to the proxy host, and publish it on the proxy container.
+3. Set `NB_PROXY_EXTERNAL_IP_MAP` to the public IP of the proxy host. Optionally map it to the internal IP or interface it belongs to, using the format `<public-IP>/<internal-IP-or-interface>`.
+
+In `proxy.env`:
+
+```bash
+NB_PROXY_WG_PORT=51830
+NB_PROXY_EXTERNAL_IP_MAP=203.0.113.5
+# Or map the public IP to an internal IP or interface:
+# NB_PROXY_EXTERNAL_IP_MAP=203.0.113.5/10.0.0.5
+# NB_PROXY_EXTERNAL_IP_MAP=203.0.113.5/eth0
+```
+
+In `docker-compose.yml`, publish the same UDP port on the `proxy` service (not needed with host networking):
+
+```yaml
+proxy:
+  # ...existing configuration...
+  ports:
+    - "51830:51830/udp"
+```
+
+Apply with `docker compose up -d proxy`.
+
+<Note>
+A fixed `NB_PROXY_WG_PORT` only works with single-account deployments. Setting `NB_PROXY_EXTERNAL_IP_MAP` without a fixed, forwarded port has no effect.
+</Note>
+
 ### Step 4: Set up DNS records
 
 Create DNS records pointing to the server running your NetBird stack: one for the base proxy domain and one wildcard for service subdomains.
@@ -754,6 +787,7 @@ The proxy is configured through environment variables (each one maps to an equiv
 | `NB_PROXY_TRUSTED_PROXIES` | No | Comma-separated list of trusted upstream proxy CIDR ranges or individual IP addresses (e.g. `10.0.0.0/8,192.168.1.1`) used for PROXY protocol and forwarded client IPs. | - |
 | `NB_PROXY_PROXY_PROTOCOL` | No | Enable PROXY protocol on TCP listeners to preserve client IPs behind L4 proxies. | `false` |
 | `NB_PROXY_WG_PORT` | No | WireGuard listen port (`0` = random). A fixed port only works with single-account deployments. | `0` |
+| `NB_PROXY_EXTERNAL_IP_MAP` | No | Comma-separated external IPs the embedded NetBird client advertises as ICE candidates, each as `IP` or `IP/internal-IP-or-interface` (e.g. `203.0.113.5/10.0.0.5` or `203.0.113.5/eth0`). Same format as the client `--external-ip-map` flag. Only effective with a fixed, forwarded `NB_PROXY_WG_PORT`. See [Enabling peer-to-peer connectivity](#enabling-peer-to-peer-connectivity). | - |
 | `NB_PROXY_PRESHARED_KEY` | No | Pre-shared key for the tunnel between the proxy and peers. | - |
 | `NB_PROXY_SUPPORTS_CUSTOM_PORTS` | No | Whether the proxy can bind arbitrary ports for UDP/TCP passthrough. | `true` |
 | `NB_PROXY_REQUIRE_SUBDOMAIN` | No | Require a subdomain label in front of the cluster domain. | `false` |
