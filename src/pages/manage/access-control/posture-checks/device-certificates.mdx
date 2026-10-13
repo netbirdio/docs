@@ -69,10 +69,10 @@ Two platform details are worth knowing. On macOS, the first signature from the l
 The NetBird service reads the System keychain without a user session, so it cannot answer a keychain prompt. A device identity is therefore usable only when the access list of its key allows NetBird; otherwise signing fails and the client log shows `SecKeyCreateSignature: CFError -25308`.
 
 - When the identity is installed with MDM, set `AllowAllAppsAccess` to `true` in the certificate payload. MDM cannot name a single application, so this lets every application on the device use the key, including to produce a proof for this check.
-- When importing it by hand, allow the NetBird binary explicitly:
+- When importing it by hand, allow the NetBird binary explicitly. `security import` asks for the passphrase of the `.p12` file, so it does not end up in your shell history:
 
 ```bash
-sudo security import device.p12 -k /Library/Keychains/System.keychain -P <password> \
+sudo security import device.p12 -k /Library/Keychains/System.keychain \
   -T /Applications/NetBird.app/Contents/MacOS/netbird
 ```
 
@@ -106,7 +106,7 @@ openssl req -provider tpm2 -provider default -new -key /etc/netbird/certs/laptop
 
 The client signs through `/dev/tpmrm0` for every challenge and the key file stays useless on any other machine.
 
-**A tpm2-pkcs11 token** is the other route, and the one Red Hat based distributions document. Give the service the token through its environment file, `/etc/sysconfig/netbird`, which the deb and rpm packages install readable by root only:
+**A tpm2-pkcs11 token** is the other route, and the one Red Hat based distributions document. Give the service the token through its environment file, `/etc/sysconfig/netbird`. The rpm package installs it readable by root only; on other distributions, such as Debian and Ubuntu, create it yourself before putting the PIN in it (`sudo install -m 0600 /dev/null /etc/sysconfig/netbird`):
 
 ```bash
 NB_CERT_PKCS11_URI=pkcs11:token=netbird?module-path=/usr/lib64/pkcs11/libtpm2_pkcs11.so
@@ -139,7 +139,7 @@ Other messages worth knowing:
 
 | Log message | Meaning |
 | --- | --- |
-| `SecKeyCreateSignature: CFError -25308` | macOS: the key's access list does not allow NetBird. See [letting NetBird use a device key](#macos-letting-netbird-use-a-device-key). |
+| `SecKeyCreateSignature: CFError -25308` | macOS: the key's access list does not allow NetBird. See [letting NetBird use a device key](#mac-os-letting-net-bird-use-a-device-key). |
 | `has no issuer in the keychain` | macOS: only the leaf certificate is sent, so the check must list the CA that issued it directly. |
 | `no console user is logged in` | macOS: nobody is signed in, so only device certificates can be proven. |
 | `rejected the PIN, not retrying it until the daemon restarts` | The token refused the PIN. Fix `NB_TPM_PIN` and restart the service. |
