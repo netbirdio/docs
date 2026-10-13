@@ -189,6 +189,10 @@ export const docsNavigation = [
                                 title: 'Disable route when in the office',
                                 href: '/manage/access-control/posture-checks/connecting-from-the-office',
                             },
+                            {
+                                title: 'Requiring a device certificate',
+                                href: '/manage/access-control/posture-checks/device-certificates',
+                            },
                         ],
                     },
                     {
