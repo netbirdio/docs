@@ -14,9 +14,9 @@ The tool only reads your MySQL database and doesn't change it.
 
 ## Before You Begin
 
-- Upgrade NetBird to `v0.81.0` or later and start it once on MySQL, so the database schema is current. Use the tool from the same release.
-- Prepare an empty PostgreSQL database. To run one in Docker, see [Set Up PostgreSQL](/selfhosted/maintenance/scaling/migrate-sqlite-to-postgresql#set-up-postgre-sql).
-- Run the tool on a machine that can reach both MySQL and PostgreSQL.
+- Upgrade the management server to `v0.81.0` or later and start it once on MySQL, so the database schema is current. That's the `netbird-server` service, or `management` on the older multi-container setup, not the NetBird client. Use the tool from the same release.
+- Prepare an empty PostgreSQL database. To run one in Docker, see [Set Up PostgreSQL](/selfhosted/maintenance/scaling/migrate-sqlite-to-postgresql#set-up-postgre-sql). The examples in this guide connect with `sslmode=require`; use `verify-full` to also verify the server certificate. Use `sslmode=disable` only when PostgreSQL runs on the same host or Docker network as the management server.
+- Run the tool on a Linux machine that can reach both MySQL and PostgreSQL. The tool is Linux-only, built for `amd64`, `arm64`, and `arm`.
 
 ## Step 1: Get the Migration Tool
 
@@ -28,16 +28,17 @@ tar xzf netbird-mysql-migrate.tar.gz
 chmod +x netbird-mysql-migrate
 ```
 
-Available architectures: `linux_amd64`, `linux_arm64`, `linux_arm`.
+On `arm64` or `arm`, replace `linux_amd64` with `linux_arm64` or `linux_arm`.
 
-## Step 2: Stop NetBird and Back Up
+## Step 2: Stop the Management Server and Back Up
 
-Stop the server and copy its data directory, which holds `events.db` and `idp.db`:
+Stop the management server and copy its data directory, which holds `events.db` and `idp.db`:
 
 ```bash
 docker compose stop netbird-server
 mkdir backup
 docker compose cp -a netbird-server:/var/lib/netbird/. backup/
+chmod 700 backup
 ```
 
 On the older multi-container setup, use the `management` service instead of `netbird-server`.
@@ -45,15 +46,17 @@ On the older multi-container setup, use the `management` service instead of `net
 Back up MySQL as well:
 
 ```bash
-mysqldump -h <MYSQL_HOST> -u <MYSQL_USER> -p <MYSQL_DB> > backup/netbird-mysql.sql
+mysqldump --no-tablespaces -h <MYSQL_HOST> -u <MYSQL_USER> -p <MYSQL_DB> > backup/netbird-mysql.sql
 ```
+
+The backup holds password hashes from `idp.db` and a full database dump, so `chmod 700` keeps it readable only by you. `--no-tablespaces` avoids a `PROCESS` privilege error when you dump as the NetBird database user.
 
 ## Step 3: Run the Migration
 
 ```bash
 ./netbird-mysql-migrate \
   --mysql-dsn '<MYSQL_USER>:<MYSQL_PASSWORD>@tcp(<MYSQL_HOST>:3306)/<MYSQL_DB>' \
-  --postgres-dsn 'host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable' \
+  --postgres-dsn 'host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=require' \
   --events-db backup/events.db \
   --auth-db backup/idp.db
 ```
@@ -70,11 +73,13 @@ Done. Point the store, activity and auth store settings at Postgres before start
 <Note>
 - All stores go into the database given by `--postgres-dsn`. To keep the activity or auth store in a separate database, add `--events-postgres-dsn` or `--auth-postgres-dsn`.
 - A missing `events.db` or `idp.db` is skipped. For example, deployments on an external IdP have no `idp.db`.
-- MySQL timestamps are read as UTC. If your NetBird server runs in another time zone, for example with `TZ` set on the container, add `--mysql-timezone`, such as `--mysql-timezone Europe/Berlin`.
+- MySQL timestamps are read as UTC. If your management server runs in another time zone, for example with `TZ` set on the container, add `--mysql-timezone`, such as `--mysql-timezone Europe/Berlin`.
 - The tool stops if the PostgreSQL database already holds NetBird data.
 </Note>
 
-## Step 4: Point NetBird at PostgreSQL
+## Step 4: Point the Management Server at PostgreSQL
+
+Change only the store settings. Keep the encryption key (`server.store.encryptionKey` in `config.yaml`, `DataStoreEncryptionKey` in `management.json`) as it is: the tool copies encrypted values as they are, so the management server needs the same key to read them.
 
 ### Combined setup (config.yaml)
 
@@ -84,13 +89,13 @@ Set all three stores to PostgreSQL in `config.yaml`, using the DSNs you migrated
 server:
   store:
     engine: "postgres"
-    dsn: "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable"
+    dsn: "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=require"
   activityStore:
     engine: "postgres"
-    dsn: "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable"
+    dsn: "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=require"
   authStore:
     engine: "postgres"
-    dsn: "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable"
+    dsn: "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=require"
 ```
 
 Remove any `NETBIRD_STORE_ENGINE_MYSQL_DSN` or `NB_STORE_ENGINE_MYSQL_DSN` variable from `docker-compose.yml`.
@@ -107,7 +112,7 @@ In `management.json`, set the store engine and, if the file has an `EmbeddedIdP`
     "Storage": {
         "Type": "postgres",
         "Config": {
-            "DSN": "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable"
+            "DSN": "host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=require"
         }
     }
 }
@@ -117,9 +122,9 @@ Then, on the `management` service in `docker-compose.yml`, replace `NETBIRD_STOR
 
 ```yaml
 environment:
-  - NETBIRD_STORE_ENGINE_POSTGRES_DSN=host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable
+  - NETBIRD_STORE_ENGINE_POSTGRES_DSN=host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=require
   - NB_ACTIVITY_EVENT_STORE_ENGINE=postgres
-  - NB_ACTIVITY_EVENT_POSTGRES_DSN=host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=disable
+  - NB_ACTIVITY_EVENT_POSTGRES_DSN=host=<PG_HOST> port=5432 user=<PG_USER> password=<PG_PASSWORD> dbname=<PG_DB> sslmode=require
 ```
 
 ## Step 5: Start and Verify
@@ -128,4 +133,10 @@ environment:
 docker compose up -d
 ```
 
-Log in to the dashboard and confirm that your peers, users, and activity events are there.
+Log in to the dashboard and confirm that your peers, users, and activity events are there. Then delete the `backup` directory.
+
+## Roll Back
+
+The tool doesn't change MySQL, so to roll back, revert the store settings from Step 4 and restart the management server. Changes made while running on PostgreSQL aren't carried back to MySQL.
+
+A failed run leaves no data in PostgreSQL, so you can fix the problem and run the tool again.
