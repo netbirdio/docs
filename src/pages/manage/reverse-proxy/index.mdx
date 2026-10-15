@@ -92,6 +92,7 @@ Target properties vary by service mode:
 - **Path** (optional) - a URL path prefix for path-based routing (e.g., `/api`). See [Path-based routing](#path-based-routing) below.
 - **Protocol** - `HTTP` or `HTTPS`, depending on what the backend service speaks
 - **Port** - the port on the target machine (defaults to `80` for HTTP, `443` for HTTPS)
+- **Access** (optional) - use the service authentication, bypass authentication, or block access for the target's matching path. Configure this under **Optional Settings**. See [Per-target access actions](/manage/reverse-proxy/authentication#per-target-access-actions).
 - **Enabled/Disabled toggle** - individually enable or disable targets without removing them
 
 **L4 services (TCP, UDP, TLS):**
@@ -263,6 +264,7 @@ In the **Details** tab:
 
 6. In the target configuration, select the **type** (Peer, Host, Domain, Subnet, or Proxy Cluster), then choose the specific peer, resource, or cluster.
 7. For HTTP services, set the **protocol** (HTTP or HTTPS) and **port** for the target. Optionally, enter a **path** for path-based routing. For L4 services, set the target **host/IP** and **port**. For **Proxy Cluster** targets, the host field accepts any hostname or IP the cluster's embedded proxy can resolve from its own host stack — see [Private services](/manage/reverse-proxy/bring-your-own-proxy#private-services-net-bird-only-access) for details.
+8. For an HTTP target, expand **Optional Settings** and choose an **Access** action if this path should differ from the service default. **Use service authentication** is the default. See [Per-target access actions](/manage/reverse-proxy/authentication#per-target-access-actions).
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-add-target.png" alt="Add Target configuration modal showing the unified Peer / Resource / Proxy Cluster picker" className="imagewrapper"/>
@@ -405,21 +407,21 @@ The proxy's main port always runs an SNI router that peeks at the TLS ClientHell
 
 ## Path-based routing
 
-When a service has multiple targets, you can assign each target a unique path prefix to route different URL paths to different backends. For example:
+When a service has multiple targets, you can assign each target a unique path prefix to route different URL paths to different backends. Each HTTP target can also choose what happens after its path matches:
 
-| Path | Target | Description |
-|------|--------|-------------|
-| `/` | Peer A (port 3000) | Main web application |
-| `/api` | Peer B (port 8080) | API service |
-| `/docs` | Resource C (port 80) | Documentation server |
+| Path | Target | Access | Example result |
+|------|--------|--------|----------------|
+| `/` | Peer A (port 3000) | Use service authentication | `/account` uses the authentication configured on the service |
+| `/public/` | Peer B (port 8080) | Bypass authentication | `/public/logo.svg` reaches Peer B without service authentication |
+| `/admin/` | Resource C (port 80) | Block access | `/admin/users` returns `403`; Resource C is not contacted |
 
-Incoming requests are matched against the configured path prefixes and forwarded to the corresponding target. Each path must be unique within a service.
+Incoming requests are matched against the configured path prefixes. When an enabled target uses **Bypass authentication** or **Block access**, all enabled target paths must be unique within the service. If more than one prefix matches, the **longest matching prefix** wins. In the example above, `/public/logo.svg` matches both `/` and `/public/`, so the `/public/` target and its access action are selected.
 
 This is useful for consolidating multiple internal services under a single public domain, reducing the number of domains and TLS certificates you need to manage.
 
-Prefixes match the request path as text, not by path segment, so a target on `/api` also receives `/api-docs`. To match a whole segment, end the path with a slash: a target on `/api/` receives `/api/x`, but not `/api-docs` or `/api` itself.
+Prefix matching is literal and case-sensitive. Glob patterns such as `*` or `**` and regular expressions are not supported. Prefixes match the request path as text, not by path segment, so a target on `/api` also receives `/api-docs`. To match a whole segment, end the path with a slash: a target on `/api/` receives `/api/x`, but not `/api-docs` or `/api` itself. Likewise, `/Public/x` does not match `/public/`.
 
-By default, the matched prefix is removed before the request reaches the backend: `/api/x` arrives as `/x`, and `/api-docs` as `/-docs`. To keep the full path, turn on **Preserve Full Path** for the target (`path_rewrite: preserve` in the API).
+The access action does not change how paths are forwarded. By default, the matched prefix is removed before the request reaches the backend: `/api/x` arrives as `/x`, and `/api-docs` as `/-docs`. To keep the full path, use the existing **Preserve Full Path** target setting (`path_rewrite: preserve` in the API).
 
 ## Integration with Networks
 
