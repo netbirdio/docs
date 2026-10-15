@@ -165,11 +165,30 @@ function rehypeAddMDXExports(getExports) {
   }
 }
 
+// Components that render their own `h2` from `title` and `id` props. The
+// heading is not in the MDX tree, so it is added to the table of contents here.
+const sectionComponents = ['TroubleshootingStart', 'TroubleshootingTiles', 'StillStuck']
+
+function jsxStringAttribute(node, name) {
+  let attribute = node.attributes?.find((a) => a.name === name)
+  return typeof attribute?.value === 'string' ? attribute.value : undefined
+}
+
 function getSections(node) {
   let sections = []
 
   for (let child of node.children ?? []) {
-    if (child.type === 'element' && ['h2', 'h3', 'h4', 'h5', 'h6'].includes(child.tagName)) {
+    if (child.type === 'mdxJsxFlowElement' && sectionComponents.includes(child.name)) {
+      let title = jsxStringAttribute(child, 'title')
+      let id = jsxStringAttribute(child, 'id')
+      if (title && id) {
+        sections.push(`{
+        title: ${JSON.stringify(title)},
+        id: ${JSON.stringify(id)},
+        tagName: "h2"
+      }`)
+      }
+    } else if (child.type === 'element' && ['h2', 'h3', 'h4', 'h5', 'h6'].includes(child.tagName)) {
       sections.push(`{
         title: ${JSON.stringify(toString(child))},
         id: ${JSON.stringify(child.properties.id)},
