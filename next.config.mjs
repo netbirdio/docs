@@ -910,7 +910,12 @@ const nextConfig = {
             },
             {
                 source: '/selfhosted/activity-mysql-store',
-                destination: '/selfhosted/maintenance/activity-mysql-store',
+                destination: '/selfhosted/maintenance/activity-postgres-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/maintenance/activity-mysql-store',
+                destination: '/selfhosted/maintenance/activity-postgres-store',
                 permanent: true,
             },
             {
