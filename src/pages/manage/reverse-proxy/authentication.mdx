@@ -185,11 +185,44 @@ HTTP targets can override the service authentication behavior for their matching
 | **Bypass authentication** | Skip SSO, password, PIN, and header authentication for requests routed to this target. Service-level access restrictions still apply. |
 | **Block access** | Return `403` for requests routed to this target without contacting its backend. |
 
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/authentication/target-access-setting.png" alt="Edit Target modal with Optional Settings expanded, showing the Access dropdown and its three options: Use service authentication, Bypass authentication, and Block access" className="imagewrapper"/>
+</p>
+
 For example, a service can require SSO on its `/` target, use **Bypass authentication** for `/public/`, and use **Block access** for `/admin/`. Target selection uses the longest matching, case-sensitive literal prefix. It does not support glob patterns or regular expressions. See [Path-based routing](/manage/reverse-proxy#path-based-routing) for matching examples and forwarding behavior.
 
 The action only controls reverse proxy authentication for the selected target. **Bypass authentication** does not bypass CIDR, country, or CrowdSec restrictions configured on the service. It also does not change path rewriting; the existing **Preserve Full Path** setting continues to control whether the matched prefix is sent to the backend.
 
 Targets that override the default are marked in target lists. Hover the access indicator to see its action.
+
+<p>
+    <img src="/docs-static/img/manage/reverse-proxy/authentication/target-access-badges.png" alt="Services list with a service expanded to show its three targets: / with no indicator, /public/ with an open-lock indicator whose tooltip reads Bypass authentication, and /admin/ with a red shield indicator for Block access" className="imagewrapper"/>
+</p>
+
+### When to use per-target access actions
+
+Most services need one rule for every path, so leave targets on **Use service authentication** unless a specific path has to behave differently from the rest of the service.
+
+Use **Bypass authentication** when a path must be reachable by clients that cannot complete a login, and the backend protects that path itself:
+
+- **Webhook receivers**, such as `/webhooks/`, where a third-party service posts events and the backend verifies the request signature.
+- **Health checks**, such as `/healthz`, polled by an external uptime monitor.
+- **Public assets**, such as `/public/` or `/static/`, that hold nothing sensitive.
+
+Use **Block access** when a path should never be reachable through the public domain, even by users who pass service authentication, such as `/admin/` or `/metrics`. Reach those paths over NetBird instead, for example through a [NetBird-Only](#net-bird-only-access-private-services) service or a [Network resource](/manage/networks).
+
+The trailing slash works in opposite directions for the two actions. A narrow prefix is safer for **Bypass authentication**, and a broad one is safer for **Block access**. A target on `/admin/` blocks `/admin/users` but not `/admin` itself, which falls through to the next matching target, for example the `/` target with service authentication. To block both, use `/admin`, keeping in mind that it also matches `/administrator`.
+
+Do not use **Bypass authentication** to make a whole application public. If every path should be public, create the service without authentication, so the service settings show its real exposure.
+
+<Warning>
+    **Bypass authentication makes the path public.** Anyone who can reach the service domain and passes its CIDR, country, and CrowdSec restrictions can request every path under the bypassed prefix. Requests arrive at the backend with no NetBird user identity, so the backend must authorize them on its own.
+
+    - Bypass the narrowest prefix that works. Prefixes match as text, so `/public` also matches `/public-admin`; end the path with `/` to match a single segment.
+    - Disabling or deleting a **Block access** target removes its rule. Requests for that path then fall through to the next matching target, which may be a bypassed one.
+    - **Custom Headers** configured on the target are still sent to the backend. Do not attach credentials to a bypassed target through headers.
+    - When any target uses an access action, the proxy rejects ambiguous request paths, such as those with `..` segments, `//`, or encoded separators, with `400` before matching. This stops a request like `/public/../admin/` from reaching a protected path through a bypassed prefix.
+</Warning>
 
 <Note>
     Per-target access actions are available only for HTTP services. Upgrade all proxy instances in the selected cluster before using them. Older proxies ignore these actions and continue applying the service's authentication settings. **Bypass authentication** is unavailable for NetBird-Only services and Agent Network targets.
