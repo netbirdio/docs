@@ -5,7 +5,7 @@ In this regard, NetBird posture checks verify various aspects of a connecting de
 
 <YouTube videoId="nk7XM8oi-4Y" title="Understanding Posture Checks" />
 
-The feature also allows for network-level restrictions by enabling you to **allow or block specific peer network ranges**. Furthermore, you can set constraints based on the operating system of the connecting device, **ensuring that only approved OS versions can gain access**. For an even more detailed level of control, Posture Checks can examine the running processes on a peer device, **allowing or denying access based on the presence of specific applications or services**.
+The feature also allows for network-level restrictions by enabling you to **allow or block specific peer network ranges**. Furthermore, you can set constraints based on the operating system of the connecting device, **ensuring that only approved OS versions can gain access**. For an even more detailed level of control, Posture Checks can examine the running processes on a peer device, **allowing or denying access based on the presence of specific applications or services**. Finally, a device can be required to **hold a certificate issued by your own certificate authority** and prove it still has the private key, which ties access to a credential you issued rather than to anything the device merely reports.
 
 By using these diverse checking capabilities, NetBird empowers you to create a robust and finely-tuned security posture for your network, significantly reducing the risk of unauthorized access and potential security breaches.
 
@@ -85,6 +85,17 @@ Furthermore, this process-based posture check allows you to create specific poli
 
 ![Process Posture Check](/docs-static/img/manage/access-control/posture-checks/posture-checks-07.png)
 
+### Certificate
+Restrict access to peers holding a certificate issued by your own certificate authority. Unlike most other checks, this one is not satisfied by something the device reports: the peer must present a certificate that chains to one of the CAs you paste here, and sign a challenge from the management server with the certificate's private key. A certificate copied to another machine without its key does not pass, and a key that is removed or a certificate that expires fails the check within 4 hours.
+
+![Certificate Posture Check](/docs-static/img/manage/access-control/posture-checks/posture-checks-certificate.png)
+
+The client finds certificates where the operating system keeps them: the computer and user stores on Windows, the System and login keychains on macOS, and on Linux a directory of PEM files or a PKCS#11 token, including keys held in a TPM. Which store to use, how to place a certificate on each platform and how to verify the result are covered in [Requiring a device certificate](/manage/access-control/posture-checks/device-certificates).
+
+<Note>
+    The Certificate check requires NetBird version [0.81.0](https://github.com/netbirdio/netbird/releases) or newer on both the management server and the client. It is not supported on iOS and Android: mobile peers always fail it and are denied the access the policy grants, so keep it off policies that mobile devices depend on.
+</Note>
+
 ## Name & Description
 After enabling the desired posture check, go to the `Name & Description` tab. Here, enter a descriptive name for your newly created posture check and save it.
 
@@ -120,7 +131,7 @@ Following these steps, you can effectively implement and manage NetBird's Postur
 
 NetBird evaluates posture checks when a peer connects or logs in. Checks are also re-evaluated during an active session whenever a peer reports changed system metadata. The management server replays each check against the peer's previous and current metadata, and when a check's verdict flips, it recomputes the network map and distributes the update to the affected peers.
 
-When you add or change a posture check on a policy, the updated configuration is distributed to connected peers immediately. A peer that is already connected is evaluated against the new check on its next connection. There is no periodic redistribution interval; distribution is driven by configuration changes and peer metadata changes, not a timer. For more on how changes reach peers, see [How Policy Changes Are Distributed](/manage/access-control#how-policy-changes-are-distributed).
+When you add or change a posture check on a policy, the updated configuration is distributed to connected peers immediately. A peer that is already connected is evaluated against the new check on its next connection. There is no periodic redistribution interval; distribution is driven by configuration changes and peer metadata changes, not a timer. The one exception is the Certificate check, whose challenge the management server renews every four hours so a connected peer keeps re-proving possession of its key; see [How the check keeps itself current](/manage/access-control/posture-checks/device-certificates#how-the-check-keeps-itself-current). For more on how changes reach peers, see [How Policy Changes Are Distributed](/manage/access-control#how-policy-changes-are-distributed).
 
 <Note>
 Mid-session re-evaluation requires a NetBird management server running [0.74.0](https://github.com/netbirdio/netbird/releases) or newer, and is driven by the peer reporting a metadata change rather than by a continuous poll. A peer that passes a posture check and later changes state during a long-lived session (for example an operating system downgrade or a required process stopping) is re-evaluated on its next metadata sync. On management servers older than 0.74.0, that state change is not picked up until the peer reconnects.
@@ -155,6 +166,10 @@ Upgrade the Android client to 0.77.1 or newer. While older Android clients are s
 - Use alternative posture checks (such as Geo Location) that are supported on every platform
 - Use Peer Network Range checks based on the **public connection IP**, which work on every platform and every version
 - Apply local-NIC-based Peer Network Range posture checks only to policies targeting platforms that report them (Windows, macOS, Linux, iOS 0.69.0+, and Android 0.77.1+)
+
+### Certificate Check on Mobile
+
+The NetBird iOS and Android apps do not collect certificate proofs, so a mobile peer always fails a Certificate check and is denied the access of every policy that carries it. There is no version of the mobile apps that changes this yet. Keep Certificate checks on policies whose source groups hold desktop and server peers only, and gate mobile devices with the checks they support.
 
 ## Get started with NetBird
 <div>

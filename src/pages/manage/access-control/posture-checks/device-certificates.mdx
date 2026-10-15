@@ -1,0 +1,162 @@
+import {Note, Warning} from "@/components/mdx";
+
+export const description = "Use a Certificate posture check so only devices holding a certificate from your own CA, with the private key still on the device, reach the resources a policy protects."
+
+# Requiring a device certificate
+
+Most posture checks read something the device reports about itself: its client version, its operating system, a process name. Those are good at keeping unmanaged devices out, but a determined user can satisfy them on a personal laptop. What they cannot produce is a certificate your own certificate authority issued to a company device, and the private key that goes with it. The **Certificate** posture check asks for exactly that: the peer must hold a certificate that chains to a CA you name, and it must prove it still has the private key by signing a challenge from the management server. A copied certificate without its key proves nothing.
+
+Think of it as a badge check at the door, repeated. The CA is the badge printer you trust, the certificate is the badge, and the signature is the guard asking the holder to sign their name rather than just wave the badge. NetBird repeats the check every 4 hours for as long as the peer is connected, so a key that is removed from a device, or a certificate that expires, closes the door within 4 hours.
+
+## The scenario
+
+A company runs a PKI with a root CA, `Corp Root CA`, that issues a certificate to every managed laptop. The laptops are NetBird peers in the group `laptops`, and an access policy from `laptops` to the group `internal-apps` grants them the internal services. The goal: a device that is in `laptops` but has no company certificate, or has lost its key, must not reach `internal-apps`. Everything below is built around that example.
+
+Three things to do, in order:
+
+1. Create a Certificate posture check that trusts `Corp Root CA`.
+2. Attach it to the policy from `laptops` to `internal-apps`.
+3. Make sure each laptop holds its certificate where the NetBird client can use it.
+
+## Prerequisites
+
+- NetBird management and client version [0.81.0](https://github.com/netbirdio/netbird/releases) or newer on both sides. Older clients never answer the challenge and fail the check.
+- The PEM encoded certificate of the CA that issues your device certificates. A root or an intermediate works; whichever you paste becomes a trust anchor, so an intermediate narrows the check to the devices it signed.
+- Device certificates with a P-256 or P-384 ECDSA key or an RSA key of at least 2048 bits, issued by that CA and valid at the time of the check. An Ed25519 key also works, as a PEM key file on Linux. The private key must be usable without a prompt: a key that asks for a PIN or a password on every signature cannot be used by a background service.
+
+<Warning>
+    The check accepts any certificate under the CA, whatever it was issued for, and it does not tie the certificate to a user or a hostname. Dedicate a CA, or an intermediate, to device identities rather than reusing the one that signs your TLS servers.
+</Warning>
+
+## Create the posture check
+
+Navigate to `Access Control` > `Posture Checks` in the NetBird dashboard and click `Create Posture Check`. Enable `Certificate`.
+
+![Certificate posture check with a CA certificate field](/docs-static/img/manage/access-control/posture-checks/posture-checks-certificate.png)
+
+Paste the PEM of `Corp Root CA` into the `CA Certificates` field. `Add CA Certificate` adds further anchors, for example a second root during a CA rotation; a peer passes if its certificate chains to any of them. Give the check a name on the `Name & Description` tab, for example `Company device certificate`, and save.
+
+## Attach it to the policy
+
+Open the policy from `laptops` to `internal-apps`, go to its `Posture Checks` tab, choose `Browse Checks` and add `Company device certificate`. From now on the policy applies only to peers in `laptops` that pass the check; the devices keep whatever other policies grant them.
+
+<Note>
+    A peer that sends no certificate at all fails the check, including every iOS and Android device: the mobile apps do not support certificate proofs. Do not attach this check to a policy that mobile devices rely on.
+</Note>
+
+## Put the certificate on the device
+
+The client proves possession with whatever the operating system already uses to store certificates, so for a managed fleet this step is usually done by your MDM or enrollment tooling rather than by hand. What the client reads on each platform:
+
+| Platform | Device certificates | User certificates |
+| --- | --- | --- |
+| Windows | `Local Computer` > `Personal` store, where Active Directory and Intune enroll device certificates | the `Personal` store of the signed-in user who owns the active NetBird profile |
+| macOS | the System keychain, where MDM installs device identities | the login keychain of the signed-in user who owns the active profile |
+| Linux | PEM files in `/etc/netbird/certs`, or a PKCS#11 token | not applicable |
+
+The **profile owner** is the user who created the NetBird profile the client is currently running. Only that user's store is consulted, and only while that user has a session open, so a second person signed in to the same machine cannot answer for the profile, and a laptop sitting at the sign-in screen proves device certificates alone.
+
+### Windows and macOS
+
+On Windows there is nothing to configure. A certificate enrolled into the computer store is found by the service; a certificate in the owner's personal store is found through a helper that NetBird runs inside that user's session. Keys protected by a TPM work the same way, since the client only ever asks the operating system to sign.
+
+On macOS the System keychain needs one setting, described below. A certificate in the owner's login keychain is found through the helper, like on Windows, and keys held in the Secure Enclave work too.
+
+Two platform details are worth knowing. On macOS, the first signature from the login keychain shows the standard prompt that `netbird` wants to use the key; choose `Always Allow`, or the prompt returns on every check. If the user declines, the client does not ask that user again for an hour. On both platforms a key that would need a PIN or password is skipped rather than prompted for.
+
+#### macOS: letting NetBird use a device key
+
+The NetBird service reads the System keychain without a user session, so it cannot answer a keychain prompt. A device identity therefore works only when its key allows NetBird to use it.
+
+- When the identity is installed with MDM, set `AllowAllAppsAccess` to `true` in the certificate payload. MDM cannot name a single application, so this lets every application on the device use the key, including to produce a proof for this check.
+- When importing it by hand, allow the NetBird binary explicitly. `security import` prompts for the `.p12` passphrase, which keeps it out of your shell history:
+
+```bash
+sudo security import device.p12 -k /Library/Keychains/System.keychain \
+  -T /Applications/NetBird.app/Contents/MacOS/netbird
+```
+
+#### Which user counts
+
+The user whose certificate counts is the owner of the active NetBird profile. For a profile without an owner it is the user signed in at the console. A user certificate is proven shortly after that user signs in.
+
+### Linux: certificate files
+
+Place the certificate and its key in `/etc/netbird/certs`, or in the directory named by the `NB_CERT_STORE_DIR` environment variable of the service. A certificate file ends in `.pem`, `.crt` or `.cer` and holds the device certificate first, followed by any intermediates. The key is either in the same file or in a sibling file with the same name and the `.key` extension:
+
+```text
+/etc/netbird/certs/
+├── laptop.pem      # device certificate, intermediates after it
+└── laptop.key      # PKCS#8, EC or RSA private key
+```
+
+The directory and the files must be owned by root and writable by nobody else, and no file in the directory may be a symlink. Keep plain key files readable by root only (`chmod 600 laptop.key`): the client does not refuse a world-readable key, but any local user could copy it and pass the check from another machine. Several certificates can sit side by side, and the client picks whichever one chains to the CA in the check.
+
+### Linux: key in the TPM
+
+A key that lives in the TPM never exists as a file in the clear. Two formats are supported.
+
+**A TSS2 key file**, the format `tpm2-openssl` and `tpm2-tss-engine` write, goes into the same directory as a plain key would:
+
+```bash
+openssl genpkey -provider tpm2 -algorithm EC -pkeyopt group:P-256 -out /etc/netbird/certs/laptop.key
+openssl req -provider tpm2 -provider default -new -key /etc/netbird/certs/laptop.key -subj "/CN=$(hostname)" -out laptop.csr
+# have Corp Root CA sign laptop.csr, then store the result as /etc/netbird/certs/laptop.pem
+```
+
+The client signs through `/dev/tpmrm0` for every challenge and the key file stays useless on any other machine.
+
+**A tpm2-pkcs11 token** is the other route, and the one Red Hat-based distributions document. Give the service the token through its environment file, `/etc/sysconfig/netbird`. The rpm package installs it readable by root only; on other distributions, such as Debian and Ubuntu, create it yourself before putting the PIN in it (`sudo install -m 0600 /dev/null /etc/sysconfig/netbird`):
+
+```bash
+NB_CERT_PKCS11_URI=pkcs11:token=netbird?module-path=/usr/lib64/pkcs11/libtpm2_pkcs11.so
+NB_TPM_PIN=<user PIN of the token>
+```
+
+The URI follows RFC 7512: `token` selects the token by label, `module-path` names the module and may be left out where p11-kit knows the module. A PIN is accepted only together with a token label, so a mistyped PIN can never be tried against a smartcard that happens to be plugged in. A PIN the token rejects is not tried again until the service restarts, so correct `NB_TPM_PIN` and restart the service. The certificate can be an object on the token, added with `tpm2_ptool addcert`, or a `.pem` file in `/etc/netbird/certs` without a key file next to it: the client pairs such a file with the token key that has the same public key.
+
+<Warning>
+    Do not pass the PIN with `netbird service install --service-env`: the command line ends up in your shell history. Put it in the environment file.
+</Warning>
+
+<Note>
+    The PKCS#11 store is part of the deb and rpm packages for amd64 and arm64. The 32-bit packages, the generic Linux tarball and the container images cannot load a PKCS#11 module; they log that the configured token is ignored. A TSS2 key file works with every Linux build.
+</Note>
+
+## Verify
+
+A device that proves no certificate yet tries again every five minutes, so a certificate placed later is picked up without a restart. To watch it work, raise the log level with `netbird debug log level debug` and read the client log. On Linux that is `/var/log/netbird/client.log`; the equivalent Windows and macOS paths are listed on the [troubleshooting page](/help/troubleshooting-client). A laptop that passes logs, in this order:
+
+```text
+certificate posture: store holds 1 candidate certificates
+certificate posture: challenge 0 proven by "CN=laptop-42" with ecdsa-sha256, signature 71 bytes, chain of 2
+certificate posture: 1 challenges produced 1 proofs
+```
+
+`challenge 0 matched none of the 1 candidates` means the certificate does not chain to a CA in the check, usually because an intermediate is missing from the file or from the check; the lines before it give the reason for each certificate. `certificate store holds no candidates` means no usable certificate and key pair was found at all. The management server logs nothing for a successful proof and a `dropping a certificate proof of peer` line with the reason for an invalid one.
+
+Two other messages are worth knowing:
+
+| Log message | Meaning |
+| --- | --- |
+| `SecKeyCreateSignature: CFError -25308` | macOS: the key's access list does not allow NetBird. See [letting NetBird use a device key](#mac-os-letting-net-bird-use-a-device-key). |
+| `rejected the PIN, not retrying it until the daemon restarts` | The token refused the PIN. Fix `NB_TPM_PIN` and restart the service. |
+
+In the dashboard the effect is the same as for any other posture check: a peer that fails loses the policy, so it no longer sees the `internal-apps` peers, and regains them on the next sync after it passes.
+
+## How the check keeps itself current
+
+The management server sends each connected peer a fresh challenge every 4 hours. The client signs the newest challenge and reports its proofs only when the set of certificates it can prove has changed, so a steady fleet produces no extra traffic. A device whose key disappears fails within 4 hours, and a certificate that expires fails at the next evaluation. This is the one posture check that is refreshed on a timer; the others are driven purely by configuration and metadata changes, as described in [When Posture Checks Are Evaluated](/manage/access-control/posture-checks#when-posture-checks-are-evaluated).
+
+## When not to use it
+
+- Fleets with iOS or Android devices in the same policy: they always fail the check. Give mobile devices their own policy, or gate them with checks they support.
+- Certificates with keys you cannot make available without a prompt, such as smartcards that require a PIN on every signature.
+- As a substitute for user identity. The check proves the device holds a key from your CA; who is using the device is what your identity provider and the policy's groups decide.
+
+## In one breath
+
+- A Certificate posture check trusts `Corp Root CA`; attached to the `laptops` to `internal-apps` policy, it hides the policy from any laptop without a company certificate.
+- The laptop proves it holds the key by signing a challenge from management, every 4 hours while connected.
+- Windows and macOS find the certificate in the system and the profile owner's store; Linux reads `/etc/netbird/certs` or a tpm2-pkcs11 token.
+- Lose the key, or let the certificate expire, and the policy is gone within 4 hours.
