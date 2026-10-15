@@ -1,4 +1,4 @@
-import {Note, Warning} from "@/components/mdx";
+import {Warning} from "@/components/mdx";
 
 export const description = "Why NetBird refuses to invite or sync a user who already has a NetBird account elsewhere, how to move them into your account, and how Sign-in Domains stops it happening again."
 
@@ -23,11 +23,11 @@ You see one of these:
 
   The dashboard shows only when the integration last synced, not the log itself. To read the log, call the sync logs endpoint for your integration in the API: [Entra ID (API)](/ipa/resources/idp-azure-integrations#get-azure-integration-sync-logs), [Google Workspace](/ipa/resources/idp-google-integrations#get-google-integration-sync-logs), [Okta](/ipa/resources/idp-okta-scim-integrations#get-okta-scim-integration-sync-logs), or [the SCIM-based integrations](/ipa/resources/idp-scim-integrations#get-scim-integration-sync-logs).
 
-Both errors mean the same thing: NetBird already knows this person, and they belong to another account.
+Both errors usually mean the same thing: NetBird already knows this person, and they belong to another account. Rule out the simpler case below first.
 
-<Note>
-    Not every missing user is this problem. If the user signed in through your IdP's own login and shows up twice in **Team → Users**, see the duplicate users guidance in the [Entra ID (SCIM) setup](/manage/team/idp-sync/microsoft-entra-id-scim-sync) instead.
-</Note>
+## Check your own account first
+
+An invite also fails with `409` when the person is already a user in **your** account. For example, they signed in on their own and joined through their email domain, or they are waiting for approval. Look for their email address under **Team → Users**, including users waiting for approval. If they are there, don't invite them again: [approve them](/manage/team/approve-users#approve-or-reject-user), or change their role if they need dashboard access.
 
 ## Why the user ended up in another account
 
@@ -46,6 +46,7 @@ Ask the user to sign in at [app.netbird.io](https://app.netbird.io) with the sam
 
 - **A network with only their own devices, and the Settings → Danger zone tab is available, not greyed out.** Only an Owner can open it, so they are the Owner of an account of their own (cases 1, 2, or 4). Go to [step 2a](#2a-the-user-owns-an-account-of-their-own).
 - **Someone else's network, or a Waiting for Approval screen naming another organization.** They are a member of another account (case 3). Go to [step 2b](#2b-the-user-is-a-member-of-another-organizations-account).
+- **A Waiting for Approval screen naming your own domain.** They are already in your account. See [Check your own account first](#check-your-own-account-first).
 
 If neither fits, or the user doesn't know where the account came from, contact [NetBird Support](/help/netbird-support). The team verifies the user's identity and points them to whoever administers that account.
 
@@ -57,9 +58,11 @@ If neither fits, or the user doesn't know where the account came from, contact [
 
 1. **If their domain differs from yours, add it as a sign-in domain first.** In your account, go to **Settings → Authentication → Sign-in Domains** and add and verify their domain, for example `company.co.uk`. See [Sign-in Domains](/manage/team/sign-in-domains). Skip this step if they share your domain.
 2. **Have the user delete their account.** In their account, they go to **Settings → Danger zone** and click **Delete Account**. See [Delete your account](/manage/settings/delete-account).
-3. **Bring them into your account.** If you verified their domain in step 1, or they share your domain, their next sign-in joins your account, and IdP sync attaches their groups on its next run. If you don't use either, invite them again or run the sync.
+3. **Bring them into your account.** If you verified their domain in step 1, or they share your domain, their next sign-in joins your account, and IdP sync attaches their groups on its next run. If you don't use either, invite them again or run the sync. If your account requires [user approval](/manage/team/approve-users#approve-or-reject-user), approve them under **Team → Users**.
 
 Doing step 1 before step 2 matters. Without a matching domain, a user who signs in again before your next sync gets a fresh account of their own, and you are back where you started.
+
+If verification in step 1 fails, the user's own account may already hold that domain. Only one account can verify a domain, so do step 2 first, then verify the domain right away. Ask the user not to sign in again until the domain shows as verified.
 
 ### 2b. The user is a member of another organization's account
 
@@ -70,12 +73,14 @@ Once the user is removed, invite them again, or let IdP sync pick them up on its
 ### 3. Run the sync or the invite again
 
 - **Direct invite.** Invite the user again from **Team → Users**.
-- **Entra ID (API) and Google Workspace.** Open the integration under **Team → Users → Identity Provider Sync** and force a synchronization, or wait for the next scheduled one.
+- **Entra ID (API) and Google Workspace.** Open the integration under **Integrations → Identity Provider Sync** and force a synchronization, or wait for the next scheduled one.
 - **SCIM integrations** (Entra ID (SCIM), Okta, JumpCloud, Keycloak, IIJ ID, generic SCIM). Your IdP pushes changes on its own schedule. Trigger provisioning for the user in your IdP, for example **Provision on demand** in Entra ID, or wait for the next cycle.
 
 ## Confirm it worked
 
-The user appears under **Team → Users** in your account, with the groups from your IdP, and the next sync log no longer reports `user account ID mismatch` for them. When the user signs in at [app.netbird.io](https://app.netbird.io), they see your network.
+The user appears under **Team → Users** in your account, with the groups from your IdP, and the next sync log no longer reports `user account ID mismatch` for them. When the user signs in at [app.netbird.io](https://app.netbird.io), they see your network, or a Waiting for Approval screen naming your own domain if your account requires user approval.
+
+If the invite still fails with `409`, or the user can't sign in after their old account is gone, contact [NetBird Support](/help/netbird-support) with their email address.
 
 ## Prevent it
 
@@ -92,7 +97,7 @@ With the embedded identity provider, a `409` on invite means the email address a
 
 ## Recap
 
-- One NetBird user belongs to exactly one account. A `409` on invite, or `user account ID mismatch` in the sync log, means the user is already in another one.
+- One NetBird user belongs to exactly one account. A `409` on invite, or `user account ID mismatch` in the sync log, usually means the user is already in another one. Check **Team → Users** in your own account first.
 - Usually they signed in early, with an email domain your account didn't know yet.
 - Free the user first: they delete their own account, or the other account's admins remove them. Then invite or sync again.
 - Add and verify every domain you use as a sign-in domain before rollout, so first sign-ins land in your account.
