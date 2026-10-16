@@ -98,45 +98,118 @@ The routing peer must have direct network reachability to the resources it serve
 
 ## High availability
 
-Multiple routing peers can serve the same network or route. Each peer that uses the network (a user's laptop, for example) picks one of those routing peers and sends all of that network's traffic through it until something makes it switch. The **metric** you assign each routing peer in the dashboard is the main control. There are no tunable thresholds.
+Multiple routing peers can serve the same network or route. Each peer that uses the network (a user's laptop, for example) picks one of those routing peers and sends all of that network's traffic through it until something makes it switch. The **metric** you assign each routing peer in the dashboard is the main control.
+
+Every switch has a cost. With masquerade on (the default), moving to another routing peer resets the TCP connections that used the old one (see [What a switch does to open connections](#what-a-switch-does-to-open-connections)). So the selection rules below are built to move a peer quickly when it has to move, and to keep it where it is when the only argument for moving is small.
+
+<Note>
+This section describes NetBird clients v0.81.1 and later. Older clients measure latency once, when the connection to a routing peer is set up, and then keep their choice while latency changes: see [Before v0.81.1](#before-v0811).
+</Note>
 
 ### How a peer picks a routing peer
 
-A peer compares the routing peers it is connected to, in this order:
+A peer ranks the routing peers it can use, in this order:
 
-1. **Metric.** The lowest metric wins, whatever the connection type or latency.
-2. **Connection type.** Among equal metrics, a direct (peer-to-peer) connection beats a relayed one.
-3. **Latency.** Among equal metrics and the same connection type, the lowest latency wins. To prevent flapping, a peer only moves to a routing peer whose latency is at least 10 ms lower than its current one.
+1. **Connection state.** A routing peer the peer has an open connection to beats one whose connection is idle, as happens with [lazy connections](/manage/peers/lazy-connection). A routing peer that is still connecting is not considered.
+2. **Metric.** The lowest metric wins, whatever the connection type or latency.
+3. **Connection type.** Among equal metrics, a direct (peer-to-peer) connection beats a relayed one.
+4. **Latency.** Among equal metrics and the same connection type, the lowest latency wins, subject to the switch margin described below.
 
-Latency is measured once, when the connection to a routing peer is set up, and is not re-measured while that connection stays up.
+When two routing peers tie on all four, the peer keeps the one it already uses.
+
+### How latency is measured
+
+Latency is the round-trip time of the direct connection to the routing peer. The client reads it every 4 seconds from the connectivity checks the connection already exchanges, so measuring it adds no traffic. It smooths the readings into a moving average, so a brief spike barely moves the value while a lasting change shows up within tens of seconds. It also tracks how much the readings scatter around that average, which is how jittery the path is.
+
+Only a direct connection has a latency. A relayed connection has none, and when a direct connection falls back to relayed its latency is cleared. Two relayed routing peers with the same metric are therefore never compared on latency: the peer stays on the one it uses.
+
+### Switching on latency: the switch margin and the dwell time
+
+A routing peer that is better only on latency takes over only when all three of these hold:
+
+- **The gain clears the switch margin.** Its latency must be lower than the current routing peer's by at least the largest of: 20 ms, 20% of the current routing peer's latency, and four times the combined jitter of the two paths. The fixed 20 ms keeps fast paths from churning over a few milliseconds, the 20% scales the margin up for slow paths, and the jitter term keeps a noisy path from moving the route on readings that only look better for the moment.
+- **The current routing peer has been in place for 30 seconds** since the last switch made for latency (the dwell time). Switches made for any other reason do not start this timer, so a failover never delays the next one.
+- **Both routing peers have a latency reading.** A routing peer whose direct connection has just come up has no reading yet and cannot take over on latency. If the current routing peer is the one without a reading, the peer keeps it for up to 30 seconds while a reading arrives, then ranks it as unmeasured.
+
+On stable paths, where the jitter term is near zero, this works out as follows:
+
+| Current routing peer | Other routing peer | Gain | Margin | Result |
+|---|---|---|---|---|
+| 40 ms | 25 ms | 15 ms | 20 ms | Stays |
+| 40 ms | 15 ms | 25 ms | 20 ms | Switches |
+| 150 ms | 125 ms | 25 ms | 30 ms (20%) | Stays |
+| 150 ms | 110 ms | 40 ms | 30 ms (20%) | Switches |
+
+On a jittery path, the margin is larger than the table shows. A freshly connected path starts out with a high jitter estimate, which shrinks as readings accumulate, so a newly connected routing peer needs a clearer lead to win on latency than one that has been connected for a while.
 
 ### What makes a peer switch
 
-A peer repeats this comparison whenever a routing peer's connection state changes or the network's configuration is updated. In practice it switches when:
+A peer repeats the ranking whenever a routing peer's connection state changes, when a routing peer's latency or jitter moves by 5 ms or more, when the network's configuration is updated, and every 30 seconds in any case. It switches immediately when:
 
-- **Its routing peer goes offline.** The peer moves to the next routing peer in the order above, normally within seconds.
+- **Its routing peer goes offline.** The peer moves to the next routing peer in the order above.
 - **A routing peer with a lower metric comes back online.** The peer moves back as soon as that routing peer reconnects, even while its connection is still relayed.
-- **Its routing peer's connection falls back from direct to relayed.** If another routing peer with the same metric still has a direct connection, the peer moves to it, although nothing went offline. With different metrics this does not happen, because metric outranks connection type.
+- **Its routing peer's connection is idle and another routing peer's connection is open.**
+
+It switches after a delay when:
+
+- **Its routing peer's connection is relayed, and another routing peer with the same metric is direct.** The peer keeps the relayed routing peer for 30 seconds by default and moves only if the connection is still relayed after that. The relay keeps carrying the traffic in the meantime, and a direct connection that dropped often recovers within seconds, so waiting avoids a reset that would not have been needed. If the routing peer dropped from direct to relayed, the 30 seconds count from the drop. If it was relayed from the start, as when all routing peers come up over relay and turn direct one after another, they count from when a direct alternative first appears. With different metrics this switch never happens, because metric outranks connection type.
+
+  To change the delay, set `NB_HA_RELAYED_SWITCH_DELAY` in the client service environment of the peers that use the network, not on the routing peers: the choice is made by each peer that uses the network. It takes a duration with a unit, such as `10s` or `2m`; `0` to switch at once; or `never` to keep a routing peer whose direct connection dropped until it goes offline. `never` does not apply to a routing peer that was relayed from the start, which still moves after 30 seconds, so it cannot leave a peer on a relay for good. An invalid value logs a warning and falls back to 30 seconds. The client reads the variable when its service starts and logs the value in use as `routing peer relayed switch delay: …`. See [Environment variables](/client/environment-variables) for how to set one on the client service.
+- **Another routing peer with the same metric and connection type is clearly closer**, under the switch margin and dwell time above.
 
 ### What a switch does to open connections
 
-With masquerade on (the default), every switch resets established TCP connections through the network, whatever caused it: a failover, a failback, or a fallback to relayed. The new routing peer translates the traffic to a different source address, so applications such as SSH must reconnect. Expect the connection to stall for several seconds before the reset, while the peer notices the change. With masquerade off, connections are not translated and behave differently: see [High availability with masquerade off](/manage/networks/masquerade#high-availability-with-masquerade-off).
+With masquerade on (the default), every switch resets established TCP connections through the network, whatever caused it: a failover, a failback, a fallback to relayed, or a lower latency elsewhere. The new routing peer translates the traffic to a different source address, so applications such as SSH must reconnect. Expect the connection to stall for several seconds before the reset, while the peer notices the change. With masquerade off, connections are not translated and behave differently: see [High availability with masquerade off](/manage/networks/masquerade#high-availability-with-masquerade-off).
 
-If users report dropped connections while no routing peer went offline, check whether the routing peers share a metric and whether their connections fall back to relayed. [Troubleshooting relayed connections](/help/troubleshooting-relayed-connections) covers why a connection is relayed.
+If users report dropped connections while no routing peer went offline, check the switch reason the client recorded (see [Finding switches](#finding-switches)). A reason of `direct connection preferred over relayed` points at connections falling back to relayed: [Troubleshooting relayed connections](/help/troubleshooting-relayed-connections) covers why a connection is relayed.
 
 ### Primary / failover (different metrics)
 
-Use different metrics when you want every peer on one known routing peer, with the others in reserve. Peers stay on the primary even when its connection falls back to relayed, but they fail back to it as soon as it returns, which resets connections a second time with masquerade on. To give routing peers different metrics, add them to the Network individually; routing peers added as a group share one metric.
+Use different metrics when you want every peer on one known routing peer, with the others in reserve. Peers stay on the primary even when its connection falls back to relayed, and latency never moves them. They fail back to the primary as soon as it returns, which resets connections a second time with masquerade on. To give routing peers different metrics, add them to the Network individually; routing peers added as a group share one metric.
 
 **Example.** Routing Peer A has a lower metric than Routing Peer B. Traffic uses Peer A, including while its connection is relayed. When Peer A goes down, traffic fails over to Peer B, and moves back as soon as Peer A reconnects.
 
 ### Nearest routing peer (equal metrics)
 
-Use equal metrics when routing peers are spread across regions and you want each peer to use the closest one: for example, an EU-based and a US-based routing peer serving the same network, with users on both continents. Each peer picks the lowest-latency routing peer when it connects, though a direct connection still beats a relayed one whatever the latency. It does not move to another routing peer later just because latency changes, and routing peers within 10 ms of each other are effectively tied. The trade-off: a fallback to relayed can move peers to another routing peer and reset their connections.
+Use equal metrics when routing peers are spread across regions and you want each peer to use the closest one: for example, an EU-based and a US-based routing peer serving the same network, with users on both continents. Each peer uses the lowest-latency routing peer, though a direct connection still beats a relayed one whatever the latency. Because latency is measured continuously, a peer also moves later when another routing peer becomes clearly closer, for example when a laptop travels from Europe to the US while staying connected. Routing peers whose latencies are within the switch margin of each other are effectively tied, and the peer stays where it is.
 
-### Finding switches in the client log
+The trade-off: every move resets connections with masquerade on, whether a fallback to relayed or a lasting latency change caused it.
 
-The client logs each switch at the default log level as `New chosen route is …`, followed by the chosen routing peer's WireGuard public key and its score. The comparison behind the decision, including the score of the routing peer it kept, is logged only at the debug level.
+### Finding switches
+
+The client records every switch as a warning event, whatever the log level. Run `netbird status -d` and look under **Events**, or open `status.txt` in a [debug bundle](/help/troubleshooting-client#debug-bundle):
+
+```text
+Events:
+  [WARNING] NETWORK (<event-id>)
+    Message: Routing peer changed
+    Time: 2 minutes ago
+    Metadata: id: <network-id>, network: <network>, peer: <new-routing-peer-key>, previous_peer: <old-routing-peer-key>, reason: lower latency
+```
+
+`peer` and `previous_peer` are WireGuard public keys, which `netbird status -d` lists for each peer. `reason` is one of:
+
+| Reason | What happened |
+|---|---|
+| `current routing peer unavailable` | The routing peer in use went offline or stopped serving the network |
+| `connected peer preferred over idle` | The routing peer in use was idle and another had an open connection |
+| `lower route metric` | A routing peer with a lower metric became available |
+| `direct connection preferred over relayed` | The routing peer in use stayed relayed for the relayed switch delay (30 seconds by default) while a direct one was available |
+| `lower latency` | Another routing peer cleared the switch margin and the dwell time |
+| `route assigned to a different routing peer` | A configuration change moved the route to another routing peer |
+
+When the last routing peer of a network goes offline, the client records a `No routing peer available` event instead. The client keeps only its 10 most recent events of any kind, so check soon after a report or read the client log.
+
+The client log has the same switch as a warning line, `switching routing peer for network [<network>] from <old-key> to <new-key>: <reason>`, followed by the new routing peer's connection state, metric, connection type and latency. The first choice for a network is logged at the info level as `new chosen route is …`. When a rule holds a better-ranked routing peer back, the client logs that at the info level once, naming the rule (the switch margin, the minimum dwell time, a missing latency reading, or the relayed switch delay), and repeats it only at the debug level for the next 10 minutes.
+
+### Before v0.81.1
+
+Clients before v0.81.1 rank routing peers by connection state, metric and connection type in the same order, but handle latency differently:
+
+- Latency is measured once, when the connection to a routing peer is set up, and is not re-measured while that connection stays up. A peer does not move later because latency changes.
+- A routing peer must be at least 10 ms faster to take over on latency.
+- A routing peer whose connection falls back to relayed loses the route at once to a direct routing peer with the same metric.
+- Switches are logged at the info level as `New chosen route is …`, and no `Routing peer changed` event is recorded.
 
 ### Failure domains
 
