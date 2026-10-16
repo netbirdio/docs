@@ -546,6 +546,7 @@ export const docsNavigation = [
                     { title: 'Quickstart', href: '/agent-network/quickstart' },
                     { title: 'Providers', href: '/agent-network/providers' },
                     { title: 'Clusters', href: '/agent-network/clusters' },
+                    { title: 'Control Center', href: '/agent-network/control-center' },
                 ],
             },
             {
