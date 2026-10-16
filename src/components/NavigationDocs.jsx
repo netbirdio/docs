@@ -1141,6 +1141,10 @@ export const docsNavigation = [
                                 title: 'Pending approval',
                                 href: '/help/troubleshooting-account-access',
                             },
+                            {
+                                title: 'User in another account',
+                                href: '/help/troubleshooting-user-in-another-account',
+                            },
                             { title: 'IdP & SSO setup', href: '/manage/team/single-sign-on' },
                             { title: 'User provisioning', href: '/manage/team/idp-sync' },
                             {
