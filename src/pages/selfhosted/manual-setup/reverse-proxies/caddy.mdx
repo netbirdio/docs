@@ -1,0 +1,331 @@
+export const description =
+  "Configure Caddy for manual NetBird combined-container and multi-container deployments with automatic TLS, h2c gRPC, WebSockets, and trusted proxies."
+
+# Use Caddy with a manual NetBird deployment
+
+Caddy provides automatic HTTPS and concise protocol-aware routing for NetBird. This guide covers Caddy installed on the host and Caddy in Docker for both NetBird layouts.
+
+Start with [Manual setup](/selfhosted/manual-setup) for the combined container or [Manual multi-container setup](/selfhosted/manual-setup/multi-container) for the multi-container layout.
+
+## How Caddy routes NetBird
+
+Caddy automatically obtains and renews a public certificate when the hostname resolves to the server and TCP 80/443 are reachable. It forwards WebSocket upgrades automatically. Native gRPC upstreams must use `h2c://` because NetBird's internal gRPC listeners use cleartext HTTP/2 behind the TLS-terminating proxy.
+
+UDP 3478 bypasses Caddy and remains published directly from `netbird-server` or `relay`.
+
+## 1. Configure trusted proxy addresses
+
+For Caddy installed on the host, use the Docker bridge gateway:
+
+Combined `config.yaml`:
+
+```yaml
+server:
+  reverseProxy:
+    trustedHTTPProxies:
+      - "172.30.0.1/32"
+    trustedPeers:
+      - "172.30.0.1/32"
+```
+
+Multi-container `management.json`:
+
+```json
+{
+  "ReverseProxy": {
+    "TrustedHTTPProxies": ["172.30.0.1/32"],
+    "TrustedHTTPProxiesCount": 0,
+    "TrustedPeers": ["172.30.0.1/32"]
+  }
+}
+```
+
+For Caddy running in Docker at `172.30.0.10`, trust `172.30.0.10/32` instead. Trust only the proxy, never `0.0.0.0/0`.
+
+## 2. Install Caddy on the host
+
+On Debian or Ubuntu, use Caddy's official package repository:
+
+```bash
+sudo apt update
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https gpg
+
+curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
+  | sudo gpg --dearmor --yes \
+      -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+
+curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \
+  | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+
+sudo chmod o+r \
+  /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
+  /etc/apt/sources.list.d/caddy-stable.list
+
+sudo apt update
+sudo apt install caddy
+```
+
+The package creates and enables `caddy.service`. Do not start another service on TCP 80 or 443.
+
+## Combined container layout
+
+The NetBird Compose file must publish the private HTTP backends only on loopback and publish STUN publicly:
+
+```yaml
+services:
+  dashboard:
+    ports:
+      - "127.0.0.1:8080:80"
+
+  netbird-server:
+    ports:
+      - "127.0.0.1:8081:80"
+      - "3478:3478/udp"
+```
+
+Replace `/etc/caddy/Caddyfile` with:
+
+```text
+netbird.example.com {
+    # Native Signal, Management, and optional NetBird Proxy gRPC.
+    @grpc path \
+        /signalexchange.SignalExchange/* \
+        /management.ManagementService/* \
+        /management.ProxyService/*
+    reverse_proxy @grpc h2c://127.0.0.1:8081
+
+    # REST, OIDC, Relay, and gRPC-over-WebSocket fallback paths.
+    @backend path \
+        /relay* \
+        /ws-proxy/* \
+        /api/* \
+        /oauth2/*
+    reverse_proxy @backend 127.0.0.1:8081
+
+    # Dashboard catch-all.
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+Replace the hostname, validate, format, and reload:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo caddy fmt --overwrite /etc/caddy/Caddyfile
+sudo systemctl enable --now caddy
+sudo systemctl reload caddy
+```
+
+Caddy evaluates the named routes before the final catch-all. Do not move the Dashboard proxy above them.
+
+## Multi-container layout
+
+Use this Caddyfile with the loopback ports from [Manual multi-container setup](/selfhosted/manual-setup/multi-container):
+
+```text
+netbird.example.com {
+    # Signal native gRPC and WebSocket fallback.
+    @signal_grpc path /signalexchange.SignalExchange/*
+    reverse_proxy @signal_grpc h2c://127.0.0.1:10000
+
+    @signal_ws path /ws-proxy/signal*
+    reverse_proxy @signal_ws 127.0.0.1:8083
+
+    # Management native gRPC, REST, OIDC, and WebSocket fallback.
+    @management_grpc path \
+        /management.ManagementService/* \
+        /management.ProxyService/*
+    reverse_proxy @management_grpc h2c://127.0.0.1:8081
+
+    @management_http path \
+        /api/* \
+        /oauth2/* \
+        /ws-proxy/management*
+    reverse_proxy @management_http 127.0.0.1:8081
+
+    # Secure Relay WebSocket.
+    @relay path /relay*
+    reverse_proxy @relay 127.0.0.1:8084
+
+    # Dashboard catch-all.
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+Replace the hostname, then validate and reload:
+
+```bash
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo caddy fmt --overwrite /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+The `relay` service must still publish `3478:3478/udp` directly.
+
+## Caddy running in Docker
+
+Create or reuse the private network and assign Caddy the same fixed proxy address used in NetBird's trust settings:
+
+```bash
+docker network create \
+  --driver bridge \
+  --subnet 172.30.0.0/24 \
+  --gateway 172.30.0.1 \
+  netbird-proxy
+```
+
+Example Caddy Compose file:
+
+```yaml
+services:
+  caddy:
+    image: caddy:2
+    container_name: netbird-caddy
+    restart: unless-stopped
+    networks:
+      netbird-proxy:
+        ipv4_address: 172.30.0.10
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  netbird-proxy:
+    external: true
+```
+
+TCP 443 is required for NetBird. The optional UDP 443 mapping enables HTTP/3 for compatible web clients; it is unrelated to NetBird's required UDP 3478 STUN listener.
+
+### Combined Docker Caddyfile
+
+```text
+netbird.example.com {
+    @grpc path \
+        /signalexchange.SignalExchange/* \
+        /management.ManagementService/* \
+        /management.ProxyService/*
+    reverse_proxy @grpc h2c://netbird-server:80
+
+    @backend path \
+        /relay* \
+        /ws-proxy/* \
+        /api/* \
+        /oauth2/*
+    reverse_proxy @backend netbird-server:80
+
+    reverse_proxy netbird-dashboard:80
+}
+```
+
+### Multi-container Docker Caddyfile
+
+```text
+netbird.example.com {
+    @signal_grpc path /signalexchange.SignalExchange/*
+    reverse_proxy @signal_grpc h2c://netbird-signal:10000
+
+    @signal_ws path /ws-proxy/signal*
+    reverse_proxy @signal_ws netbird-signal:80
+
+    @management_grpc path \
+        /management.ManagementService/* \
+        /management.ProxyService/*
+    reverse_proxy @management_grpc h2c://netbird-management:80
+
+    @management_http path \
+        /api/* \
+        /oauth2/* \
+        /ws-proxy/management*
+    reverse_proxy @management_http netbird-management:80
+
+    @relay path /relay*
+    reverse_proxy @relay netbird-relay:80
+
+    reverse_proxy netbird-dashboard:80
+}
+```
+
+Join every referenced NetBird service to `netbird-proxy`, remove unnecessary HTTP port publishing, keep UDP 3478 published, and set both trusted proxy lists to `172.30.0.10/32`.
+
+Validate before starting:
+
+```bash
+docker run --rm \
+  -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  caddy:2 \
+  caddy validate --config /etc/caddy/Caddyfile
+
+docker compose config --quiet
+docker compose up -d
+```
+
+## Verify Caddy and NetBird
+
+Check Caddy's service and recent logs:
+
+```bash
+sudo systemctl --no-pager --full status caddy
+sudo journalctl -u caddy --since '10 minutes ago' --no-pager
+```
+
+For Docker:
+
+```bash
+docker compose ps
+docker compose logs --tail=100 caddy
+```
+
+From another network:
+
+```bash
+NETBIRD_DOMAIN="netbird.example.com"
+
+curl -fsSI "http://${NETBIRD_DOMAIN}/"
+curl -fsSI "https://${NETBIRD_DOMAIN}/setup"
+curl -fsS "https://${NETBIRD_DOMAIN}/oauth2/.well-known/openid-configuration"
+```
+
+Then run the gRPC and WebSocket checks from [Manual multi-container setup](/selfhosted/manual-setup/multi-container#9-verify-the-complete-deployment). Create the first owner and enroll two clients to verify Management, Signal, STUN, and Relay.
+
+## Troubleshooting Caddy
+
+### Automatic HTTPS does not issue a certificate
+
+Check that public DNS resolves directly to this host and TCP 80/443 are reachable. Caddy logs the ACME reason:
+
+```bash
+sudo journalctl -u caddy --since '30 minutes ago' --no-pager
+```
+
+Do not use `tls internal` for public NetBird clients unless every client explicitly trusts your private CA.
+
+### gRPC returns HTML or an HTTP status instead of gRPC
+
+The Dashboard catch-all handled the request. Keep the `@grpc` matcher above the final `reverse_proxy` and keep `h2c://` on each native gRPC upstream.
+
+### WebSockets disconnect
+
+Caddy handles upgrade headers automatically. If connections still close, inspect any upstream load balancer or CDN and ensure the hostname is DNS-only. Verify that the matched upstream is NetBird Server, Signal, Management, or Relay—not Dashboard.
+
+### Caddy cannot reach a Docker backend
+
+Confirm all containers share the same network:
+
+```bash
+docker network inspect netbird-proxy
+```
+
+Use container names only when Caddy is in Docker. A host-installed Caddy must use the loopback mappings instead.
+
+### Forwarded addresses are ignored
+
+Confirm whether Caddy uses `172.30.0.1` (host install) or `172.30.0.10` (Docker), and place that exact `/32` in both `trustedHTTPProxies` and `trustedPeers`. Restart the NetBird server or Management service after changing it.
