@@ -31,7 +31,7 @@ See [Lazy Connections](/manage/peers/lazy-connection) for how activation works, 
 
 ## Unique Peer Hostnames
 
-Two machines in one account can register with the same hostname, for example similar VMs that a provisioning tool all named `laptop`. Every peer still needs its own DNS name, so by default NetBird keeps the registration and adds the last two octets of the peer's NetBird IP to its DNS name: a second `laptop` that gets the IP `100.64.12.7` becomes `laptop-12-7.netbird.cloud`. A peer renamed to a name another peer already uses as its DNS name gets the same suffix. By default, [ephemeral peers](/manage/peers/register-machines-using-setup-keys#ephemeral-peers) get the suffix even when no other peer uses their hostname.
+Two machines in one account can register with the same hostname, for example similar VMs that a provisioning tool all named `laptop`. By default both register, and each gets its own DNS name: the peer that registers first gets `laptop.netbird.cloud`, and the second gets the last two octets of its NetBird IP added, so with the IP `100.64.12.7` it becomes `laptop-12-7.netbird.cloud`. The suffix goes on the DNS name only; both peers still show as `laptop` in the dashboard. If you rename a peer to `laptop` while another peer has `laptop.netbird.cloud`, the renamed peer also gets a suffix. By default, [ephemeral peers](/manage/peers/register-machines-using-setup-keys#ephemeral-peers) get the suffix even when no other peer uses their hostname.
 
 The suffix gives each peer its own DNS name, but it also hides that two machines share a hostname. If you want such a registration to fail loudly instead, enable the `Reject Hostname Collisions` toggle under `Unique Peer Hostnames` in the `Clients` tab of [Settings](https://app.netbird.io/settings). The setting applies to the whole account and is off by default.
 
@@ -39,17 +39,16 @@ The suffix gives each peer its own DNS name, but it also hides that two machines
     <img src="/docs-static/img/manage/settings/unique-peer-hostnames.png" alt="Unique Peer Hostnames section of the Clients settings tab, with the Reject Hostname Collisions toggle switched off" className="imagewrapper"/>
 </p>
 
+Whether the toggle is on or off, two hostnames collide when they produce the same DNS name. To build the DNS name, NetBird takes the part of the hostname before the first dot, lowercases it, and replaces each run of characters that are not valid in DNS with a single `-` (non-ASCII characters are first converted to punycode). So `Laptop` and `laptop` collide, so do `my_laptop` and `my-laptop`, and so do `web.prod` and `web.staging`, which both become `web`.
+
 With the toggle on:
 
-- No new peer gets a suffix. A peer whose DNS name is free registers with it; a peer whose DNS name another peer in the account already has fails to register, and no peer is created. The client reports `peer with hostname "laptop" is already registered`, stops retrying, and stays disconnected until it logs in again with a hostname whose DNS name is free, for example with `netbird up --hostname <name>`.
+- No new peer gets a suffix, ephemeral peers included. A peer whose DNS name is free registers with it; a peer whose DNS name another peer in the account already has fails to register, and no peer is created, so nothing appears in the peer list. The client reports `peer with hostname "laptop" is already registered`, stops retrying, and stays disconnected until it runs `netbird up` again with a free name: use a different hostname (`netbird up --hostname <name>`), or delete the peer that holds the name first.
 - Renaming a peer in the dashboard or through the API to a name whose DNS name another peer already has fails with the same error.
-- Ephemeral peers follow the same rule, so they also lose the suffix they get by default.
 
-Collisions are matched on the DNS name, not the raw hostname. To build it, NetBird takes the part of the hostname before the first dot, lowercases it, and replaces each run of characters that are not valid in DNS with a single `-` (non-ASCII characters are first converted to punycode). So `Laptop` and `laptop` collide, so do `my_laptop` and `my-laptop`, and so do `web.prod` and `web.staging`, which both become `web`.
+Enabling the toggle does not touch existing peers: DNS names that already carry a suffix keep it, and a registered peer is not checked for collisions when it logs in again, even if it now reports a hostname whose DNS name another peer has; it keeps the DNS name it already had. The toggle only blocks DNS names that are already taken, so a peer that already has a suffixed name, such as `laptop-12-7`, doesn't block a new `laptop`.
 
-Enabling the toggle does not touch existing peers: DNS names that already carry a suffix keep it, and a registered peer is not checked for collisions when it logs in again, even under a hostname another peer uses. The toggle only blocks DNS names that are already taken, so a peer that already has a suffixed name, such as `laptop-12-7`, doesn't block a new `laptop`.
-
-Deleting a peer frees its name for the next registration, but it does not remove the suffix from a peer that already has one. To give that peer a DNS name without the suffix once the name is free, rename the peer to another name and then back. Saving the same name does not recompute it.
+Deleting a peer frees its DNS name but does not change the others: if you delete the `laptop` that holds `laptop.netbird.cloud`, the other one keeps `laptop-12-7.netbird.cloud`. To give it the plain name, rename it to another name and then back to `laptop`; saving the same name does not change its DNS name.
 
 Keep the toggle off if your fleet registers machines with identical hostnames on purpose, such as autoscaled VMs or containers that join through a [setup key](/manage/peers/register-machines-using-setup-keys). The default suffix exists for that case, and with the toggle on every such machine after the first fails to join.
 
