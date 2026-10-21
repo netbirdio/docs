@@ -1,0 +1,96 @@
+import { Note, Warning } from "@/components/mdx";
+
+export const description =
+  "Deliver NetBird MDM policy to iOS, iPadOS, and tvOS devices with Managed App Configuration: the payload, where to put it in Intune, Jamf Pro, and other MDMs, when a change reaches the tunnel, and what each key does in the app.";
+
+# Enforce NetBird Settings on iOS
+
+On iOS there is no file or registry for policy. Apple's channel for configuring a managed app is **Managed App Configuration**: your MDM sends a dictionary along with the app, and iOS hands it to that app only. The NetBird app reads it from its own preferences, so the payload must target the NetBird app's bundle id: `io.netbird.app` on iOS and iPadOS, `io.netbird.app.tv` on tvOS.
+
+What each key does, and how the client applies and locks a policy, is on the [MDM Integration](/client/mdm-integration) page. Read its [How the client applies a policy](/client/mdm-integration#how-the-client-applies-a-policy) section first if you have not.
+
+The examples use [the user device baseline](/client/mdm-integration#the-user-device-baseline): a self-hosted server at `https://netbird.example.com:443`, read-only settings, and no extra profiles.
+
+<Note>
+**The app must be managed by the MDM that sends the configuration.** It does not have to be installed by it: an MDM can take over management of a copy the user installed from the App Store, and on an unsupervised device the user has to accept that change. Until the app is managed it receives no app configuration, and NetBird runs with no policy on that device.
+</Note>
+
+## Push the payload
+
+The payload is a plain property-list dictionary, with the same key names as on desktop. The user device baseline is:
+
+```xml
+<dict>
+    <key>managementURL</key>
+    <string>https://netbird.example.com:443</string>
+    <key>disableUpdateSettings</key>
+    <true/>
+    <key>disableProfiles</key>
+    <true/>
+</dict>
+```
+
+Start from <a href="/docs-static/files/netbird-ios-appconfig.plist" download>netbird-ios-appconfig.plist</a> and delete the keys you do not want to pin: a key that is present is pinned, even when its value is `false`. Then add it to the NetBird app's assignment in your MDM:
+
+- **Microsoft Intune**: **Apps → App configuration policies → Add → Managed devices**, platform **iOS/iPadOS**, pick the NetBird app, then set **Configuration settings format** to **Enter XML data** and paste the dictionary.
+- **Jamf Pro**: **Devices → Mobile Device Apps → NetBird → App Configuration**, and paste the dictionary.
+- **Kandji**, **Mosyle**, **Workspace ONE**, **JumpCloud**: the same field exists on the managed-app assignment, usually labelled *App Configuration* or *Application Configuration*.
+
+Booleans can be written as `<true/>` and `<false/>`, or as `<integer>1</integer>` and `<integer>0</integer>`. Integers and strings behave as on desktop.
+
+## When a policy takes effect
+
+Every key that applies to iOS is enforced: the keys that reshape the app, and the keys the client applies to the connection itself. When a change lands depends on one detail of how iOS works.
+
+iOS delivers the configuration to the NetBird app. The tunnel, though, runs in a Network Extension: a separate process the system starts when the tunnel comes up and stops when it goes down, and which Apple's app-configuration channel does not reach. The app therefore passes the configuration on to the extension whenever the app is running: when it becomes active, when a settings screen appears, and on a timer about every 30 seconds. When the policy has changed, the tunnel restarts on its own and the user is told their IT policy was applied.
+
+<Note>
+**A policy lands while the app is open.** With NetBird in the foreground, a change pushed from your MDM reaches the tunnel within about 30 seconds, or at once when the user switches back to the app. Nothing has to be restarted by hand.
+
+**While the app is closed or in the background, iOS suspends it**, and a policy pushed or withdrawn in that time reaches the tunnel only the next time the app is opened. This matters most with VPN On Demand or the widget, where the tunnel can come up without the app ever appearing: it then runs on the last policy the app saw. Plan rollouts accordingly, and treat "applied" as "applied once the user next opens the app".
+</Note>
+
+<Warning>
+**On tvOS, only the app is enforced, not the tunnel.** The hand-off described above relies on a shared app group, which does not work between the tvOS app and its extension, so the tvOS tunnel runs without the policy. Keys that lock or hide controls behave as described below; the keys the client applies to the connection (`managementURL`, `preSharedKey`, `rosenpassEnabled`, `rosenpassPermissive`, `blockInbound`, `wireguardPort`, `lazyConnection`) do not reach the tunnel on tvOS yet.
+</Warning>
+
+## What each key does in the app
+
+| Key | Effect in the iOS and tvOS app |
+| --- | --- |
+| `managementURL` | Hides **Settings → Connection** and the server step of onboarding. The profile-creation sheet shows and uses the pinned URL. |
+| `preSharedKey` | The key row reads *Configured* and is locked: no Save, no Remove. The value itself never reaches the app's interface. |
+| `rosenpassEnabled`, `rosenpassPermissive` | Locks its own switch and shows the pinned value. |
+| `disableClientRoutes` | Hides the exit-node selector. The resource list explains why, instead of listing resources. |
+| `disableAutoConnect` | VPN On Demand becomes read-only. |
+| `disableProfiles` | Hides the Profiles section: no creating, switching, or removing profiles. |
+| `disableNetworks` | Removes the Resources tab. |
+| `disableAdvancedView` | Hides Advanced (on tvOS, the whole section). |
+| `disableUpdateSettings` | Read-only mode: nothing is hidden, and every configuration control is locked. |
+
+A second group of keys has no control to lock, because the client applies them straight to the connection: `blockInbound`, `wireguardPort`, `lazyConnection`, `allowRemoteJobs`, and `debugBundleUploadURL` (when a remote job produces a bundle). On iOS they are enforced all the same, with nothing on screen to mark: a device whose policy sets `allowRemoteJobs: false`, for example, refuses remote jobs. On tvOS none of them reach the tunnel, for the reason in the warning above.
+
+The remaining keys do not apply to iOS and are ignored, so they are safe in a payload shared with desktop devices: `allowServerSSH` (there is no SSH server on iOS), `disableServerRoutes` (an iOS device does not route for other peers), `disableAutostart` (desktop app only), `disableMetricsCollection`, `enableLocalMetrics` and `localMetricsAddress` (the local endpoint is not reachable on iOS), and `splitTunnelMode` and `splitTunnelApps`.
+
+## Verifying on a device
+
+There is no CLI on iOS. A pinned setting shows a lock and a **Managed by your organization** note in the app, and a gated section disappears altogether. For the user device baseline, the Profiles section is gone and every configuration control is locked.
+
+That confirms the app received the policy. To confirm it reached the *tunnel*, change the policy while the tunnel is connected and bring NetBird to the foreground: the tunnel restarts and the device shows "NetBird configuration was updated by your IT policy". That notice comes from the extension, so seeing it means the tunnel applied the new policy.
+
+## Troubleshooting
+
+**Nothing is locked in the app.**
+The app did not receive the configuration. Check that NetBird is a managed app on the device (installed by your MDM, or taken over by it), that the app-configuration policy is assigned to the same device group as the app, and that it targets the bundle id `io.netbird.app` (`io.netbird.app.tv` on tvOS).
+
+**The app shows the policy, but the tunnel still behaves as before.**
+The app passes the policy to the tunnel only while it is running. Open NetBird and leave it in the foreground for half a minute; the tunnel restarts and reports that the policy was applied. On tvOS the tunnel does not receive the policy at all; see [When a policy takes effect](#when-a-policy-takes-effect).
+
+For problems that look the same on every platform, see [Troubleshooting](/client/mdm-integration#troubleshooting) on the MDM Integration page.
+
+## Recap
+
+- iOS delivers the policy as Managed App Configuration to the managed NetBird app, bundle id `io.netbird.app` (tvOS: `io.netbird.app.tv`).
+- The user device baseline is the same three keys as on desktop: `managementURL`, `disableUpdateSettings`, and `disableProfiles`.
+- A change reaches the tunnel while the app is open, within about 30 seconds; on tvOS it reaches the app only.
+- Confirm in the app: pinned settings show **Managed by your organization**.

@@ -55,7 +55,6 @@ export const apiNavigation = [
   {
     title: 'Cloud Resources',
     links: [
-      { title: 'Ingress Ports', href: '/api/resources/ingress-ports' },
       {
         title: 'IDP (Azure API)',
         href: '/api/resources/idp-azure-integrations',

@@ -69,6 +69,7 @@ export const docsNavigation = [
                     { title: 'Proxmox VE', href: '/get-started/install/proxmox-ve' },
                     { title: 'Synology', href: '/get-started/install/synology' },
                     { title: 'TrueNAS', href: '/get-started/install/truenas' },
+                    { title: 'Unraid', href: '/get-started/install/unraid' },
                     { title: 'pfSense', href: '/get-started/install/pfsense' },
                     { title: 'OPNsense', href: '/get-started/install/opnsense' },
                     { title: 'OpenWrt', href: '/get-started/install/openwrt' },
@@ -110,6 +111,22 @@ export const docsNavigation = [
                         title: 'MDM Deployment',
                         isOpen: false,
                         links: [
+                            {
+                                title: 'MDM Integration',
+                                href: '/client/mdm-integration',
+                            },
+                            {
+                                title: 'Enforce Settings on Windows',
+                                href: '/manage/peers/mdm-deployment/windows-mdm-policy',
+                            },
+                            {
+                                title: 'Enforce Settings on macOS',
+                                href: '/manage/peers/mdm-deployment/macos-mdm-policy',
+                            },
+                            {
+                                title: 'Enforce Settings on iOS',
+                                href: '/manage/peers/mdm-deployment/ios-mdm-policy',
+                            },
                             {
                                 title: 'Deploy with Group Policy (GPO)',
                                 href: '/manage/peers/mdm-deployment/windows-gpo-deployment',
@@ -171,6 +188,10 @@ export const docsNavigation = [
                             {
                                 title: 'Disable route when in the office',
                                 href: '/manage/access-control/posture-checks/connecting-from-the-office',
+                            },
+                            {
+                                title: 'Requiring a device certificate',
+                                href: '/manage/access-control/posture-checks/device-certificates',
                             },
                         ],
                     },
@@ -261,6 +282,10 @@ export const docsNavigation = [
                     {
                         title: 'Bring Your Own Proxy',
                         href: '/manage/reverse-proxy/bring-your-own-proxy',
+                    },
+                    {
+                        title: 'OpenShift',
+                        href: '/manage/reverse-proxy/openshift',
                     },
                     {
                         title: 'Custom Domains',
@@ -368,6 +393,10 @@ export const docsNavigation = [
                         //                            { title: 'Auth0', href: '/manage/team/single-sign-on/auth0' },
                         //                            { title: 'JumpCloud', href: '/manage/team/single-sign-on/jumpcloud' },
                         //                        ]
+                    },
+                    {
+                        title: 'Sign-in Domains',
+                        href: '/manage/team/sign-in-domains',
                     },
                 ],
             },
@@ -517,6 +546,7 @@ export const docsNavigation = [
                     { title: 'Quickstart', href: '/agent-network/quickstart' },
                     { title: 'Providers', href: '/agent-network/providers' },
                     { title: 'Clusters', href: '/agent-network/clusters' },
+                    { title: 'Control Center', href: '/agent-network/control-center' },
                 ],
             },
             {
@@ -597,6 +627,10 @@ export const docsNavigation = [
                     {
                         title: 'High Availability',
                         href: '/selfhosted/maintenance/scaling/high-availability',
+                    },
+                    {
+                        title: 'External Relays (Licensed)',
+                        href: '/selfhosted/enterprise/external-relays',
                     },
                     {
                         title: 'Grafana Dashboard',
@@ -867,6 +901,10 @@ export const docsNavigation = [
                         title: 'External IdP to Embedded IdP',
                         href: '/selfhosted/migration/external-to-embedded-idp',
                     },
+                    {
+                        title: 'MySQL to PostgreSQL',
+                        href: '/selfhosted/migration/mysql-to-postgresql',
+                    },
                 ],
             },
         ],
@@ -875,6 +913,7 @@ export const docsNavigation = [
         title: 'CLIENT',
         links: [
             { title: 'Desktop App', href: '/client/desktop-app' },
+            { title: 'nblink', href: '/client/nblink' },
             { title: 'Profiles', href: '/client/profiles' },
             { title: 'Profile Ownership', href: '/client/profile-ownership' },
             { title: 'gRPC Daemon Socket', href: '/client/grpc-socket' },
@@ -1026,6 +1065,16 @@ export const docsNavigation = [
                     },
                 ],
             },
+            {
+                title: 'Deployment',
+                isOpen: false,
+                links: [
+                    {
+                        title: 'Roll Out with MDM',
+                        href: '/use-cases/deployment/mdm-rollout',
+                    },
+                ],
+            },
             { title: 'Homelab', href: '/use-cases/homelab' },
         ],
     },
@@ -1093,6 +1142,10 @@ export const docsNavigation = [
                             {
                                 title: 'Pending approval',
                                 href: '/help/troubleshooting-account-access',
+                            },
+                            {
+                                title: 'User in another account',
+                                href: '/help/troubleshooting-user-in-another-account',
                             },
                             { title: 'IdP & SSO setup', href: '/manage/team/single-sign-on' },
                             { title: 'User provisioning', href: '/manage/team/idp-sync' },

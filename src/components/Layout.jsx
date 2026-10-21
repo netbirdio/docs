@@ -188,7 +188,7 @@ export function Layout({ children, title, tableOfContents }) {
       <AnnouncementBanner />
       <HeroPattern/>
       <div
-        className="relative mx-auto flex max-w-8xl sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80"
+        className="relative mx-auto flex max-w-8xl md:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80"
         style={{ paddingTop: bannerHeight }}
       >
         <header
@@ -206,9 +206,9 @@ export function Layout({ children, title, tableOfContents }) {
           </div>
           <Header />
         </header>
-        <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-5">
-          <main className="py-16">
-            <Prose as="article">{children}</Prose>
+        <div className="min-w-0 flex-auto px-4 py-16 md:max-w-2xl lg:max-w-none lg:pl-8 lg:pr-0 xl:px-5">
+          <main className="py-8 lg:py-16">
+            <Prose as="article" className="max-md:max-w-none">{children}</Prose>
           </main>
           <Footer />
         </div>

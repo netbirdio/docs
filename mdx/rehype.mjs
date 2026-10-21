@@ -54,7 +54,7 @@ function rehypeInsertLastUpdated() {
       type: 'element',
       tagName: 'p',
       properties: {
-        className: ['not-prose', 'text-sm', 'text-slate-400', 'dark:text-zinc-500', 'mt-0', 'mb-8', 'ml-2.5'],
+        className: ['not-prose', 'text-sm', 'text-slate-400', 'dark:text-zinc-500', 'mt-0', 'mb-8', 'md:ml-2.5'],
       },
       children: [
         { type: 'text', value: 'Updated ' },
@@ -165,11 +165,30 @@ function rehypeAddMDXExports(getExports) {
   }
 }
 
+// Components that render their own `h2` from `title` and `id` props. The
+// heading is not in the MDX tree, so it is added to the table of contents here.
+const sectionComponents = ['TroubleshootingStart', 'TroubleshootingTiles', 'StillStuck']
+
+function jsxStringAttribute(node, name) {
+  let attribute = node.attributes?.find((a) => a.name === name)
+  return typeof attribute?.value === 'string' ? attribute.value : undefined
+}
+
 function getSections(node) {
   let sections = []
 
   for (let child of node.children ?? []) {
-    if (child.type === 'element' && ['h2', 'h3', 'h4', 'h5', 'h6'].includes(child.tagName)) {
+    if (child.type === 'mdxJsxFlowElement' && sectionComponents.includes(child.name)) {
+      let title = jsxStringAttribute(child, 'title')
+      let id = jsxStringAttribute(child, 'id')
+      if (title && id) {
+        sections.push(`{
+        title: ${JSON.stringify(title)},
+        id: ${JSON.stringify(id)},
+        tagName: "h2"
+      }`)
+      }
+    } else if (child.type === 'element' && ['h2', 'h3', 'h4', 'h5', 'h6'].includes(child.tagName)) {
       sections.push(`{
         title: ${JSON.stringify(toString(child))},
         id: ${JSON.stringify(child.properties.id)},

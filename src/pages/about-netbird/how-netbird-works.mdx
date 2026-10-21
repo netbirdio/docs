@@ -44,6 +44,8 @@ After installation, NetBird client requires login that can be done through Ident
 * **Keeping the network map.** The Management service stores information about all the registered peers including WireGuard public key that was sent during the registration process.
 * **Managing private IP addresses.** Each peer receives a unique private IP with which it can be identified in the network.
 We use [Carrier Grade NAT](https://en.wikipedia.org/wiki/Carrier-grade_NAT) address space with an allocated address block <em>100.64.0.0/10</em>.
+Each account gets its own range inside this block, a randomly chosen /16 by default, and each new peer receives a randomly chosen free address from it.
+When a peer is deleted, its address is released immediately and can be assigned to a later peer; there is no holding period.
 * **Synchronizing network changes to peers.** The Management Service keeps a control channel open to each peer sending network updates.
 Whenever a new peer joins the network, all other peers that are authorized to connect to it receive an update.
 After that, they are able to establish a connection to the new peer.
@@ -74,7 +76,7 @@ The client application requests a user to log in with an Identity Provider (IDP)
 * **Receiving network updates from the Management service.**
 Each peer receives initial configuration and a list of peers with corresponding public keys and IP addresses so that it can establish a point-to-point connection.
 * **Establishing point-to-point WireGuard connection.** To establish a connection with a remote peer, the Client first discovers the most suitable connection candidate, or simply address (IP:port) that other peers can use to connect to it.
-It then sends it to the remote peer via Signal. This message is encrypted with the peer's private key and a public key of the remote peer.
+It then sends it to the remote peer via Signal. The message body is encrypted end to end with a shared key that each peer derives from its own private key and the other peer's public key (NaCl `box`: Curve25519, XSalsa20, Poly1305). Signal sees the two peers' public keys, so it knows who is talking to whom, but never the contents. The same shared key also authenticates the message, so there is no separate signature step.
 The remote peer does the same and once the peers can reach each other, they establish an encrypted WireGuard tunnel.
 * **Applying access control policies.** The client application applies access control rules that are received from the Management service.
 The client uses a system's available firewall manager like `nftables` to apply the rules.
