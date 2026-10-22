@@ -263,6 +263,79 @@ If the service is not installed, use `install`. `reconfigure` works only on an i
 
 **Confirm:** Run `netbird service status`. Then connect to the daemon as a user in the group, for example with `netbird status`.
 
+### Remote desktop users cannot use the default profile
+
+**Symptom:** A user in a remote desktop session gets a message that says the profile has no owner on record.
+
+**Cause:** Only a user at the console can claim the default profile automatically. On Windows, a user in a Remote Desktop (RDP) session is not at the console. On Linux, a user in a remote session is not at the console.
+
+**Fix:** Ask an administrator to run `sudo netbird profile claim default --owner <user>`.
+
+### Users lost access to the default profile after the upgrade
+
+**Symptom:** After the upgrade, users who used the default profile before get a message that says the profile belongs to another user.
+
+**Cause:** The migration gives the default profile to the user who was active last. A profile has only one owner.
+
+**Fix:** Each of the other users adds a profile with `netbird profile add`. To give the default profile to a different user, run `sudo netbird profile claim default --owner <user>`.
+
+### The client uses the default profile after the upgrade
+
+**Symptom:** After the upgrade, the daemon starts with the default profile, not the profile that was active before. The daemon log shows `starting on the default profile, the active one could not be resolved`.
+
+**Cause:** Profiles of different users had the same ID. The migration cannot find which of these profiles was active. The daemon uses the default profile, so it does not connect with the profile of another user. The migration tries again at the next start.
+
+**Fix:**
+
+1. Restart the service. The migration then gives each profile a unique ID.
+
+   ```shell
+   sudo netbird service restart
+   ```
+
+2. Find the ID of your profile, and select it:
+
+   ```shell
+   netbird profile list --show-id
+   netbird profile select <id-prefix>
+   ```
+
+**Confirm:** The daemon log shows `profile migration complete`.
+
+### Profiles from an earlier version have no owner
+
+**Symptom:** A user gets a message that says the profile has no owner on record for a profile that they created in an earlier version. The daemon log shows `cannot resolve ... to an account name, its legacy profiles stay unowned`.
+
+**Cause:** The daemon gives an old profile to the user whose account name matches the profile directory. The daemon could not get the account name. For example, the account was renamed or deleted, or the LDAP or Active Directory server was not available.
+
+**Fix:** If the directory server was not available, run the command again when the server is available. The daemon tries again at each request. If the account was renamed or deleted, ask an administrator to run `sudo netbird profile claim <profile> --owner <user>`.
+
+### An integration lost access to the daemon
+
+**Symptom:** A monitoring tool, a script, or a scheduled job gets less status information than before, or the daemon refuses its requests.
+
+**Cause:** The integration runs as a user that does not own the active profile. That user gets only basic status. The daemon refuses requests to connect, disconnect, or change the profile.
+
+**Fix:** Run the integration as the owner of the profile, or as root. If the integration uses a TCP socket, change it to a Unix socket or a named pipe. See [TCP sockets (deprecated)](/client/grpc-socket#tcp-sockets-deprecated).
+
+### Turn off profile ownership temporarily
+
+If the upgrade stops a critical workflow, you can turn off profile ownership until you fix the cause:
+
+```shell
+sudo netbird service reconfigure --service-env NB_DISABLE_PROFILE_OWNERSHIP=true
+```
+
+<Warning>
+  This removes the isolation between local users. All identified users can use all profiles and control all connections. Use it only for a short time.
+</Warning>
+
+To turn profile ownership on again, run:
+
+```shell
+sudo netbird service reconfigure --service-env NB_DISABLE_PROFILE_OWNERSHIP=false
+```
+
 ### Collect information for support
 
 A debug bundle includes `profiles.txt` and `active_profile.json`. These files show each profile, its owner, and the active profile. For instructions, see [Troubleshooting client issues](/help/troubleshooting-client).
