@@ -33,6 +33,18 @@ Warm-up only applies to names in [custom DNS zones](/manage/dns/custom-zones) an
 
 Set `NB_DNS_LAZY_WARMUP_TIMEOUT` on the daemon to change this per-query wait. The value must be a positive Go duration, for example `5s`. Invalid, zero, or negative values fall back to the `2s` default.
 
+### When Management or Signal is unavailable
+
+Opening a connection needs the Signal server, because the two peers exchange connection offers through it. Keeping an open connection does not: its traffic goes directly between the peers, or through a Relay server. If your Relay runs as a separate service, as it does on NetBird Cloud and in self-hosted deployments with [external relays](/selfhosted/maintenance/scaling/set-up-external-relays), relayed connections stay up as well.
+
+During an outage of Management or Signal, lazy connections therefore behave like this:
+
+- A connection that keeps carrying traffic stays up.
+- A connection that sits idle for the inactivity threshold is still torn down, and traffic sent to that peer afterwards does not get through until Signal is back.
+- A connection to a peer that was already idle cannot open.
+
+Once Signal is reachable again, these connections open on the next traffic, as usual. A peer that must stay reachable through a control-plane outage even when its connection is idle needs lazy connections off on both ends (`NB_LAZY_CONN=off`), so that its connection is never torn down.
+
 ## Enable Lazy Connections in Management
 
 The account setting in the NetBird Dashboard is the normal source of truth: go to `Settings` > `Clients` and turn on the `Enable Lazy Connections` toggle. When it is enabled, compatible clients activate their lazy connection manager. When it is disabled, clients stop lazy mode and immediately attempt to connect to all applicable peers.
