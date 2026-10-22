@@ -43,7 +43,7 @@ module.exports = ({ theme }) => ({
 
       // Base
       color: 'var(--tw-prose-body)',
-      fontSize: theme('fontSize.sm')[0],
+      fontSize: '0.9375rem',
       lineHeight: theme('lineHeight.7'),
 
       // Layout
@@ -212,7 +212,7 @@ module.exports = ({ theme }) => ({
       },
       h5: {
         color: 'var(--tw-prose-headings)',
-        fontSize: theme('fontSize.sm')[0],
+        fontSize: '0.9375rem',
         ...theme('fontSize.sm')[1],
         fontWeight: '600',
         marginTop: theme('spacing.6'),
@@ -220,7 +220,7 @@ module.exports = ({ theme }) => ({
       },
       h6: {
         color: 'var(--tw-prose-headings)',
-        fontSize: theme('fontSize.sm')[0],
+        fontSize: '0.9375rem',
         ...theme('fontSize.sm')[1],
         fontWeight: '600',
         marginTop: theme('spacing.6'),
