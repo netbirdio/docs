@@ -54,6 +54,8 @@ If you already have a self-hosted NetBird deployment without NetBird Proxy, foll
   Proxy.
 </Warning>
 
+Before making the changes below, back up your NetBird install directory. See [Backup](/selfhosted/maintenance/backup).
+
 ## Add a dashboard bouncer key
 
 Create a dedicated bouncer key for the Traefik plugin and store it in the Compose project `.env` file:
@@ -64,9 +66,10 @@ umask 077
 if ! grep -q '^CROWDSEC_DASHBOARD_BOUNCER_KEY=' .env 2>/dev/null; then
   printf 'CROWDSEC_DASHBOARD_BOUNCER_KEY=%s\n' "$(openssl rand -hex 32)" >> .env
 fi
+chmod 600 .env
 ```
 
-Rerunning this command preserves the existing key.
+Rerunning this command preserves the existing key. `chmod 600` restricts `.env` to its owner, since the file now holds the bouncer key.
 
 ## Add CrowdSec AppSec acquisition
 
@@ -267,6 +270,10 @@ curl -4s ifconfig.me
 
 Run this command through the same network path as the dashboard test. NAT or proxies can change the source IP that Traefik sees.
 
+<Warning>
+  This test blocks the dashboard, `/api`, and `/oauth2` for your IP for the duration of the decision. If you can't remove the decision, see [Recovering from a dashboard lockout](#recovering-from-a-dashboard-lockout).
+</Warning>
+
 On the NetBird host, add a short test ban:
 
 ```bash
@@ -274,6 +281,8 @@ cd "$NETBIRD_INSTALL_DIR"
 TEST_IP="<your-public-ipv4>"
 docker compose exec -T crowdsec cscli decisions add --ip "$TEST_IP" --duration 3m --reason "dashboard bouncer test"
 ```
+
+If your IP is on a CrowdSec allowlist, `cscli decisions add` refuses the decision. Add `--bypass-allowlist` to the command to test anyway.
 
 Wait up to 60 seconds because the Traefik bouncer runs in `stream` mode and refreshes decisions periodically. Then open your NetBird dashboard in a browser from the blocked IP. The dashboard request should be blocked.
 
@@ -297,7 +306,7 @@ Remove the decision when done:
 docker compose exec -T crowdsec cscli decisions delete --ip "$TEST_IP"
 ```
 
-Verify access returns:
+Wait up to 60 seconds for the bouncer to refresh, then verify access returns:
 
 ```bash
 curl -ks -A 'Mozilla/5.0 NetBirdDashboardCheck' -o /dev/null -w '%{http_code}\n' "https://$NETBIRD_DOMAIN"
@@ -309,14 +318,15 @@ The response should be `200`.
 
 This protection fails open. If the middleware is detached for any reason, most commonly a label edit applied with `docker compose restart` instead of `docker compose up -d`, which does not recreate the container, requests stop being inspected and nothing reports an error. The dashboard loads, authentication works, and all containers report healthy. The only symptom is that a known malicious probe returns `404` instead of `403`.
 
-After any change to the labels, recreate the affected containers and re-run the probe:
+After any change to the labels, recreate the affected containers and re-run both probes:
 
 ```bash
 docker compose up -d dashboard netbird-server
-curl -ks -o /dev/null -w '%{http_code}\n' "https://$NETBIRD_DOMAIN/.env"
+curl -ks -A 'Mozilla/5.0 NetBirdDashboardCheck' -o /dev/null -w '%{http_code}\n' "https://$NETBIRD_DOMAIN/.env"
+curl -ks -A 'Mozilla/5.0 NetBirdDashboardCheck' -o /dev/null -w '%{http_code}\n' "https://$NETBIRD_DOMAIN/api/.env"
 ```
 
-A `403` confirms the middleware is in the request path. A `404` means it is not.
+A `403` from both confirms the middleware is in the request path on both routers. A `404` from either means it is not attached to that router.
 
 To surface this automatically, monitor the same probe from outside the deployment and treat `403` as the healthy response. The middleware is attached to the two routers separately, so probe both. A check on `/.env` alone exercises only the dashboard router and would still return `403` if the middleware were detached from the API router. Point an uptime monitor or a cron job at each of:
 
@@ -345,10 +355,16 @@ Alert when either response is anything other than `403`. This is an inverted che
 
 If AppSec or an IP decision blocks you from the dashboard, the block also covers `/api` and `/oauth2`, so it cannot be lifted from the UI. All recovery is performed over SSH on the host.
 
+Run the following commands from the NetBird install directory:
+
+```bash
+cd "$NETBIRD_INSTALL_DIR"
+```
+
 First identify which of the two mechanisms is blocking you, because they are handled differently:
 
 ```bash
-docker compose exec crowdsec cscli decisions list
+docker compose exec -T crowdsec cscli decisions list
 ```
 
 If your address is listed, an **IP decision** is blocking you. This includes bans created by the `crowdsecurity/appsec-vpatch` scenario after repeated AppSec matches, which appear with that reason. If it is not, the block is an **AppSec** match on the request itself: an individual AppSec match does not create a decision, so `cscli decisions delete` has no effect in that case. Confirm with `cscli metrics show appsec` and `cscli alerts list`, where AppSec matches appear with `kind` set to `waf`.
@@ -356,8 +372,8 @@ If your address is listed, an **IP decision** is blocking you. This includes ban
 Allowlisting the address resolves both cases. `cscli allowlists add` fails with `allowlist '<name>' not found` if the list does not already exist, so create it first if you have not set one up:
 
 ```bash
-docker compose exec crowdsec cscli allowlists create netbird-admins -d "Addresses that should never be blocked"
-docker compose exec crowdsec cscli allowlists add netbird-admins <your-ip> -d "admin"
+docker compose exec -T crowdsec cscli allowlists create netbird-admins -d "Addresses that should never be blocked"
+docker compose exec -T crowdsec cscli allowlists add netbird-admins <your-ip> -d "admin"
 ```
 
 Adding an address that currently carries a decision expires that decision immediately. Allowlisted addresses are also exempted from AppSec blocking, though that takes effect on the Traefik bouncer's next stream refresh rather than instantly, so allow up to a minute. See [Allowlisting addresses](/selfhosted/maintenance/crowdsec#allowlisting-addresses) for details.
@@ -365,7 +381,7 @@ Adding an address that currently carries a decision expires that decision immedi
 If an IP decision is present and you want it gone without allowlisting the address permanently, delete it directly:
 
 ```bash
-docker compose exec crowdsec cscli decisions delete --ip <your-ip>
+docker compose exec -T crowdsec cscli decisions delete --ip <your-ip>
 ```
 
 The Traefik bouncer runs in `stream` mode and refreshes periodically, so allow up to a minute for access to return.
@@ -394,7 +410,7 @@ docker compose up -d dashboard netbird-server
   Detach both labels, or neither.
 </Warning>
 
-Restore both labels once the underlying issue is resolved, recreate the containers, and confirm with the `/.env` probe above.
+Restore both labels once the underlying issue is resolved, recreate the containers, and confirm with the `/.env` and `/api/.env` probes in [Verifying the middleware stays attached](#verifying-the-middleware-stays-attached).
 
 ## Troubleshooting
 
@@ -406,7 +422,7 @@ Separately, a reverse proxy service in `enforce` mode denies all connections whi
 
 If Traefik logs warnings about a missing Docker network, follow [Traefik Docker network](/selfhosted/maintenance/upgrade#traefik-docker-network) to correct the configured name.
 
-If AppSec metrics do not increment, confirm that the middleware is attached to the dashboard router and that Traefik can reach `crowdsec:8080` and `crowdsec:7422`.
+If AppSec metrics do not increment, confirm that the middleware is attached to both the `netbird-dashboard` and `netbird-dashboard-api` routers and that Traefik can reach `crowdsec:8080` and `crowdsec:7422`.
 
 ## Related documentation
 
