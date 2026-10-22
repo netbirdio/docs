@@ -1,0 +1,140 @@
+# Hairpin NAT and Split DNS for Self-Hosted NetBird
+
+import {Note, Warning} from "@/components/mdx";
+
+Your self-hosted NetBird server is usually reachable at a public name, such as `netbird.example.com`, and every client is configured with that name. Peers on the internet reach it without a second thought. Peers in the same building or data center as the server are a different case: their traffic to the server's public address has to leave through the site firewall and come straight back in.
+
+This page gives the recommended setup for those inside peers, and one fallback for when it does not fit. With either setup, inside peers reach the server and, in testing, connected directly (peer-to-peer) to remote peers, meaning peers outside your site, except remote peers behind symmetric NAT, which stayed on the relay (see [Limits](#limits)).
+
+Running example: the server, `netbird.example.com`, runs at `10.0.2.10` in a DMZ subnet, `10.0.2.0/24`. The office LAN is `10.0.1.0/24`. The site firewall's public address is `203.0.113.10`, and the server's DNS name points there. Office desktops on the LAN run the NetBird client, and so do staff laptops at home, the remote peers in this example.
+
+## Why the path matters: everything lives at one name
+
+By default, the combined `netbird-server` serves Management, Signal, the relay and STUN all at the name in `server.exposedAddress`. Each client receives `rels://netbird.example.com:443` as its relay and `stun:netbird.example.com:3478` as its STUN server.
+
+STUN is how a peer learns the address that remote peers should use to reach it directly. The peer asks the STUN server "what address do you see me coming from?", then offers that answer to the remote peer as an address to try. NetBird calls any address offered this way a candidate; one learned from STUN is a server-reflexive candidate.
+
+In testing, an office desktop connected directly to a home laptop only when the address and port STUN reported matched the public address and port the firewall actually used for the desktop's traffic to that laptop. Whatever path the office desktops take to `netbird.example.com`, their STUN request takes the same path, so that path decides the answer they get. Both setups below make the answer right.
+
+## Choose a setup
+
+- **Recommended: [Setup 1](#setup-1-hairpin-nat-to-the-public-address).** A hairpin rule that translates the source to the public address, on a firewall that drops unsolicited inbound UDP on its internet side. Nothing changes in NetBird's configuration.
+- **Fallback: [Setup 2](#setup-2-a-stun-server-outside-your-site),** when you prefer split DNS, or when your firewall's hairpin can only translate the source to its inside address. A STUN-only service is enough; you do not need a separate relay server.
+
+With either setup, inside peers connect to each other directly over the LAN. Connections between inside peers and remote peers behind symmetric NAT (a NAT that assigns a new port for every destination) go through the relay with either setup. One tested exception: the NetBird Proxy can reach services behind symmetric NAT directly with a fixed, forwarded WireGuard port (see [If you run the NetBird Proxy](#if-you-run-the-net-bird-proxy)).
+
+## Setup 1: Hairpin NAT to the public address
+
+A hairpin rule (also called NAT reflection or NAT loopback) tells the firewall to catch traffic from inside addressed to its own public IP and send it to the server. For `netbird.example.com`, the rule covers the server's three ports and translates both the destination and the source:
+
+| Traffic from | To | Protocol and port | Translate destination to | Translate source to |
+|---|---|---|---|---|
+| Inside networks, including the server's own subnet | `203.0.113.10` | TCP 80, TCP 443 | `10.0.2.10` | `203.0.113.10` (the public address) |
+| Inside networks, including the server's own subnet | `203.0.113.10` | UDP 3478 | `10.0.2.10` | `203.0.113.10` (the public address) |
+
+Translating the source to the public address is what makes STUN report `203.0.113.10` to the office desktops. STUN also has to report the right port: the firewall must use the same public port for the desktop's STUN request and for its traffic to the laptop. In testing, it did when the firewall dropped unsolicited inbound UDP on its internet side. Every test connection was then direct to a remote peer whose NAT keeps the same port for every destination (the opposite of symmetric NAT).
+
+With a hairpin that translates the source to the public address, the server sees every inside peer as coming from that address. Anything on the server that is keyed by client IP treats them as one client.
+
+Dropping unsolicited inbound traffic is the secure default for a firewall. If yours accepts unsolicited inbound UDP today, for example through an allow rule, remove that rather than working around it (see [Setups to avoid](#setups-to-avoid)).
+
+To see whether your firewall gives direct connections, follow the steps in [Verify](#verify).
+
+<Warning>
+With a hairpin, relayed connections between inside and remote peers run through the server's relay over the hairpin. If the hairpin rule stops working, the inside peers lose Management, Signal and those relayed connections. Peer-to-peer connections that were already up between inside and remote peers keep working through the outage. Restoring the rule brings Management and Signal back. The relayed connections are not guaranteed to resume on their own: run `netbird status -d` on an inside peer, and if a remote peer still shows as disconnected, run `netbird down` and then `netbird up` on that inside peer.
+</Warning>
+
+## Setup 2: A STUN server outside your site
+
+Configure the server to give every NetBird client a STUN server outside your site in place of its own. Inside peers reach it through the firewall's normal outbound NAT, so it reports the site's real public address and port, the one the remote peer can actually reach. In testing, on a firewall that dropped unsolicited inbound UDP, Setup 2 gave the same results as Setup 1: direct connections to remote peers whose NAT keeps the same port for every destination, and relayed connections to remote peers behind symmetric NAT (a NAT that assigns a new port for every destination).
+
+The STUN server can be either of these:
+
+- **An external relay with its embedded STUN server**, on its own public IP. Deploy it following [Set Up External Relay Servers](/selfhosted/maintenance/scaling/set-up-external-relays), for example at `relay.example.com`. Relayed connections then run through that relay instead of the server's.
+- **A STUN-only service** that you run outside your site, or a public one. The server keeps its own relay.
+
+A STUN server learns the public address of every peer that asks it. Prefer one you run yourself over a third-party service.
+
+1. Give inside peers a path to the server, either of these:
+   - **Split DNS:** your internal DNS answers `netbird.example.com` with `10.0.2.10`, while public DNS keeps answering `203.0.113.10`. The name and the TLS certificate stay the same, so no client configuration changes. Make sure every inside resolver gives the internal answer. If the NetBird Proxy runs on the server host, that includes the host's own resolver, because the Proxy contains a NetBird client that connects to Signal and the relay by the public name (see [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy)).
+   - **A hairpin rule** as in Setup 1. Here the source can be translated to the public address or to the firewall's inside address.
+2. If you use split DNS, give the STUN server a name your split DNS does not override, so inside peers resolve it to its public address. If your internal DNS overrides the whole `example.com` zone, add a record there that gives `relay.example.com`, or your STUN service's name, its public address.
+3. In the server's `config.yaml`, inside the `server:` block, add `stuns`, and with an external relay also `relays`:
+
+   ```yaml
+   server:
+     # ...existing keys...
+     relays:            # only with an external relay
+       addresses:
+         - "rels://relay.example.com:443"
+       secret: "<the auth secret you set on the relay>"
+       credentialsTTL: "24h"
+     stuns:
+       - uri: "stun:relay.example.com:3478"
+   ```
+
+   With a STUN-only service and no separate relay server, add only `stuns`:
+
+   ```yaml
+   server:
+     # ...existing keys...
+     stuns:
+       - uri: "stun:stun.example.org:3478"
+   ```
+
+   Setting `stuns` replaces the STUN server handed to clients and turns off the server's own STUN server.
+
+4. Restart the server: `docker compose up -d --force-recreate netbird-server`.
+
+<Warning>
+Setting `relays` without `stuns` turns off the server's own STUN server but keeps handing clients `stun:netbird.example.com:3478`. Nothing answers it, so inside peers get no server-reflexive candidate from it and their connections to remote peers stay relayed. With an external relay, always set both.
+</Warning>
+
+## If you run the NetBird Proxy
+
+This section assumes the NetBird Proxy runs on the server host, `10.0.2.10`. The Proxy contains its own NetBird client, behind Docker's NAT, and as installed that client picks a random WireGuard port on every start. In testing, with Setup 1 or Setup 2 in place, the Proxy connected directly to services on inside peers (the office desktops in the example) and on remote peers behind a NAT that keeps the same port for every destination. Services on remote peers behind symmetric NAT were reached only through the relay.
+
+To reach services behind symmetric NAT directly as well, give the Proxy a fixed WireGuard port and forward it, in addition to Setup 1 or Setup 2:
+
+1. In the `proxy` service's environment, for example in `docker-compose.override.yml`, set `NB_PROXY_WG_PORT: "51820"`. A fixed port only works when the server holds a single NetBird account, which is the default and is always the case with the embedded IdP. The Proxy runs one NetBird client per account, so with several accounts they cannot all bind the same port (see the `NB_PROXY_WG_PORT` row in [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy#networking-and-forwarding)).
+2. On the site firewall, forward UDP 51820 from the internet to the server, `10.0.2.10`. The installer already publishes 51820/udp on the Proxy container.
+3. Recreate the Proxy: `docker compose up -d --force-recreate proxy`.
+
+In testing, this made every test connection to a service behind symmetric NAT direct, and connections to services on inside peers and on remote peers behind a NAT that keeps the same port stayed direct. The office desktops' own connections to remote peers also stayed direct with the forward in place. This forward opens UDP 51820 to the internet, to the Proxy only. The Proxy's NetBird client uses that port for WireGuard and for its direct-connection checks, and in testing, unrelated datagrams sent to it got no reply. It is optional: skip it if relayed connections to backends behind symmetric NAT are acceptable. The firewall still drops unsolicited inbound UDP on every other port.
+
+## Verify
+
+On an office desktop, run:
+
+```shell
+netbird status -d
+```
+
+- With Setup 2, the `Relays:` section of the output lists the STUN server too: it shows your STUN server, for example `stun:relay.example.com:3478`, not `netbird.example.com`.
+- The entry for a home laptop shows `Connection type: P2P` once traffic has flowed between the two, for example after you ping the laptop's NetBird IP from the desktop.
+
+After three failed attempts at a direct connection, a client stays on the relay and retries only hourly. After you change the firewall or the server configuration, run `netbird down` and then `netbird up` on the desktop so it tries again straight away.
+
+## Setups to avoid
+
+Each of these was tested. They are listed so you can recognize them, not as alternatives.
+
+- **No hairpin and no split DNS:** inside peers cannot reach the server at all.
+- **A hairpin that translates only the destination:** peers on other inside subnets, such as the office LAN, still reach the server, but peers on the server's own subnet do not. In the example, that is anything in the `10.0.2.0/24` DMZ, including the NetBird Proxy if it runs on the server: every proxied service then returns `504 Gateway Timeout`.
+- **A hairpin that translates the source to the firewall's inside address, on its own:** every inside peer connects, but STUN reports that inside address, so connections to remote peers are relayed. Adding a STUN server outside your site (Setup 2) makes connections to remote peers direct, except those behind symmetric NAT.
+- **Split DNS on its own:** every inside peer connects, but STUN reaches the server directly and reports the peer's own private address, so connections to remote peers are relayed. A NetBird Proxy on the server host behaves the same way: it connects peer-to-peer to services on inside peers, and through the relay to services on remote peers. Adding a STUN server outside your site (Setup 2) makes connections to remote peers direct, except those behind symmetric NAT.
+- **A firewall that accepts unsolicited inbound UDP:** it widens what the firewall exposes, and it breaks Setup 1. In testing, most connections were then relayed: when the laptop's first packet reached the firewall before the desktop had sent anything to the laptop, the desktop's own traffic left from a different public port than the one STUN had reported. Drop that UDP at the firewall. If you cannot change it right away, Setup 2 on such a firewall still made 11 of 12 test connections direct.
+
+## Limits
+
+- Connections between inside peers and remote peers behind symmetric NAT go through the relay with either setup. The one tested exception is a NetBird Proxy on the server host with a fixed, forwarded WireGuard port, which reaches services behind symmetric NAT directly.
+- Direct connections to remote peers are common but not guaranteed with either setup; an individual connection can still end up relayed.
+
+## Recap
+
+For the office running `netbird.example.com` in its DMZ:
+
+- Every client finds Management, Signal, the relay and STUN at `netbird.example.com`, so the path office desktops take to that name also decides what STUN tells them about themselves.
+- Setup 1, the recommended one: a hairpin that translates the source to `203.0.113.10`, on a firewall that drops unsolicited inbound UDP, lets STUN see the office's real public address, and the desktops connect directly to the home laptops.
+- Setup 2, the fallback: split DNS, or a hairpin that translates the source, plus a STUN server outside the office in `server.stuns`, on a firewall that drops unsolicited inbound UDP: the desktops connect directly to the home laptops, as with Setup 1.
+- With either setup, laptops behind symmetric NAT stay on the relay.

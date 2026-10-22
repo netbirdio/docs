@@ -679,6 +679,10 @@ export const docsNavigation = [
                                 href: '/selfhosted/maintenance/scaling/set-up-external-relays',
                             },
                             {
+                                title: 'Hairpin NAT and Split DNS',
+                                href: '/selfhosted/maintenance/scaling/hairpin-nat-and-split-dns',
+                            },
+                            {
                                 title: 'Migrate SQLite to PostgreSQL',
                                 href: '/selfhosted/maintenance/scaling/migrate-sqlite-to-postgresql',
                             },
