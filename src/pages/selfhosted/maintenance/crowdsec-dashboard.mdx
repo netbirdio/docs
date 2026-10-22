@@ -380,7 +380,7 @@ docker compose exec -T crowdsec cscli allowlists create netbird-admins -d "Addre
 docker compose exec -T crowdsec cscli allowlists add netbird-admins <your-ip> -d "admin"
 ```
 
-Adding an address that currently carries a decision expires that decision immediately. Allowlisted addresses are also exempted from AppSec blocking, though that takes effect on the Traefik bouncer's next stream refresh rather than instantly, so allow up to a minute. See [Allowlisting addresses](/selfhosted/maintenance/crowdsec#allowlisting-addresses) for details.
+Adding an address that currently carries a decision expires that decision immediately. Allowlisted addresses are also exempted from AppSec blocking. AppSec refreshes its allowlists every minute, so allow up to a minute for that exemption to take effect. See [Allowlisting addresses](/selfhosted/maintenance/crowdsec#allowlisting-addresses) for details.
 
 If an IP decision is present and you want it gone without allowlisting the address permanently, delete it directly:
 
@@ -420,7 +420,15 @@ docker compose up -d dashboard netbird-server
   Detach both labels, or neither.
 </Warning>
 
-Restore both labels once the underlying issue is resolved, recreate the containers, and confirm with the `/.env` and `/api/.env` probes in [Verifying the middleware stays attached](#verifying-the-middleware-stays-attached).
+Restore both labels once the underlying issue is resolved, recreate the containers, and confirm with the `/.env` and `/api/.env` probes in [Verifying the middleware stays attached](#verifying-the-middleware-stays-attached). Run these probes from an IP outside `netbird-admins` and any other CrowdSec allowlist, because allowlisted IPs bypass AppSec checks.
+
+If you use the IP you allowlisted during recovery, first remove it from `netbird-admins` on the NetBird host:
+
+```bash
+docker compose exec -T crowdsec cscli allowlists remove netbird-admins <your-ip>
+```
+
+Wait up to one minute for AppSec to refresh its allowlists, then run both probes from that IP and confirm that each returns `403`.
 
 ## Troubleshooting
 
