@@ -198,6 +198,68 @@ The same shape solves a different everyday need: keep NetBird connected while a 
 
 The check compares the device's local interface addresses, as reported when the client connects, and the public IP it connects from. A local interface counts as its whole subnet, so the range you enter must be at least as wide as the netmask the office hands out: `192.168.1.0/24` matches a device on that `/24`, while a `/32` or a `/25` never will. See [Peer Network Range](/manage/access-control/posture-checks#peer-network-range) for the matching rules. Windows and macOS clients reconnect on their own when the network changes, so the check is re-evaluated within seconds of the laptop moving. Linux clients do not, and are re-evaluated on their next `netbird up` or service restart. Android clients cannot report local ranges; see [Peer Network Range Check on Android](/manage/access-control/posture-checks#peer-network-range-check-on-android).
 
+## Routing Traffic by Destination Country
+
+[Geo-Based Exit Node Routing](#geo-based-exit-node-routing) above decides by where the *device* is. A country route decides by where the *destination* is: traffic to IP addresses in the countries you name goes through a routing peer of your choice, and everything else keeps its usual path.
+
+A common example: an exit node in the US for US destinations, and a default exit node in Europe for everything else. A device in the distribution group then reaches US services through the US exit node and the rest of the internet through the European one, without switching exit nodes.
+
+<Note>
+    Country routes need the management service to run with the [Geolocation Database](/selfhosted/maintenance/geo-support), and peers on a NetBird version that supports them. Android and iOS peers do not receive country routes.
+</Note>
+
+### How it works
+
+A country route names ISO 3166-1 alpha-2 country codes, such as `US` or `DE`, instead of a network range or domains.
+
+- **Resolution:** management looks up each country's IP prefixes in the same MaxMind GeoLite2 City database it uses for posture checks.
+- **Client peers:** fetch the prefixes when they install the route, and route them to the routing peer like any other network route.
+- **Routing peer:** matches the prefixes with a firewall set, so it only forwards traffic to the countries it serves.
+
+The prefixes are more specific than `0.0.0.0/0`, so a country route takes precedence over the selected exit node for its countries. Exit node selection and [Auto Apply](#exit-node-selection-and-auto-apply) are unaffected, and devices can use a country route and an exit node at the same time.
+
+### 1. Deploy the routing peer
+
+Set up the routing peer for the countries as described in the [configuration steps](#configuration-steps) above, with masquerading and a stable internet path in the right location.
+
+### 2. Create the country route
+
+Country routes are configured through the [API](/ipa/resources/routes). Create a route with `countries` instead of `network` or `domains`, the routing peer as `peer` or `peer_groups`, and your devices' group as the distribution group:
+
+```bash
+curl -X POST https://api.netbird.io/api/routes \
+  -H "Authorization: Token <PAT>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "network_id": "us-exit",
+    "description": "US destinations through the US exit node",
+    "countries": ["US"],
+    "peer": "<routing peer ID>",
+    "groups": ["<distribution group ID>"],
+    "masquerade": true,
+    "metric": 9999,
+    "enabled": true,
+    "keep_route": false
+  }'
+```
+
+A route can name up to 32 countries. Management stores them as sorted, upper-case codes and rejects a code the geolocation database does not know.
+
+### 3. Verify
+
+On a device in the distribution group:
+
+- Run `netbird networks ls`. The route appears with its countries as the range, for example `US`.
+- Check the egress path. A service in one of the countries should see the country routing peer's public IP, and a service elsewhere should see the exit node's IP.
+
+### What this does and does not do
+
+The route follows the database, not the service: a destination counts as being in a country when the GeoLite2 database places its IP address there. Content delivery networks and anycast addresses often resolve to a country other than the one you expect, so check the services that matter to you.
+
+Large countries map to many prefixes. The US alone has about 127,000 IPv4 and 139,000 IPv6 prefixes. Every device in the distribution group installs them as routes, which takes a few seconds when the route is added.
+
+Routing peers using the iptables backend can hold at most 65,536 prefixes per address family in a country set, which every country except the US fits into. Routing peers using nftables have no such limit.
+
 ## Enforcing the Exit Node on Managed Devices
 
 Auto Apply turns the exit node on for every device in the distribution groups, but as noted [above](#exit-node-selection-and-auto-apply), it is not a lock: a user can still turn the exit node off in the NetBird menu or with `netbird networks deselect`. Compliance setups often need more than a default. Company devices must send their internet traffic through the exit node, and users must not be able to opt out.
