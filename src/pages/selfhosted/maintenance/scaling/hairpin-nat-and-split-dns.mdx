@@ -6,6 +6,16 @@ Your self-hosted NetBird server is usually reachable at a public name, such as `
 
 This page gives the recommended setup for those inside peers, and one fallback for when it does not fit. With either setup, inside peers reach the server and, in testing, connected directly (peer-to-peer) to remote peers, meaning peers outside your site, except remote peers behind symmetric NAT, which stayed on the relay (see [Limits](#limits)).
 
+## When you need this
+
+Use this page when your NetBird server runs on the same network as some of its peers and any of these is true:
+
+- inside peers cannot reach the server by its public name, or a NetBird Proxy on the server returns `504 Gateway Timeout`;
+- you want inside peers' NetBird traffic to stay on your network: their connections to the server, and to each other;
+- inside peers are relayed to remote peers when they should connect directly.
+
+With either setup below, inside peers reach the server without going out to the internet: a hairpin turns their traffic around at the site firewall, and split DNS sends it straight to the server. They connect to each other directly over the LAN. Setup 2 also sends their STUN requests to a STUN server outside your site and, if that STUN server is an external relay, their relayed connections too.
+
 Running example: the server, `netbird.example.com`, runs at `10.0.2.10` in a DMZ subnet, `10.0.2.0/24`. The office LAN is `10.0.1.0/24`. The site firewall's public address is `203.0.113.10`, and the server's DNS name points there. Office desktops on the LAN run the NetBird client, and so do staff laptops at home, the remote peers in this example.
 
 ## Why the path matters: everything lives at one name
@@ -31,6 +41,8 @@ A hairpin rule (also called NAT reflection or NAT loopback) tells the firewall t
 |---|---|---|---|---|
 | Inside networks, including the server's own subnet | `203.0.113.10` | TCP 80, TCP 443 | `10.0.2.10` | `203.0.113.10` (the public address) |
 | Inside networks, including the server's own subnet | `203.0.113.10` | UDP 3478 | `10.0.2.10` | `203.0.113.10` (the public address) |
+
+You may not need to write these rules by hand. Many firewalls generate them from your existing port forwards when you turn on a setting, often called NAT reflection, NAT loopback or hairpin NAT. Before you rely on the setting, check that the rules it generates match the table above: TCP 80, TCP 443 and UDP 3478, from every inside subnet including the server's own, with the destination translated to `10.0.2.10` and the source to the public address, `203.0.113.10`. Many of these settings translate the source to the firewall's inside address instead. Inside peers then reach the server, but their connections to remote peers are relayed unless you add a STUN server outside your site (Setup 2).
 
 Translating the source to the public address is what makes STUN report `203.0.113.10` to the office desktops. STUN also has to report the right port: the firewall must use the same public port for the desktop's STUN request and for its traffic to the laptop. In testing, it did when the firewall dropped unsolicited inbound UDP on its internet side. Every test connection was then direct to a remote peer whose NAT keeps the same port for every destination (the opposite of symmetric NAT).
 
