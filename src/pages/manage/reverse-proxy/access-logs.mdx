@@ -1,4 +1,4 @@
-import {Note} from "@/components/mdx"
+import {Note, Warning} from "@/components/mdx"
 
 export const description =
     'Monitor and audit HTTP requests and L4 connections flowing through your NetBird reverse proxy services with detailed access logs.'
@@ -129,6 +129,69 @@ reverseProxy:
 
 - **accessLogRetentionDays** - Define how long access logs are retained before they are automatically deleted.
 - **accessLogCleanupIntervalHours** - Set how often the system checks for and deletes expired access log entries.
+
+## Storage
+
+Starting with v1.1.b.c, self-hosted deployments keep access logs on their own database connection, separate from the rest of the management data. By default, they follow the main store engine:
+
+- **SQLite**: a separate `access_logs.db` file in the data directory, next to `store.db`. A [backup](/selfhosted/maintenance/backup) of the data volume covers both.
+- **PostgreSQL**: the main database, through a separate connection pool.
+
+To store access logs elsewhere, such as a dedicated PostgreSQL database, see [Access Log Store Settings](/selfhosted/maintenance/configuration-files#access-log-store-settings) or the `NB_ACCESS_LOG_*` [environment variables](/selfhosted/environment-variables#advanced-runtime-variables).
+
+When access logs move to another database, existing entries stay behind: they no longer appear in the dashboard, and the retention cleanup no longer removes them. With the default 7-day retention, this affects at most the last week of history. To keep them, copy them to the new database, then drop the old table to reclaim the space. Copied entries older than `accessLogRetentionDays` are removed by the next cleanup run.
+
+### Upgrading a SQLite deployment
+
+Before v1.1.b.c, access logs were stored in `store.db`. After the upgrade, new entries are written to `access_logs.db`, which the server creates on its first start.
+
+The netbird-server image doesn't include `sqlite3`, so the steps below run it from a throwaway container. Find the volume name with `docker volume ls` (it ends in `netbird_data`).
+
+1. From the install directory, stop the NetBird containers and [back up the data volume](/selfhosted/maintenance/backup#create-a-backup):
+
+   ```bash
+   docker compose stop
+   ```
+
+2. Optional: copy the old entries into `access_logs.db`:
+
+   ```bash
+   docker run --rm -v VOLUME_NAME:/data alpine sh -c \
+     "set -o pipefail && apk add -q sqlite && sqlite3 -cmd '.headers on' -cmd '.mode insert access_log_entries' /data/store.db 'SELECT * FROM access_log_entries;' | sqlite3 /data/access_logs.db"
+   ```
+
+3. Drop the old table and compact `store.db`:
+
+   ```bash
+   docker run --rm -v VOLUME_NAME:/data alpine sh -c \
+     "apk add -q sqlite && sqlite3 /data/store.db 'DROP TABLE IF EXISTS access_log_entries; VACUUM;'"
+   ```
+
+4. Start the containers:
+
+   ```bash
+   docker compose start
+   ```
+
+### Moving to a dedicated PostgreSQL database
+
+PostgreSQL deployments keep their history on upgrade, because access logs stay in the main database. Once you point access logs at another database with `server.accessLogStore.dsn` or `NB_ACCESS_LOG_POSTGRES_DSN`, new entries go there and the server creates the table on startup. Both steps below can run while the server is up, using `pg_dump` and `psql` that match your server's major version. `<main_store_dsn>` is the value of `server.store.dsn`.
+
+1. Optional: copy the old entries into the new database:
+
+   ```bash
+   pg_dump --data-only --table=access_log_entries -d "<main_store_dsn>" | psql -d "<access_log_dsn>"
+   ```
+
+2. Drop the old table from the main database:
+
+   ```bash
+   psql -d "<main_store_dsn>" -c "DROP TABLE access_log_entries;"
+   ```
+
+<Warning>
+Drop the table only after every management instance runs with the dedicated database configured. Without `server.accessLogStore.dsn`, access logs are still stored in the main database's `access_log_entries` table.
+</Warning>
 
 ## Related pages
 
