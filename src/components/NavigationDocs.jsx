@@ -721,7 +721,7 @@ export const docsNavigation = [
                         href: '/selfhosted/maintenance/crowdsec',
                     },
                     {
-                        title: 'CrowdSec Dashboard Protection',
+                        title: 'CrowdSec AppSec',
                         href: '/selfhosted/maintenance/crowdsec-dashboard',
                     },
                 ],
