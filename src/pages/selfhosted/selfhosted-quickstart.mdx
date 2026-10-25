@@ -87,6 +87,14 @@ If you skipped the proxy during initial setup, you can add it later by following
 
 When the proxy is enabled, the script also offers to add [CrowdSec](/selfhosted/maintenance/crowdsec) for automatic IP reputation blocking. A local CrowdSec LAPI container syncs community threat intelligence and the proxy checks every incoming connection against it. You can enable CrowdSec per service in enforce or observe mode through the dashboard.
 
+### Protect the dashboard with CrowdSec AppSec (Optional)
+
+After you enable CrowdSec, the script asks whether to inspect HTTP requests to the dashboard, `/api`, and `/oauth2`. A request that matches an AppSec rule is rejected with `403` before the dashboard or the API handles it. Relay, gRPC, and services you expose through the proxy are not inspected. Those services keep the per-service IP reputation setting above.
+
+The default is no. There is no observe mode on this path. If CrowdSec is unreachable, the dashboard, `/api`, and `/oauth2` are blocked. Two different rule matches from the same public IP within about a minute can ban that IP for 4 hours. Remove the ban over SSH, as described in [Recovering from a dashboard lockout](/selfhosted/maintenance/crowdsec-dashboard#recovering-from-a-dashboard-lockout).
+
+The script asks when you chose built-in Traefik and enabled both the proxy and CrowdSec. Other reverse proxy options and the agent-network preset skip the question. Answering no leaves AppSec off. Add it later with [Protect the dashboard with CrowdSec AppSec](/selfhosted/maintenance/crowdsec-dashboard). Rerunning the quickstart on an existing install does not turn it on.
+
 ### Generated Files
 
 The script generates the following files:
@@ -97,6 +105,8 @@ The script generates the following files:
 | `config.yaml` | Combined server configuration (management, signal, relay, STUN) |
 | `dashboard.env` | Environment variables for the dashboard container |
 | `proxy.env` | Environment variables for the proxy container (only when proxy is enabled) |
+| `.env` | Dashboard bouncer key, `CROWDSEC_DASHBOARD_BOUNCER_KEY`, mode `600` (only when AppSec is enabled) |
+| `crowdsec/acquis.d/appsec.yaml` | AppSec listener on port `7422` (only when AppSec is enabled) |
 
 For options 2-4, additional configuration files are generated (e.g., `nginx-netbird.conf`, `caddyfile-netbird.txt`, or `npm-advanced-config.txt`).
 
@@ -152,6 +162,7 @@ The variables must be set for `bash`, not `curl`. Export them first, as above, o
 | `NETBIRD_REVERSE_PROXY_TYPE` | `0` | Every option | The reverse proxy option, `0` to `5`, from [Reverse Proxy Selection](#reverse-proxy-selection) |
 | `NETBIRD_ENABLE_PROXY` | `false` | Option `0` | Whether to enable the [NetBird Proxy service](#enable-the-net-bird-proxy-service) |
 | `NETBIRD_ENABLE_CROWDSEC` | `false` | Option `0`, proxy enabled | Whether to add [CrowdSec IP reputation](#crowd-sec-ip-reputation-optional) |
+| `NETBIRD_ENABLE_CROWDSEC_APPSEC` | `false` | Option `0`, CrowdSec enabled | Whether to protect the dashboard, `/api`, and `/oauth2` with [CrowdSec AppSec](#protect-the-dashboard-with-crowd-sec-app-sec-optional). Requires `NETBIRD_ENABLE_CROWDSEC=true` |
 | `NETBIRD_TRAEFIK_EXTERNAL_NETWORK` | Empty | Option `1` | The Docker network of your existing Traefik |
 | `NETBIRD_TRAEFIK_ENTRYPOINT` | `websecure` | Option `1` | The entrypoint of your existing Traefik |
 | `NETBIRD_TRAEFIK_CERTRESOLVER` | Empty | Option `1` | The certificate resolver of your existing Traefik |
@@ -168,6 +179,7 @@ Before you automate the install, know that:
 - **Set `NETBIRD_TRUSTED_PEERS` if you use your own reverse proxy (options `1` to `5`).** Without it, the NetBird server trusts forwarded client IP headers from any source, not only from your proxy. The script only prints a warning, which is easy to miss in an unattended run.
 - **The script does not wait for your reverse proxy.** Interactively, options `2`, `4` and `5` pause until you confirm that your proxy is configured. Unattended, the script starts the containers straight away, and you configure the proxy afterwards.
 - **A rerun never overwrites an installation.** If the directory already has a generated `config.yaml`, the script stops and lists the files to remove. Run it in a fresh directory.
+- **`NETBIRD_ENABLE_CROWDSEC_APPSEC=true` requires CrowdSec, built-in Traefik, and the proxy.** Any other combination stops the script. A copy of `getting-started.sh` from before this option ignores the variable. If the script never asks about AppSec, it did not enable it. Check for `crowdsec/acquis.d/appsec.yaml`, or follow the [dashboard guide](/selfhosted/maintenance/crowdsec-dashboard).
 
 Like the interactive install, an unattended install creates no users. Create the first user in the browser, as described in [Initial setup](#initial-setup-onboarding), or from your automation with the [setup API](/selfhosted/automated-setup).
 

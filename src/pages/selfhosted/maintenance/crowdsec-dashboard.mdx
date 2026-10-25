@@ -46,9 +46,16 @@ For a new deployment, follow the [Self-hosting Quickstart Guide](/selfhosted/sel
 Reverse proxy: 0, Traefik
 Enable proxy: y
 Enable CrowdSec IP reputation blocking: y
+Enable AppSec: y
 ```
 
 Enabling CrowdSec creates a local `crowdsec` service, registers a `netbird-proxy` bouncer, and writes `NB_PROXY_CROWDSEC_API_URL` and `NB_PROXY_CROWDSEC_API_KEY` to `proxy.env`.
+
+Answering yes to AppSec writes the rest of this guide: the dashboard bouncer key in `.env` (mode `600`), `crowdsec/acquis.d/appsec.yaml`, the Traefik plugin at `v1.7.1`, the middleware, a router for `/api` and `/oauth2` at priority `110`, and a health check that waits for port `7422`. The middleware definition is placed on the Traefik service, so a dashboard restart does not drop it. The dashboard router and the API router reference that middleware. Relay, gRPC, and the proxy TCP passthrough do not. Continue at [Verify protection](#verify-protection).
+
+If you leave AppSec off, add it later with the steps from [Add a dashboard bouncer key](#add-a-dashboard-bouncer-key) through [Apply the change](#apply-the-change). Rerunning the quickstart does not add AppSec to an install that already exists.
+
+The [enterprise script](/selfhosted/enterprise/getting-started) asks the same question when it is adding the proxy and you enable CrowdSec. It does not add AppSec to a proxy that is already running. On that stack, keep the CrowdSec named volumes and chain the middleware in front of `nb-security@docker`, as described in [Update docker-compose.yml](#update-docker-compose-yml).
 
 If you already have a self-hosted NetBird deployment without NetBird Proxy, follow [Enable Reverse Proxy Feature](/selfhosted/migration/enable-reverse-proxy) first.
 
@@ -172,12 +179,17 @@ Replace `netbird.example.com` with your NetBird domain. Traefik labels do not re
 
 <Warning>
   Leave the NetBird Proxy TCP passthrough labels unchanged. Do not attach this
-  middleware to the `proxy-passthrough` TCP router.
+  middleware to the `proxy-passthrough` TCP router, or to the relay and gRPC
+  routers.
 </Warning>
+
+<Note>
+  On an install created by `getting-started-enterprise.sh`, keep the named volumes `netbird_crowdsec_config` and `netbird_crowdsec_data`. Bind-mount only `./crowdsec/acquis.d:/etc/crowdsec/acquis.d:ro`. Chain the middleware in front of the existing security middleware on the dashboard router and on the `/api` and `/oauth2` router: `netbird-dashboard-crowdsec@docker,nb-security@docker`. Leave the gRPC and relay routers on `nb-security@docker` alone. Replacing that middleware drops the enterprise security headers.
+</Note>
 
 Merge these fields into `services.crowdsec`. This sets the validated image version, adds the AppSec collections, registers the dashboard bouncer key, and updates the health check so CrowdSec reports healthy only after both LAPI and AppSec are available. Keep the other generated fields, including `container_name`, `restart`, `networks`, `labels`, `logging`, and `volumes`.
 
-The installer-created health check only verifies the CrowdSec Local API:
+When AppSec was left off, the installer-created health check only verifies the CrowdSec Local API:
 
 ```yaml
 healthcheck:
@@ -327,6 +339,8 @@ The response should be `200`.
 
 This protection fails open. If the middleware is detached for any reason, most commonly a label edit applied with `docker compose restart` instead of `docker compose up -d`, which does not recreate the container, requests stop being inspected and nothing reports an error. The dashboard loads, authentication works, and all containers report healthy. The only symptom is that a known malicious probe returns `404` instead of `403`.
 
+On an install where the script enabled AppSec, the middleware definition is on the `traefik` service, so it survives a dashboard restart. The router lines on `dashboard` and `netbird-server` still have to stay in place. Losing either one takes that router off the middleware.
+
 After any change to the labels, recreate the affected containers and re-run both probes:
 
 ```bash
@@ -401,7 +415,7 @@ For example, removing one matching decision logs:
 
 The Traefik bouncer runs in `stream` mode and refreshes periodically, so allow up to a minute for access to return.
 
-If the dashboard is still unreachable and you need immediate access, detach the middleware. It is attached to **two** routers and both must be commented out:
+If the dashboard is still unreachable and you need immediate access, detach the middleware. It is attached to **two** routers and both must be removed from the request path. On a script-generated install the middleware definition stays on the `traefik` service. Comment out the router lines below, not that definition. On an enterprise install, set those two lines back to `nb-security@docker` instead of removing them, so the security headers stay:
 
 ```yaml
 services:
