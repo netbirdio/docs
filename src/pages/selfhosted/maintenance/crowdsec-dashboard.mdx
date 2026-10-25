@@ -26,7 +26,7 @@ For updates to Traefik, CrowdSec, or the bouncer plugin, see [Upgrading Traefik 
 - `curl`, `jq`, and `openssl`.
 
 <Warning>
-  Before changing an existing deployment, follow the [Backup guide](/selfhosted/maintenance/backup) to back up both the install directory and the `netbird_data` and `crowdsec_db` Docker volumes. Copying the install directory alone does not preserve the Management database or CrowdSec state.
+  Before changing an existing deployment, follow the [Backup guide](/selfhosted/maintenance/backup) to back up both the install directory and the `netbird_data` and `crowdsec_db` Docker volumes. Copying the install directory alone does not preserve the Management database or CrowdSec state. On an install created by `getting-started-enterprise.sh`, the CrowdSec volumes are `netbird_crowdsec_config` and `netbird_crowdsec_data`.
 </Warning>
 
 Set these shell variables before running the commands in this guide:
@@ -143,12 +143,13 @@ services:
       - traefik.http.routers.netbird-dashboard.middlewares=netbird-dashboard-crowdsec@docker
 ```
 
-In the same `services.dashboard.labels` list, define the middleware:
+Under `services.traefik.labels`, define the middleware. This is where the install scripts place it, and keeping the definition on the Traefik service means a dashboard restart cannot drop it. Traefik runs with `exposedbydefault=false`, so the `traefik.enable=true` label is needed before it reads labels from its own container:
 
 ```yaml
 services:
-  dashboard:
+  traefik:
     labels:
+      - traefik.enable=true
       - traefik.http.middlewares.netbird-dashboard-crowdsec.plugin.bouncer.enabled=true
       - traefik.http.middlewares.netbird-dashboard-crowdsec.plugin.bouncer.crowdsecMode=stream
       - traefik.http.middlewares.netbird-dashboard-crowdsec.plugin.bouncer.crowdsecLapiScheme=http
@@ -339,9 +340,9 @@ The response should be `200`.
 
 This protection fails open. If the middleware is detached for any reason, most commonly a label edit applied with `docker compose restart` instead of `docker compose up -d`, which does not recreate the container, requests stop being inspected and nothing reports an error. The dashboard loads, authentication works, and all containers report healthy. The only symptom is that a known malicious probe returns `404` instead of `403`.
 
-On an install where the script enabled AppSec, the middleware definition is on the `traefik` service, so it survives a dashboard restart. The router lines on `dashboard` and `netbird-server` still have to stay in place. Losing either one takes that router off the middleware.
+The middleware definition lives on the `traefik` service, so a dashboard restart does not drop it. The router lines on `dashboard` and `netbird-server` still have to stay in place. Losing either one takes that router off the middleware.
 
-After any change to the labels, recreate the affected containers and re-run both probes:
+After any change to the labels, recreate the containers whose labels changed and re-run both probes. For the two router labels, that is:
 
 ```bash
 docker compose up -d dashboard netbird-server
@@ -415,7 +416,7 @@ For example, removing one matching decision logs:
 
 The Traefik bouncer runs in `stream` mode and refreshes periodically, so allow up to a minute for access to return.
 
-If the dashboard is still unreachable and you need immediate access, detach the middleware. It is attached to **two** routers and both must be removed from the request path. On a script-generated install the middleware definition stays on the `traefik` service. Comment out the router lines below, not that definition. On an enterprise install, set those two lines back to `nb-security@docker` instead of removing them, so the security headers stay:
+If the dashboard is still unreachable and you need immediate access, detach the middleware. It is attached to **two** routers and both must be removed from the request path. The middleware definition on the `traefik` service stays. Comment out the router lines below, not that definition. On an enterprise install, set those two lines back to `nb-security@docker` instead of removing them, so the security headers stay:
 
 ```yaml
 services:
