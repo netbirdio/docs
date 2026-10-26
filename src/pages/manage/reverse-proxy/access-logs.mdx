@@ -37,20 +37,25 @@ Every log entry (HTTP and L4) shares a common set of fields. Some fields are onl
 | **Bytes Downloaded** | Bytes sent from backend to client | Yes | Yes |
 | **Source IP** | The client's IP address | Yes | Yes |
 | **Location** | Country, city, and subdivision based on source IP geolocation | Yes | Yes |
-| **Auth Method** | Raw `auth_method_used` value: `oidc` (shown as SSO in the dashboard), `password`, `pin`, `header`, or a target access action such as `path_bypass` or `path_block`. For denied requests, carries the restriction code instead (e.g. `ip_restricted`, `crowdsec_ban`). Omitted from the API response when empty | Yes | Restriction code on denials |
+| **Auth Method** | Raw `auth_method_used` value: `oidc` (shown as SSO in the dashboard), `password`, `pin`, `header`, or a target access action such as `path_bypass` or `path_block`. When an access restriction rejects the request, carries the restriction code instead (e.g. `ip_restricted`, `crowdsec_ban`). Omitted from the API response when empty | Yes | Restriction code on denials |
 | **User** | The authenticated user's ID, set when `oidc` authentication was used. Omitted from the API response when empty | Yes | N/A |
-| **Reason** | Exactly one of two values: `Authentication failed` when authentication or an access restriction rejected the request, or `Request failed` when an authenticated request returned `4xx`/`5xx`. Set for HTTP entries only and omitted from the API response when empty. Never a specific denial code: see the note under [Deny reasons](#deny-reasons) | Yes | Omitted |
+| **Reason** | Derived from the HTTP response status: `Authentication failed` for `401`/`403`, or `Request failed` for other `4xx`/`5xx` responses. This includes responses from the backend. Omitted when empty. For specific restriction codes, see [Deny reasons](#deny-reasons) | Yes | Omitted |
 | **Metadata** | Additional decision details. Target access records `access_action` as `bypass`, `block`, or `invalid_path` (an ambiguous request path rejected with `400`); CrowdSec records its mode and verdict here | Yes | Yes |
 
 ## Understanding log entries
 
 ### HTTP log entries
 
-HTTP log entries fall into three categories based on the status code:
+Use the status code together with `auth_method_used` and metadata to interpret HTTP entries:
 
 - **Allowed requests**: successful requests show a `2xx` status code along with the authentication method used to access the service. A target that bypasses authentication records `path_bypass`. The dashboard marks these entries with a small open-lock icon in the **User** column, at the right end of the row, labeled **Auth Bypassed** on hover.
-- **Denied requests**: failed authentication, access restriction blocks, and blocked target paths show `401` or `403` status codes with `reason` set to `Authentication failed`. The specific cause (invalid password, missing SSO session, blocked path, IP restricted, country restricted, CrowdSec verdict) is carried in `auth_method_used`, not in `reason`. A blocked target path records `path_block`. The dashboard marks these entries with a small shield icon in the **User** column, at the right end of the row, labeled **Path Blocked** on hover.
-- **Errors**: backend errors or proxy issues show `5xx` status codes. These typically indicate that the target service is unreachable or returned an error.
+- **Redirects**: `3xx` responses can come from the backend or the proxy's authentication flow. The `reason` field is omitted.
+- **Unauthorized or forbidden responses**: `401` and `403` responses have `reason` set to `Authentication failed`. These can originate from proxy authentication, access restrictions, blocked target paths, or the backend. A blocked target path records `path_block` in `auth_method_used`; the dashboard shows a shield icon labeled **Path Blocked** on hover. Access restrictions record the codes listed under [Deny reasons](#deny-reasons).
+- **Other errors**: other `4xx` responses and `5xx` responses have `reason` set to `Request failed`. They can originate from the backend or the proxy and do not imply that the request was authenticated.
+
+<Note>
+    A backend can return `401` or `403` after proxy authentication succeeds. The log still says `Authentication failed`, so that label alone does not establish that the proxy denied access. Check `auth_method_used`, metadata, and the backend's logs to identify the source.
+</Note>
 
 ### L4 log entries
 
@@ -109,8 +114,9 @@ Access logs support several operational and security workflows:
 
 ## Retention and Cleanup
 
-For the cloud version of NetBird, access logs are retained for 7 days.
-For the self-hosted version, access log retention can be configured in the `management.json` or `config.yaml` by setting the following config parameters:
+For NetBird Cloud, access logs are retained for 7 days. Self-hosted deployments can configure retention in the management server's configuration file.
+
+For standalone management, set `ReverseProxy` in `management.json`:
 
 ```json
 {
@@ -121,14 +127,17 @@ For the self-hosted version, access log retention can be configured in the `mana
 }
 ```
 
+For the combined server, set `server.reverseProxy` in `config.yaml`:
+
 ```yaml
-reverseProxy:
-  accessLogRetentionDays: 7
-  accessLogCleanupIntervalHours: 24
+server:
+  reverseProxy:
+    accessLogRetentionDays: 7
+    accessLogCleanupIntervalHours: 24
 ```
 
-- **accessLogRetentionDays** - Define how long access logs are retained before they are automatically deleted.
-- **accessLogCleanupIntervalHours** - Set how often the system checks for and deletes expired access log entries.
+- **accessLogRetentionDays** - Retention in days. An omitted value or `0` uses the default of 7 days. A negative value disables automatic cleanup.
+- **accessLogCleanupIntervalHours** - Time between cleanup passes in hours. An omitted or non-positive value uses the default of 24 hours. When cleanup is enabled, it also runs at startup.
 
 ## Related pages
 
