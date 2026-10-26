@@ -237,6 +237,18 @@ See an example `config.yaml` file in the [NetBird GitHub repository](https://git
   <Property name="server.stunPorts" type="array">
     List of UDP ports for the embedded STUN server. Default: `[3478]`. These ports must be exposed in `docker-compose.yml` and reachable through firewalls.
   </Property>
+  <Property name="server.disableStun" type="boolean">
+    Turns STUN off entirely. The embedded STUN server does not start, `server.stunPorts` is ignored, and peers receive no STUN servers. Cannot be combined with `server.stuns` or `server.keepEmbeddedStun`. Default: `false`.
+  </Property>
+  <Property name="server.disableRelay" type="boolean">
+    Turns relay off entirely. The embedded relay does not start, and peers receive no relay servers. The embedded STUN server keeps running unless `server.disableStun` is also set. `server.authSecret` is not required. Cannot be combined with `server.relays` or `server.keepEmbeddedRelay`. Default: `false`.
+  </Property>
+  <Property name="server.keepEmbeddedStun" type="boolean">
+    Keeps the embedded STUN server running when `server.stuns` is set. Peers receive the external STUN servers followed by the embedded ones on `server.stunPorts`. Has no effect without `server.stuns`. Default: `false`.
+  </Property>
+  <Property name="server.keepEmbeddedRelay" type="boolean">
+    Keeps the embedded relay running when `server.relays` is set. Peers receive the external relays and the embedded one, and each peer uses whichever answers first. `server.relays.secret` must be empty or equal to `server.authSecret`. Has no effect without `server.relays`. Default: `false`.
+  </Property>
   <Property name="server.metricsPort" type="number">
     Port to expose Prometheus metrics endpoint. Default: `9090`. Metrics are available at `/metrics` for monitoring.
   </Property>
@@ -573,6 +585,70 @@ server:
   signalUri: "https://signal.example.com:443"
 ```
 See the [Scaling Your Self-Hosted Deployment](/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment) guide for more details on configuring external services.
+
+### Disabling or Keeping Embedded STUN and Relay (Advanced)
+
+By default the combined server runs an embedded STUN server and relay. Setting `stuns` or `relays` replaces them with external servers. Four options change that behavior. All of them default to `false`, so existing configurations are unaffected. They are available since **v0.82.0**.
+
+- `disableStun` and `disableRelay` turn the service off entirely: nothing runs locally, and peers receive none.
+- `keepEmbeddedStun` and `keepEmbeddedRelay` keep the embedded service running when `stuns` or `relays` is set, and peers receive both the external and embedded servers.
+
+<Warning>
+Without STUN, peers cannot discover their public addresses. Without relay, peers that cannot reach each other directly cannot connect at all. Disable a service only when your network guarantees direct connectivity between peers, for example a flat private network.
+</Warning>
+
+To run without STUN and relay:
+
+```yaml
+server:
+  # ... basic settings ...
+  disableStun: true
+  disableRelay: true
+```
+
+To add external relays while keeping the embedded one:
+
+```yaml
+server:
+  # ... basic settings ...
+  authSecret: "your-existing-secret"
+  keepEmbeddedRelay: true
+  relays:
+    addresses:
+      - "rels://relay-us.example.com:443"
+    # Leave empty, or set it to the same value as authSecret
+    secret: "your-existing-secret"
+```
+
+<Note>
+The management server signs one relay token for all relays. With `keepEmbeddedRelay`, every external relay must use the same secret as `server.authSecret`, so set `NB_AUTH_SECRET` on your relay servers to that value. If `relays.secret` differs from `authSecret`, the server refuses to start.
+</Note>
+
+The table shows what runs on the combined server and what peers receive for each combination:
+
+| Config | What runs locally | What peers receive |
+|---|---|---|
+| default | relay + STUN | local relay + STUN |
+| `stuns` set | relay | external STUN, local relay |
+| `relays` set, no `stuns` | nothing | external relays + local STUN address (with a startup warning) |
+| `relays` + `stuns` set | nothing | external relays + STUN |
+| `disableStun: true` | relay | local relay, no STUN |
+| `disableRelay: true` | STUN | local STUN, no relay |
+| `disableStun` + `disableRelay` | nothing | no STUN, no relay |
+| `stuns` + `keepEmbeddedStun` | relay + STUN | external + local STUN |
+| `relays` + `keepEmbeddedRelay` | relay (+ STUN if no `stuns`) | external + local relays |
+
+The server refuses to start when the settings contradict each other:
+
+| Combination | Reason |
+|---|---|
+| `disableStun` + `stuns` | contradictory |
+| `disableStun` + `keepEmbeddedStun` | contradictory |
+| `disableRelay` + `relays.addresses` | contradictory |
+| `disableRelay` + `keepEmbeddedRelay` | contradictory |
+| `keepEmbeddedRelay` + `relays.secret` ≠ `authSecret` | one signed token must be valid on every relay |
+
+When the embedded STUN server runs, its ports must stay exposed in `docker-compose.yml`. When `disableStun` is set, you can remove the `3478/udp` port mapping.
 
 ---
 
