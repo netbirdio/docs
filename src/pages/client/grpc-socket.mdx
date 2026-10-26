@@ -34,10 +34,9 @@ migrated from `tcp://127.0.0.1:41731` automatically.
 <Warning>
   **Security warning:** The default Unix socket allows read and write access for
   local users, so any local user can read status and configuration and perform
-  operations that do not require privileges. Operations that decide who may
-  obtain a shell on the machine are refused unless the caller is root, or an
-  administrator on Windows: see [Privileged
-  operations](#privileged-operations). If you require local-user isolation
+  operations that do not require privileges. The [privileged
+  operations](#privileged-operations) below require root on Unix systems or
+  administrator privileges on Windows. If you require local-user isolation
   beyond that, place a custom socket inside a restricted directory and ensure
   that the directory is recreated securely at boot.
 </Warning>
@@ -116,27 +115,40 @@ netbird --daemon-addr tcp://127.0.0.1:41731 status
 On the default sockets any local user can connect, so the daemon authorizes operations
 by the identity of whoever calls it, read from the kernel rather than supplied by
 the client: `SO_PEERCRED` on Linux, `LOCAL_PEERCRED` on macOS, and the named-pipe
-client token on Windows. A caller whose identity cannot be established is refused.
+client token on Windows. Privileged operations are refused when the caller's
+identity cannot be established.
 
-Since 0.76.0 the following require root, or an administrator on Windows, because
-they decide who may obtain a shell on the machine:
+The following operations require root on Unix systems or administrator privileges
+on Windows:
 
 | Change | Refused when |
 | --- | --- |
 | Enable the NetBird SSH server | the caller is not privileged |
 | Enable SSH root login | the caller is not privileged |
 | Disable SSH authentication | the caller is not privileged |
+| Enable [Remote Jobs](/manage/peers/remote-jobs) | the caller is not privileged |
+| Enable [local metrics](/client/local-metrics) on a non-loopback address, or change an enabled endpoint to a non-loopback address | the caller is not privileged |
 | Change the management URL | the caller is not privileged and that profile has the SSH server enabled |
 | Deregister the peer (logout) | the caller is not privileged and that profile has the SSH server enabled |
+| Upload a debug bundle to an upload service other than NetBird's default service | the caller is not privileged |
+| Upload a debug bundle with `uploadInsecure` enabled | the caller is not privileged |
 
-Only the direction that creates the capability is guarded. Turning the SSH server or
-root login off, and re-enabling SSH authentication, are always allowed, and restating a
-value that is already set is not a change, so an integration that submits a whole
-settings form does not start failing once an administrator enables SSH.
+Configuration checks compare the requested settings with the stored values.
+Resubmitting an unchanged value does not require privileges. Turning the SSH server,
+SSH root login, remote jobs, or local metrics off, and re-enabling SSH authentication,
+does not require privileges either.
 
-Removing a profile is not refused. An unprivileged caller removes it locally and the
-daemon skips the deregistration, which leaves the peer registered on the management
-server rather than detached from it.
+Enabling local metrics on a loopback address, including the default
+`127.0.0.1:9191`, does not require privileges. Moving an enabled metrics endpoint
+back to a loopback address is also allowed without privileges.
+
+Creating a debug bundle locally or uploading it to NetBird's default HTTPS upload
+service does not require privileges. Setting `uploadInsecure` allows HTTP or an
+untrusted TLS certificate and requires privileges even for the default service.
+
+Profile removal can proceed when deregistration is refused: the daemon removes the
+local profile and leaves the peer registered on the management server. The active
+and default profiles cannot be removed.
 
 A profile written before the SSH server flag existed counts as having it enabled,
 because the daemon reads an unset flag the same way the engine does. The management URL
@@ -153,8 +165,9 @@ metadata: summary = "Enabling the NetBird SSH server requires root."
           command = "sudo netbird down; sudo netbird up --allow-server-ssh"
 ```
 
-Render `summary` and `command` rather than the raw error: `command` is the same
-operation with the privileges it needs, ready to run.
+Render `summary` and `command` to explain the refusal and how to resolve it.
+When the socket cannot identify the caller, `command` points to reinstalling the
+service on a socket that carries caller identity.
 
 <Note>
   When the daemon itself runs unprivileged, as in a rootless container or on
@@ -304,12 +317,17 @@ Confirm that the daemon is running and that the integration uses the same socket
 
 ### A Call Is Refused With PermissionDenied
 
-The operation is one of the [privileged operations](#privileged-operations) and the
-caller is not root, or not an administrator on Windows. Check the `ErrorInfo` detail
-on the error: `PRIVILEGE_REQUIRED` in domain `daemon.netbird.io` means the daemon
-identified the caller and refused the change, rather than failing to reach it. On a
-TCP socket every such operation is refused, because the transport carries no caller
-identity.
+Check the `ErrorInfo` detail on the error. `PRIVILEGE_REQUIRED` in domain
+`daemon.netbird.io` means the caller lacks the required privileges or the daemon
+cannot verify the caller's identity. The `summary` and `command` fields describe
+the required action. TCP sockets carry no caller identity, so privileged operations
+are refused even when the client runs as root or an administrator. Use a Unix
+socket or a Windows named pipe for these operations.
+
+Other restrictions can also return `PermissionDenied` without this error detail.
+For example, `StartCapture` requires the service's `--enable-capture` option, and
+`RegisterUILog` requires a socket that carries caller identity. Check the error
+message for the method's specific requirement.
 
 ### A Method or Field Is Unimplemented
 
