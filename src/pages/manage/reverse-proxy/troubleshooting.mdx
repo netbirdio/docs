@@ -29,15 +29,15 @@ docker exec <routing-peer-container> wget -qO- http://<target-ip>:<port> --timeo
 # Look for 502 status codes and connection errors:
 # "Peer Not Connected" -> peer is offline or unreachable
 # "Connection Error: operation timed out" -> routing/ACL issue
-# "no route to host" -> invalid target IP (e.g., network address .0)
+# "no route to host" -> check target IP, routes, and firewall rules
 
 # 5. Is the target IP the same as the routing peer's IP?
 # If yes, this is a known issue. Switch the target type to Peer.
 # See Issue 1 below.
 
 # 6. Is the service listening on the right interface?
-# It must bind to 0.0.0.0 (or :: for IPv6), the NetBird IP,
-# or the destination IP, NOT 127.0.0.1/localhost.
+# With a tunnel interface, bind to the destination IP or all interfaces.
+# Netstack mode can forward peer-IP traffic to localhost; see Issue 2.
 ss -tlnp | grep <port>
 # or on macOS:
 lsof -iTCP:<port> -sTCP:LISTEN
@@ -189,7 +189,11 @@ When the target type is **Peer**, the proxy sends traffic directly to that peer 
 - The service works when accessed locally on the machine (e.g., `curl http://localhost:8080`) but fails through the reverse proxy
 - Proxy logs show connection refused or timeout errors
 
-This happens when the target service is configured to listen only on `127.0.0.1` (localhost) or `::1`. Traffic arriving through NetBird comes from the WireGuard tunnel interface, not the loopback interface, so a service bound to localhost will refuse the connection.
+With a normal tunnel interface, traffic addressed to the peer's NetBird IP is not delivered to a service listening only on `127.0.0.1` or `::1`. The service must listen on an address that matches the destination, or on all interfaces.
+
+<Note>
+    In **netstack mode**, the receiving NetBird client forwards traffic addressed to its own NetBird IP to loopback (`127.0.0.1` for IPv4 or `::1` for IPv6). A localhost listener can work in this mode without changing its bind address. If NetBird runs in a container, that loopback address belongs to the container's network namespace; a backend in a separate container or on the host must be reachable from there.
+</Note>
 
 **How to check**:
 
@@ -206,24 +210,17 @@ lsof -iTCP:<port> -sTCP:LISTEN
 Get-NetTCPConnection -LocalPort <port> -State Listen | Select-Object LocalAddress,LocalPort
 ```
 
-If the `Local Address` column shows `127.0.0.1` or `::1`, the service is only reachable from the machine itself.
+If the `Local Address` column shows `127.0.0.1` or `::1`, the service is listening on loopback. Check the receiving client's mode and, for containers, whether NetBird and the backend share the same network namespace before changing the bind address.
 
 **Solution**:
 
-Reconfigure the service to listen on one of the following:
-- `0.0.0.0` (all IPv4 interfaces) or `::` (all IPv6 interfaces), the simplest option
-- The machine's NetBird IP (e.g., `100.x.y.z`) if you want to restrict access to NetBird traffic only
-- The specific LAN IP used as the reverse proxy destination
+For a normal tunnel interface, configure the service to listen on the address used by the proxy target:
 
-Where to change this depends on the service. Look for a `bind`, `listen`, `host`, or `address` setting in the service's configuration file. For example:
+- The machine's NetBird IP for a **Peer** target.
+- The specific LAN IP for a target reached through a routing peer.
+- `0.0.0.0` (all IPv4 interfaces) or `::` (all IPv6 interfaces) if access on all interfaces is intended.
 
-```
-# Common examples across different services
-bind-address = 0.0.0.0
-host: 0.0.0.0
-listen_addresses = '*'
-server.host: "0.0.0.0"
-```
+Look for a `bind`, `listen`, `host`, or `address` setting in the service's configuration file. Use the actual destination IP from your target configuration. In netstack mode, a loopback listener in the NetBird client's network namespace can remain on loopback.
 
 After changing the bind address, restart the service and verify with `ss` or `lsof` that it now listens on the correct interface.
 
@@ -268,7 +265,7 @@ Then geo-restrictions on the reverse proxy service are blocking internal traffic
 
 Remove or adjust the geo-restriction on the reverse proxy service that exposes your IdP. You can do this from the NetBird dashboard under **Reverse Proxy > Services**, then edit the service and remove the country restriction.
 
-If you are locked out of the dashboard because the IdP connector cannot initialize (e.g., you already removed local users), you can modify the restriction directly in the management database:
+If you are locked out of the dashboard because the IdP connector cannot initialize (e.g., you already removed local users), you can remove the country restrictions directly from the management database. The commands below assume SQLite at `/data/store.db` in `<netbird_data_volume>`; replace the volume placeholder with your management data volume.
 
 1. Stop all NetBird containers:
 
@@ -277,27 +274,36 @@ cd ~/netbird
 docker compose stop
 ```
 
-2. Identify the service ID for your IdP service:
+2. Back up the database before editing it. Use a new backup filename if this one already exists:
+
+```
+docker run --rm --user root -v <netbird_data_volume>:/data --entrypoint sqlite3 keinos/sqlite3 /data/store.db \
+  ".backup '/data/store.db.before-geo-recovery'"
+```
+
+3. Identify the service ID for your IdP service:
 
 ```
 docker run --rm --user root -v <netbird_data_volume>:/data --entrypoint sqlite3 keinos/sqlite3 /data/store.db \
   "SELECT id, domain, restrictions FROM services;"
 ```
 
-3. Clear the geo-restriction on the IdP service:
+4. Remove only the country allowlist and blocklist from the IdP service. Replace `<service-id>` with the ID from the previous step:
 
 ```
 docker run --rm --user root -v <netbird_data_volume>:/data --entrypoint sqlite3 keinos/sqlite3 /data/store.db \
-  "UPDATE services SET restrictions='{}' WHERE id='<service-id>';"
+  "UPDATE services SET restrictions=json_remove(restrictions, '$.allowed_countries', '$.blocked_countries') WHERE id='<service-id>';"
 ```
 
-4. Start the containers:
+This preserves the service's IP allowlist, IP blocklist, and CrowdSec mode. Setting the whole `restrictions` value to `{}` would remove those controls too. If you use PostgreSQL, use your database's backup and JSON editing tools to remove only these two country fields.
+
+5. Start the containers:
 
 ```
 docker compose start
 ```
 
-5. Verify the connector initializes by checking the management server logs:
+6. Verify the connector initializes by checking the management server logs:
 
 ```
 docker logs netbird-server --tail 20
@@ -352,17 +358,28 @@ sudo tcpdump -i utun4 -n port <target-port>
 
 ### Windows (pktmon)
 
+Run PowerShell as Administrator. Port matching is configured with [`pktmon filter add`](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/pktmon-filter-add); [`pktmon start --comp`](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/pktmon-start) selects the capture component. Replace the placeholders before running:
+
 ```powershell
 # List network interfaces to find the WireGuard/NetBird adapter
 pktmon list
 
-# Start a capture filtered by port
-pktmon start --capture --pkt-size 0 -c <component-id> -t <target-port>
+# Review existing filters, then add a filter for the target port
+pktmon filter list
+pktmon filter add NetBirdProxy -p <target-port>
+
+# Start a capture on the selected component
+pktmon start --capture --comp <component-id> --pkt-size 0
 
 # Stop and convert to pcapng for Wireshark
 pktmon stop
 pktmon etl2pcap pktmon.etl -o capture.pcapng
+
+# Remove the filter added for this capture
+pktmon filter remove NetBirdProxy
 ```
+
+Pktmon accepts packets matching any active filter. Existing filters can therefore include traffic outside the target port.
 
 ### Wireshark
 
@@ -382,4 +399,4 @@ ip.addr == <target-ip>
 
 ## Common mistakes
 
-**Pointing a subnet target at the network address instead of a host address.** For example, using `10.0.0.0:8989` instead of `10.0.0.10:8989`. The network address (`.0`) is not a valid host and will return "no route to host." Always use the specific IP of the machine running the service.
+**Pointing a subnet target at the network address instead of a host address.** For example, on `10.0.0.0/24`, use the service host's address, such as `10.0.0.10:8989`, rather than `10.0.0.0:8989`. The subnet prefix determines the network address; an address ending in `.0` is not necessarily a network address. Always use the IP assigned to the machine running the service.
