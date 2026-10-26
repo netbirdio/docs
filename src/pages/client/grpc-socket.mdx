@@ -71,15 +71,25 @@ netbird --daemon-addr unix:///var/run/netbird-integration-grpc.sock status
 
 ### Use a TCP Socket
 
+On Linux or macOS:
+
 ```shell
 sudo netbird service reconfigure \
-  --daemon-addr tcp://127.0.0.1:41731
+  --daemon-addr tcp://127.0.0.1:41732
 ```
 
-Then specify that address when using the CLI on platforms where it is not the default:
+On Windows, run this in an elevated PowerShell terminal:
+
+```powershell
+netbird service reconfigure --daemon-addr tcp://127.0.0.1:41732
+```
+
+On Windows, NetBird automatically migrates the legacy address `tcp://127.0.0.1:41731` to `npipe://netbird`. Use a different port, such as `41732`, when configuring a TCP listener.
+
+Then specify that address when using the CLI:
 
 ```shell
-netbird --daemon-addr tcp://127.0.0.1:41731 status
+netbird --daemon-addr tcp://127.0.0.1:41732 status
 ```
 
 <Warning>
@@ -156,15 +166,18 @@ The service also includes methods that change configuration, profiles, network s
 
 ## Test the Socket with grpcurl
 
-[`grpcurl`](https://github.com/fullstorydev/grpcurl) is a command-line tool for invoking gRPC methods. Because it needs access to the `.proto` files to perform requests, we need to download the repository at the same version that the daemon to not have a mismatch on the Protocol Buffer definition. 
+[`grpcurl`](https://github.com/fullstorydev/grpcurl) is a command-line tool for invoking gRPC methods. These examples supply `daemon.proto` because the daemon does not support reflection. Download the NetBird source at the version of the running daemon so the schema matches its API.
+
+Run `netbird status` and note the **Daemon version**. Include `--daemon-addr` if you configured a custom socket. The `netbird version` command reports the CLI binary's version, which can differ from the running daemon's version.
+
+Replace `<daemon-version>` below with that value, keeping the `v` prefix:
 
 ```shell
-export NETBIRD_VERSION=v$(netbird version)
-git clone --depth 1 \
-  --branch "$NETBIRD_VERSION" \
-  https://github.com/netbirdio/netbird.git
+git clone --depth 1 --branch "v<daemon-version>" https://github.com/netbirdio/netbird.git
 cd netbird
 ```
+
+For a development build, check out the source commit used to build the daemon instead of a release tag.
 
 Run the following examples from the root of the cloned `netbird` repository.
 
@@ -198,16 +211,10 @@ grpcurl \
 
 ### Query Status Through a TCP Socket
 
-This applies to a custom loopback TCP listener, since `grpcurl` cannot dial a Windows named pipe and the Windows default is therefore not reachable this way. Use a client that can open the pipe, or configure a TCP listener for testing and accept that [privileged operations](#privileged-operations) are refused on it:
+This applies to the [custom loopback TCP listener](#use-a-tcp-socket) configured above. `grpcurl` cannot dial a Windows named pipe. To use it on Windows, configure the TCP listener first; [privileged operations](#privileged-operations) remain unavailable over TCP.
 
 ```shell
-grpcurl \
-  -plaintext \
-  -import-path ./client/proto \
-  -proto daemon.proto \
-  -d '{}' \
-  127.0.0.1:41731 \
-  daemon.DaemonService/Status
+grpcurl -plaintext -import-path ./client/proto -proto daemon.proto -d '{}' 127.0.0.1:41732 daemon.DaemonService/Status
 ```
 
 `-plaintext` is required because the local daemon socket does not use TLS. For a Unix socket, pass the full `unix:///...` URI and include `-unix`. The URI form also avoids a Unix-socket regression in some `grpcurl` 1.9.x builds.
@@ -231,15 +238,17 @@ Press `Ctrl+C` to end the stream.
 
 ## Build an Integration
 
-For a long-running integration, generate a gRPC client from the same `daemon.proto` revision as the installed NetBird client:
+For a long-running integration, generate a gRPC client from the same `daemon.proto` revision as the running NetBird daemon:
 
 1. Download or vendor `client/proto/daemon.proto` from the NetBird repository.
 2. Generate client bindings with the Protocol Buffer and gRPC tools for your language.
-3. Create a local gRPC channel to the configured Unix or TCP address without TLS. That does not make the socket safe to expose remotely.
+3. Create a local gRPC channel over the configured Unix socket, Windows named pipe, or TCP listener. These transports do not use TLS.
 4. Create a `daemon.DaemonService` client from that channel.
 5. Call unary methods or consume server streams using the generated request and response types.
 
-Use a protobuf definition and generated bindings that match your deployed NetBird version. A newer client may call methods or use fields that an older daemon does not support.
+On Windows, use a named-pipe dialer; a generic gRPC client does not automatically understand `npipe://` addresses. Open the pipe with `SECURITY_IDENTIFICATION` so the daemon can read the caller's token. An anonymous pipe connection cannot perform privileged operations, even when the client runs as an administrator. See NetBird's [pipe dialer](https://github.com/netbirdio/netbird/blob/main/client/internal/daemonaddr/pipe_windows.go) for pipe selection and server identity checks.
+
+Use a protobuf definition and generated bindings that match the running daemon's version. A newer client may call methods or use fields that an older daemon does not support.
 
 The HTTP/JSON gateway exposes this service for environments where generated gRPC clients are unavailable. See [HTTP/JSON Daemon Socket](/client/json-socket) for setup and HTTP examples.
 
@@ -269,6 +278,10 @@ Check the `ErrorInfo` detail on the error. `PRIVILEGE_REQUIRED` in domain `daemo
 
 Other restrictions can also return `PermissionDenied` without this error detail. For example, `StartCapture` requires the service's `--enable-capture` option, and `RegisterUILog` requires a socket that carries caller identity. Check the error message for the method's specific requirement.
 
-### A Method or Field Is Unimplemented
+### An RPC Method Is Unimplemented
 
-The integration's generated bindings may be newer than the installed NetBird daemon. Compare the installed client version with the revision of `daemon.proto` used to generate the bindings, then use a compatible schema or upgrade NetBird.
+An `Unimplemented` response can mean the running daemon does not provide the requested RPC method. Check the service and method name, then compare the **Daemon version** from `netbird status` with the revision of `daemon.proto` used to generate the bindings. Use a compatible schema or upgrade and restart the daemon.
+
+### grpcurl Rejects an Unknown Field
+
+An unknown JSON field can be rejected by `grpcurl` before the request reaches the daemon. Check the field name against the `.proto` file or descriptor set supplied to `grpcurl`, and use a schema that matches the running daemon. The `-allow-unknown-fields` option discards unknown fields; it does not make the daemon support them.
