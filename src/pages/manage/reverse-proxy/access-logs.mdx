@@ -132,7 +132,7 @@ reverseProxy:
 
 ## Storage
 
-Starting with v1.1.b.c, self-hosted deployments keep access logs on their own database connection, separate from the rest of the management data. By default, they follow the main store engine:
+Starting with v0.82.0, self-hosted deployments keep access logs on their own database connection, separate from the rest of the management data. By default, they follow the main store engine:
 
 - **SQLite**: a separate `access_logs.db` file in the data directory, next to `store.db`. A [backup](/selfhosted/maintenance/backup) of the data volume covers both.
 - **PostgreSQL**: the main database, through a separate connection pool.
@@ -143,7 +143,7 @@ When access logs move to another database, existing entries stay behind: they no
 
 ### Upgrading a SQLite deployment
 
-Before v1.1.b.c, access logs were stored in `store.db`. After the upgrade, new entries are written to `access_logs.db`, which the server creates on its first start.
+Before v0.82.0, access logs were stored in `store.db`. After the upgrade, new entries are written to `access_logs.db`, which the server creates on its first start.
 
 The netbird-server image doesn't include `sqlite3`, so the steps below run it from a throwaway container. Find the volume name with `docker volume ls` (it ends in `netbird_data`).
 
@@ -175,7 +175,7 @@ The netbird-server image doesn't include `sqlite3`, so the steps below run it fr
 
 ### Moving to a dedicated PostgreSQL database
 
-PostgreSQL deployments keep their history on upgrade, because access logs stay in the main database. Once you point access logs at another database with `server.accessLogStore.dsn` or `NB_ACCESS_LOG_POSTGRES_DSN`, new entries go there and the server creates the table on startup. Both steps below can run while the server is up, using `pg_dump` and `psql` that match your server's major version. `<main_store_dsn>` is the value of `server.store.dsn`.
+PostgreSQL deployments keep their history on upgrade, because access logs stay in the main database. Once you point access logs at another database with `server.accessLogStore.dsn` or `NB_ACCESS_LOG_POSTGRES_DSN`, new entries go there and the server creates the table on startup. All steps below can run while the server is up, using `pg_dump` and `psql` that match your server's major version. `<main_store_dsn>` is the value of `server.store.dsn`, and `<access_log_dsn>` is the value of `server.accessLogStore.dsn`.
 
 1. Optional: copy the old entries into the new database:
 
@@ -183,7 +183,24 @@ PostgreSQL deployments keep their history on upgrade, because access logs stay i
    pg_dump --data-only --table=access_log_entries -d "<main_store_dsn>" | psql -d "<access_log_dsn>"
    ```
 
-2. Drop the old table from the main database:
+2. Verify that new entries no longer reach the main database. Run this query against both databases:
+
+   ```bash
+   psql -d "<main_store_dsn>" -c "SELECT count(*), max(timestamp) FROM access_log_entries;"
+   psql -d "<access_log_dsn>" -c "SELECT count(*), max(timestamp) FROM access_log_entries;"
+   ```
+
+   The newest entry in the main database should predate the switch, and its count should stay the same when you run the query again after new traffic through a service. If you copied the old entries, the dedicated database should hold at least as many entries as the main one, minus any copied entries older than `accessLogRetentionDays` that the cleanup has already removed.
+
+3. Back up the old table:
+
+   ```bash
+   pg_dump --table=access_log_entries -d "<main_store_dsn>" -f access_log_entries.sql
+   ```
+
+   The file includes the table definition, so `psql -d "<main_store_dsn>" -f access_log_entries.sql` restores the table if you need it back.
+
+4. Drop the old table from the main database:
 
    ```bash
    psql -d "<main_store_dsn>" -c "DROP TABLE access_log_entries;"
