@@ -1,123 +1,108 @@
-import {Note, Warning} from "@/components/mdx"
+import {Warning} from "@/components/mdx"
 
 export const description =
-    'Configure backend services like Jellyfin, Home Assistant, Plex, and Nextcloud to trust the NetBird reverse proxy IP range for correct client IP detection.'
+    'Configure trusted proxies and client IP forwarding for backend services such as Jellyfin, Home Assistant, and Nextcloud behind the NetBird reverse proxy.'
 
 # Backend Service Configuration
 
-When a backend service sits behind a reverse proxy, it sees the proxy's IP address as the client IP instead of the real user's IP. Many self-hosted applications require you to configure a list of "trusted proxies" or "known proxies" so they can correctly read the real client IP from the `X-Forwarded-For` header.
+For HTTP services, the NetBird reverse proxy sets `X-Forwarded-For` and `X-Real-IP` to carry the client IP to your backend. Many applications require a "trusted proxies" or "known proxies" setting before they use these headers. Configure this setting to match the source of the connection **as seen by the backend**, which depends on how traffic reaches it.
 
-With the NetBird Reverse Proxy, the proxy connects to your target service through a WireGuard tunnel. From the target's perspective, the source IP of incoming requests is the proxy's **NetBird IP** — an address from the `100.64.0.0/10` Carrier-Grade NAT range that NetBird uses for all peers.
-
-<Warning>
-    **Do not hardcode a specific NetBird IP** (e.g., `100.64.0.47`) in your backend's trusted proxy configuration. NetBird IPs can change when the peer or service restarts, which would cause your backend to stop trusting the proxy and reject forwarded headers.
-</Warning>
+This page covers HTTP backends. For TCP and TLS services, see [PROXY Protocol](/manage/reverse-proxy#step-4-configure-advanced-settings).
 
 <Warning>
     **Cloud-hosted usage limits:** NetBird's cloud-hosted Reverse Proxy is provided on a shared, best-effort basis. High-volume or sustained data transfers may be subject to bandwidth limits, rate limiting, and fair-use policies under the [NetBird Terms of Service](https://netbird.io/terms). These restrictions do not apply if you [self-host NetBird](/selfhosted/selfhosted-guide).
 </Warning>
 
-## Docker Bridge Networks
+## Identify the source IP
 
-If the NetBird peer and the backend service run as containers on the **same Docker bridge network** (for example, when using the Home Assistant NetBird add-on), traffic between them does not traverse the WireGuard tunnel. In this case, the backend sees the NetBird container's **Docker bridge IP** (typically from `172.16.0.0/12`) rather than a NetBird IP.
+Check the backend's connection logs or untrusted-proxy error messages for the remote address before forwarded headers are applied. Do not use the client address from `X-Forwarded-For` as the trusted proxy entry.
 
-When this applies, add the Docker bridge subnet to your trusted proxy list **in addition to** the NetBird range:
+| Backend connection | Source IP the backend sees |
+|--------------------|----------------------------|
+| Directly to a peer's WireGuard interface | The proxy's NetBird IPv4 or IPv6 address, depending on the backend connection. |
+| Through a routing peer with [masquerade](/manage/networks/masquerade) enabled | The routing peer's address on the backend's network. Routing without masquerade can preserve the proxy's NetBird IP. |
+| Through userspace forwarding, including some container deployments | The address used by the forwarding peer to open the backend connection, which can be a LAN, Docker bridge, or loopback address. |
+| With **Direct Upstream** enabled | An address of the proxy host or container, using its local network stack. |
 
-```
-100.64.0.0/10
-172.16.0.0/12
-```
+### Docker Bridge Networks
 
-<Note>
-    The default Docker bridge subnet is `172.17.0.0/16`, but Docker and add-on managers may assign addresses from anywhere in the `172.16.0.0/12` range. Check your Docker network configuration (`docker network inspect <network>`) to find the exact subnet if you want a narrower entry.
-</Note>
+When a NetBird container forwards requests to a backend on the same Docker bridge, the backend may see the NetBird container's bridge IP. The request can still arrive at the NetBird container through a WireGuard tunnel; the final hop to the backend uses the bridge network.
+
+Use `docker network inspect <network>` to check the container addresses and subnet, then match them against the backend's observed connection source. Trust the forwarding container's address when it is stable, or the specific bridge subnet when necessary. Add a NetBird range only if the backend also receives connections from that range.
 
 ## Recommended Solution
 
-Instead of specifying a single IP, configure your backend to trust the **entire NetBird CGNAT range**:
+Trust the smallest set of addresses or subnets that covers your proxy connections. Avoid adding the entire `100.64.0.0/10` or `172.16.0.0/12` range by default.
 
-```
-100.64.0.0/10
-```
+If the backend sees a proxy's NetBird IP, account for changes when the proxy restarts or recreates its embedded peer. You can use your account's corresponding IPv4 or IPv6 network range if other peers are prevented from connecting directly to the backend. Find the ranges under **Settings** → **Networks**: [**Network Range**](/manage/settings/networks#network-range) for IPv4 and [**IPv6 Network Range**](/manage/settings/ipv6) for IPv6. Alternatively, call `GET /api/accounts` and read `settings.network_range` (IPv4) and `settings.network_range_v6` (IPv6) from the account object in the response array. Accounts can use a custom IPv4 range outside `100.64.0.0/10`.
 
-This covers all possible NetBird IPs regardless of reassignment. This is safe because only authorized peers within your NetBird network can reach the target through the encrypted WireGuard tunnel — no external traffic can originate from this range.
-
-If the NetBird peer runs on the same Docker bridge network as the backend (see [above](#docker-bridge-networks)), also add the Docker bridge range `172.16.0.0/12`.
-
-<Note>
-    If you prefer a narrower NetBird range, you can use your account's specific network range (typically `100.64.0.0/16`). Find your account's range via the API: `GET /api/accounts/{id}` — look for the `network_range` field. However, the full `/10` range is recommended for simplicity and resilience.
-</Note>
+<Warning>
+    A trusted subnet does not identify the reverse proxy. Any peer or container in that subnet that can connect directly to the backend could supply forged forwarded headers. Restrict access to the backend port with NetBird access policies, host firewall rules, or container network isolation as appropriate for your deployment.
+</Warning>
 
 ## Service-specific Examples
 
-Below are configuration examples for common self-hosted applications. Configuration options may vary by version — consult each application's official documentation for the most current syntax.
+In the examples below, replace `<PROXY_SOURCE_IP_OR_CIDR>` with the IPv4 or IPv6 address or subnet identified above. Add separate entries if more than one proxy or forwarding peer can connect to the backend, or if connections can arrive over both IPv4 and IPv6. An IPv4 trusted proxy entry does not cover an IPv6 source address.
 
 ### Jellyfin
 
 In the Jellyfin admin dashboard:
 
 1. Go to **Dashboard** → **Networking**.
-2. In the **Known Proxies** field, enter `100.64.0.0/10`.
+2. In the **Known Proxies** field, enter the proxy source addresses or CIDR ranges identified above.
 3. Click **Save**.
 
-<p>
-    <img src="/docs-static/img/manage/reverse-proxy/service-configuration/jellyfin-known-proxies.png" alt="Jellyfin Networking settings showing 100.64.0.0/10 in the Known Proxies field" className="imagewrapper-large"/>
-</p>
+Jellyfin uses this setting to decide whether to accept forwarded client IP, host, and protocol headers. See the [Jellyfin reverse proxy guide](https://jellyfin.org/docs/general/post-install/networking/reverse-proxy/).
 
-This tells Jellyfin to trust forwarded headers from any NetBird IP, allowing it to see the real client IP. Additionally, Jellyfin supports adding a 'Base URL' this can be used in conjunction with setting a location while [configuring your service](https://docs.netbird.io/manage/reverse-proxy#step-2-configure-service-details) on the NetBird Reverse Proxy service.
+For subpath deployments, configure Jellyfin's **Base URL** together with your service's [path and rewrite settings](/manage/reverse-proxy#step-2-configure-service-details).
+
 ### Home Assistant
 
-In your `configuration.yaml`, add or update the `http` section. You can do this through the File Editor or Studio Code Server add-on, or via the command line if you have terminal access. If you want to learn more about Home Assistant checkout our [full guide on the Knowledge Hub](https://netbird.io/knowledge-hub/home-assistant-access).
+In Home Assistant 2026.8 and later, go to **Settings** → **System** → **Network** and find the **HTTP server** section. Enable **Trust X-Forwarded-For** and add the proxy source addresses or CIDR ranges to **Trusted proxies**. Saving restarts Home Assistant; confirm the settings after the restart within five minutes to avoid an automatic rollback. See the [Home Assistant HTTP documentation](https://www.home-assistant.io/integrations/http/).
+
+On older versions, add or update the `http` section in `configuration.yaml`, then restart Home Assistant:
 
 ```yaml
 http:
   use_x_forwarded_for: true
   trusted_proxies:
-    - 100.64.0.0/10
+    - "<PROXY_SOURCE_IP_OR_CIDR>"
 ```
 
-If you are running the [NetBird add-on](https://github.com/netbirdio/addon-netbird) (which runs as a Docker container on the same host), also add the Docker bridge range. Click the button below to get this add-on.
+If you use the [NetBird add-on](https://github.com/netbirdio/addon-netbird), check the source reported by Home Assistant before choosing a trusted proxy entry. It may be the add-on's container address; follow the [Docker bridge guidance](#docker-bridge-networks) above.
 
-[![Add NetBird add-on repository](/docs-static/img/manage/reverse-proxy/service-configuration/ha_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fglemsom%2Fhassio-netbird)
+[![Add NetBird add-on repository](/docs-static/img/manage/reverse-proxy/service-configuration/ha_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fnetbirdio%2Faddon-netbird)
 
-```yaml
-http:
-  use_x_forwarded_for: true
-  trusted_proxies:
-    - 100.64.0.0/10
-    - 172.16.0.0/12
-```
-
-Restart Home Assistant after making this change. Without `use_x_forwarded_for` and a matching `trusted_proxies` entry, Home Assistant will block requests from the reverse proxy.
+Home Assistant rejects proxied requests unless forwarded headers are enabled and the connection source matches a trusted proxy entry. For a full setup walkthrough, see our [Home Assistant guide](https://netbird.io/knowledge-hub/home-assistant-access).
 
 ### Nextcloud
 
-In your Nextcloud `config/config.php`, add the NetBird range to the `trusted_proxies` array:
+In your Nextcloud `config/config.php`, add the proxy source address or subnet to the `trusted_proxies` array:
 
 ```php
-'trusted_proxies' => ['100.64.0.0/10'],
+'trusted_proxies' => ['<PROXY_SOURCE_IP_OR_CIDR>'],
 ```
 
-If you're running NextCloud AIO this should be configured automatically during setup, but if needed you can use `sudo docker exec -u 0 -it nextcloud-aio-nextcloud /bin/bash`.
-
-Nextcloud supports CIDR notation for IPv4 ranges. When a request arrives from a trusted proxy, Nextcloud reads the real client IP from the `X-Forwarded-For` header instead of using the proxy's IP.
+Nextcloud accepts IPv4 and IPv6 addresses and CIDR ranges. It reads `X-Forwarded-For` by default for requests from trusted proxies. See the [Nextcloud reverse proxy documentation](https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/reverse_proxy_configuration.html).
 
 ## NetBird identity headers
 
-Services configured with [NetBird-Only Access](/manage/reverse-proxy/authentication#netbird-only-access-private-services) are private — every inbound request is authenticated against the WireGuard tunnel before it reaches your backend. The proxy attaches two headers to each upstream request identifying the caller:
+For HTTP services configured with [NetBird-Only Access](/manage/reverse-proxy/authentication#netbird-only-access-private-services), the proxy authenticates the caller through the WireGuard tunnel and forwards the available identity information in these headers:
 
 | Header | Value |
 |--------|-------|
-| `X-NetBird-User` | The calling user's email (or peer name when the peer has no user owner). |
-| `X-NetBird-Groups` | Comma-separated list of the user's group display names. Falls back to group IDs at positions where the display name was unavailable at session-mint time. |
+| `X-NetBird-User` | The peer owner's email when available; otherwise the peer name. |
+| `X-NetBird-Groups` | Comma-separated display names of the calling peer's groups. Falls back to a group ID when its display name is unavailable. |
 
-Use these headers in your backend to drive per-user authorization, audit logging, or personalization without running your own login flow. Because the proxy has already verified the caller's WireGuard identity, the headers are trustworthy for any backend that sits behind a NetBird-Only service.
+The proxy omits empty or unsafe header values and skips group labels containing commas or non-ASCII characters. `X-NetBird-Groups` is absent if no valid labels remain. These headers contain display values that can change and need not be unique; do not treat them as immutable user or group identifiers.
 
 <Warning>
-    **Anti-spoof discipline.** The proxy strips any client-supplied `X-NetBird-User` or `X-NetBird-Groups` headers from the inbound request before stamping its own values. Your backend should still verify it is reachable only through a NetBird-Only service — anything that bypasses the proxy (e.g., direct connections from inside your Docker network) will reach the backend without these headers, and your code should treat their absence as "unauthenticated."
+    The proxy removes client-supplied `X-NetBird-User` and `X-NetBird-Groups` headers before setting its own values. A client that reaches the backend directly can supply either header itself. Trust these headers only when access to the backend is restricted to the intended NetBird-Only proxy service. Checking that a header is present does not enforce that restriction.
 </Warning>
 
 ### Example: read the user in a backend
+
+After restricting backend access as described above, this example reads the identity headers and rejects requests without a user value:
 
 ```python
 from fastapi import FastAPI, Header, HTTPException
@@ -129,7 +114,7 @@ def me(
     user: str | None = Header(default=None, alias="X-NetBird-User"),
     groups: str | None = Header(default=None, alias="X-NetBird-Groups"),
 ):
-    if user is None:
+    if not user:
         raise HTTPException(403, "must be accessed through a NetBird private service")
     return {
         "user": user,
@@ -137,15 +122,17 @@ def me(
     }
 ```
 
-The same pattern works in any backend framework — read the two headers, refuse the request if `X-NetBird-User` is absent, and use the groups for per-user authorization decisions.
+Keep service access rules in NetBird and apply any additional application permissions separately; this example only returns the supplied identity.
 
 ## Verifying your configuration
 
 After updating your backend's trusted proxy settings:
 
 1. Access your service through the NetBird reverse proxy URL.
-2. Check the backend's access logs — the logged client IP should be the **real user's IP**, not a `100.64.x.x` address.
-3. If the backend still shows a NetBird IP, verify that **Pass Host Header** is enabled in your reverse proxy service's [Settings tab](/manage/reverse-proxy#step-4-configure-advanced-settings) and that you have restarted the backend service after changing its configuration.
+2. Check the backend's resolved client IP against the client address seen by the proxy. A client using NetBird-Only Access can legitimately have a NetBird IP here.
+3. If the backend reports the proxy or forwarding peer's address, check that its trusted proxy list matches the connection source, forwarded-header processing is enabled, and the backend has reloaded the configuration.
+
+**Pass Host Header** controls the upstream `Host` header; it does not enable client IP forwarding. If a self-hosted proxy sits behind another proxy or load balancer, also check its [`NB_PROXY_TRUSTED_PROXIES` configuration](/selfhosted/migration/enable-reverse-proxy#networking-and-forwarding).
 
 You can also monitor requests from the NetBird side using [Access Logs](/manage/reverse-proxy/access-logs).
 
