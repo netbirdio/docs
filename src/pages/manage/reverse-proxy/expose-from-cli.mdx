@@ -5,7 +5,7 @@ export const description =
 
 # Expose from CLI
 
-The `netbird expose` command lets peers expose local services to the public internet through the NetBird reverse proxy without using the dashboard. Services created this way are **ephemeral**: they exist only while the command is running and are automatically removed when you stop the command or the session expires.
+The `netbird expose` command lets peers expose local services to the public internet through the NetBird reverse proxy without using the dashboard. Services created this way are **ephemeral**: the command keeps them alive through periodic renewals and requests their removal when it stops. If that request fails, the management server removes the service after its session expires.
 
 This supports both HTTP and L4 (TCP, UDP, TLS) protocols, making it useful for quick demos, temporary access to development servers, webhook receivers, database tunnels, or sharing local work with teammates.
 
@@ -216,18 +216,18 @@ netbird expose 8080 --with-custom-domain app.example.com
 
 ## Session lifecycle
 
-Understanding how expose sessions work helps you manage them effectively and troubleshoot issues.
-
 ### How sessions work
 
 When you run `netbird expose`, the following happens:
 
 1. The CLI sends the request to the local NetBird daemon.
 2. The daemon connects to the management server and creates an ephemeral reverse proxy service.
-3. The management server provisions a TLS certificate and domain for the service.
-4. The daemon receives the public URL and displays it to you.
+3. The management server assigns the service domain and sends its configuration to the proxy cluster. For HTTP/HTTPS services, the proxy handles the public TLS certificate.
+4. The daemon returns the service URL to the CLI, which displays it to you.
 5. The daemon enters a **renewal loop**, sending a keep-alive signal to the management server every **30 seconds**.
-6. The management server maintains an in-memory session with a **90-second TTL** that resets on each renewal.
+6. The management server stores the service and its last renewal time in the database. Each renewal resets the **90-second TTL**.
+
+The management server checks for expired sessions every **30 seconds**. With management running normally, cleanup usually happens between 90 and 120 seconds after the last successful renewal. Cleanup can take longer if management is unavailable or has a backlog of expired services.
 
 ### Stopping a session
 
@@ -235,11 +235,11 @@ There are several ways a session can end:
 
 | Trigger | What happens | Service removed? |
 |---------|-------------|-----------------|
-| **Ctrl+C** or **SIGTERM** | The daemon sends a stop request to the management server within a 5-second timeout. | Yes, immediately |
-| **Renewal failure** | The daemon cannot reach the management server to renew. The CLI exits with an error. The server-side session expires after the TTL. | Yes, after 90 seconds |
-| **Client disconnects** | The daemon process is killed (e.g., `kill -9`, system crash). No stop request is sent. | Yes, after 90 seconds |
-| **Session TTL expires** | The management server's reaper removes sessions that haven't been renewed within 90 seconds. | Yes, by the reaper |
-| **Management server restart** | In-memory sessions are lost. | Yes, immediately on restart |
+| **Ctrl+C** or **SIGTERM** | The daemon attempts a stop request with a 10-second timeout. | When the request succeeds; otherwise, after expiration and cleanup |
+| **Renewal failure** | The renewal loop exits with an error and the daemon attempts a stop request. | When the stop request succeeds; otherwise, after expiration and cleanup |
+| **Daemon stops unexpectedly** | The daemon process is killed (e.g., `kill -9`, system crash). No stop request is sent. | After expiration and cleanup |
+| **Session TTL expires** | The management server's cleanup process deletes services whose last renewal is more than 90 seconds old. | On a subsequent cleanup pass |
+| **Management server restart** | The service and last renewal time remain in the database. | Only if explicitly stopped or no longer renewed before cleanup |
 
 ### What causes expiration
 
@@ -248,12 +248,12 @@ A session expires when the management server does not receive a renewal within 9
 - **Network interruption** between the peer and the management server.
 - **Client process killed** without graceful shutdown (e.g., `kill -9`, OOM kill, system reboot).
 - **Daemon restarted** while an expose session is active.
-- **Management server restarted** — all in-memory sessions are cleared.
+- **Management server unavailable** long enough to interrupt renewals. A restart does not itself delete sessions, but a failed renewal ends the client's renewal loop.
 
 When a session expires, the management server automatically deletes the ephemeral service and logs a **"Peer expose expired"** activity event.
 
 <Note>
-    The 90-second TTL means the service may remain accessible for up to 90 seconds after the client disconnects unexpectedly. During this window, the domain still resolves and routes traffic. For sensitive services, always use authentication to prevent unauthorized access.
+    The TTL is not a guarantee that access ends within 90 seconds. Until cleanup removes the service, the proxy may continue routing requests if the backend is still reachable. Use authentication for sensitive services and stop sessions gracefully when possible.
 </Note>
 
 ## Rate limits
@@ -280,8 +280,8 @@ If the peer does not have permission, the command returns a "permission denied" 
 | Property | Dashboard services | CLI expose services |
 |----------|-------------------|---------------------|
 | **Created via** | Dashboard or API | `netbird expose` command |
-| **Lifecycle** | Permanent until manually deleted | Ephemeral: removed when command exits or session expires |
-| **TTL** | None | 90 seconds, auto-renewed every 30 seconds |
+| **Lifecycle** | Permanent until manually deleted | Ephemeral: removed by a successful stop request or expiration cleanup |
+| **TTL** | None | 90 seconds, renewed every 30 seconds; cleanup runs every 30 seconds |
 | **Service modes** | HTTP, TCP, UDP, TLS | HTTP, HTTPS, TCP, UDP, TLS |
 | **Multiple targets** | Yes (path-based routing for HTTP) | Single target (the local port) |
 | **Custom domains** | Yes | Yes (if pre-configured) |
@@ -320,7 +320,7 @@ Either peer expose is disabled in account settings, or your peer is not in an al
 
 ### "peer has reached the maximum number of active expose sessions (10)"
 
-You have 10 active expose sessions on this peer. Stop one of them before creating a new one. Check for stale sessions that may not have been properly cleaned up — they will expire within 90 seconds.
+You have 10 active expose sessions on this peer. Stop one of them before creating a new one. Sessions that are no longer renewed expire 90 seconds after their last successful renewal and are removed on a subsequent cleanup pass, normally within another 30 seconds.
 
 ### "generate service name: invalid name prefix"
 
@@ -336,11 +336,11 @@ The `--protocol` flag accepts `http`, `https`, `tcp`, `udp`, or `tls`. Any other
 
 ### Service URL returns connection error after Ctrl+C
 
-This is expected. The service is removed when you press `Ctrl+C`. The domain will stop resolving shortly after. If the TLS certificate was cached by your browser, you may see a brief connection error before the domain fully propagates.
+This is expected after the stop request succeeds and the proxy receives the removal. The service's routing configuration is removed, but the wildcard DNS record is unchanged, so the hostname can still resolve to the proxy. DNS resolution alone does not mean the exposed service is still available.
 
 ### Service still accessible after client crash
 
-If the client disconnects without sending a stop request (e.g., process killed, network failure), the service remains active for up to 90 seconds until the session TTL expires. This is by design to tolerate brief network interruptions without interrupting active users.
+If renewals stop without a successful stop request, the service remains configured until the management server removes it. This normally takes 90–120 seconds from the last successful renewal. Requests can still succeed during that window if the backend remains reachable. A management outage or cleanup backlog can delay removal further.
 
 ## Examples
 
