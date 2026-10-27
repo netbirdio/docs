@@ -16,7 +16,7 @@ NetBird Reverse Proxy supports multiple authentication methods and connection-le
 NetBird offers two families of authentication, suited to different access patterns:
 
 - **Operator auth** — SSO, password, PIN, and header authentication. Designed for *public* services where the proxy fronts an internal app for the open internet and you want to gate it with credentials of your choosing. Multiple methods can be enabled on the same service; users pick which one to use.
-- **NetBird-Only Access** — Designed for *private* services that should never be reachable from the public internet. The proxy only lets in requests that come from a peer in your NetBird network and whose owner belongs to the configured access groups. Available on clusters that advertise the `Private` capability.
+- **NetBird-Only Access** — Designed for *private* services that should only be reachable through your NetBird network. The calling peer must belong to at least one of the service's configured access groups. Available on clusters that advertise the `Private` capability.
 
 NetBird-Only Access is mutually exclusive with the operator auth methods on the same service. When NetBird-Only is enabled, the SSO/password/PIN/header rows are hidden — the trust boundary is the WireGuard tunnel, not an operator credential.
 
@@ -35,20 +35,25 @@ NetBird-Only Access restricts the service to peers running inside your own NetBi
 **How it works:**
 
 1. The proxy receives an inbound HTTP request and resolves the source address back to a NetBird peer using its embedded `netbird proxy` client. Requests with no peer-of-origin are rejected.
-2. The owning user's groups are checked against the service's **access groups**. If the user is not in any of them, the request is rejected with `403`.
-3. The request is forwarded to the backend with two extra headers identifying the caller — see [Identity headers stamped on upstream requests](#identity-headers-stamped-on-upstream-requests).
+2. The calling peer's groups are checked against the service's **access groups**. If none match, the request is rejected with `403`. If the peer has a user owner, that user must also belong to the service's account and must not be blocked or pending approval.
+3. The request is forwarded to the backend with the available identity headers — see [Identity headers stamped on upstream requests](#identity-headers-stamped-on-upstream-requests).
 
 By default the proxy reaches the backend over the encrypted WireGuard tunnel through a NetBird peer — the service is reachable only from inside your NetBird network, and access is gated by group membership:
 
-<p>
-    <img src="/docs-static/img/manage/reverse-proxy/authentication/netbird-only-via-peer-diagram.png" alt="Diagram of a NetBird-Only service: the device tunnels to the proxy cluster, the management service checks group membership, and requests from allowed users are forwarded over WireGuard through a NetBird peer to the backend service while others get a 403" className="imagewrapper-big"/>
-</p>
+```mermaid
+flowchart LR
+    Client["Client peer"] -->|WireGuard| Proxy["Proxy cluster"]
+    Proxy -.->|Validate peer and group membership| Management["Management service"]
+    Proxy -->|Denied| Denied["403"]
+    Proxy -->|Allowed over WireGuard| Peer["Backend NetBird peer"]
+    Peer --> Backend["Backend service"]
+```
 
 For services that target a **Proxy Cluster** (or have **Direct Upstream** enabled), the proxy dials the backend directly from its own host network stack instead of through a peer — see [Private services](/manage/reverse-proxy/bring-your-own-proxy#private-services-net-bird-only-access).
 
 **Access groups:**
 
-When you enable NetBird-Only Access you must pick at least one **access group**. Only peers whose owning user (or the peer itself, for user-less peers like cluster proxies) is in one of those groups can reach the service. The service-save button stays disabled until you pick a group.
+When you enable NetBird-Only Access, pick at least one **access group** containing the peers that should reach the service. The same peer-group check applies to peers registered by a user and peers registered with a setup key. A user's group membership alone does not grant access to all of their devices. The **Enable** or **Save** button in the NetBird-Only Access modal stays disabled until you pick a group.
 
 **Cluster capability requirement:**
 
@@ -59,24 +64,26 @@ NetBird Cloud's shared clusters do not currently advertise the `Private` capabil
 - **NetBird Cloud:** run your own [account cluster](/manage/reverse-proxy/bring-your-own-proxy). The BYOP proxy joins your mesh as an embedded peer and gives the cluster the `Private` capability automatically.
 - **Self-hosted:** deploy at least one proxy instance in embedded mode (`netbird proxy`). See the [BYOP guide](/manage/reverse-proxy/bring-your-own-proxy) — the same setup applies to a management-wide proxy.
 
-**Default access-control baseline:**
+**Additional access restrictions:**
 
-Enabling NetBird-Only Access applies an implicit allow rule for the NetBird network range on the **Access Control** tab — additional CIDR rules you add are layered on top of that baseline. Country and CrowdSec checks are skipped on the overlay path because the source address is always a NetBird CGNAT address with no meaningful geo or reputation data.
+For requests arriving over WireGuard, configured CIDR allowlists and blocklists still apply in addition to the peer-group check. Country and CrowdSec checks are skipped on this path. The caller's overlay address can come from a custom account range; it is not necessarily a CGNAT address.
 
-<p>
-    <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-access-control-modal.png" alt="Access Control tab on a NetBird-only service, showing the default-allow callout" className="imagewrapper"/>
-</p>
+#### Identity headers stamped on upstream requests
 
-**Identity headers stamped on upstream requests:**
-
-When a request is forwarded to the backend, the proxy injects two headers identifying the authenticated caller:
+For NetBird-Only requests, the proxy forwards the available identity information in these headers:
 
 | Header | Value |
 |--------|-------|
-| `X-NetBird-User` | Display identity of the calling user — email when the peer is attached to a user, peer name otherwise |
-| `X-NetBird-Groups` | Comma-separated list of group display names the user belongs to. Falls back to group IDs at positions where the display name was unavailable at session-mint time |
+| `X-NetBird-User` | The peer owner's email when available; otherwise the peer name. |
+| `X-NetBird-Groups` | Comma-separated display names of the calling peer's groups. Falls back to a group ID when its display name is unavailable. |
 
-Any client-supplied `X-NetBird-User` or `X-NetBird-Groups` headers are **stripped** from the inbound request before the proxy stamps its own — clients cannot impersonate a user by setting the header. Backends can read these headers safely and use them to drive per-user authorization, logging, or personalization. See [Backend Service Configuration](/manage/reverse-proxy/service-configuration#netbird-identity-headers) for example backend integrations.
+Empty or unsafe values are omitted. Group labels containing commas or non-ASCII characters are skipped, and `X-NetBird-Groups` is absent if no valid labels remain. These are display values that can change and need not be unique; do not treat them as immutable user or group identifiers.
+
+<Warning>
+    The proxy removes client-supplied identity headers before setting its own values. A client that reaches the backend directly can supply forged headers. Trust `X-NetBird-User` and `X-NetBird-Groups` only when backend access is restricted to the intended NetBird-Only proxy service; checking for a header's presence is not enough.
+</Warning>
+
+See [Backend Service Configuration](/manage/reverse-proxy/service-configuration#net-bird-identity-headers) for backend integration guidance.
 
 **Best for:** internal tools that should only be reachable from a company-managed device, admin consoles, dashboards, dev/staging endpoints, and any service where you want the WireGuard tunnel to be the trust boundary instead of an operator-managed password or IdP.
 
@@ -163,14 +170,14 @@ You can configure multiple header entries on a single service. If multiple heade
 
 ### No authentication (public access)
 
-Services can also be configured without any authentication. When no authentication method is enabled, anyone with the service URL can access it without any restrictions.
+When no authentication method is enabled, clients do not need proxy credentials. Configured CIDR, country, and CrowdSec restrictions still apply, as do targets set to **Block access**. If you also leave access restrictions unset, anyone who can reach the service URL can access its unblocked targets. The backend can still enforce its own authentication.
 
 <Note>
-    When you save a service with no authentication configured, the dashboard displays a warning: **"This service will be publicly accessible to everyone on the internet without any restrictions."** You must confirm before the service is saved. Make sure this is intentional before proceeding.
+    When you save a service with neither authentication nor access restrictions configured, the dashboard displays **No Protection Configured** and asks you to confirm public access. Configuring access restrictions suppresses this confirmation even when authentication is disabled.
 </Note>
 
 <p>
-    <img src="/docs-static/img/manage/reverse-proxy/authentication/auth-no-auth-warning.png" alt="Warning dialog displayed when saving a service without authentication" className="imagewrapper"/>
+    <img src="/docs-static/img/manage/reverse-proxy/authentication/auth-no-auth-warning.png" alt="Service row showing No Auth and No Rules" className="imagewrapper"/>
 </p>
 
 **Best for:** Public-facing websites, APIs that handle their own authentication internally, or services that are intentionally open to the internet.
@@ -353,27 +360,23 @@ This layered approach lets you, for example, restrict a service to your corporat
 
 Authentication and access control are configured in separate tabs of the service creation or edit modal. Navigate to **Reverse Proxy** > **Services**, then either click **Add Service** to create a new service or click an existing service to edit it.
 
-- **Authentication** tab (HTTP services only): SSO, password, PIN, and header authentication
+- **Authentication** tab (HTTP services only): NetBird-Only Access, SSO, password, PIN, and header authentication
 - **Access Control** tab (all service modes): IP CIDR and country restrictions
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-auth-modal.png" alt="Authentication tab showing all available authentication methods" className="imagewrapper"/>
 </p>
 
-<p>
-    <img src="/docs-static/img/manage/reverse-proxy/reverse-proxy-access-control-modal.png" alt="Access Control tab on a service, showing the rule list and the NetBird-only baseline callout" className="imagewrapper"/>
-</p>
-
 ### Setting up NetBird-Only Access (private services)
 
 1. Open the service modal (create or edit).
-2. Confirm the selected base domain is on a cluster that reports the **Private** capability — the **NetBird-Only Access** row in the next step is greyed out otherwise. See [Cluster capability requirement](#netbird-only-access-private-services) above for how to enable it on your cluster.
+2. Confirm the selected base domain is on a cluster that reports the **Private** capability — the **NetBird-Only Access** row in the next step is greyed out otherwise. See [Cluster capability requirement](#net-bird-only-access-private-services) above for how to enable it on your cluster.
 3. Switch to the **Authentication** tab.
 4. Click **NetBird-Only Access**.
-5. In the modal, pick one or more **access groups**. Only peers whose owning user is in one of these groups can reach the service. The **Enable** button stays disabled until at least one group is selected.
+5. In the modal, pick one or more **access groups** containing the client peers that should reach the service. The **Enable** button stays disabled until at least one group is selected.
 6. Click **Enable**, then **Save Changes** on the service.
 
-To remove NetBird-Only Access, reopen the modal and click **Remove**. The service immediately reverts to the operator-auth flow (defaulting to no auth) — re-enable SSO, password, PIN, or header auth as needed before saving.
+To remove NetBird-Only Access, reopen its modal and click **Remove**. Configure SSO, password, PIN, or header authentication as needed, then save the service. The change takes effect when you save the service, and the previously enabled operator authentication methods are not restored automatically. Existing access restrictions remain in place.
 
 ### Setting up SSO
 
@@ -467,7 +470,7 @@ To remove an authentication method from a service:
 4. Use the **Remove** option to disable it.
 5. Click **Save Changes**.
 
-If you remove all authentication methods, the service becomes publicly accessible. The dashboard will display a warning before saving, as described in the [No authentication](#no-authentication-public-access) section above.
+After you save with all authentication methods removed, clients no longer need proxy credentials. Existing access restrictions and **Block access** targets remain in effect. The dashboard asks you to confirm public access only when access restrictions are also unset, as described in [No authentication](#no-authentication-public-access).
 
 ## Session management
 
