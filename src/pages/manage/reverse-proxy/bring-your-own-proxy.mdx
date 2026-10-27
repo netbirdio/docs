@@ -266,7 +266,7 @@ An L4 service on a port below the floor still fails to bind: its status becomes 
 A BYOP cluster whose proxy runs embedded as a NetBird peer (`netbird proxy` mode — the default for the `netbirdio/reverse-proxy` image) reports the `Private` capability if started with the flag `--private` or environment variable `NB_PROXY_PRIVATE=true`. With that capability set, the cluster unlocks two new options anywhere it is selected:
 
 - **NetBird-Only Access** on the service's **Authentication** tab — turn the service into a *private service* that only peers in your NetBird network can reach. See [NetBird-Only Access](/manage/reverse-proxy/authentication#net-bird-only-access-private-services) for the full behaviour, identity-header semantics, and access-group rules.
-- **Proxy Cluster** in the target picker — point the service at a hostname or IP that the embedded proxy can resolve directly from its own host stack (without WireGuard), with **Direct Upstream** locked on. Useful when the upstream is co-located with the BYOP proxy and you do not need (or want) to route it through the mesh.
+- **Proxy Cluster** in the target picker — point the service at a hostname or IP that the embedded proxy can resolve directly from its own host stack (without WireGuard), with **Direct Upstream** locked on. Useful when the upstream is co-located with the BYOP proxy and you do not need (or want) to route it through the mesh. Saving this target requires every active proxy in the selected cluster to report the `Private` capability.
 
 With a **Proxy Cluster** target (or **Direct Upstream** enabled on a peer/resource target), the service is still reachable only over the NetBird tunnel and still gated by group membership, but the proxy reaches the upstream directly via its host network stack — no WireGuard peer is required between the proxy and the backend:
 
@@ -282,7 +282,7 @@ When the selected base domain does *not* advertise the `Private` capability:
 - The **Proxy Cluster** option is hidden from the target picker.
 - **Direct Upstream** is locked off in service settings.
 
-To verify the capability is set, check the cluster row on the **Clusters** page — a **Private** badge appears in the Features column when at least one connected proxy is running in embedded mode.
+A **Private** badge in the cluster row's Features column means at least one active proxy reports private-mode support. It does not confirm that every replica supports it; see [High availability](#high-availability) below.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/byop/byop-clusters-private-feature.png" alt="Clusters page row showing the Private feature badge in the Features column" className="imagewrapper-big"/>
@@ -295,6 +295,8 @@ Run multiple proxy replicas with the **same** `NB_PROXY_TOKEN` and **same** `NB_
 - Registers itself with management as part of the same cluster.
 - Receives the full set of service mappings for the cluster.
 - Maintains its own WireGuard tunnels to backend peers.
+
+For an HA cluster using **Proxy Cluster** targets or **Direct Upstream**, set `NB_PROXY_PRIVATE=true` on every replica, including replicas added later. Management rejects creation or updates of services with those targets unless every active proxy reports the `Private` capability, even if the cluster already shows a **Private** badge.
 
 For DNS, point the cluster hostname's `A` records at the replica IPs (round-robin) or at a load balancer / floating IP. Keep the wildcard CNAME pointing to that hostname. With the default `tls-alpn-01` challenge, the load balancer must pass TLS through on port 443, including `acme-tls/1` traffic. For certificate coordination, see [Sharing certificates across replicas](#sharing-certificates-across-replicas).
 
