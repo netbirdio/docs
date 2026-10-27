@@ -37,7 +37,8 @@ docker exec <routing-peer-container> wget -qO- http://<target-ip>:<port> --timeo
 
 # 6. Is the service listening on the right interface?
 # With a tunnel interface, bind to the destination IP or all interfaces.
-# Netstack mode can forward peer-IP traffic to localhost; see Issue 2.
+# Netstack localhost forwarding requires NB_ENABLE_NETSTACK_LOCAL_FORWARDING=true
+# (or NB_ENABLE_LOCAL_FORWARDING=true); see Issue 2.
 ss -tlnp | grep <port>
 # or on macOS:
 lsof -iTCP:<port> -sTCP:LISTEN
@@ -192,7 +193,9 @@ When the target type is **Peer**, the proxy sends traffic directly to that peer 
 With a normal tunnel interface, traffic addressed to the peer's NetBird IP is not delivered to a service listening only on `127.0.0.1` or `::1`. The service must listen on an address that matches the destination, or on all interfaces.
 
 <Note>
-    In **netstack mode**, the receiving NetBird client forwards traffic addressed to its own NetBird IP to loopback (`127.0.0.1` for IPv4 or `::1` for IPv6). A localhost listener can work in this mode without changing its bind address. If NetBird runs in a container, that loopback address belongs to the container's network namespace; a backend in a separate container or on the host must be reachable from there.
+    In **netstack mode**, localhost forwarding requires `NB_ENABLE_NETSTACK_LOCAL_FORWARDING=true` on the receiving NetBird client. `NB_ENABLE_LOCAL_FORWARDING=true` is also accepted when the netstack-specific variable is unset. Setting `NB_USE_NETSTACK_MODE=true` alone is not enough; the rootless NetBird client images enable local forwarding by default.
+
+    With local forwarding enabled, the client forwards traffic addressed to its own NetBird IP to loopback (`127.0.0.1` for IPv4 or `::1` for IPv6), so a localhost listener can work without changing its bind address. If NetBird runs in a container, that loopback address belongs to the container's network namespace; a backend in a separate container or on the host must be reachable from there.
 </Note>
 
 **How to check**:
@@ -210,7 +213,7 @@ lsof -iTCP:<port> -sTCP:LISTEN
 Get-NetTCPConnection -LocalPort <port> -State Listen | Select-Object LocalAddress,LocalPort
 ```
 
-If the `Local Address` column shows `127.0.0.1` or `::1`, the service is listening on loopback. Check the receiving client's mode and, for containers, whether NetBird and the backend share the same network namespace before changing the bind address.
+If the `Local Address` column shows `127.0.0.1` or `::1`, the service is listening on loopback. Check the receiving client's mode, its local forwarding setting, and, for containers, whether NetBird and the backend share the same network namespace before changing the bind address.
 
 **Solution**:
 
@@ -220,7 +223,9 @@ For a normal tunnel interface, configure the service to listen on the address us
 - The specific LAN IP for a target reached through a routing peer.
 - `0.0.0.0` (all IPv4 interfaces) or `::` (all IPv6 interfaces) if access on all interfaces is intended.
 
-Look for a `bind`, `listen`, `host`, or `address` setting in the service's configuration file. Use the actual destination IP from your target configuration. In netstack mode, a loopback listener in the NetBird client's network namespace can remain on loopback.
+Look for a `bind`, `listen`, `host`, or `address` setting in the service's configuration file. Use the actual destination IP from your target configuration.
+
+In netstack mode, a loopback listener in the NetBird client's network namespace can remain on loopback when local forwarding is enabled. Set `NB_ENABLE_NETSTACK_LOCAL_FORWARDING=true` in the receiving NetBird daemon's or container's environment and restart that client to apply it.
 
 After changing the bind address, restart the service and verify with `ss` or `lsof` that it now listens on the correct interface.
 
@@ -259,13 +264,13 @@ If this returns `Forbidden` while the same URL works from the host:
 curl -s https://<your-idp-domain>/.well-known/openid-configuration
 ```
 
-Then geo-restrictions on the reverse proxy service are blocking internal traffic.
+The internal request is being denied, but a `403` alone does not identify the cause. Check the proxy's debug logs for `IP restriction: country_restricted`, `geo_unavailable`, or `ip_restricted`, or inspect `auth_method_used` in [Access Logs](/manage/reverse-proxy/access-logs#deny-reasons). IP allowlists and blocklists are checked before country rules; `ip_restricted` requires an IP-rule change, even if country restrictions are also configured.
 
 **Solution**:
 
-Remove or adjust the geo-restriction on the reverse proxy service that exposes your IdP. You can do this from the NetBird dashboard under **Reverse Proxy > Services**, then edit the service and remove the country restriction.
+Remove or adjust the restriction blocking the management server's request. In the NetBird dashboard under **Reverse Proxy > Services**, edit the IdP service's country restrictions or IP rules according to the denial reason.
 
-If you are locked out of the dashboard because the IdP connector cannot initialize (e.g., you already removed local users), you can remove the country restrictions directly from the management database. The commands below assume SQLite at `/data/store.db` in `<netbird_data_volume>`; replace the volume placeholder with your management data volume.
+If you are locked out of the dashboard because the IdP connector cannot initialize (e.g., you already removed local users), you can temporarily remove the blocking country or IP restrictions directly from the management database. The commands below assume SQLite at `/data/store.db` in `<netbird_data_volume>`; replace the volume placeholder with your management data volume.
 
 1. Stop all NetBird containers:
 
@@ -288,14 +293,21 @@ docker run --rm --user root -v <netbird_data_volume>:/data --entrypoint sqlite3 
   "SELECT id, domain, restrictions FROM services;"
 ```
 
-4. Remove only the country allowlist and blocklist from the IdP service. Replace `<service-id>` with the ID from the previous step:
+4. Remove the restriction fields responsible for the lockout from the IdP service. Replace `<service-id>` with the ID from the previous step. For `country_restricted` or `geo_unavailable`, remove the country allowlist and blocklist:
 
 ```
 docker run --rm --user root -v <netbird_data_volume>:/data --entrypoint sqlite3 keinos/sqlite3 /data/store.db \
   "UPDATE services SET restrictions=json_remove(restrictions, '$.allowed_countries', '$.blocked_countries') WHERE id='<service-id>';"
 ```
 
-This preserves the service's IP allowlist, IP blocklist, and CrowdSec mode. Setting the whole `restrictions` value to `{}` would remove those controls too. If you use PostgreSQL, use your database's backup and JSON editing tools to remove only these two country fields.
+For `ip_restricted`, removing country rules alone will not restore access. Temporarily remove the IP allowlist and blocklist instead:
+
+```
+docker run --rm --user root -v <netbird_data_volume>:/data --entrypoint sqlite3 keinos/sqlite3 /data/store.db \
+  "UPDATE services SET restrictions=json_remove(restrictions, '$.allowed_cidrs', '$.blocked_cidrs') WHERE id='<service-id>';"
+```
+
+If both IP and country rules block the internal request, apply both changes. Each command removes the indicated restrictions for the entire IdP service, including public requests; restore appropriate rules after regaining access. Both commands preserve CrowdSec mode, so a CrowdSec denial needs separate investigation. If you use PostgreSQL, use your database's backup and JSON editing tools to remove the corresponding fields.
 
 5. Start the containers:
 
@@ -309,8 +321,9 @@ docker compose start
 docker logs netbird-server --tail 20
 ```
 
-Once you regain access to the dashboard, you can re-enable geo-restrictions on the service if needed. To prevent this issue in the future, consider one of the following:
+Once you regain access to the dashboard, restore appropriate IP and country restrictions on the service. To prevent another lockout:
 
+- If you use an IP allowlist, include the management server's source address as seen by the proxy, and ensure the IP blocklist does not match it. Passing the IP checks does not bypass country checks.
 - Leave geo-restrictions disabled on services that the management server needs to reach internally (such as your IdP).
 - Use a separate network path for the IdP that doesn't pass through the reverse proxy's geo-restriction layer.
 
