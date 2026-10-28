@@ -169,12 +169,13 @@ services:
       - traefik.http.middlewares.netbird-dashboard-crowdsec.plugin.bouncer.crowdsecAppsecUnreachableBlock=true
 ```
 
-Under `services.netbird-server.labels`, add a higher-priority router for dashboard API and embedded IdP paths:
+Under `services.netbird-server.labels`, replace the existing `netbird-backend.rule` with the rule below and keep its other labels. Add the higher-priority `netbird-dashboard-api` router for dashboard API and embedded IdP paths in the same list:
 
 ```yaml
 services:
   netbird-server:
     labels:
+      - traefik.http.routers.netbird-backend.rule=Host(`netbird.example.com`) && (PathPrefix(`/relay`) || PathPrefix(`/ws-proxy/`))
       - traefik.http.routers.netbird-dashboard-api.rule=Host(`netbird.example.com`) && (PathPrefix(`/api`) || PathPrefix(`/oauth2`))
       - traefik.http.routers.netbird-dashboard-api.entrypoints=websecure
       - traefik.http.routers.netbird-dashboard-api.tls=true
@@ -185,6 +186,8 @@ services:
 ```
 
 Replace `netbird.example.com` with your NetBird domain. Traefik labels do not read the `NETBIRD_DOMAIN` shell variable used in the command examples.
+
+With AppSec enabled, `/api` and `/oauth2` must use the protected API router. Restricting `netbird-backend` to `/relay` and `/ws-proxy/` prevents those requests from reaching an uninspected backend if the protected router is unavailable. Both install scripts apply this restriction when AppSec is enabled.
 
 <Warning>
   Leave the NetBird Proxy TCP passthrough labels unchanged. Do not attach this
@@ -346,11 +349,11 @@ The response should be `200`.
 
 ## Verifying the middleware stays attached
 
-This protection fails open. If the middleware is detached for any reason, most commonly a label edit applied with `docker compose restart` instead of `docker compose up -d`, which does not recreate the container, requests stop being inspected and nothing reports an error. The dashboard loads, authentication works, and all containers report healthy. The only symptom is that a known malicious probe returns `404` instead of `403`.
+The middleware definition lives on the `traefik` service, and the routers on `dashboard` and `netbird-server` reference it. If that definition is missing or invalid, Traefik logs a configuration error and does not enable routers that still reference it. The restricted backend rule above prevents `/api` and `/oauth2` from falling back to the uninspected backend router.
 
-The middleware definition lives on the `traefik` service, so a dashboard restart does not drop it. The router lines on `dashboard` and `netbird-server` still have to stay in place. Losing either one takes that router off the middleware.
+Removing the middleware reference from a router leaves that router without AppSec inspection. Container health alone does not confirm that protection is attached.
 
-After any change to the labels, recreate the containers whose labels changed and re-run both probes. For the two router labels, that is:
+After changing labels, recreate the containers whose labels changed with `docker compose up -d`. `docker compose restart` does not apply label changes. For the two router attachments, recreate `dashboard` and `netbird-server` and re-run both probes from an IP outside any CrowdSec allowlist:
 
 ```bash
 docker compose up -d dashboard netbird-server
@@ -358,7 +361,7 @@ curl -ks -A 'Mozilla/5.0 NetBirdDashboardCheck' -o /dev/null -w '%{http_code}\n'
 curl -ks -A 'Mozilla/5.0 NetBirdDashboardCheck' -o /dev/null -w '%{http_code}\n' "https://$NETBIRD_DOMAIN/api/.env"
 ```
 
-A `403` from both confirms the middleware is in the request path on both routers. A `404` from either means it is not attached to that router.
+Both probes should return `403`, and the normal dashboard and OIDC requests in [Verify protection](#verify-protection) should still succeed. A `404` alone does not identify the cause: check the router labels and Traefik logs for middleware configuration errors.
 
 To surface this automatically, monitor the same probe from outside the deployment and treat `403` as the healthy response. The middleware is attached to the two routers separately, so probe both. A check on `/.env` alone exercises only the dashboard router and would still return `403` if the middleware were detached from the API router. Point an uptime monitor or a cron job at each of:
 
@@ -367,7 +370,7 @@ https://<your-domain>/.env
 https://<your-domain>/api/.env
 ```
 
-Alert when either response is anything other than `403`. This is an inverted check, alerting on the absence of a block rather than on an outage, but it is the only signal that confirms the protection layer is still in the request path.
+Alert when either response is anything other than `403`. Monitor normal dashboard and OIDC requests separately so an outage or an IP ban is not mistaken for working protection.
 
 <Warning>
   Do not enable the Traefik API (`--api.insecure=true`) for this purpose. The
@@ -378,9 +381,9 @@ Alert when either response is anything other than `403`. This is an inverted che
 </Warning>
 
 <Warning>
-  This is detection only. Nothing here restores enforcement automatically: the
-  probe tells you protection has stopped, and reattaching the middleware
-  remains a manual step.
+  These probes do not restore enforcement automatically. Investigate unexpected
+  responses, correct the router labels or middleware configuration, and recreate
+  the affected containers.
 </Warning>
 
 ## Recovering from a dashboard lockout
