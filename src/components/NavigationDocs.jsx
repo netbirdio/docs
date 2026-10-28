@@ -1298,7 +1298,7 @@ export function NavigationDocs({ className }) {
                 <TopLevelNavItem href="https://github.com/netbirdio/netbird">
                     Github
                 </TopLevelNavItem>
-                <TopLevelNavItem href="/slack-url">Support</TopLevelNavItem>
+                <TopLevelNavItem href="/help/community-support">Support</TopLevelNavItem>
                 {docsNavigation.map((group, groupIndex) =>
                     group.featured ? (
                         <NavigationStateProvider key={group.title} index={groupIndex}>
