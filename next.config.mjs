@@ -31,6 +31,11 @@ const nextConfig = {
                 permanent: false,
             },
             {
+                source: '/discord-url',
+                destination: 'https://discord.gg/hKgZsZDuCK',
+                permanent: false,
+            },
+            {
                 source: '/how-to/networks-concept',
                 destination: '/manage/networks',
                 permanent: true,
