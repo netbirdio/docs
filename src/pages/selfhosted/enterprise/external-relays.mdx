@@ -74,7 +74,15 @@ CONFIG=config.yaml; [ -f config.yaml.enterprise ] && CONFIG=config.yaml.enterpri
 grep 'authSecret:' "$CONFIG"
 ```
 
-Read it from the server configuration and not from `.env`. The server configuration carries this value on every deployment. `.env` does not: a deployment created by `getting-started-enterprise.sh` has it there as `NETBIRD_RELAY_AUTH_SECRET`, one migrated up from the community edition with traffic flow has `NB_FLOW_AUTH_SECRET` instead, and one migrated without traffic flow has neither, because the community installer never wrote the relay secret to `.env` in the first place.
+From NetBird vX.Y.Z, `NB_AUTH_SECRET` set on the `netbird-server` container overrides `server.authSecret`. Check for it before you trust the line above:
+
+```bash
+docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$(docker compose ps -q netbird-server)" | grep '^NB_AUTH_SECRET='
+```
+
+If this prints `NB_AUTH_SECRET=` followed by a value, that value is the secret your server uses. If it prints nothing, or `NB_AUTH_SECRET=` with nothing after it, the server uses `server.authSecret`.
+
+Use the value these checks found, not a value you see in `.env`. A variable in `.env` reaches the server only if `docker-compose.yml` passes it to the container, and only after the container is recreated. Other entries in `.env`, such as `NETBIRD_RELAY_AUTH_SECRET` (created by `getting-started-enterprise.sh`) or `NB_FLOW_AUTH_SECRET` (added by a migration with traffic flow), may hold the same secret for other services, but they do not tell you what the server uses.
 
 That value goes in two places later: `NB_AUTH_SECRET` on every relay host in Step 3, and `relays.secret` on the main server in Step 6.
 
@@ -468,7 +476,7 @@ openssl rand -base64 32
 
 1. `NB_AUTH_SECRET` in `relay.env` on every relay host.
 2. `relays.secret` in the server configuration on the main server (`config.yaml`, or `config.yaml.enterprise` on a migrated deployment that has it).
-3. `server.authSecret` in the same file.
+3. `server.authSecret` in the same file, and `NB_AUTH_SECRET` on the `netbird-server` container too if your deployment sets it there. A container's environment is fixed when it is created, so after changing that variable run `docker compose up -d netbird-server` instead of the restart below.
 4. In `.env` on the main server, under whichever name your deployment uses: `NETBIRD_RELAY_AUTH_SECRET` on a fresh install, `NB_FLOW_AUTH_SECRET` on one migrated from the community edition with traffic flow. That is the value that reaches the traffic-flow receiver. A migrated deployment without traffic flow has no entry here.
 
 All four must end up holding the same value. Relaying needs 1 and 2 to match, and traffic events need 2 and 4 to match. Entry 3 is not used by either, but the product's own migration tooling treats `server.authSecret` as the value the receiver's secret must equal, so leaving it stale stores up a failure for a later upgrade.

@@ -157,7 +157,9 @@ We recommend using SCIM provisioning where possible. In the following setup guid
 
 ## 3. Migrate an Existing Community Combined Deployment
 
-Use `migrate-to-enterprise.sh` to convert an existing community combined-server deployment to the enterprise images. The same script also migrates SQLite data to Postgres and enables traffic flow, so no manual Compose or `config.yaml` edits are required for the supported migration path.
+Use `migrate-to-enterprise.sh` to convert an existing community combined-server deployment to the enterprise images. The same script also migrates SQLite data to Postgres and enables traffic flow, so no manual Compose or `config.yaml` edits are required for the supported migration path, except in the case below.
+
+Before you run the script, if your community deployment sets `NB_AUTH_SECRET` or `NB_STORE_ENCRYPTION_KEY` on the `netbird-server` container, copy each value it sets into `config.yaml` (`server.authSecret`, `server.store.encryptionKey`). The Enterprise server requires the encryption key in `config.yaml`, and when you enable traffic flow the script reads both values from `config.yaml` only. After the migration, remove `NB_STORE_ENCRYPTION_KEY` from the `netbird-server` service in `docker-compose.yml` and run `docker compose up -d netbird-server`: Enterprise integrations read the key only from `config.yaml`, so a variable that later drifts from it would leave management data and integration data under different keys. `NB_AUTH_SECRET` can stay, as long as `server.authSecret` holds the same value.
 
 For installations created with `getting-started-enterprise.sh`, use [1.7 Enable features on an existing installation](#1-7-enable-features-on-an-existing-installation) instead.
 
@@ -241,8 +243,8 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
 ### Boot fails: `server.store.encryptionKey is required`
 
 - **Symptom:** The server exits immediately with this message in the logs.
-- **Cause:** `config.yaml` is missing `server.store.encryptionKey`, or the value is the empty string.
-- **Resolution:** Generate a key with `openssl rand -base64 32` and set it under `server.store.encryptionKey`.
+- **Cause:** `config.yaml` is missing `server.store.encryptionKey`, or the value is the empty string. Setting the key only through `NB_STORE_ENCRYPTION_KEY` does not satisfy this check: the Enterprise server requires it in `config.yaml`. If a deployment that has run before sets `NB_STORE_ENCRYPTION_KEY`, the key was moved out of `config.yaml` into that variable: either just now, or during a migration from community without copying it back first.
+- **Resolution:** If the deployment has run before, copy its existing key (from `NB_STORE_ENCRYPTION_KEY`, or from your backup) into `server.store.encryptionKey`. A new key cannot read the data already in the database. Only for a new installation, generate a key with `openssl rand -base64 32` and set it under `server.store.encryptionKey`.
 - **Verification:** Restart; the server should now reach the `Management server created` and `Starting CloudServer` log lines.
 
 <Warning>
