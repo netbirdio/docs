@@ -5,7 +5,7 @@ import {Note} from "@/components/mdx";
 Lazy connections reduce resource use in large NetBird networks by opening peer connections only when traffic needs them, rather than maintaining every possible full-mesh connection continuously.
 
 <Note>
-    Lazy connections require NetBird v0.50.1 or later on the client, the peers it communicates with, and self-hosted Management and Signal servers.
+    Lazy connections require NetBird v0.50.1 or later on the client and on the peers it communicates with. If you self-host NetBird, your Management and Signal servers must also run v0.50.1 or later. NetBird Cloud already meets this requirement.
 </Note>
 
 ## How Lazy Connections Work
@@ -32,6 +32,21 @@ When the local NetBird resolver answers with two or more A or AAAA records that 
 Warm-up only applies to names in [custom DNS zones](/manage/dns/custom-zones) and in the zones NetBird creates for [private services](/manage/reverse-proxy/authentication#net-bird-only-access-private-services). A name with a single record does not trigger it, and neither does a peer's own name, such as `peer-a.netbird.cloud`. Peer names are excluded on purpose: otherwise every lookup would wake idle connections across the network.
 
 Set `NB_DNS_LAZY_WARMUP_TIMEOUT` on the daemon to change this per-query wait. The value must be a positive Go duration, for example `5s`. Invalid, zero, or negative values fall back to the `2s` default.
+
+### When the Signal server is down
+
+A Signal outage usually comes with a Management outage, for example while a single self-hosted server restarts.
+
+Opening a connection needs Signal, because the two peers exchange connection offers through it. Keeping a connection open does not: its traffic goes directly between the peers or through a Relay server. So while Signal is down:
+
+- Open direct connections stay up.
+- Open relayed connections stay up if Relay runs separately from Signal, as on NetBird Cloud and in self-hosted deployments with [external relays](/selfhosted/maintenance/scaling/set-up-external-relays). In the default self-hosted deployment, Relay runs in the same `netbird-server` container as Signal, so relayed connections drop.
+- Restarting the NetBird client, or the device it runs on, closes every connection on that device, and none reopens until Signal is back.
+- No connection can open. That includes one that dropped (for example after a network change), one to a peer the device has never connected to, and one that lazy connections closed for inactivity.
+
+With lazy connections on, an idle connection, direct or relayed, still closes after the inactivity threshold (15 minutes by default) if either peer runs userspace WireGuard, as the Windows and macOS clients always do. It cannot reopen until Signal is back. If both peers run kernel WireGuard (possible only on Linux), the connection does not close when idle. A connection in use stays up.
+
+Once Signal is back, every connection that could not open opens on the next traffic to its peer. You don't need to restart anything.
 
 ## Enable Lazy Connections in Management
 
@@ -94,5 +109,5 @@ The connection between the two then opens on demand and closes after the inactiv
 
 - Make sure to [star us on GitHub](https://github.com/netbirdio/netbird)
 - Follow us [on X](https://x.com/netbird)
-- Join our [Slack Channel](/slack-url)
+- Join our [Slack Channel](/slack-url) or [Discord server](/discord-url)
 - NetBird [latest release](https://github.com/netbirdio/netbird/releases) on GitHub

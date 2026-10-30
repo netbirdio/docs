@@ -546,6 +546,7 @@ export const docsNavigation = [
                     { title: 'Quickstart', href: '/agent-network/quickstart' },
                     { title: 'Providers', href: '/agent-network/providers' },
                     { title: 'Clusters', href: '/agent-network/clusters' },
+                    { title: 'Control Center', href: '/agent-network/control-center' },
                 ],
             },
             {
@@ -678,6 +679,10 @@ export const docsNavigation = [
                                 href: '/selfhosted/maintenance/scaling/set-up-external-relays',
                             },
                             {
+                                title: 'Hairpin NAT and Split DNS',
+                                href: '/selfhosted/maintenance/scaling/hairpin-nat-and-split-dns',
+                            },
+                            {
                                 title: 'Migrate SQLite to PostgreSQL',
                                 href: '/selfhosted/maintenance/scaling/migrate-sqlite-to-postgresql',
                             },
@@ -716,7 +721,7 @@ export const docsNavigation = [
                         href: '/selfhosted/maintenance/crowdsec',
                     },
                     {
-                        title: 'CrowdSec Dashboard Protection',
+                        title: 'CrowdSec AppSec',
                         href: '/selfhosted/maintenance/crowdsec-dashboard',
                     },
                 ],
@@ -1293,7 +1298,7 @@ export function NavigationDocs({ className }) {
                 <TopLevelNavItem href="https://github.com/netbirdio/netbird">
                     Github
                 </TopLevelNavItem>
-                <TopLevelNavItem href="/slack-url">Support</TopLevelNavItem>
+                <TopLevelNavItem href="/help/community-support">Support</TopLevelNavItem>
                 {docsNavigation.map((group, groupIndex) =>
                     group.featured ? (
                         <NavigationStateProvider key={group.title} index={groupIndex}>

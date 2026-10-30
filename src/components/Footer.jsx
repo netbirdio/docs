@@ -252,6 +252,9 @@ function SmallPrint() {
         <SocialLink href="/slack-url" icon={SlackIcon}>
           Join us on Slack
         </SocialLink>
+        <SocialLink href="/discord-url" icon={DiscordIcon}>
+          Join us on Discord
+        </SocialLink>
       </div>
     </div>
   )

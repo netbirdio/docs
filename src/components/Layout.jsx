@@ -188,12 +188,12 @@ export function Layout({ children, title, tableOfContents }) {
       <AnnouncementBanner />
       <HeroPattern/>
       <div
-        className="relative mx-auto flex max-w-8xl md:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80"
+        className="relative flex md:px-2 lg:px-8 xl:px-12 lg:ml-[calc(var(--layout-offset)+18rem)] lg:max-w-[calc(var(--layout-max-width)-18rem)] xl:ml-[calc(var(--layout-offset)+20rem)] xl:max-w-[calc(var(--layout-max-width)-20rem)]"
         style={{ paddingTop: bannerHeight }}
       >
         <header
             // layoutScroll
-            className="contents lg:pointer-events-none lg:fixed lg:inset-0 lg:z-40 lg:flex"
+            className="contents lg:pointer-events-none lg:fixed lg:inset-y-0 lg:left-[var(--layout-offset)] lg:right-[var(--layout-offset)] lg:z-40 lg:flex"
             style={{ top: bannerHeight }}
         >
           <div className="contents lg:pointer-events-auto lg:block lg:w-72 lg:overflow-y-auto lg:border-r lg:border-zinc-900/10 lg:dark:border-neutral-700/50 lg:px-6 lg:pb-8 lg:pt-4 lg:bg-white/70 lg:dark:bg-[#181A1D]/95 lg:backdrop-blur-lg xl:w-80 lg:overflow-x-visible sidebar-scroll">
