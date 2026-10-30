@@ -128,7 +128,7 @@ A peer repeats this comparison whenever a routing peer's connection state or lat
 - **When another routing peer is clearly closer**, once all three of these hold:
   - **Switch margin.** The latency gain has to be at least 20 ms, at least 20% of the current latency, and at least four times the combined uncertainty of the two latency values, which the client logs as the `+/-` figure next to each latency (for example `latency: 40ms +/- 2ms`). The uncertainty grows with the jitter of a path and is small on a stable one. On stable paths that have been connected for a while, this means a peer on a routing peer at 40 ms moves to one at 15 ms but not to one at 25 ms, and a peer on a routing peer at 150 ms moves only to one at 120 ms or less. A newly connected path starts with a high uncertainty that settles as measurements accumulate, so right after connecting, the gain has to be larger.
   - **Dwell time.** After a switch made for latency, the next switch for latency waits at least 30 seconds; this never delays a failover.
-  - **Latency measurement.** Both routing peers need a latency measurement. A routing peer whose direct connection just came up cannot take over until it has one, and a current routing peer without one is kept for up to 30 seconds while it gets one.
+  - **Latency measurement.** The routing peer that would take over needs a latency measurement, so one whose direct connection just came up cannot take over until it has one. A current routing peer without a measurement is kept for up to 30 seconds while it gets one; after that, it counts as slower than any measured routing peer.
 
 ### Relayed switch delay
 
@@ -155,7 +155,7 @@ sudo netbird service reconfigure --service-env NB_HA_RELAYED_SWITCH_DELAY=60s
 ```
 
 <Note>
-When a routing peer fails without shutting down, for example on power loss or a network outage, its direct connection is detected as down within seconds, but its relayed connection only once the relay service notices that the routing peer is gone, which can take a minute. In between, the routing peer looks relayed rather than offline, so the relayed switch delay applies, and traffic to the network is dropped until the failover. With the default delay, such a failover takes about 30 seconds longer than one where the routing peer shuts down cleanly. With `never`, the failover waits until the relay service notices. Where fast failover matters more than avoiding connection resets, set a shorter delay, such as `10s`.
+When a routing peer fails without shutting down, for example on power loss or a network outage, its direct connection is detected as down within seconds, but its relayed connection only once the relay service notices that the routing peer is gone, which can take a minute. In between, the routing peer looks relayed rather than offline, and traffic to the network is dropped until the failover. If an equivalent routing peer has a direct connection, the relayed switch delay applies: with the default delay, the failover takes about 30 seconds longer than one where the routing peer shuts down cleanly, and with `never` it waits until the relay service notices. Where fast failover matters more than avoiding connection resets, set a shorter delay, such as `10s`. With different metrics, or when the other routing peers are relayed too, the delay plays no part: the failover waits until the relay service notices, whatever the delay.
 </Note>
 
 ### What a switch does to open connections
