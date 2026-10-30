@@ -59,7 +59,7 @@ NetBird does **not require** specific roles or group memberships by default. How
 
 ### Groups Claim Format
 
-If you want to use JWT group sync, your IdP must include a groups claim as a JSON array of strings:
+If you want to use JWT group sync, your IdP must provide a groups claim as a JSON array of strings or objects with a string `name` field. The generic OIDC connector uses that field as the group name.
 
 ```json
 {
@@ -69,7 +69,7 @@ If you want to use JWT group sync, your IdP must include a groups claim as a JSO
 }
 ```
 
-The claim name is configurable (default: `groups`). Some providers use `roles`, `memberOf`, or custom claim names.
+The claim name is configurable (default: `groups`). Some providers use `roles`, `memberOf`, or custom claim names. The [API options](#api-configuration) can map an upstream custom claim to the standard `groups` claim emitted by NetBird's embedded IdP.
 
 ---
 
@@ -110,10 +110,11 @@ Ensure your OIDC client requests the following scopes:
 | `openid` | Required for OIDC |
 | `profile` | Access to `name` and `preferred_username` claims |
 | `email` | Access to `email` claim |
-| `groups` | Access to group membership (if supported and needed) |
+| Provider-specific group scope | Access to group membership, if your provider requires one |
 
 <Note>
 Some providers include profile and email claims by default. Others require explicit scope requests. Check your provider's documentation.
+The generic OIDC connector requests `openid`, `profile`, and `email` by default. Additional scopes can be configured through the API described below.
 </Note>
 
 ### Step 3: Add Identity Provider in NetBird
@@ -199,6 +200,7 @@ Configure NetBird with:
 
 <Note>
 Groups created via JWT sync are managed by your IdP. Users are added/removed from these groups automatically on each login based on their IdP group membership.
+If you use the API's `groups_claim` mapping, set the NetBird JWT claim to `groups`, the claim name emitted by the embedded IdP.
 </Note>
 
 ---
@@ -207,11 +209,11 @@ Groups created via JWT sync are managed by your IdP. Users are added/removed fro
 
 ### Claims in ID Token vs UserInfo
 
-Some providers only include basic claims in the ID token and require a UserInfo request for `email` and `name`. NetBird's embedded DEX connector automatically fetches UserInfo when configured with `getUserInfo: true` (the default for generic OIDC connectors).
+Some providers only include basic claims in the ID token and require a UserInfo request for `email`, `name`, or groups. The generic OIDC connector does not fetch UserInfo by default. Set `get_user_info` through the API if your provider returns the required claims only from UserInfo.
 
 If users appear without email or name:
 1. Check if your IdP includes these claims in the ID token
-2. Verify the UserInfo endpoint is accessible
+2. If the missing claims are only available from UserInfo, set `get_user_info` to `true` through the API
 3. Ensure the `profile` and `email` scopes are granted
 
 ### Issuer URL Format
@@ -264,8 +266,8 @@ NetBird validates tokens using public keys from your IdP's JWKS endpoint. Ensure
 ### Groups not syncing
 
 - Verify your IdP includes groups in the token (check with a JWT decoder)
-- Ensure the claim name in NetBird matches your IdP's claim name
-- Check that groups are in array format: `["group1", "group2"]`
+- Ensure the NetBird JWT claim matches the claim emitted by the embedded IdP; use `groups` when `groups_claim` maps a custom upstream claim
+- Check that groups are an array of strings or objects with a string `name` field
 
 ---
 
@@ -285,6 +287,20 @@ curl -X POST "https://netbird.example.com/api/identity-providers" \
     "issuer": "https://idp.example.com"
   }'
 ```
+
+For a provider with a custom group scope and claim, add these optional fields to the request body:
+
+```json
+{
+  "additional_scopes": ["iserv:groups"],
+  "groups_claim": "iserv:groups",
+  "get_user_info": true
+}
+```
+
+`additional_scopes` is appended to the default scopes without duplicates. `groups_claim` maps the upstream claim to the embedded IdP's `groups` claim. The mapped value overrides any standard `groups` claim sent by the upstream provider. `get_user_info` fetches additional upstream claims from UserInfo. These fields apply only to the generic OIDC provider type. On update, omit a field or send `null` to keep its current value; send `[]`, `""`, or `false` to clear the corresponding setting.
+
+[IServ documents](https://doku.iserv.de/manage/system/sso/#iserv-groups) group entries with `id`, `act`, and `name`; the connector uses `name` for NetBird group names. Enable `get_user_info` if your IServ instance provides these entries only through UserInfo.
 
 ---
 
