@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:24.22.1-slim
 
 # tini runs as PID 1 and forwards signals to node (which doesn't install its
 # own SIGTERM handler, and as PID 1 would otherwise ignore it) — so
@@ -18,7 +18,7 @@ ENV PORT=3000
 # Next's standalone output (built on the CI runner, see build_n_push.yml)
 # bundles a minimal, traced node_modules plus server.js — there is nothing to
 # install here. The output is traced against the runner (Ubuntu/glibc), so this
-# runtime image must also be glibc (node:20-slim, NOT alpine/musl) or the traced
+# runtime image must also be glibc (node:*-slim, NOT alpine/musl) or the traced
 # native binaries won't load.
 #
 # Files are chowned to the non-root `node` user because entrypoint.sh rewrites
