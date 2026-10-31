@@ -292,7 +292,13 @@ Configures the built-in identity provider (embedded IdP) that handles user authe
   <Property name="server.auth.mfaSessionIdleTimeout" type="string">
     MFA session idle timeout. If the user is inactive for this duration, the MFA session expires and they must re-authenticate with TOTP. Default: `"1h"`. Only applicable when [local MFA](/selfhosted/identity-providers/enable-local-mfa) is enabled.
   </Property>
-  
+  <Property name="server.auth.brandName" type="string">
+    Name shown in place of "NetBird" in the title and wording of the login pages. Default: `"NetBird"`. See [Branding](#branding).
+  </Property>
+  <Property name="server.auth.brandLogoURL" type="string">
+    Absolute `http(s)` URL of an image shown on the login pages in place of the NetBird logo. Optional. The server refuses to start if the value is not an absolute `http(s)` URL, or if it uses `http` while `server.auth.issuer` uses `https`, because browsers do not load such an image.
+  </Property>
+
 </Properties>
 
 For example, disable the OAuth device flow while retaining dashboard/browser login and refresh tokens:
@@ -493,6 +499,45 @@ The dashboard container's embedded nginx server can be configured using these en
 <Note>
 The `NGINX_SSL_PORT` and Let's Encrypt variables are **only necessary when running the dashboard standalone** without an external reverse proxy. For most installations using the built-in Traefik or an external reverse proxy, set `LETSENCRYPT_DOMAIN=none` and the embedded nginx will serve on HTTP (port 80) internally while your reverse proxy handles HTTPS.
 </Note>
+
+### Branding
+
+A deployment can show its own name, logo, and favicon instead of NetBird's. Every setting is optional, and anything left unset keeps the NetBird default.
+
+| Variable | Description |
+|----------|-------------|
+| `NETBIRD_BRAND_NAME` | Replaces "NetBird Dashboard" in the browser tab title (e.g., `Acme Access`). |
+| `NETBIRD_BRAND_LOGO_URL` | Replaces the NetBird logo in the dashboard header and on the setup, onboarding, and pending approval screens. |
+| `NETBIRD_BRAND_FAVICON_URL` | Replaces the favicon. |
+
+The logo and favicon accept an `http(s)` URL or a path to a file mounted into the dashboard container's web root. The logo is scaled to the height of the NetBird logo (22 to 24 pixels) and is displayed on a dark background, so a wide SVG or PNG with a transparent background works best.
+
+To serve the images from the dashboard itself, mount a directory into the container and point the variables at it:
+
+```yaml
+dashboard:
+  volumes:
+    - ./branding:/usr/share/nginx/html/branding:ro
+```
+
+```bash
+NETBIRD_BRAND_NAME=Acme Access
+NETBIRD_BRAND_LOGO_URL=/branding/logo.svg
+NETBIRD_BRAND_FAVICON_URL=/branding/favicon.png
+```
+
+The login pages are served by the identity provider, not the dashboard, and are branded separately. With the embedded IdP, set `server.auth.brandName` and `server.auth.brandLogoURL` in [`config.yaml`](#authentication-settings):
+
+```yaml
+server:
+  auth:
+    brandName: "Acme Access"
+    brandLogoURL: "https://netbird.example.com/branding/logo.svg"
+```
+
+The login pages cannot serve mounted files, so `brandLogoURL` must be an absolute URL, served over `https` when the login pages are. The logo mounted into the dashboard above can be reused through its public address. With an external identity provider, brand the login page in that provider.
+
+Restart the affected containers to apply the changes.
 
 ---
 
