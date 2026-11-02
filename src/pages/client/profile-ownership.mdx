@@ -145,7 +145,7 @@ If the migration fails, the daemon writes the error to the log and tries again a
 After the migration, some profiles can still have no owner. The daemon gives them an owner when a user sends a request:
 
 - **Profiles in a user directory.** The daemon records the user whose name matches the directory as the owner.
-- **Default profile.** The daemon records the first user who is logged in at the console of the device as the owner. A console is a local graphical session, or a local seat on Linux. A user in a remote SSH session is not at the console.
+- **Default profile.** The daemon records the first user who is logged in at the console of the device as the owner. For what counts as the console, see [Set up a headless machine](#set-up-a-headless-machine).
 
 Root and administrators never become owners through an automatic claim.
 
@@ -157,7 +157,24 @@ sudo netbird profile claim default --owner <owner>
 
 ## Set up a headless machine
 
-A headless machine, for example a server or a Raspberry Pi, has no console. No user can claim the default profile automatically. A user without root privileges cannot connect the default profile.
+A headless machine, for example a server or a Raspberry Pi, has no user at the console. No user can claim the default profile automatically. A user without root privileges cannot connect the default profile.
+
+A user is at the console when they are logged in locally on the machine:
+
+| OS | Console |
+| --- | --- |
+| Linux | The active local session of a seat in systemd-logind. This includes a graphical login and a text login on a local terminal. |
+| macOS | The user logged in to the graphical session. |
+| Windows | The user logged in to the physical console session. |
+| FreeBSD | A user logged in on a local virtual terminal. |
+
+These sessions are not at the console:
+
+- SSH sessions and other remote sessions.
+- Remote Desktop (RDP) sessions on Windows.
+- All sessions on a Linux machine without a logind service (systemd-logind or elogind), for example a container.
+
+A machine with a screen and keyboard is also headless if no user logs in locally.
 
 This protects machines that many users access over SSH, for example a shared server. If the first SSH user claimed the default profile, that user could control the connection of the machine and read its configuration. The daemon cannot know which SSH user is the correct owner, so it lets an administrator decide.
 
@@ -249,6 +266,32 @@ Administrators and LocalSystem always keep access.
 <Warning>
   All users in the group can read and change all profiles, and connect or disconnect the machine. Add only users that you trust with the NetBird connection of this machine.
 </Warning>
+
+## Harden daemon access
+
+Use the recommendations for your environment.
+
+### All environments
+
+- Use the default Unix socket on Linux and macOS, and the default named pipe on Windows. Do not use a TCP socket. A TCP socket carries no caller identity and is deprecated.
+- Keep the HTTP/JSON socket off, unless an integration needs it. It is off by default.
+- Set `--allow-group` to the users that use NetBird on the machine. Users outside the group cannot connect to the daemon.
+- Do not set `NB_DISABLE_PROFILE_OWNERSHIP` without `--allow-group`.
+
+### Servers
+
+- Connect as root, and give the default profile to a user only when that user must control the connection.
+- Set `NB_DISABLE_DEFAULT_PROFILE_CLAIM=true`. A user who logs in on the local terminal then cannot claim the default profile.
+- Set `--allow-group` to the administrators group, or to an empty group. Root keeps access.
+
+### Managed devices
+
+- Set the `allowGroups` [MDM key](/client/mdm-integration) with group IDs, not names. The daemon then does not wait for a directory server when it starts.
+- Set `disableProfiles` or `disableUpdateSettings` if users must not change the configuration.
+
+### Containers and rootless daemons
+
+- If the daemon does not run as root, the user that it runs as is a privileged user. Do not run other workloads as this user.
 
 ## Troubleshooting
 
