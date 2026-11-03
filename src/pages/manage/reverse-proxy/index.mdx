@@ -74,17 +74,7 @@ Toward the backend, the proxy uses HTTP/2 only over TLS: a target with protocol 
 
 TCP services relay other TCP protocols the same way, such as SSH and RDP.
 
-### Windows file shares (SMB)
-
-Don't publish Windows file shares through the reverse proxy. A TCP service can relay SMB, but:
-
-- **The port.** Windows connects to file shares on port 445. On NetBird Cloud, NetBird assigns each TCP service its listen port and you can't choose 445, so a normal `\\<service hostname>\share` path can't connect. Only a drive mapped to the assigned port gets through, from a device running Windows 11, version 24H2 or later, or Windows Server 2025 or later (`New-SmbMapping -TcpPort`; see Microsoft's [alternative SMB ports](https://learn.microsoft.com/en-us/windows-server/storage/file-server/smb-ports) page). A self-hosted proxy can listen on 445, but the next two points still apply.
-- **The sign-in.** Through the proxy, Windows signs in with NTLM, not Kerberos, on a mapped drive as well, unless the TCP service's hostname is registered as a service principal name and the device reaches a domain controller over the tunnel. Kerberos needs a domain controller and a ticket for the server name in the share path. That name is the TCP service's hostname, which has no service principal name in Active Directory, and a device without the NetBird client can't reach a domain controller. Windows falls back to NTLM without warning: if the file server accepts NTLM, the share opens normally; if it refuses NTLM, the connection fails.
-
-  You can register the hostname on the file server's computer account (`setspn -S cifs/<service hostname> <file server>`). That gets Kerberos for devices that reach a domain controller over the tunnel, but those devices can reach the file server directly, so the proxy adds nothing for them.
-- **The exposure.** TCP services have no SSO, so anyone who passes the access restrictions reaches the file server's own sign-in directly.
-
-For devices that run the NetBird client, reach the file servers and domain controllers over the tunnel instead: see [Active Directory & Windows File Shares](/use-cases/remote-access/active-directory). For devices that can't run the client, publish a web application that serves the files as an HTTP service. HTTP services support SSO and the other [authentication methods](/manage/reverse-proxy/authentication).
+A TCP service can relay Windows file shares (SMB) too, but don't publish them this way: see [Limitations](#windows-file-shares-smb).
 
 ### Targets
 
@@ -458,6 +448,20 @@ The command supports HTTP and L4 protocols (`--protocol`), optional authenticati
 </Note>
 
 For the complete guide including setup, authentication options, session lifecycle, troubleshooting, and examples, see [Expose from CLI](/manage/reverse-proxy/expose-from-cli).
+
+## Limitations
+
+### Windows file shares (SMB)
+
+Don't publish Windows file shares through the reverse proxy. A TCP service can relay SMB, but:
+
+- **The port.** Windows connects to file shares on port 445. On NetBird Cloud, NetBird assigns each TCP service its listen port and you can't choose 445, so a normal `\\<service hostname>\share` path can't connect. Only a drive mapped to the assigned port gets through, from a device running Windows 11, version 24H2 or later, or Windows Server 2025 or later (`New-SmbMapping -TcpPort`; see Microsoft's [alternative SMB ports](https://learn.microsoft.com/en-us/windows-server/storage/file-server/smb-ports) page). A self-hosted proxy can listen on 445, but the next two points still apply.
+- **The sign-in.** Through the proxy, Windows signs in with NTLM, not Kerberos, on a mapped drive as well, unless the TCP service's hostname is registered as a service principal name and the device reaches a domain controller over the tunnel. Kerberos needs a domain controller and a ticket for the server name in the share path. That name is the TCP service's hostname, which has no service principal name in Active Directory, and a device without the NetBird client can't reach a domain controller. Windows falls back to NTLM without warning: if the file server accepts NTLM, the share opens normally; if it refuses NTLM, the connection fails.
+
+  You can register the hostname on the file server's computer account (`setspn -S cifs/<service hostname> <file server>`). That gets Kerberos for devices that reach a domain controller over the tunnel, but those devices can reach the file server directly, so the proxy adds nothing for them.
+- **The exposure.** TCP services have no SSO, so anyone who passes the access restrictions reaches the file server's own sign-in directly.
+
+For devices that run the NetBird client, reach the file servers and domain controllers over the tunnel instead: see [Active Directory & Windows File Shares](/use-cases/remote-access/active-directory). For devices that can't run the client, publish a web application that serves the files as an HTTP service. HTTP services support SSO and the other [authentication methods](/manage/reverse-proxy/authentication).
 
 ## Related pages
 
