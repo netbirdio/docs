@@ -43,7 +43,7 @@ Built-in domains are a quick way to get started. They receive automatic TLS cert
 
 ## Custom domains
 
-Custom domains let you use your own domain name (e.g., `app.example.com`) for reverse proxy services. Custom domains work identically in both cloud and self-hosted deployments. Before a custom domain can be used, you must verify ownership by creating a CNAME record in your DNS provider.
+Custom domains let you use your own domain name (e.g., `app.example.com`) for reverse proxy services. Before a custom domain can be used, you must verify ownership by creating a CNAME record in your DNS provider.
 
 To manage custom domains, navigate to **Reverse Proxy** > **Custom Domains** in the NetBird dashboard.
 
@@ -69,26 +69,41 @@ After saving, the domain appears in your list with a **Pending Verification** st
 
 To prove that you own the domain, NetBird requires you to create a specific CNAME record in your DNS provider.
 
-### Step 1: Create the CNAME record
+### Step 1: Create the CNAME records
 
-In your DNS provider, create a wildcard CNAME record for your custom domain, pointing to the proxy cluster address. The CNAME target depends on your deployment type:
+In your DNS provider, create CNAME records for names under your custom domain, pointing to the cluster address the NetBird dashboard shows for the proxy cluster you selected:
 
-- **Cloud deployments** - point to a NetBird-hosted cluster address (e.g., `eu.proxy.netbird.io`)
-- **Self-hosted deployments** - point to your own proxy hostname (e.g., `proxy.mycompany.com`, without a URL scheme or port)
+- **Cloud deployments** - a NetBird-hosted cluster address (e.g., `eu1.netbird.services`)
+- **Self-hosted deployments** - your own proxy hostname (e.g., `proxy.mycompany.com`, without a URL scheme or port)
 
-For example, on a cloud deployment:
+You can create the records in one of two ways:
+
+- **One wildcard CNAME** for `*.<your-domain>`. It covers `validation.<your-domain>` and every service hostname under the domain, so new services need no further DNS changes. A wildcard record does not need a wildcard certificate: NetBird issues one certificate per service hostname.
+- **Explicit CNAME records**, if your DNS provider does not support wildcard records or you prefer to publish only the names you use: one for `validation.<your-domain>`, which NetBird looks up to verify the domain, and one for each service hostname.
+
+Point the records directly at the cluster address. On a self-hosted deployment, if `validation.<your-domain>` points to an alias of yours (another CNAME you created that points to the cluster address), verification can fail with a `points to <your alias>` error.
+
+For example, on a cloud deployment with a wildcard record:
 
 | Record Type | Name | Value |
 |-------------|------|-------|
-| `CNAME` | `*.proxy.example.com` | `eu.proxy.netbird.io` |
+| `CNAME` | `*.proxy.example.com` | `eu1.netbird.services` |
 
-On a self-hosted deployment:
+The same domain with explicit records, for two services:
+
+| Record Type | Name | Value |
+|-------------|------|-------|
+| `CNAME` | `validation.proxy.example.com` | `eu1.netbird.services` |
+| `CNAME` | `dashboard.proxy.example.com` | `eu1.netbird.services` |
+| `CNAME` | `wiki.proxy.example.com` | `eu1.netbird.services` |
+
+On a self-hosted deployment, use your proxy hostname as the value:
 
 | Record Type | Name | Value |
 |-------------|------|-------|
 | `CNAME` | `*.proxy.example.com` | `proxy.mycompany.com` |
 
-The exact target value depends on the proxy cluster you selected when adding the domain. The NetBird dashboard displays the required CNAME record and target after you save the domain.
+On a self-hosted deployment, each explicit service hostname record can instead be an `A` record for your proxy's public IP address. The `validation.` record must stay a CNAME, because verification is a CNAME lookup.
 
 ### Check your CAA records
 
@@ -139,22 +154,24 @@ Empty output from the parent queries alone does not rule out CAA restrictions at
 
 ### Step 2: Verify in the dashboard
 
-After creating the DNS record, return to the **Reverse Proxy** > **Custom Domains** page and click **Verify Domain** next to the domain.
+After creating the records from step 1, return to the **Reverse Proxy** > **Custom Domains** page and click **Verify Domain** next to the domain.
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/custom-domains/custom-domains-verification.png" alt="Domain verification modal showing CNAME record details" className="imagewrapper-big"/>
 </p>
 
-Confirm that the dialog reflects the CNAME record you added to your DNS provider and click **Start Verification**.
+In the **Verify Domain** dialog, the **Wildcard record** and **Explicit records** sections show the same **CNAME Content** value: the cluster address from step 1, which on self-hosted is your proxy hostname. Verification looks up only `validation.<your-domain>`, not your service hostname records. Whichever option you chose, run `dig CNAME validation.<your-domain> +short`. The output should be the **CNAME Content** value followed by a dot, for example `eu1.netbird.services.` on Cloud or `proxy.mycompany.com.` on self-hosted. Then click **Start Verification**.
 
 <p>
-    <img src="/docs-static/img/manage/reverse-proxy/custom-domains/custom-domains-start-verification.png" alt="Start Verification Dialog" className="imagewrapper"/>
+    <img src="/docs-static/img/manage/reverse-proxy/custom-domains/custom-domains-start-verification.png" alt="Verify Domain dialog showing the Wildcard record and Explicit records sections, both with the same CNAME Content value" className="imagewrapper"/>
 </p>
 
-NetBird performs a CNAME lookup on `validation.<your-domain>` and checks that the resulting hostname matches the proxy cluster selected for the registration. The wildcard CNAME normally answers this lookup. Once verification succeeds, the domain status changes to **Active** and it becomes available in the domain selector when creating or editing services.
+NetBird performs a CNAME lookup on `validation.<your-domain>` and checks that the resulting hostname matches the proxy cluster selected for the registration. Once verification succeeds, the domain status changes to **Active** and it becomes available in the domain selector when creating or editing services.
+
+After the domain is **Active**, NetBird does not check `validation.` again, so you can remove an explicit `validation.` record. Keep each service hostname's record.
 
 <Note>
-    DNS changes can take time to propagate. If NetBird does not find the record immediately, please wait up to 24 hours and try again.
+    DNS changes can take time to propagate. Verification can fail for a minute or two right after you create or correct the record. If NetBird does not find the record immediately, please wait up to 24 hours and try again.
 </Note>
 
 ### Verification deadline
@@ -202,19 +219,23 @@ To assign a domain to a service, enter a **subdomain** on the left side of the s
 
 For example, if you enter `dashboard` as the subdomain and select `proxy.example.com` as the base domain, the service is accessible at `dashboard.proxy.example.com`.
 
-All domain types receive automatic TLS certificates managed by the proxy.
+All domain types receive automatic TLS certificates managed by the proxy. For a custom domain, the certificate is issued only once the service hostname resolves to the proxy.
+
+### Creating the DNS record and the service
+
+With a wildcard record, every service hostname already resolves when you create the service. If you use explicit records, create each service hostname's record and confirm it resolves before you create the service: `dig <service-hostname> +short` shows the cluster address (or, for a self-hosted `A` record, your proxy's IP address). Then allow about two minutes after creating the service before it responds over HTTPS.
 
 ## Troubleshooting
 
 ### Domain shows as Pending Verification
 
-Verify that the wildcard CNAME record for `*.<your-domain>` points to the selected proxy cluster hostname. Query the same hostname NetBird uses for verification:
+Verify that `validation.<your-domain>`, through your wildcard CNAME or an explicit record, points directly to the selected proxy cluster hostname. Query the same hostname NetBird uses for verification:
 
 ```bash
 dig CNAME validation.proxy.example.com +short
 ```
 
-The result should match the target shown in the dashboard, such as `eu.proxy.netbird.io` or `proxy.mycompany.com`. If it is missing or different, check for typos, DNS propagation delays, and an explicit record at `validation.proxy.example.com` that overrides the wildcard.
+The result should match the target shown in the dashboard, such as `eu1.netbird.services` or `proxy.mycompany.com`. If it is missing or different, check for typos, DNS propagation delays, and an explicit record at `validation.proxy.example.com` that overrides the wildcard. On a self-hosted deployment, if the result is an alias of yours rather than the cluster address, change the record to point directly to the cluster address.
 
 ### CNAME pointing to the wrong cluster
 
@@ -222,7 +243,7 @@ The CNAME lookup must return the cluster selected when the domain was added. Poi
 
 ### Certificate is not issued after verification
 
-An **Active** domain has passed the CNAME check, but certificate issuance can still fail. Check the service's certificate status and, on self-hosted proxies, the proxy logs. If the error identifies CAA, follow [Check your CAA records](#check-your-caa-records) for the service hostname and authorize the proxy's certificate authority in the applicable record set. Also check DNS resolution and the proxy's [TLS challenge requirements](/manage/reverse-proxy#tls-alpn-01-requirements).
+An **Active** domain has passed the CNAME check, but certificate issuance can still fail. Check the service's certificate status and, on self-hosted proxies, the proxy logs. If the error identifies CAA, follow [Check your CAA records](#check-your-caa-records) for the service hostname and authorize the proxy's certificate authority in the applicable record set. Also check that the service hostname itself resolves to the cluster address (or, for a self-hosted `A` record, your proxy's IP address), through the wildcard or its own record, and check the proxy's [TLS challenge requirements](/manage/reverse-proxy#tls-alpn-01-requirements).
 
 ### Domain already in use
 
