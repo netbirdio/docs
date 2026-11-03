@@ -1,0 +1,250 @@
+import {Note, Warning} from "@/components/mdx"
+
+export const description =
+  'Let AI agents such as Claude Code, Codex, Cursor and VS Code manage your NetBird account through the Model Context Protocol (MCP): what agents can do, which access they get, how sign-in works, and how to revoke it.'
+
+# NetBird MCP Server
+
+The NetBird MCP server lets an AI agent manage your NetBird account. Connect an MCP client
+such as Claude Code, Codex, Cursor or VS Code, and the agent can list peers, edit groups and
+access policies, set up networks and DNS, and read the audit log through the NetBird
+management API.
+
+- **The same API and the same permissions.** Each MCP tool maps to one operation of the
+  [NetBird REST API](/api). A tool call runs the same handler and permission checks as the
+  REST call and returns the same JSON, so an agent can do only what your role allows.
+- **Sign in with your NetBird login.** MCP clients sign you in through OAuth, so there is no
+  token to create or paste. A [personal access token](/manage/public-api) works too.
+- **Read-only when you want it.** When you sign in, you choose whether the agent may make
+  changes or only read.
+- **Every call is checked.** Each tool call is its own authenticated API request, with the same
+  rate limits as the REST API.
+
+<Note>
+    The MCP server is not [Agent Network](/agent-network). Agent Network routes your agents'
+    LLM traffic through NetBird. The MCP server lets an agent change your NetBird configuration.
+</Note>
+
+## Endpoint
+
+| Deployment | MCP server URL |
+|---|---|
+| NetBird Cloud | `https://api.netbird.io/api/mcp` |
+| Self-hosted | `https://netbird.example.com/api/mcp`, on the host your dashboard uses for the API |
+
+On self-hosted NetBird, the MCP server is off until an administrator turns it on. See
+[MCP Server for Self-Hosted NetBird](/selfhosted/maintenance/mcp-server).
+
+The server uses the MCP streamable HTTP transport, so any MCP client that supports remote HTTP
+servers can connect. To add it to your client, see [Connect AI Clients](/manage/mcp-server/connect-clients).
+
+## What Agents Can Do
+
+Tools are named after the API operation they run. Read-only tools list or fetch objects. The
+other tools create, replace or delete them.
+
+| Area | Read-only tools | Tools that change data |
+|---|---|---|
+| Account settings | `get_account` | `update_account` |
+| [Users](/manage/team/add-users-to-your-network) | `list_users`, `get_current_user` | `create_user`, `update_user`, `delete_user`, `approve_user`, `reject_user` |
+| [Peers](/manage/peers/add-machines-to-your-network) | `list_peers`, `get_peer`, `list_accessible_peers` | `update_peer`, `delete_peer` |
+| [Setup keys](/manage/peers/register-machines-using-setup-keys) | `list_setup_keys`, `get_setup_key` | `create_setup_key`, `update_setup_key`, `delete_setup_key` |
+| [Groups](/manage/settings/groups) | `list_groups`, `get_group` | `create_group`, `update_group`, `delete_group` |
+| [Access control policies](/manage/access-control) | `list_policies`, `get_policy` | `create_policy`, `update_policy`, `delete_policy` |
+| [Posture checks](/manage/access-control/posture-checks) | `list_posture_checks`, `get_posture_check`, `list_countries`, `list_country_cities` | `create_posture_check`, `update_posture_check`, `delete_posture_check` |
+| [Networks](/manage/networks) | `list_networks`, `get_network`, `list_network_resources`, `get_network_resource`, `list_network_routers`, `get_network_router`, `list_all_network_routers` | `create_network`, `update_network`, `delete_network`, `create_network_resource`, `update_network_resource`, `delete_network_resource`, `create_network_router`, `update_network_router`, `delete_network_router` |
+| [Network routes](/manage/network-routes) | `list_routes`, `get_route` | `create_route`, `update_route`, `delete_route` |
+| [Nameservers](/manage/dns/nameserver-groups) | `list_nameserver_groups`, `get_nameserver_group` | `create_nameserver_group`, `update_nameserver_group`, `delete_nameserver_group` |
+| [DNS settings](/manage/dns/dns-settings) | `get_dns_settings` | `update_dns_settings` |
+| [DNS zones and records](/manage/dns/custom-zones) | `list_dns_zones`, `get_dns_zone`, `list_dns_records`, `get_dns_record` | `create_dns_zone`, `update_dns_zone`, `delete_dns_zone`, `create_dns_record`, `update_dns_record`, `delete_dns_record` |
+| [Audit events](/manage/activity) | `list_audit_events` | None |
+
+The server tells the agent how NetBird works: groups hold peers and resources, policies between
+groups are what let traffic flow, and [Networks](/manage/networks) are preferred over network
+routes, which remain for exit nodes. Agents pass object IDs that they look up with the `list_`
+tools.
+
+A secret that the API returns once, such as the key from `create_setup_key`, is returned to the
+agent the same way. The list and get tools for setup keys never return the key itself.
+
+### Not Available Through MCP
+
+These parts of NetBird have no MCP tools. Use the dashboard or the [REST API](/api) for them.
+
+- Deleting the account
+- Personal access tokens, user invite links and passwords
+- Identity provider settings and instance setup
+- Remote jobs on peers and temporary access for peers
+- [Reverse Proxy](/manage/reverse-proxy) services, domains and clusters
+- [Agent Network](/agent-network)
+- Proxy and network traffic events, activity event streaming, and notifications
+- NetBird Cloud integrations: billing, MSP tenant management, EDR and identity provider sync
+
+Settings that live on a device, such as `netbird up` flags or the exit node a client selects,
+cannot be changed through MCP. The server asks the agent to tell you the command to run on the
+device instead.
+
+## Access Levels
+
+What an agent can do through MCP is the intersection of four limits.
+
+1. **Your role.** Tools run with the permissions of the NetBird user the agent signs in as,
+   exactly as in the dashboard and the API. An `Auditor` can use every read-only tool and no
+   tool that changes data. A `User` can see little more than their own peers. A role change
+   applies on the agent's next call. See [User Roles](/manage/team/user-roles).
+2. **The access you grant at sign-in.** With OAuth, you choose between read-only access and
+   access that also allows changes. A read-only connection can call only read-only tools.
+   A personal access token has no such option: it always carries the full rights of its user.
+3. **The tools the server exposes.** A self-hosted administrator can limit the server to a list
+   of tools. Tools outside the list are neither shown to the agent nor callable.
+4. **One account.** Tools act only on the account you signed in to, or the MSP tenant in the
+   URL. No tool takes an account ID, so an agent cannot point a call at another account.
+
+| | OAuth sign-in | Personal access token |
+|---|---|---|
+| Setup | Add the URL to your client and sign in in the browser | Create a token, then add it to your client's configuration |
+| Access | Your role, read-only or read and write | Your role (for a service user, its role) |
+| Lifetime | 30 days, then sign in again | Until the token expires or is deleted |
+| Works for service users | No | Yes |
+| Revoke | Sign out in the client, or block or remove the user | Delete the token |
+
+Service users act only through personal access tokens. A service user's token has read access
+to the account whatever the service user's role, as it has with the REST API.
+
+<Warning>
+    `update_` tools replace the whole object. A field the agent leaves out is reset, for example
+    `update_group` without `peers` removes every peer from the group, and `update_account`
+    without `ipv6_enabled_groups` turns IPv6 off for all peers. The tool descriptions tell the
+    agent to fetch the object first and send every field back, and the server rejects unknown
+    or mistyped fields, but review what the agent sends before you approve it.
+</Warning>
+
+All `update_` and `delete_` tools are marked as destructive in their MCP annotations, and the
+read-only tools are marked as read-only. Clients can use these hints to decide when to ask you
+before running a tool.
+
+## Sign In with OAuth
+
+When you add the server without a token, your MCP client signs you in through NetBird:
+
+1. The client opens a NetBird page in your browser titled **Allow &lt;application&gt; to access
+   NetBird?**. It names the application and the host you will be sent back to after you sign in.
+   If the host is your own computer, the page asks you to continue only if you started the
+   connection yourself just now.
+2. Choose the access to grant:
+   - **Read your NetBird configuration** is always granted.
+   - **Make changes: create, update and delete** is ticked by default. Untick it to connect
+     read-only. The option is not shown when the client asks for read-only access.
+3. Click **Continue to sign in** and sign in with your usual NetBird login. If you are already
+   signed in to your identity provider, it may send you straight back.
+4. The browser returns you to the client, which is now connected.
+
+Click **Cancel** to refuse. The client is told that you declined.
+
+<Note>
+    The application name on the consent page is chosen by the application itself. Check the host
+    you will be sent back to: it is where your sign-in goes. NetBird asks for consent every time a
+    client signs in.
+</Note>
+
+On a read-only connection, the agent still sees the tools that change data. Calling one returns
+an error that says the connection was authorized to read only. To allow changes, sign in to the
+server again from your client and leave **Make changes** ticked.
+
+### Sessions
+
+| Item | Lifetime |
+|---|---|
+| Access token | 1 hour. The client refreshes it without asking you. |
+| Session | 30 days from sign-in. Refreshing does not extend it. After 30 days, sign in again. |
+| Sign-in page | 10 minutes to complete the consent page and the login |
+
+Complete one sign-in at a time. Starting a second connection in the same browser before the
+first one finishes ends the first one on an error page.
+
+## Revoke Access
+
+| To cut off | Do this | Takes effect |
+|---|---|---|
+| One personal access token | Delete the token in **Team** → **Users** | Next call |
+| One OAuth connection | Sign out in your client, if it revokes tokens on sign-out | Next call |
+| Every MCP connection of one user | Remove the user, or block the user | Next call |
+| Every OAuth connection of every user (self-hosted) | Set or change `NB_MCP_OAUTH_KEY`. See [MCP Server for Self-Hosted NetBird](/selfhosted/maintenance/mcp-server#keys-and-restarts) | When management restarts with the new key |
+
+Blocking a user stops their OAuth sessions only while the user stays blocked: unblocking them
+lets sessions that have not reached their 30-day end work again. Removing the user ends them
+for good, even if the user is added again later. Blocking a user also logs out their peers,
+and removing a user removes their peers.
+
+<Note>
+    Disabling a user in your identity provider, or removing them from the JWT allow groups, does
+    not end MCP sessions that are already open. It takes effect at their next sign-in, at most
+    30 days later. Block the user in NetBird to cut access right away.
+</Note>
+
+## Security Model
+
+This section summarizes how the server protects your account, for security reviews.
+
+- **Off by default on self-hosted NetBird.** Until an administrator turns it on, no MCP or
+  OAuth path exists on the server.
+- **No new permissions.** A tool call is replayed inside management against the REST API with
+  your identity. The same handler, permission checks and audit logging run as for the REST
+  call. Changes appear in the [audit log](/manage/activity) as actions of the user the agent
+  signed in as.
+- **The agent cannot choose the account.** The account comes from the credential, or from the
+  tenant URL when the credential may manage that tenant. A tenant URL the credential cannot
+  use is refused with `403`, never run against another account.
+- **Strict arguments.** Each tool has a closed input schema. Unknown, missing or mistyped fields
+  fail the call before any API request is made, and an ID argument that looks like a path is
+  refused.
+- **One tool call per HTTP request.** The server keeps no MCP session. JSON-RPC batches are
+  refused, so every tool call is authenticated, authorized and rate limited on its own.
+- **Standard OAuth 2.1 for sign-in.** Clients register automatically as public clients and must
+  use the authorization code flow with PKCE (`S256` only). A redirect address must be `https`,
+  or `http` on the client's own computer, and must match the registered one exactly (on the
+  client's own computer, on any port). An authorization code works once, within 2 minutes.
+- **Consent the user can see.** NetBird asks for consent on every sign-in and shows where the
+  sign-in returns to. The page cannot be embedded in another site, the approve button reacts
+  only after real pointer or keyboard input, and a form posted from another site is refused.
+- **The usual login checks.** Sign-in goes through your identity provider and is validated like
+  a dashboard login, including JWT allow groups and group sync. Blocked users and users pending
+  approval cannot sign in. NetBird discards the identity provider's token after the login and
+  issues its own tokens.
+- **Tokens that work only for MCP.** OAuth access tokens (`nbmcp_...`) are accepted only on the
+  MCP endpoint of the server that issued them, never on the rest of the API. They are sealed with
+  AES-256-GCM and carry IDs and the granted access, never an identity provider token.
+- **Prefixes for secret scanners.** Access tokens start with `nbmcp_`, refresh tokens with
+  `nbmcpr_`, authorization codes with `nbmcpk_` and client IDs with `nbmcpc_`. Personal access
+  tokens start with `nbp_`.
+- **Rotating refresh tokens.** Each refresh issues a new refresh token. Reusing an old one, or
+  redeeming an authorization code twice, ends the whole session.
+- **Checked on every call.** Each call reloads the user: a user who was blocked, removed, moved
+  to another account or set to pending approval loses access on the next call.
+- **Fails closed.** When the session store or the database cannot answer, the server returns
+  `503` and lets no token through. Personal access tokens keep working.
+
+Limits of this model:
+
+- A stolen access token works through the MCP endpoint, within its granted access, until it
+  expires, at most 1 hour later.
+- A session lasts until its 30-day end unless you revoke it or block or remove the user. See
+  [Revoke Access](#revoke-access).
+
+<Warning>
+    An agent acts with your permissions, and it reads what the tools return. Peer names, group
+    names, user names and audit event details are data that someone else may control, and text
+    in them can try to steer the agent. Everything the tools return, including peer IPs, user
+    emails and new setup keys, also goes to the model provider your client uses. Start with a
+    read-only connection, sign in as a user whose role fits the task, and review each change the
+    agent proposes before you approve it.
+</Warning>
+
+## Related Resources
+
+- [Connect AI Clients](/manage/mcp-server/connect-clients)
+- [MCP Server for Self-Hosted NetBird](/selfhosted/maintenance/mcp-server)
+- [User Roles](/manage/team/user-roles)
+- [Use Service Users and Tokens to Access the Public API](/manage/public-api)
+- [NetBird REST API reference](/api)
+- [MSP API access](/api/guides/msp-api-access)

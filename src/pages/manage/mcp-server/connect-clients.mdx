@@ -1,0 +1,381 @@
+import {Note, Warning} from "@/components/mdx"
+
+export const description =
+  'Add the NetBird MCP server to Claude Code, Claude Desktop, Codex, Cursor, VS Code, Gemini CLI or any other MCP client, sign in with OAuth or a personal access token, and fix common connection errors.'
+
+# Connect AI Clients to NetBird
+
+This page shows how to add the [NetBird MCP server](/manage/mcp-server) to your MCP client. Most
+clients need only the server URL: they sign you in through your browser the first time they
+connect.
+
+## Before You Begin
+
+You need the MCP server URL for your deployment:
+
+| Deployment | MCP server URL |
+|---|---|
+| NetBird Cloud | `https://api.netbird.io/api/mcp` |
+| Self-hosted | `https://netbird.example.com/api/mcp` |
+
+The examples on this page use the NetBird Cloud URL. On a self-hosted deployment, replace
+`api.netbird.io` with the domain of your NetBird dashboard. Your administrator must have
+[enabled the MCP server](/selfhosted/maintenance/mcp-server) first.
+
+Then choose how the client signs in:
+
+- **OAuth (recommended).** Add only the URL. The client opens a NetBird consent page in your
+  browser, where you choose read-only or read and write access, and then you sign in with your
+  usual NetBird login. You never handle a token. Sign-in lasts 30 days.
+- **Personal access token.** For clients without a browser sign-in, for scripts, and for service
+  users. [Create a token](/manage/public-api#creating-an-access-token) and send it in the
+  `Authorization` header as `Token nbp_...`. NetBird also accepts `Bearer nbp_...`. A token
+  always carries the full permissions of its user.
+
+<Note>
+    On a self-hosted deployment, OAuth sign-in works when the administrator has set it up. If your
+    client reports that the server does not support OAuth, or the sign-in fails, use a personal
+    access token and ask your administrator to check the
+    [OAuth setup](/selfhosted/maintenance/mcp-server#set-up-sign-in).
+</Note>
+
+Keep tokens out of files you commit. The examples below read the token from an environment
+variable where the client supports it. Put the URL in quotes in shell commands, so that a `?` in
+a [tenant URL](#connect-to-an-msp-tenant) is not read as a wildcard.
+
+## Claude Code
+
+<CodeGroup>
+```bash {{ title: 'OAuth' }}
+claude mcp add --transport http netbird "https://api.netbird.io/api/mcp"
+```
+
+```bash {{ title: 'Personal access token' }}
+claude mcp add --transport http netbird "https://api.netbird.io/api/mcp" \
+  --header "Authorization: Token nbp_..."
+```
+</CodeGroup>
+
+Claude Code does not start the OAuth sign-in by itself. After you add the server, sign in in one
+of two ways:
+
+- In a Claude Code session, run `/mcp`, select `netbird` and choose to authenticate. Your
+  browser opens the NetBird consent page.
+- From your shell, run `claude mcp login netbird`.
+
+To sign out, run `claude mcp logout netbird`, or clear the authentication from `/mcp`.
+
+By default, `claude mcp add` adds the server for the current project only. Add `--scope user` to
+use it in every project, or `--scope project` to write it to `.mcp.json` in the project, which you
+can share with your team. In a shared `.mcp.json`, read the token from an environment variable:
+
+```json {{ title: '.mcp.json' }}
+{
+  "mcpServers": {
+    "netbird": {
+      "type": "http",
+      "url": "https://api.netbird.io/api/mcp",
+      "headers": { "Authorization": "Token ${NETBIRD_TOKEN}" }
+    }
+  }
+}
+```
+
+Leave out `headers` to sign in with OAuth instead. Non-interactive runs, such as `claude -p`,
+cannot open the browser sign-in. Sign in from an interactive session first.
+
+## Claude Desktop and claude.ai
+
+Claude Desktop and claude.ai add remote MCP servers as custom connectors:
+
+1. In Claude, go to **Customize** → **Connectors** and add a custom connector.
+2. Enter `NetBird` as the name and the MCP server URL. Leave the OAuth client ID empty:
+   NetBird registers Claude automatically.
+3. Click **Connect** on the connector to sign in through the NetBird consent page.
+
+On a Team or Enterprise organization, an owner adds the connector in the organization's connector
+settings, and each member then clicks **Connect** to sign in as themselves. Use OAuth with these
+clients, so that every member acts with their own NetBird role.
+
+<Note>
+    Claude Desktop and claude.ai reach the MCP server from Anthropic's cloud, not from your
+    computer. A self-hosted management server must be reachable from the internet for these
+    clients. Clients that run on your computer, such as Claude Code, only need your computer to
+    reach it.
+</Note>
+
+## Codex
+
+<CodeGroup>
+```bash {{ title: 'OAuth' }}
+codex mcp add netbird --url "https://api.netbird.io/api/mcp"
+```
+
+```bash {{ title: 'Personal access token' }}
+export NETBIRD_TOKEN=nbp_...
+codex mcp add netbird --url "https://api.netbird.io/api/mcp" \
+  --bearer-token-env-var NETBIRD_TOKEN
+```
+</CodeGroup>
+
+With OAuth, `codex mcp add` detects that NetBird supports OAuth and opens the sign-in in your
+browser. To sign in again later, run `codex mcp login netbird`. To connect read-only, run
+`codex mcp login netbird --scopes mcp:read`: the consent page then grants read access only. To
+sign out, run `codex mcp logout netbird`.
+
+`codex mcp add` writes the server to `~/.codex/config.toml`. You can also edit the file directly:
+
+<CodeGroup>
+```toml {{ title: 'OAuth' }}
+[mcp_servers.netbird]
+url = "https://api.netbird.io/api/mcp"
+```
+
+```toml {{ title: 'Personal access token' }}
+[mcp_servers.netbird]
+url = "https://api.netbird.io/api/mcp"
+bearer_token_env_var = "NETBIRD_TOKEN"
+```
+</CodeGroup>
+
+Codex sends the token as `Authorization: Bearer nbp_...`, which NetBird accepts. Always pass
+`--url`: without it, Codex treats the argument as a local command to run.
+
+## Cursor
+
+Add the server to `~/.cursor/mcp.json` for every project, or to `.cursor/mcp.json` in a project:
+
+<CodeGroup>
+```json {{ title: 'OAuth' }}
+{
+  "mcpServers": {
+    "netbird": {
+      "url": "https://api.netbird.io/api/mcp"
+    }
+  }
+}
+```
+
+```json {{ title: 'Personal access token' }}
+{
+  "mcpServers": {
+    "netbird": {
+      "url": "https://api.netbird.io/api/mcp",
+      "headers": { "Authorization": "Token ${env:NETBIRD_TOKEN}" }
+    }
+  }
+}
+```
+</CodeGroup>
+
+With OAuth, complete the sign-in that Cursor offers for the `netbird` server in its MCP settings.
+If the sign-in fails with an `invalid_redirect_uri` error, use a personal access token. Cursor
+reads `${env:NETBIRD_TOKEN}` from its own environment, so when you start Cursor from a desktop
+launcher, the variable must be set where the launcher can see it.
+
+## VS Code
+
+In VS Code with GitHub Copilot:
+
+1. Run **MCP: Add Server** from the Command Palette.
+2. Choose **HTTP (HTTP or Server-Sent Events)** and enter the MCP server URL.
+3. Enter `netbird` as the server ID and choose where to save it.
+
+VS Code signs you in through the NetBird consent page the first time the server starts. To add
+the server from a terminal instead, run:
+
+```bash
+code --add-mcp '{"name":"netbird","type":"http","url":"https://api.netbird.io/api/mcp"}'
+```
+
+To use a personal access token, add a header. In a workspace `.mcp.json` file, read the token from
+an environment variable. In `.vscode/mcp.json`, VS Code can prompt for the token and store it
+securely:
+
+<CodeGroup>
+```json {{ title: '.mcp.json' }}
+{
+  "mcpServers": {
+    "netbird": {
+      "type": "http",
+      "url": "https://api.netbird.io/api/mcp",
+      "headers": { "Authorization": "Token ${NETBIRD_TOKEN}" }
+    }
+  }
+}
+```
+
+```json {{ title: '.vscode/mcp.json' }}
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "netbird-token",
+      "description": "NetBird personal access token",
+      "password": true
+    }
+  ],
+  "servers": {
+    "netbird": {
+      "type": "http",
+      "url": "https://api.netbird.io/api/mcp",
+      "headers": { "Authorization": "Token ${input:netbird-token}" }
+    }
+  }
+}
+```
+</CodeGroup>
+
+Servers that prompt for input are not available in Copilot harness sessions. Use OAuth or the
+environment variable there.
+
+## Gemini CLI
+
+<CodeGroup>
+```bash {{ title: 'OAuth' }}
+gemini mcp add --scope user --transport http netbird "https://api.netbird.io/api/mcp"
+```
+
+```bash {{ title: 'Personal access token' }}
+gemini mcp add --scope user --transport http \
+  --header 'Authorization: Token ${NETBIRD_TOKEN}' netbird "https://api.netbird.io/api/mcp"
+```
+</CodeGroup>
+
+Gemini CLI starts the sign-in when it connects. Run `/mcp auth netbird` to sign in again. The
+single quotes in the token example keep `${NETBIRD_TOKEN}` in the settings file, and Gemini CLI
+reads the variable when it loads them. To connect read-only, add `"oauth": {"scopes": ["mcp:read"]}`
+to the `netbird` entry in `~/.gemini/settings.json`.
+
+Gemini CLI refuses OAuth endpoints on private addresses. If your self-hosted management server
+has a private address, add `"allowPrivateNetwork": true` to the same `oauth` block.
+
+## Other MCP Clients
+
+Any MCP client that supports the streamable HTTP transport can connect. Most accept a
+configuration like this:
+
+```json
+{
+  "mcpServers": {
+    "netbird": {
+      "type": "http",
+      "url": "https://api.netbird.io/api/mcp"
+    }
+  }
+}
+```
+
+For OAuth, the client discovers the sign-in from the server's `401` response and registers
+itself, so it needs no client ID. The client must receive the sign-in on an `https` address, or
+on an `http` address on your own computer such as `http://localhost:<port>/callback`. A client
+that offers only a custom scheme, such as `myapp://callback`, cannot use OAuth with NetBird: use
+a personal access token in the `Authorization` header instead.
+
+The server does not support the older HTTP with Server-Sent Events (SSE) transport. Choose
+streamable HTTP in clients that ask.
+
+## Connect to an MSP Tenant
+
+On NetBird Cloud, an MSP user can manage a tenant by adding the tenant ID to the URL:
+
+```text
+https://api.netbird.io/api/mcp?account=<tenant_id>
+```
+
+Every tool then acts on that tenant, including `update_account`. Add one server entry per tenant
+you want the agent to manage, with a distinct name such as `netbird-tenant-a`. A sign-in is not
+tied to one tenant: NetBird checks on every call whether you may manage the tenant in the URL. See
+[MSP API access](/api/guides/msp-api-access) to find tenant IDs.
+
+If your credential cannot access the tenant, the server answers `403` with `the account in the
+URL is not accessible with this credential`. It never falls back to your own account. A malformed
+tenant URL, such as an empty `account` or `Account` with a capital letter, gets `400`. Personal
+access tokens of service users cannot manage tenants.
+
+<Note>
+    Self-hosted NetBird has no tenant switching. There, a URL with `?account=` works only with the
+    ID of your own account.
+</Note>
+
+## Verify the Connection
+
+Ask your agent a read-only question, such as "List my NetBird peers". The client shows the
+`list_peers` tool call and its result.
+
+To test a personal access token without a client, list the tools with curl:
+
+```bash
+curl -s "https://api.netbird.io/api/mcp" \
+  -H "Authorization: Token nbp_..." \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+The response lists the tools you can use. The server accepts only `POST`, with both
+`Content-Type` and `Accept` headers as shown.
+
+## Troubleshooting
+
+### The client keeps asking you to sign in
+
+- Your session ended. Sessions last 30 days from sign-in, and they end early when the user is
+  blocked or removed, or when a self-hosted administrator signs every client out.
+- On a self-hosted deployment, connect with the same host your dashboard uses. A sign-in is valid
+  only for the server URL it was made for.
+- If the server never offers a sign-in, OAuth is not set up on that deployment. Use a personal
+  access token.
+
+### Tool error: `changes data, but this connection was authorized to read only`
+
+You signed in read-only. Sign in to the server again from your client, and leave **Make changes:
+create, update and delete** ticked on the consent page.
+
+### Tool error: `failed with HTTP 403`
+
+Your NetBird role does not allow the operation. The same request would fail in the REST API. See
+[User Roles](/manage/team/user-roles).
+
+### Tool error: `invalid arguments`
+
+The agent sent a field that the tool does not accept, sent a value of the wrong type, or left out
+a required field. The error says what is wrong, and agents usually correct the call and retry.
+
+### `This application is not registered with NetBird. Reconnect it to register again.`
+
+The client's registration is no longer valid, for example after a self-hosted administrator
+changed the server's keys. Remove the server from your client, or clear its authentication, and
+add it again.
+
+### `This sign-in has expired or was started in another browser.`
+
+The consent page and the login are valid for 10 minutes, in the browser that opened them. Start
+the connection again from your client, and finish one sign-in before you start another.
+
+### `403` with `the account in the URL is not accessible with this credential`
+
+The tenant in the URL is not one your credential can manage. Check the tenant ID, or remove
+`?account=` to use your own account. See [Connect to an MSP Tenant](#connect-to-an-msp-tenant).
+
+### `405 Method Not Allowed`
+
+The client tried to open a Server-Sent Events stream. Configure the server with the streamable
+HTTP transport, for example `--transport http` in Claude Code and Gemini CLI.
+
+### `429 Too Many Requests`
+
+The client made more calls than the API rate limit allows. A personal access token has its own
+limit. OAuth sign-ins share one limit per user across all clients. Wait and retry.
+
+### `503` with `temporarily unavailable, try again shortly`
+
+The server cannot reach the store that holds sign-ins. Retry later. Personal access tokens keep
+working meanwhile.
+
+## Related Resources
+
+- [NetBird MCP Server](/manage/mcp-server)
+- [MCP Server for Self-Hosted NetBird](/selfhosted/maintenance/mcp-server)
+- [Use Service Users and Tokens to Access the Public API](/manage/public-api)
+- [MSP API access](/api/guides/msp-api-access)
