@@ -187,19 +187,21 @@ If the routing peer reaches the other site but devices on its LAN can't connect,
 sudo iptables -S FORWARD | head -n 1
 ```
 
-`-P FORWARD DROP` means the routing peer drops the traffic. NetBird allows traffic arriving from the tunnel and replies going back into it, but not new connections from the LAN into the tunnel. ufw sets this policy to `DROP`, and so does Docker when it turns on IP forwarding. Allow only the site-to-site traffic, with `<IFACE>` as the routing peer's LAN interface and `wt0` as NetBird's:
+`-P FORWARD DROP` means the routing peer drops the traffic. NetBird allows traffic arriving from the tunnel that your policies permit, and replies going back into it, but not new connections from the LAN into the tunnel. ufw sets this policy to `DROP`, and so does Docker when it turns on IP forwarding. Allow only the site-to-site traffic, with `<IFACE>` as the routing peer's LAN interface and `wt0` as NetBird's:
 
 ```bash
 sudo iptables -I FORWARD -i <IFACE> -o wt0 -s 10.0.0.0/24 -d 10.1.0.0/24 -j ACCEPT
 ```
 
-The rule is lost on reboot. Save it with your distribution's tool, such as `iptables-persistent`, or on a ufw host add it as `sudo ufw route allow in on <IFACE> out on wt0 from 10.0.0.0/24 to 10.1.0.0/24` instead, which ufw keeps.
+The rule is lost on reboot. Don't keep it with `iptables-save` or `iptables-persistent`: they also save NetBird's own rules, which can fail to load at boot and leave the host with no IPv4 firewall rules. On a ufw host, add it as `sudo ufw route allow in on <IFACE> out on wt0 from 10.0.0.0/24 to 10.1.0.0/24` instead, which ufw keeps.
 
-On a host whose firewall is written in nftables, the check above can show `ACCEPT` while an nftables chain drops the traffic. Look for a forward chain with `policy drop` in `sudo nft list ruleset`, and add the rule there and to the file the host loads at boot, such as `/etc/nftables.conf`. For the common `inet filter` table:
+On a host whose firewall is written in nftables, the check above can show `ACCEPT` while an nftables chain drops the traffic. Look for a forward chain with `policy drop` in `sudo nft list ruleset` and insert the rule into it. To keep it, add it to the same chain in the file the host loads at boot, such as `/etc/nftables.conf`, before any drop or reject rule. For the common `inet filter` table:
 
 ```bash
-sudo nft add rule inet filter forward iifname "<IFACE>" oifname "wt0" ip saddr 10.0.0.0/24 ip daddr 10.1.0.0/24 accept
+sudo nft insert rule inet filter forward iifname "<IFACE>" oifname "wt0" ip saddr 10.0.0.0/24 ip daddr 10.1.0.0/24 accept
 ```
+
+firewalld isn't covered here: these checks don't detect it, and it removes rules added this way on `firewall-cmd --reload`.
 
 If devices at Site B start connections too, add the same rule on the Site B routing peer with the subnets swapped. Replies need no rule.
 
