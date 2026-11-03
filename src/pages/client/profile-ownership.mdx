@@ -102,6 +102,25 @@ The operating system then refuses connections from users outside the group. This
   A TCP socket cannot carry the restriction. If you set `--allow-group` for a daemon on a TCP socket, the daemon does not start.
 </Note>
 
+### Socket location
+
+This section applies to Linux, macOS, and FreeBSD. It does not apply to Windows.
+
+When the daemon starts with `--allow-group`, it changes the group of the socket and sets the socket mode to `0660`. Before this change, the daemon examines the directory that contains the socket. The daemon does not start if one of these conditions is true:
+
+- Other accounts can write to the directory, and the directory does not have the sticky bit.
+- The owner of the directory is not root and not the account that the daemon runs as.
+
+The daemon does not examine the directories higher in the path. If you set a custom socket path with `--daemon-addr` or `--json-socket`, make sure that root or the daemon account owns each directory in the path, and that other users cannot write to these directories. If other users can write to a directory in the path, they can replace a directory while the daemon applies the restriction.
+
+The default socket paths, `/var/run/netbird.sock` and `/var/run/netbird-http.sock`, meet these requirements. For example:
+
+| Socket path | Result |
+|-------------|--------|
+| `/srv/sockets/netbird.sock`, where `/srv/sockets` has mode `0777` | The daemon does not start. |
+| `/run/netbird/netbird.sock`, where root owns `/run/netbird` with mode `0755` | Supported. |
+| `/home/alice/sockets/netbird/netbird.sock` | Not supported, because a user can write to a directory in the path. |
+
 ### Set allowed groups with MDM
 
 On managed Windows and macOS devices, use the `allowGroups` [MDM policy key](/client/mdm-integration). On Windows, the Group Policy name is **Restrict the daemon sockets**.
