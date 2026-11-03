@@ -1,4 +1,4 @@
-import {Note, Warning} from "@/components/mdx"
+import {Warning} from "@/components/mdx"
 
 export const description =
   'Turn on the NetBird MCP server on a self-hosted deployment, set up OAuth sign-in for the embedded or a standalone identity provider, limit the tools, and run it behind a reverse proxy or on several instances.'
@@ -13,12 +13,22 @@ works without further setup.
 ## Before You Begin
 
 - **A NetBird release that includes the MCP server.** See [Upgrade](/selfhosted/maintenance/upgrade).
-- **Your identity provider setup.** New deployments use the embedded identity provider, also
-  when you connect Google, Microsoft Entra ID, Okta, Keycloak or another provider in
-  **Settings** → **Identity Providers**. Older deployments may use a standalone identity
-  provider configured in `management.json`. The OAuth setup below differs between the two.
+- **Your identity provider setup.** The OAuth setup below differs between the two:
+  - **Embedded identity provider.** You run the combined `netbird-server` container with
+    `config.yaml`, or `management.json` has an `EmbeddedIdP` section with `"Enabled": true`.
+    This includes Google, Microsoft Entra ID, Okta, Keycloak or other providers connected in
+    **Settings** → **Identity Providers** or by the
+    [migration tool](/selfhosted/migration/external-to-embedded-idp).
+  - **Standalone identity provider.** `management.json` has no enabled `EmbeddedIdP`, and
+    `PKCEAuthorizationFlow` → `ProviderConfig` → `AuthorizationEndpoint` points at your
+    identity provider.
 - **HTTPS on your NetBird domain.** MCP clients connect to
   `https://netbird.example.com/api/mcp`, the same host your dashboard uses for the API.
+- **Who must reach the server.** Clients that run on users' computers, such as Claude Code,
+  reach it from there. Claude Desktop and claude.ai reach it from Anthropic's cloud, so they work
+  only if the server is reachable from the internet.
+- **More than one management instance?** Set up the shared Redis and keys in
+  [Multiple Management Instances](#multiple-management-instances) before you enable MCP.
 
 ## Enable the MCP Server
 
@@ -76,8 +86,12 @@ curl -s https://netbird.example.com/api/mcp/.well-known/oauth-protected-resource
 ```
 
 It returns JSON with a `resource` of `https://netbird.example.com/api/mcp` and an
-`authorization_servers` entry of `https://netbird.example.com/api/mcp/auth`. If the host in it is not the one your users
-connect to, see [Reverse Proxy](#reverse-proxy).
+`authorization_servers` entry of `https://netbird.example.com/api/mcp/auth`. If the URLs start
+with `http://` or name another host than the one your users connect to, see
+[Reverse Proxy](#reverse-proxy).
+
+Each management instance decides at startup whether OAuth sign-in runs. Behind a load balancer,
+check the startup log of each instance for `MCP OAuth disabled`.
 
 ## Set Up Sign-In
 
@@ -96,11 +110,12 @@ embedded identity provider, so they need no change either.
 Two conditions apply:
 
 - **The issuer must have the form `https://netbird.example.com/oauth2`**, with no trailing slash,
-  as the setup script writes it to `server.auth.issuer`. Otherwise OAuth sign-in does not start,
-  and management logs `the MCP base URL "..." must be a scheme and host, such as https://netbird.example.com`.
+  as the setup script writes it. The issuer is `server.auth.issuer` in `config.yaml`, or
+  `EmbeddedIdP.Issuer` in `management.json`. Otherwise OAuth sign-in does not start, and
+  management logs `the MCP base URL "..." must be a scheme and host, such as https://netbird.example.com`.
 - **MCP clients must connect on the issuer's host.** Sign-ins are bound to
-  `https://<issuer host>/api/mcp`. A client that connects on another hostname or address gets
-  `401`.
+  `https://<issuer host>/api/mcp`, and the server's metadata names that host. A client that
+  connects on another hostname or IP address cannot complete the sign-in.
 
 ### Standalone Identity Provider (Advanced)
 
@@ -115,9 +130,11 @@ section. Allow the MCP callback on that application:
    https://netbird.example.com/api/mcp/auth/callback
    ```
    If MCP clients reach management on more than one hostname, add the callback for each one.
-3. Make sure your reverse proxy sets `X-Forwarded-Proto` and `X-Forwarded-Host`. See
-   [Reverse Proxy](#reverse-proxy).
-4. Restart management and [verify the endpoint](#verify-the-endpoint).
+3. Make sure your reverse proxy sets `X-Forwarded-Proto` and `X-Forwarded-Host` on the requests
+   it sends to `/api/`. With nginx, use the
+   [location snippet in Reverse Proxy](#reverse-proxy).
+4. Reload your proxy if you changed it, then [verify the endpoint](#verify-the-endpoint). The
+   redirect URI and proxy changes need no restart of management.
 
 | Provider | Change needed if you followed the NetBird guide |
 |---|---|
@@ -126,7 +143,7 @@ section. Allow the MCP callback on that application:
 | [Zitadel](/selfhosted/identity-providers/advanced/zitadel) | Add the callback to the application's redirect URIs. |
 | [PocketID](/selfhosted/identity-providers/advanced/pocketid) | Add the callback to the client's callback URLs. |
 | [Okta](/selfhosted/identity-providers/managed/advanced/okta) | Add the callback to the sign-in redirect URIs of the single-page application. |
-| [Microsoft Entra ID](/selfhosted/identity-providers/managed/advanced/microsoft-entra-id) | Add the callback in **Authentication**, on the same platform as `http://localhost:53000`. |
+| [Microsoft Entra ID](/selfhosted/identity-providers/managed/advanced/microsoft-entra-id) | Add the callback in **Authentication** → **Mobile and desktop applications**, next to `http://localhost:53000`. |
 | [Google Workspace](/selfhosted/identity-providers/managed/advanced/google-workspace) | Add the callback to the authorized redirect URIs of the OAuth client. |
 | [JumpCloud](/selfhosted/identity-providers/managed/advanced/jumpcloud) | Add the callback to the application's redirect URIs. |
 | [Auth0](/selfhosted/identity-providers/managed/advanced/auth0) | Add the callback to the allowed callback URLs. |
@@ -181,9 +198,12 @@ Both decide whether users stay signed in across restarts.
 
 - **Keep the datastore encryption key persistent.** It is `server.store.encryptionKey` in
   `config.yaml`, or `DataStoreEncryptionKey` in `management.json`. The setup script writes it.
-  Without it, management generates a new key at each start, and every MCP client must register
-  and sign in again after a restart. Management then logs
-  `no datastore encryption key or NB_MCP_OAUTH_KEY set: MCP OAuth logins will not survive a restart or work across instances`.
+  If it is missing, the `management` command of a multi-container deployment generates one and
+  saves it to `management.json`, so keep that file on a persistent volume. The combined
+  `netbird-server` container instead generates a new key at every start and logs
+  `DataStoreEncryptionKey generated (...); add it to your config file under 'server.store.encryptionKey' to persist across restarts`.
+  Every MCP client must then register and sign in again after each restart, and other data
+  encrypted with the key cannot be read.
 - **Optionally set `NB_MCP_OAUTH_KEY`**, a separate secret for OAuth codes and tokens. It lets you
   sign every MCP client out without touching the datastore key. It must be at least 32 bytes.
   Generate one with:
@@ -199,7 +219,7 @@ Both decide whether users stay signed in across restarts.
 |---|---|
 | Set or change `NB_MCP_OAUTH_KEY` | Every OAuth client is signed out. Client registrations stay valid when a datastore key is set, so users only sign in again. |
 | Change the datastore encryption key | Every client registration becomes invalid, and without `NB_MCP_OAUTH_KEY` every client is also signed out. Users remove the server from their client and add it again. |
-| Restart without a persistent datastore key and without `NB_MCP_OAUTH_KEY` | Same as changing the datastore key. |
+| Restart the combined container without `server.store.encryptionKey` | Same as changing the datastore key. |
 
 Personal access tokens are not affected by `NB_MCP_OAUTH_KEY`. The datastore key also encrypts
 other data, so do not change it only to sign MCP clients out; see
@@ -224,9 +244,13 @@ netbird-server:
     - NB_CACHE_REDIS_ADDRESS=redis://redis:6379
 ```
 
-Management connects to Redis when it starts. If Redis cannot be reached, or the URL does not parse,
-OAuth sign-in does not start and management logs the reason. Session keys in Redis start with
-`mcp-oauth:`. Flushing Redis, or deleting the `mcp-oauth:session:*` keys, signs every MCP client out.
+Setting `NB_CACHE_REDIS_ADDRESS` also moves management's other caches to Redis. Management
+connects to Redis when it starts. If Redis cannot be reached or the URL does not parse,
+management does not start and logs `failed to create shared cache store`. Use a `rediss://` URL
+for TLS.
+
+Session keys in Redis start with `mcp-oauth:`. Deleting the `mcp-oauth:session:*` keys signs every
+MCP client out.
 
 ### Multiple Management Instances
 
@@ -236,8 +260,9 @@ Every instance that serves the same domain needs:
 - The same `NB_MCP_OAUTH_KEY`, if you set one.
 - The same datastore encryption key.
 
-In a [high availability deployment](/selfhosted/maintenance/scaling/high-availability), make sure
-`NB_CACHE_REDIS_ADDRESS` is set on every Management replica.
+In a [high availability deployment](/selfhosted/maintenance/scaling/high-availability), management
+stores MCP sign-ins in the Redis set in `server.ha.redisAddr`, so you need no extra variable. Give
+every replica the same `NB_MCP_OAUTH_KEY`, if you set one.
 
 ## Reverse Proxy
 
@@ -253,16 +278,65 @@ In a [high availability deployment](/selfhosted/maintenance/scaling/high-availab
   - `/.well-known/openid-configuration/api/mcp/auth`
 - **Forwarded headers without the embedded identity provider.** Management builds its sign-in
   URLs from the request: the scheme from `X-Forwarded-Proto` and the host from `X-Forwarded-Host`,
-  or `Host`. Make your proxy set or overwrite both headers. Without
-  `X-Forwarded-Proto: https`, the callback becomes an `http://` URL that the identity provider
-  rejects. With the embedded identity provider, management uses the issuer's host and ignores
-  these headers.
+  or `Host`. Management accepts these headers from any caller, so make your proxy set or
+  overwrite both, and do not expose management directly. Without `X-Forwarded-Proto: https`, the
+  callback becomes an `http://` URL that the identity provider rejects. With the embedded
+  identity provider, management uses the issuer's host and ignores these headers.
 - **Trusted proxies.** The sign-in callback is limited to 30 requests per minute for each client
   IP address. Management takes the client address from `X-Forwarded-For` only when the request
-  comes from a trusted proxy. List your proxy in `server.reverseProxy.trustedHTTPProxies` in
-  `config.yaml`, or `ReverseProxy.TrustedHTTPProxies` in `management.json`, so that each user gets
-  their own limit. Otherwise all users behind the proxy share one. The setup script sets it for
-  the built-in Traefik. `TrustedHTTPProxiesCount` is not used for this limit.
+  comes from a trusted proxy. List your proxy in the trusted proxies, as shown below, so that
+  each user gets their own limit. Otherwise all users behind the proxy share one. The setup
+  script sets it for the built-in Traefik. `TrustedHTTPProxiesCount` is not used for this limit.
+
+<Warning>
+    In nginx, a `location` that sets any `proxy_set_header` does not inherit the ones set in
+    `server`. The nginx templates in [External Reverse Proxy Setup](/selfhosted/external-reverse-proxy)
+    set `Host` in the location that serves `/api/`, so the forwarded headers set in `server` do
+    not reach management. Add them to that location.
+</Warning>
+
+<CodeGroup>
+```nginx {{ title: 'Combined container' }}
+location ~ ^/(api|oauth2)/ {
+    proxy_pass http://netbird_server;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+```
+
+```nginx {{ title: 'Multi-container' }}
+location /api/ {
+    proxy_pass http://netbird_management;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+```
+</CodeGroup>
+
+To trust your proxy, list its address as management sees it, as a CIDR prefix such as
+`10.0.0.5/32`. List only your proxies: management trusts the `X-Forwarded-For` header of every
+address in the list.
+
+<CodeGroup>
+```yaml {{ title: 'config.yaml' }}
+server:
+  reverseProxy:
+    trustedHTTPProxies:
+      - "10.0.0.5/32"
+```
+
+```json {{ title: 'management.json' }}
+"ReverseProxy": {
+  "TrustedHTTPProxies": ["10.0.0.5/32"]
+}
+```
+</CodeGroup>
 
 ## Rate Limits
 
@@ -313,35 +387,52 @@ line that starts with `MCP OAuth disabled`:
 | `no PKCE authorization flow is configured` | Add a `PKCEAuthorizationFlow`, or let users connect with personal access tokens. |
 | `the PKCE flow needs a client id, an authorization endpoint and a token endpoint` | Complete `PKCEAuthorizationFlow` → `ProviderConfig`. |
 | `NB_MCP_OAUTH_KEY must be at least 32 bytes` | Generate a longer key with `openssl rand -base64 32`. |
-| `reach redis: ...` or `the redis URL does not parse` | Check `NB_CACHE_REDIS_ADDRESS` and that management can reach Redis. |
 | `the MCP base URL "..." must be a scheme and host` | Set the embedded identity provider's issuer to `https://netbird.example.com/oauth2`. |
 
-### Management does not start after enabling MCP
+### Management does not start
 
-Look for `failed to register MCP endpoints` in the log. The usual cause is a name in
-`NB_MCP_TOOLS` that is not a tool.
+| Message in the log | Fix |
+|---|---|
+| `failed to register MCP endpoints` | A name in `NB_MCP_TOOLS` is not a tool. Correct the list. |
+| `failed to create shared cache store` | Management cannot reach Redis, or `NB_CACHE_REDIS_ADDRESS` does not parse. Check the URL and that management can reach Redis. |
 
 ### The identity provider rejects the redirect URI
 
-On a standalone identity provider, add `https://netbird.example.com/api/mcp/auth/callback` to the
+The identity provider shows an error such as Keycloak's `Invalid parameter: redirect_uri`. On a
+standalone identity provider, add `https://netbird.example.com/api/mcp/auth/callback` to the
 application's redirect URIs. If the error shows an `http://` callback or the wrong host, fix the
-`X-Forwarded-Proto` and `X-Forwarded-Host` headers on your proxy.
+`X-Forwarded-Proto` and `X-Forwarded-Host` headers on your proxy, as in
+[Reverse Proxy](#reverse-proxy).
 
 ### Users see `the login could not be verified`
 
 Management could not validate the identity provider's login. The user may be blocked, pending
 approval, outside the JWT allow groups, or the token's audience may not be one management accepts.
-Set the log level to `debug` and look for `MCP login failed` for the reason.
+Management may also have failed to redeem the code at `TokenEndpoint`. Management calls that
+endpoint itself, so it must be reachable from the management container, and a confidential
+client also needs `ClientSecret`. Set the log level to `debug` and look for `MCP login failed`
+for the reason.
+
+### Users see `the login was not completed`
+
+The identity provider refused the login, or the user cancelled it. The identity provider's log
+has the reason.
 
 ### Every MCP client is signed out after a restart
 
-Management uses the in-memory session store, or the encryption keys are not persistent. See
-[Keys and Restarts](#keys-and-restarts).
+Management uses the in-memory session store, or the encryption keys are not persistent. A combined
+container that logs `DataStoreEncryptionKey generated` at startup has no persistent datastore key.
+See [Keys and Restarts](#keys-and-restarts).
+
+### Clients are asked to sign in again minutes after signing in
+
+Several management instances do not share Redis in `NB_CACHE_REDIS_ADDRESS`, or do not have the
+same `NB_MCP_OAUTH_KEY`. See [Multiple Management Instances](#multiple-management-instances).
 
 ### Users get `503` with `temporarily unavailable, try again shortly`
 
-Management cannot reach Redis or its database. MCP sign-ins resume when the store is back, and
-personal access tokens keep working meanwhile.
+Management cannot reach Redis or its database. MCP sign-ins resume when the store is back. During
+a Redis outage, personal access tokens keep working. While the database is down, they fail too.
 
 ### Users get `429` with `rate limit exceeded, please try again later` while signing in
 

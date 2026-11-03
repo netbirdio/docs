@@ -64,15 +64,16 @@ groups are what let traffic flow, and [Networks](/manage/networks) are preferred
 routes, which remain for exit nodes. Agents pass object IDs that they look up with the `list_`
 tools.
 
-A secret that the API returns once, such as the key from `create_setup_key`, is returned to the
-agent the same way. The list and get tools for setup keys never return the key itself.
+A secret that the API returns once is returned to the agent the same way: the key from
+`create_setup_key`, and the initial password of a user that `create_user` creates in the
+embedded identity provider. The list and get tools for setup keys never return the key itself.
 
 ### Not Available Through MCP
 
 These parts of NetBird have no MCP tools. Use the dashboard or the [REST API](/api) for them.
 
 - Deleting the account
-- Personal access tokens, user invite links and passwords
+- Personal access tokens, user invite links and password changes
 - Identity provider settings and instance setup
 - Remote jobs on peers and temporary access for peers
 - [Reverse Proxy](/manage/reverse-proxy) services, domains and clusters
@@ -103,13 +104,14 @@ What an agent can do through MCP is the intersection of four limits.
 | | OAuth sign-in | Personal access token |
 |---|---|---|
 | Setup | Add the URL to your client and sign in in the browser | Create a token, then add it to your client's configuration |
-| Access | Your role, read-only or read and write | Your role (for a service user, its role) |
+| Access | Your role, read-only or read and write | Your role. A service user's token reads everything in the account whatever its role, and changes only what its role allows. |
 | Lifetime | 30 days, then sign in again | Until the token expires or is deleted |
 | Works for service users | No | Yes |
-| Revoke | Sign out in the client, or block or remove the user | Delete the token |
+| Revoke | Sign out in a client that revokes its tokens, or block or remove the user | Delete the token |
 
-Service users act only through personal access tokens. A service user's token has read access
-to the account whatever the service user's role, as it has with the REST API.
+Service users act only through personal access tokens, with the same access as on the REST API.
+Users with the `User`, `Agent Network Admin` or `Usage Viewer` role cannot create personal access
+tokens, so they connect with OAuth.
 
 <Warning>
     `update_` tools replace the whole object. A field the agent leaves out is reset, for example
@@ -119,9 +121,11 @@ to the account whatever the service user's role, as it has with the REST API.
     or mistyped fields, but review what the agent sends before you approve it.
 </Warning>
 
-All `update_` and `delete_` tools are marked as destructive in their MCP annotations, and the
-read-only tools are marked as read-only. Clients can use these hints to decide when to ask you
-before running a tool.
+All `update_` and `delete_` tools, and `reject_user`, are marked as destructive in their MCP
+annotations, and the read-only tools are marked as read-only. `create_` tools and `approve_user`
+are marked as neither, so a client that asks only before destructive tools runs them without
+asking. Keep approval prompts on for NetBird tools that change data, and do not use a mode that
+approves tool calls automatically on a connection that can make changes.
 
 ## Sign In with OAuth
 
@@ -151,13 +155,17 @@ On a read-only connection, the agent still sees the tools that change data. Call
 an error that says the connection was authorized to read only. To allow changes, sign in to the
 server again from your client and leave **Make changes** ticked.
 
+If the consent page does not show **Make changes**, your client asks for read-only access.
+Remove its `mcp:read` scope setting, such as Codex `--scopes` or Gemini CLI `oauth.scopes`, and
+sign in again.
+
 ### Sessions
 
 | Item | Lifetime |
 |---|---|
 | Access token | 1 hour. The client refreshes it without asking you. |
 | Session | 30 days from sign-in. Refreshing does not extend it. After 30 days, sign in again. |
-| Sign-in page | 10 minutes to complete the consent page and the login |
+| Sign-in pages | 10 minutes to complete the consent page, then 10 minutes to complete the login |
 
 Complete one sign-in at a time. Starting a second connection in the same browser before the
 first one finishes ends the first one on an error page.
@@ -167,14 +175,15 @@ first one finishes ends the first one on an error page.
 | To cut off | Do this | Takes effect |
 |---|---|---|
 | One personal access token | Delete the token in **Team** → **Users** | Next call |
-| One OAuth connection | Sign out in your client, if it revokes tokens on sign-out | Next call |
+| One OAuth connection | Sign out in a client that revokes its tokens, such as `claude mcp logout netbird` | Next call |
 | Every MCP connection of one user | Remove the user, or block the user | Next call |
 | Every OAuth connection of every user (self-hosted) | Set or change `NB_MCP_OAUTH_KEY`. See [MCP Server for Self-Hosted NetBird](/selfhosted/maintenance/mcp-server#keys-and-restarts) | When management restarts with the new key |
 
 Blocking a user stops their OAuth sessions only while the user stays blocked: unblocking them
-lets sessions that have not reached their 30-day end work again. Removing the user ends them
-for good, even if the user is added again later. Blocking a user also logs out their peers,
-and removing a user removes their peers.
+can let sessions that have not reached their 30-day end work again, unless the client discarded
+its tokens when a refresh was refused. Removing the user ends them for good, even if the user
+is added again later. Blocking a user also logs out their peers, and removing a user removes
+their peers.
 
 <Note>
     Disabling a user in your identity provider, or removing them from the JWT allow groups, does
@@ -186,12 +195,13 @@ and removing a user removes their peers.
 
 This section summarizes how the server protects your account, for security reviews.
 
-- **Off by default on self-hosted NetBird.** Until an administrator turns it on, no MCP or
-  OAuth path exists on the server.
+- **Off by default on self-hosted NetBird.** Until an administrator turns it on, management
+  serves no MCP or OAuth path; requests get `404`.
 - **No new permissions.** A tool call is replayed inside management against the REST API with
   your identity. The same handler, permission checks and audit logging run as for the REST
   call. Changes appear in the [audit log](/manage/activity) as actions of the user the agent
-  signed in as.
+  signed in as. The audit log does not show that a change came through MCP: it looks the same
+  as a change the user made in the dashboard or the API.
 - **The agent cannot choose the account.** The account comes from the credential, or from the
   tenant URL when the credential may manage that tenant. A tenant URL the credential cannot
   use is refused with `403`, never run against another account.
@@ -205,39 +215,65 @@ This section summarizes how the server protects your account, for security revie
   or `http` on the client's own computer, and must match the registered one exactly (on the
   client's own computer, on any port). An authorization code works once, within 2 minutes.
 - **Consent the user can see.** NetBird asks for consent on every sign-in and shows where the
-  sign-in returns to. The page cannot be embedded in another site, the approve button reacts
-  only after real pointer or keyboard input, and a form posted from another site is refused.
+  sign-in returns to. The page cannot be embedded in another site. In a browser that runs
+  scripts, the approve button reacts only after pointer movement, a key press or a tap. A form
+  posted from another site is refused.
 - **The usual login checks.** Sign-in goes through your identity provider and is validated like
   a dashboard login, including JWT allow groups and group sync. Blocked users and users pending
   approval cannot sign in. NetBird discards the identity provider's token after the login and
   issues its own tokens.
+- **Your identity provider's session applies.** NetBird does not ask the identity provider to
+  force a new login, so an existing session there, and its MFA policy, apply as they do for the
+  dashboard.
+- **A first sign-in creates the user.** A user's first sign-in through MCP creates them in
+  NetBird, as a first dashboard login does. When new users need approval, the sign-in fails
+  until an administrator approves the user.
+- **Sign-in URLs from forwarding headers.** With a standalone identity provider, management
+  builds its sign-in URLs from the `X-Forwarded-Proto` and `X-Forwarded-Host` headers of each
+  request. Make the proxy overwrite both headers, and do not expose management directly. With
+  the embedded identity provider, management uses the issuer's host instead.
 - **Tokens that work only for MCP.** OAuth access tokens (`nbmcp_...`) are accepted only on the
   MCP endpoint of the server that issued them, never on the rest of the API. They are sealed with
   AES-256-GCM and carry IDs and the granted access, never an identity provider token.
 - **Prefixes for secret scanners.** Access tokens start with `nbmcp_`, refresh tokens with
   `nbmcpr_`, authorization codes with `nbmcpk_` and client IDs with `nbmcpc_`. Personal access
   tokens start with `nbp_`.
-- **Rotating refresh tokens.** Each refresh issues a new refresh token. Reusing an old one, or
-  redeeming an authorization code twice, ends the whole session.
+- **Rotating refresh tokens.** Each refresh issues a new refresh token. Presenting a replaced
+  refresh token more than 10 seconds after it was replaced, or redeeming an authorization code
+  twice, ends the whole session.
+- **Fixed lifetimes.** Access tokens last 1 hour and sessions 30 days. Neither can be
+  configured.
 - **Checked on every call.** Each call reloads the user: a user who was blocked, removed, moved
   to another account or set to pending approval loses access on the next call.
 - **Fails closed.** When the session store or the database cannot answer, the server returns
-  `503` and lets no token through. Personal access tokens keep working.
+  `503` and lets no OAuth token through. During a session store (Redis) outage, personal access
+  tokens keep working.
+- **Other API credentials work too.** Like the rest of the API, the MCP endpoint also accepts
+  the dashboard's own sign-in tokens.
 
 Limits of this model:
 
 - A stolen access token works through the MCP endpoint, within its granted access, until it
-  expires, at most 1 hour later.
+  expires, at most 1 hour later, or until its session is revoked.
+- A stolen refresh token works until the thief and the client refresh more than 10 seconds
+  apart. The later refresh then ends the session for both.
 - A session lasts until its 30-day end unless you revoke it or block or remove the user. See
   [Revoke Access](#revoke-access).
+- NetBird has no list of MCP connections. An administrator cannot see which clients a user
+  connected or end one of them. Blocking a user pauses all of their sessions, and removing the
+  user ends them.
+- Every user of an account can connect an MCP client, whatever their role, and acts with that
+  role. NetBird has no account setting that turns the MCP server off or limits its tools. On
+  self-hosted NetBird, an administrator controls both with
+  [environment variables](/selfhosted/maintenance/mcp-server).
 
 <Warning>
     An agent acts with your permissions, and it reads what the tools return. Peer names, group
     names, user names and audit event details are data that someone else may control, and text
     in them can try to steer the agent. Everything the tools return, including peer IPs, user
-    emails and new setup keys, also goes to the model provider your client uses. Start with a
-    read-only connection, sign in as a user whose role fits the task, and review each change the
-    agent proposes before you approve it.
+    emails, new setup keys and initial user passwords, also goes to the model provider your
+    client uses. Start with a read-only connection, sign in as a user whose role fits the task,
+    and review each change the agent proposes before you approve it.
 </Warning>
 
 ## Related Resources
