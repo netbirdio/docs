@@ -670,6 +670,10 @@ export const docsNavigation = [
                         href: '/selfhosted/maintenance/admin-cli',
                     },
                     {
+                        title: 'Peer Authentication',
+                        href: '/selfhosted/maintenance/peer-authentication',
+                    },
+                    {
                         title: 'Scaling Your Deployment',
                         href: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
                         isOpen: false,

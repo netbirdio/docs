@@ -1,0 +1,223 @@
+# Peer Authentication for Signal and Relay
+
+import {Note, Warning} from "@/components/mdx";
+
+Peer authentication lets Signal and Relay verify the identity of each peer that connects. Management signs a token for each peer with its own Ed25519 key, and the token is derived from the peer's WireGuard and authentication keys. Every time the client connects to Signal or Relay, it presents the token and the proof that it holds its authentication key. Relay and Signal check both and upon success the peer is authenticated.
+
+To turn it on, give Management's public key to every Relay and Signal, then give the signing key to Management. Peer authentication is off by default, and turning it on is backward compatible: clients that do not support it keep connecting without authentication until you decide to refuse them.
+
+## Requirements
+
+- Management, Signal, Relay and the NetBird clients at **v1.0.0 or later**.
+- Clients older than v1.0.0 keep working without authentication. You can refuse them later, once every client is upgraded. See [Refuse unauthenticated peers](#refuse-unauthenticated-peers).
+
+## Order of the steps
+
+<Warning>
+**Deploy Management's public key on every Relay and Signal before you set the signing key on Management.**
+
+As soon as Management has a signing key, it hands every upgraded client a signed token, and the clients present it to Relay and Signal. A Relay that does not have the public key refuses those clients. This happens if the Relay was not upgraded, or if `NB_PEER_AUTH_PUBLIC_KEYS` is not set on it. The clients then lose every connection that goes through that Relay. A Relay in this state logs `bound token presented but no Management public key is configured, set --peer-auth-public-keys`.
+</Warning>
+
+The safe order is always:
+
+1. [Generate the signing key](#generate-the-signing-key).
+2. [Give the public key to every Relay and Signal](#give-the-public-key-to-every-relay-and-signal), after upgrading them.
+3. [Set the signing key on Management](#set-the-signing-key-on-management).
+4. Optional: once every client is upgraded, [refuse unauthenticated peers](#refuse-unauthenticated-peers).
+
+Which of these steps you have to do by hand depends on your deployment:
+
+| Deployment | What to do |
+|------------|------------|
+| Combined server (`netbird-server`) with its built-in Relay and Signal | Follow [Combined server only](#combined-server-only). The built-in Relay and Signal read the public key from the same file, so they get it at the same time as Management. |
+| Combined server with [external Relays](/selfhosted/maintenance/scaling/set-up-external-relays) or an [external Signal](/selfhosted/maintenance/scaling/set-up-external-signal), or a deployment with a separate Management | Follow [Deployments with external Relay or Signal](#deployments-with-external-relay-or-signal). Do the steps in order. |
+
+## Combined server only
+
+This section applies only if the combined server runs its own Relay and Signal, that is, `server.relays` and `server.signalUri` are not set in `config.yaml`.
+
+1. Upgrade the combined server to v1.0.0 or later.
+2. Add the signing key file to `config.yaml`:
+
+   ```yaml
+   server:
+     peerAuth:
+       signingKeyFile: "/var/lib/netbird/peer_auth_signing.pem"
+   ```
+
+3. Restart `netbird-server`.
+
+   If the file does not exist, the server generates it, readable by its owner only, and never overwrites it afterwards. Keep it in the data volume and include it in your [backups](/selfhosted/maintenance/backup).
+
+4. Check the log for the key that is now in use:
+
+   ```text
+   peer auth signing key id 2221581819, public key 3x1q...=
+   ```
+
+<Warning>
+If you add an external Relay or Signal later, configure it with this public key **before** it serves peers. See [Give the public key to every Relay and Signal](#give-the-public-key-to-every-relay-and-signal).
+</Warning>
+
+## Deployments with external Relay or Signal
+
+### Generate the signing key
+
+Generate the key yourself, so that you know its public key before Management uses it:
+
+```bash
+openssl genpkey -algorithm ed25519 -out peer_auth_signing.pem
+chmod 600 peer_auth_signing.pem
+```
+
+Print the public key in the format Relay and Signal expect:
+
+```bash
+openssl pkey -in peer_auth_signing.pem -pubout -outform DER | tail -c 32 | base64
+```
+
+The private key never leaves Management. If you run several Management instances, for example in a [high availability](/selfhosted/maintenance/scaling/high-availability) setup, copy the same file to every instance: all of them must sign with the same key.
+
+<Note>
+Do not let the combined server generate the key in this setup. It would start signing at the same moment it creates the key, before any external Relay or Signal has the public key.
+</Note>
+
+### Give the public key to every Relay and Signal
+
+On **every** Relay and **every** Signal:
+
+1. Upgrade to v1.0.0 or later.
+2. Add the public key to the environment file (`relay.env` or `signal.env`):
+
+   ```bash
+   NB_PEER_AUTH_PUBLIC_KEYS=3x1q...=
+   ```
+
+3. Restart the container and check its log for:
+
+   ```text
+   peer auth tokens verified with Management Ed25519 key ids [2221581819]
+   ```
+
+Nothing changes for peers at this point: until Management has the signing key, Relay and Signal keep accepting peers as they do now.
+
+Do not move on until every Relay and Signal that peers can reach has the key. A Relay that is missing it refuses upgraded clients as soon as Management has the signing key.
+
+### Set the signing key on Management
+
+Copy `peer_auth_signing.pem` to Management and point the configuration at it.
+
+For a combined server, in `config.yaml`:
+
+```yaml
+server:
+  peerAuth:
+    signingKeyFile: "/var/lib/netbird/peer_auth_signing.pem"
+```
+
+For a standalone Management, in `management.json`:
+
+```json
+"PeerAuth": {
+  "SigningKeyFile": "/var/lib/netbird/peer_auth_signing.pem"
+}
+```
+
+Restart Management and check its log. The key ID and public key must match the ones you gave to Relay and Signal:
+
+```text
+peer auth signing key id 2221581819, public key 3x1q...=
+```
+
+If the file is set but cannot be read, Management does not start.
+
+Upgraded clients get the signed token at their next login or sync, and authenticate to Relay and Signal from then on. Older clients keep connecting without authentication, but they can no longer take over the identity of a peer that is connected with authentication.
+
+### Refuse unauthenticated peers
+
+Only once **every** client is at v1.0.0 or later, refuse peers that do not present a signed token. On the Relay this setting replaces the shared secret: a Relay runs either with `NB_AUTH_SECRET`, which admits peers without authentication, or with `NB_PEER_AUTH_REQUIRED`, never with both.
+
+On every Relay, in `relay.env`, add the setting and remove the secret:
+
+```bash
+NB_PEER_AUTH_REQUIRED=true
+# NB_AUTH_SECRET=...   removed
+```
+
+On every Signal, in `signal.env`:
+
+```bash
+NB_PEER_AUTH_REQUIRED=true
+```
+
+For the built-in Relay and Signal of a combined server, set `server.peerAuth.required: true` and remove `server.authSecret` from `config.yaml` (and `NB_AUTH_SECRET` from the container environment, if you set it there).
+
+A Relay with both settings, or with neither, does not start. `NB_PEER_AUTH_REQUIRED` without `NB_PEER_AUTH_PUBLIC_KEYS` does not start either. A client that does not authenticate can no longer use Relay or Signal and loses its connections.
+
+## Optional checks
+
+### Hostname check
+
+Each proof a client signs contains the hostname it dialed. When you list the accepted hostnames, a Relay or Signal refuses proofs made for any other name. Someone who obtained a client's proof on one server can then no longer present it to another one.
+
+```bash
+NB_PEER_AUTH_HOSTNAMES=relay-us.example.com,relay.example.com
+```
+
+List every name clients dial: the Relay's own exposed address and any shared name in front of several Relays. If the Relay is behind a reverse proxy, list the public name of the proxy, not the internal name of the container. A wrong list refuses every client, so check the log after enabling it. The Relay warns at startup when its own exposed address is missing from the list.
+
+For a combined server, use `server.peerAuth.hostnames`. Its built-in Relay and Signal share one list.
+
+### Timestamp check
+
+Each proof carries the time it was signed on the client's clock. By default, Relay and Signal do not check that time: a proof is valid for as long as its token, which is the relay credentials TTL (12 hours by default).
+
+If every client clock in your deployment is kept in sync, you can refuse proofs signed more than 10 minutes away from the clock of the Relay or Signal:
+
+```bash
+NB_PEER_AUTH_CHECK_TIME=true
+```
+
+A client whose clock is wrong is then refused everywhere. For a combined server, use `server.peerAuth.checkTime`.
+
+## Rotate the signing key
+
+Relay and Signal accept tokens signed by any key in `NB_PEER_AUTH_PUBLIC_KEYS`, so you can rotate without interrupting peers:
+
+1. Generate a new key and print its public key, as in [Generate the signing key](#generate-the-signing-key).
+2. On every Relay and Signal, add the new public key next to the old one, and restart:
+
+   ```bash
+   NB_PEER_AUTH_PUBLIC_KEYS=OLD_KEY=,NEW_KEY=
+   ```
+
+3. Replace the signing key file on every Management instance and restart them.
+4. Wait at least one relay credentials TTL (12 hours by default), so that every token signed with the old key has expired.
+5. Remove the old public key from every Relay and Signal.
+
+On a combined server without external Relay or Signal, replacing the key file and restarting `netbird-server` is enough.
+
+## Turn it off
+
+Remove the signing key setting from Management and restart it. Clients go back to the old tokens on their own when they reconnect to Management, with no action on the clients. Once they have, you can remove `NB_PEER_AUTH_PUBLIC_KEYS` from Relay and Signal.
+
+If you set `NB_PEER_AUTH_REQUIRED`, undo it first: remove it from every Relay and Signal, and put `NB_AUTH_SECRET` back on every Relay (`server.authSecret` on a combined server). Otherwise every client is refused once Management stops signing tokens.
+
+## Limits
+
+- **Management downtime.** A signed token expires after the relay credentials TTL. If Management is unreachable for longer, clients cannot renew their tokens, and Signal refuses them until Management is back.
+- **Replay.** A proof can be presented again for as long as its token is valid, or for 10 minutes with the timestamp check. Over TLS, only the server the client connected to sees the proof, and the hostname check keeps that server from using it elsewhere. Over plain `rel://`, anyone on the network path can see it.
+- **No authorization.** Relay and Signal now know which peer is connecting, but they do not check whether two peers are allowed to talk to each other. Access control still happens on Management and on the peers.
+
+## Settings reference
+
+| Where | Setting | Description |
+|-------|---------|-------------|
+| Management (`management.json`) | `PeerAuth.SigningKeyFile` | PEM PKCS#8 Ed25519 private key that signs the tokens. Unset: peer authentication is off. |
+| Relay, Signal | `NB_PEER_AUTH_PUBLIC_KEYS` (`--peer-auth-public-keys`) | Comma-separated base64 Ed25519 public keys of Management. Any number of keys; tokens signed by any of them are accepted. |
+| Relay, Signal | `NB_PEER_AUTH_REQUIRED` (`--peer-auth-required`) | Refuse peers that present no signed token. Default `false`. Requires public keys. On the Relay it replaces `NB_AUTH_SECRET`. |
+| Relay | `NB_AUTH_SECRET` (`--auth-secret`) | Shared secret that admits peers without authentication. Required unless `NB_PEER_AUTH_REQUIRED` is set, and not allowed with it. |
+| Relay, Signal | `NB_PEER_AUTH_HOSTNAMES` (`--peer-auth-hostnames`) | Comma-separated hostnames accepted in proofs. Unset: no hostname check. |
+| Relay, Signal | `NB_PEER_AUTH_CHECK_TIME` (`--peer-auth-check-time`) | Refuse proofs signed more than 10 minutes away from the local clock. Default `false`. |
+| Combined (`config.yaml`) | `server.peerAuth.signingKeyFile`, `.hostnames`, `.required`, `.checkTime` | Same meaning, for the combined server and its built-in Relay and Signal. The key file is generated if missing. With the built-in Relay, `.required` replaces `server.authSecret`. |
