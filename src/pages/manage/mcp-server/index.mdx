@@ -191,6 +191,33 @@ their peers.
     30 days later. Block the user in NetBird to cut access right away.
 </Note>
 
+## Audit Log
+
+Changes an agent makes through tools appear in the [audit log](/manage/activity) as ordinary
+actions of the user it signed in as. Nothing marks them as made through MCP. OAuth sessions add
+entries of their own, in the user's own account, with that user as both initiator and target:
+
+| Entry | Activity code | Recorded when |
+|---|---|---|
+| **MCP client signed in** | `mcp.session.start` | The client completes the sign-in and receives its tokens. |
+| **MCP client signed out** | `mcp.session.revoke` | The client revokes a token of a session that is still open. Revoking both of its tokens records one entry. |
+| **MCP session revoked after token reuse** | `mcp.session.replay` | A replaced refresh token, or an authorization code redeemed a second time, ends a session that is still open. |
+
+The entries carry these details:
+
+- `access`: `read` or `read and write`, the access the user granted on the consent page. The
+  user's role still limits what the session can do.
+- `client_name`: the application name from the consent page, with control characters and
+  characters that render as nothing removed. The application chooses it, so it does not prove
+  which application signed in. A sign-out entry has it only when the client sends its client ID.
+- `redirect_host`: the host the sign-in returned to, on sign-in entries and on entries for a
+  reused authorization code.
+
+A failed or cancelled sign-in, and a connection with a personal access token, record no MCP
+entry. A session that ends at its 30-day end, or whose client deletes its tokens without revoking
+them, leaves no sign-out entry. Blocking or removing the user records **User blocked** or
+**User deleted** instead.
+
 ## Security Model
 
 This section summarizes how the server protects your account, for security reviews.
@@ -202,6 +229,8 @@ This section summarizes how the server protects your account, for security revie
   call. Changes appear in the [audit log](/manage/activity) as actions of the user the agent
   signed in as. The audit log does not show that a change came through MCP: it looks the same
   as a change the user made in the dashboard or the API.
+- **Sign-ins are logged.** OAuth sign-ins, sign-outs and sessions ended for token reuse appear in
+  the audit log of the user's account. See [Audit Log](#audit-log).
 - **The agent cannot choose the account.** The account comes from the credential, or from the
   tenant URL when the credential may manage that tenant. A tenant URL the credential cannot
   use is refused with `403`, never run against another account.
@@ -259,9 +288,9 @@ Limits of this model:
   apart. The later refresh then ends the session for both.
 - A session lasts until its 30-day end unless you revoke it or block or remove the user. See
   [Revoke Access](#revoke-access).
-- NetBird has no list of MCP connections. An administrator cannot see which clients a user
-  connected or end one of them. Blocking a user pauses all of their sessions, and removing the
-  user ends them.
+- NetBird has no list of open MCP connections. The audit log shows each sign-in, but not which
+  sessions are still open, and an administrator cannot end a single one. Blocking a user pauses
+  all of their sessions, and removing the user ends them.
 - Every user of an account can connect an MCP client, whatever their role, and acts with that
   role. NetBird has no account setting that turns the MCP server off or limits its tools. On
   self-hosted NetBird, an administrator controls both with
