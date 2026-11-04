@@ -56,7 +56,8 @@ and budgets (see [How It Works](/agent-network/how-it-works#llm-apis-and-ai-gate
 3. Paste the provider's **API key**. It is stored encrypted server-side and never sent to
    callers.
 4. _(Optional)_ Restrict the **allowed models** and set **per-model pricing** used for cost
-   estimates in usage and logs.
+   estimates in usage and logs. On supported providers, **Load models from provider** offers
+   the vendor's own list — see [Load Models from the Provider](#load-models-from-the-provider).
 5. _(Optional, gateways)_ Fill any gateway-specific fields (for example a Portkey config
    ID) and the identity headers used for attribution.
 6. Save the provider.
@@ -136,6 +137,59 @@ for how these buckets appear in the cost breakdown.
 Self-hosters can seed the catalog defaults these fields prefill from with a
 pricing file. See
 [`server.agentNetwork.pricingDefaultsFile`](/selfhosted/maintenance/configuration-files#agent-network-settings).
+
+### Load Models from the Provider
+
+NetBird ships a catalog of known models, but it can't see your account: which OpenAI models
+your organization is entitled to, which Bedrock inference profiles exist in your account and
+region, or which Vertex AI models your project has enabled. The catalog also drifts as
+vendors retire models.
+
+On the **Models** tab, **Load models from provider** asks the vendor which models it offers
+this provider's credential, and adds the answer to the model picker. Nothing is written to
+the form on its own: the models already listed keep the rates you gave them, and you pick
+the ones you want from **Add More**.
+
+Available for **OpenAI**, **Anthropic**, **Amazon Bedrock** and **Google Vertex AI**. Every
+other entry in the catalog — Azure OpenAI, Mistral, Kimi, the AI gateways and custom
+endpoints — publishes no listing NetBird can ask for, so the button reports that and the
+catalog list is used instead.
+
+For a provider you are still filling in, the button stays disabled until the **Upstream URL**
+and the credential are both filled in.
+
+A few details worth knowing:
+
+- **A model the catalog already prices arrives priced.** Anything else arrives with no input
+  or output rate: NetBird outlines the row and asks you to confirm before saving it, rather
+  than hiding the model — the vendor listed it, so leaving it out would hide a model you
+  really have. Set the rates yourself, or usage against it is costed at $0 and adds nothing
+  to the spend side of [token & budget limits](/agent-network/policies/limits). Its tokens
+  still count toward the token caps.
+- **Editing a saved provider reuses the stored credential.** The API key (or, on Vertex AI,
+  the uploaded service account key) never returns to your browser, so the lookup runs against
+  the credential already on the record. Change the provider, the upstream URL, or the masked
+  credential and NetBird asks for a credential to use instead — the values on screen are
+  then used.
+- **Bedrock ids are registered exactly as AWS issues them**, prefix included
+  (`eu.anthropic.claude-sonnet-4-5-20250929-v1:0`), because that is the only form that works
+  at invoke time. The prefix is a cross-region geography (`us.`, `eu.`, `apac.`, `global.`,
+  and so on) rather than the region you configured, and AWS routinely offers the same model
+  under more than one — so expect both an `eu.anthropic.…` and a `global.anthropic.…` entry
+  for it. Both are genuine, and both cost the same, since pricing keys on the model and not
+  the geography. Only `ACTIVE` inference profiles are offered. The listing comes from the
+  Bedrock control plane, which is a different host from the runtime endpoint you configured —
+  NetBird derives it from your upstream URL.
+- **Vertex AI lists the Anthropic publisher's catalog**, not what your project has enabled,
+  so treat it as a suggestion alongside NetBird's catalog rather than a definitive list. Ids
+  come back version-pinned, in the `claude-sonnet-4-5@20250929` form Vertex addresses them by.
+
+<Note>
+The vendor call is made by NetBird's management service using the provider's credential, not
+from your browser and not over your agents' tunnels. It only ever dials public vendor
+endpoints and does not follow redirects. Loading the list spends that credential against the
+vendor, so it needs the same permission as creating a provider.
+</Note>
 
 ### Adding a Model Not in the Catalog
 
