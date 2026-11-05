@@ -20,6 +20,7 @@ The steps below use `backup/` as the target directory and assume the default qui
 | `proxy.env`, `traefik-dynamic.yaml` | Install directory | [Reverse proxy](/manage/reverse-proxy) enabled | Proxy access token and the Traefik routing rules that pass TLS through to the proxy. |
 | `crowdsec/` directory | Install directory | [CrowdSec](/selfhosted/maintenance/crowdsec) enabled | CrowdSec configuration, mounted into the container at `/etc/crowdsec`. |
 | `nginx-netbird.conf`, `caddyfile-netbird.txt`, `npm-advanced-config.txt` | Install directory | External reverse proxy chosen during setup | Snippets for your own reverse proxy. Harmless to copy if present. |
+| `.env`, or the secret store that sets `NB_AUTH_SECRET` or `NB_STORE_ENCRYPTION_KEY` | Install directory, or your secret store | Either variable set on `netbird-server` | The only copy of these secrets once they are removed from `config.yaml`. See [Keeping secrets out of the config file](/selfhosted/maintenance/configuration-files#keeping-secrets-out-of-the-config-file). Without the encryption key the restored database cannot be read, and without `server.authSecret` the server does not start (unless it uses external relays). **Required.** |
 | `/var/lib/netbird` in `netbird-server` | Docker volume `netbird_data` | Always | Management database (SQLite by default), encryption keys and state. **Required.** |
 | `/var/lib/crowdsec/data` in `crowdsec` | Docker volume `crowdsec_db` | CrowdSec enabled | CrowdSec LAPI database, including the bouncer key that `proxy.env` references. Without it the restored proxy cannot authenticate to CrowdSec. |
 | `/certs` in `proxy` | Docker volume `netbird_proxy_certs` | Reverse proxy enabled | Certificates for proxied services. Optional: the proxy reissues them, but restoring avoids a burst of Let's Encrypt requests. |
@@ -59,6 +60,14 @@ If CrowdSec is enabled, copy its configuration directory:
 ```bash
 cp -r crowdsec backup/crowdsec
 ```
+
+If a `.env` file exists in the install directory, copy it too. It holds `NB_AUTH_SECRET` and `NB_STORE_ENCRYPTION_KEY` when you pass them to `netbird-server` from there:
+
+```bash
+cp .env backup/
+```
+
+If the values come from a secret store instead, make sure that store is backed up.
 
 ### 3. Copy the data volumes
 
@@ -121,6 +130,12 @@ If CrowdSec is part of the backup, also restore its configuration directory:
 
 ```bash
 cp -r ../backup/crowdsec .
+```
+
+If the backup contains a `.env` file, restore it as well:
+
+```bash
+cp ../backup/.env .
 ```
 
 ### 2. Create the containers without starting them

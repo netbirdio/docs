@@ -157,7 +157,9 @@ We recommend using SCIM provisioning where possible. In the following setup guid
 
 ## 3. Migrate an Existing Community Combined Deployment
 
-Use `migrate-to-enterprise.sh` to convert an existing community combined-server deployment to the enterprise images. The same script also migrates SQLite data to Postgres and enables traffic flow, so no manual Compose or `config.yaml` edits are required for the supported migration path.
+Use `migrate-to-enterprise.sh` to convert an existing community combined-server deployment to the enterprise images. The same script also migrates SQLite data to Postgres and enables traffic flow, so no manual Compose or `config.yaml` edits are required for the supported migration path, except in the case below.
+
+Before you run the script, if your community deployment sets `NB_AUTH_SECRET` or `NB_STORE_ENCRYPTION_KEY` on the `netbird-server` container, copy each value it sets into `config.yaml` (`server.authSecret`, `server.store.encryptionKey`). The Enterprise server requires the encryption key in `config.yaml`, and when you enable traffic flow the script reads both values from `config.yaml` only. After the migration, remove `NB_STORE_ENCRYPTION_KEY` from the `netbird-server` service in `docker-compose.yml` and run `docker compose up -d netbird-server`: Enterprise integrations read the key only from the server's config file (`config.yaml.enterprise` if the script created one, otherwise `config.yaml`), so if the variable ever held a different value, management data and integration data would end up under different keys. `NB_AUTH_SECRET` can stay, as long as `server.authSecret` in that same file holds the same value.
 
 For installations created with `getting-started-enterprise.sh`, use [1.7 Enable features on an existing installation](#1-7-enable-features-on-an-existing-installation) instead.
 
@@ -203,7 +205,7 @@ The script does not modify the existing `docker-compose.yml` or original `config
 | File or directory | Purpose |
 | --- | --- |
 | `docker-compose.override.yml` | Compose override with the enterprise images and optional Postgres or traffic-flow services. |
-| `config.yaml.enterprise` | Generated only when Postgres migration is selected. Points the enterprise server at Postgres. |
+| `config.yaml.enterprise` | Generated when the run migrates to Postgres or enables traffic flow: a copy of `config.yaml` with those changes, which the enterprise server runs on from then on. |
 | `.env` additions | License key and generated secrets used by the override file. |
 | `backups/sqlite-pre-enterprise-*` | SQLite data backup created before the Postgres migration. |
 
@@ -241,9 +243,9 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
 ### Boot fails: `server.store.encryptionKey is required`
 
 - **Symptom:** The server exits immediately with this message in the logs.
-- **Cause:** `config.yaml` is missing `server.store.encryptionKey`, or the value is the empty string.
-- **Resolution:** Generate a key with `openssl rand -base64 32` and set it under `server.store.encryptionKey`.
-- **Verification:** Restart; the server should now reach the `Management server created` and `Starting CloudServer` log lines.
+- **Cause:** the server's config file (`config.yaml.enterprise` if a migration created it, otherwise `config.yaml`) is missing `server.store.encryptionKey`, or the value is the empty string. Setting the key only through `NB_STORE_ENCRYPTION_KEY` does not satisfy this check: the Enterprise server requires it in that config file. If a deployment that has run before sets `NB_STORE_ENCRYPTION_KEY`, the key was moved out of `config.yaml` into that variable: either just now, or during a migration from community without copying it back first.
+- **Resolution:** If the deployment has run before, copy its existing key (from `NB_STORE_ENCRYPTION_KEY` in `.env` or `docker-compose.yml`, or from a backup of those files) into `server.store.encryptionKey` in that config file, then remove `NB_STORE_ENCRYPTION_KEY` from the `netbird-server` service and run `docker compose up -d netbird-server`. A new key cannot read the data already in the database. Only for a new installation, generate a key with `openssl rand -base64 32` and set it under `server.store.encryptionKey`.
+- **Verification:** After `docker compose up -d netbird-server`, the server should now reach the `Management server created` and `Starting CloudServer` log lines.
 
 <Warning>
 **Do not rotate the key on an existing deployment.** If you have already booted once with a key, that exact value must remain — otherwise encrypted records become unreadable.
