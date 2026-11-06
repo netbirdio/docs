@@ -220,19 +220,144 @@ After the script completes:
 - If Postgres migration was selected, confirm historical activity and embedded IdP data are present.
 - If traffic flow was enabled, confirm flow data appears in the dashboard after peers generate traffic.
 
-### 3.6 Rollback
+### 3.6 Return to the Community Edition
 
-At the end of the run, the script prints the rollback commands for the choices made during migration. Use those commands as the source of truth for your deployment.
+| | Keep your data | Restore the pre-migration backup |
+| --- | --- | --- |
+| Data created after the migration | Kept | Deleted |
+| Users and peers registered after the migration | Keep working | Must register again |
+| Applies to | Any migrated deployment | Only if you migrated to Postgres |
 
-Rollback generally means:
+Use **Keep your data** unless you need the deployment exactly as it was before the migration. If you declined the Postgres migration, the script did not move your data, so there is no backup to restore and **Keep your data** is the only path.
 
-- Stop the stack with Docker Compose.
-- If Postgres migration was selected, remove the generated Postgres volume and restore the SQLite backup created by the script.
-- Remove `docker-compose.override.yml` and `config.yaml.enterprise`.
-- Remove the migration entries added to `.env`.
-- Start the original stack again.
+On either path, the features the license unlocks stop working, including traffic-flow event logging and peer approval. See [What the license unlocks](/selfhosted/enterprise#what-the-license-unlocks) for the full list.
 
-Keep the SQLite backup until the enterprise deployment has been validated and your rollback window has passed.
+#### Before you start
+
+Open a root shell with `sudo -i`, then change to the directory that holds `docker-compose.yml`:
+
+```bash
+cd "$(docker inspect netbird-server \
+  --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}')"
+```
+
+Run every command in this section from there. If you open a new terminal, run both again.
+
+Check which database the migration left you on:
+
+```bash
+ls docker-compose.override.yml config.yaml.enterprise
+```
+
+If both files are listed, you migrated to Postgres. If `ls` prints `No such file or directory` for `config.yaml.enterprise`, you are on SQLite.
+
+<Warning>
+Approve or remove every peer that is waiting for approval before you switch. The Community Edition has no peer approval, so a peer that is still waiting is let in as soon as the community server starts, and can reach what its policies allow.
+</Warning>
+
+Write down the running version:
+
+```bash
+docker logs netbird-server 2>&1 | grep 'management server version'
+```
+
+If the output contains `management server version 0.82.0+enterprise.1`, your `<VERSION>` is `0.82.0`: drop the `+enterprise.N` suffix and add no `v`.
+
+Back up the database and `.env`. On Postgres:
+
+```bash
+docker exec netbird-postgres pg_dump -U netbird -d netbird > netbird-backup.sql
+chmod 600 netbird-backup.sql
+cp -p .env .env.backup
+```
+
+On SQLite, the server stops briefly so the copy is consistent:
+
+```bash
+docker compose stop netbird-server
+docker run --rm --volumes-from netbird-server \
+  -v "$PWD":/backup alpine \
+  tar czf /backup/netbird-data-backup.tgz -C /var/lib/netbird .
+chmod 600 netbird-data-backup.tgz
+cp -p .env .env.backup
+docker compose start netbird-server
+```
+
+These are your copies if something goes wrong; the restore path below does not use them. They contain credentials and keys, so keep them private.
+
+<Warning>
+Never add `-f` files to `docker compose`, for example `docker compose -f docker-compose.yml up -d`, before or after you switch. Explicit `-f` files replace the automatic loading of `docker-compose.override.yml`, so the server starts without the migration's settings, and on a Postgres migration, peers registered after the migration can no longer connect. Do not run `docker compose down -v` either: it deletes the database volume.
+</Warning>
+
+#### Keep your data
+
+1. Create `docker-compose.community.yml`. The file switches the server to the community image, clears the license key, and keeps the traffic-flow services from starting. It works whether or not you enabled traffic flow. Replace `<VERSION>` with the version you wrote down:
+
+    ```bash
+    cat > docker-compose.community.yml <<'EOF'
+    {services: {
+    netbird-server: {image: "netbirdio/netbird-server:<VERSION>",
+    environment: {NB_LICENSE_KEY: ""}},
+    flow-enricher: {profiles: [enterprise-flow]},
+    flow-receiver: {profiles: [enterprise-flow]},
+    nats: {profiles: [enterprise-flow]}}}
+    EOF
+    ```
+
+2. Add the file to `COMPOSE_FILE` in `.env`. Every plain `docker compose` command, such as a later `docker compose up -d`, then loads all three files, so the server stays on the community image. Expect a short interruption while the server restarts:
+
+    ```bash
+    printf '\nCOMPOSE_FILE=%s\n' \
+      docker-compose.yml:docker-compose.override.yml:docker-compose.community.yml >> .env
+    docker compose stop flow-enricher flow-receiver nats
+    docker compose up -d --force-recreate netbird-server
+    ```
+
+3. Check the running image and config file:
+
+    ```bash
+    docker inspect netbird-server --format '{{.Config.Image}} {{join .Args " "}}'
+    ```
+
+    The output starts with `netbirdio/netbird-server:` and the version you wrote down, and includes `--config /etc/netbird/config.yaml.enterprise` on Postgres or `--config /etc/netbird/config.yaml` on SQLite. Sign in to the dashboard and confirm your peers connect.
+
+To undo **Keep your data** and run Enterprise again, for example if step 3 fails:
+
+```bash
+rm -f docker-compose.community.yml
+sed -i '/^COMPOSE_FILE=/d' .env
+docker compose up -d
+```
+
+#### Restore the pre-migration backup
+
+It puts back the SQLite backup the script took before the migration and deletes the Postgres database: everything created after the migration is lost, and this cannot be undone. You can run it while still on Enterprise or after **Keep your data**.
+
+1. Find the backup folder and the Postgres volume. Run the first two lines, put the names they print into `BACKUP=` and `VOLUME=`, then run the rest. Continue only if the output ends with `READY`:
+
+    ```bash
+    ls -d backups/sqlite-pre-enterprise-*
+    docker volume ls --filter name=netbird_postgres
+    BACKUP=backups/sqlite-pre-enterprise-<timestamp>
+    VOLUME=<volume name>
+    test -d "$BACKUP" && docker volume inspect "$VOLUME" >/dev/null && echo READY
+    ```
+
+2. Run this block in one go: it needs `$BACKUP` and `$VOLUME` from step 1. If you opened a new terminal since step 1, rerun `sudo -i`, the `cd` command from **Before you start** and step 1 first. The `sed` command removes the line `# Added by migrate-to-enterprise.sh` and every line after it, including the `COMPOSE_FILE` line if you ran **Keep your data**; your own lines above it stay:
+
+    ```bash
+    docker compose stop
+    docker cp "$BACKUP"/. \
+      "$(docker compose ps -aq netbird-server)":/var/lib/netbird/
+    docker compose down
+    docker volume rm "$VOLUME"
+    rm -f docker-compose.override.yml config.yaml.enterprise docker-compose.community.yml
+    sed -i '/^# Added by migrate-to-enterprise.sh/,$d' .env
+    docker compose up -d --remove-orphans
+    docker inspect netbird-server --format '{{.Config.Image}} {{join .Args " "}}'
+    ```
+
+    The output shows `netbirdio/netbird-server` and `--config /etc/netbird/config.yaml`. Sign in to the dashboard and confirm your peers from before the migration connect. Users and peers that registered after the migration must register again.
 
 ## 4. Troubleshooting
 
