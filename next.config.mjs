@@ -32,7 +32,7 @@ const nextConfig = {
             },
             {
                 source: '/discord-url',
-                destination: 'https://discord.gg/hKgZsZDuCK',
+                destination: 'https://discord.gg/mFhRpjFpMB',
                 permanent: false,
             },
             {
