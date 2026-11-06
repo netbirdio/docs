@@ -60,9 +60,20 @@ If you've also enabled [Traffic Events Logging](/manage/activity/traffic-events-
 rule.groups : "traffic"
 ```
 
-Useful columns: `rule.id`, `rule.level`, `rule.description`, `data.nb.meta.source_name`, `data.nb.meta.destination_addr`, `data.nb.meta.tx_bytes`.
+Useful columns: `rule.id`, `rule.level`, `rule.description`, `data.nb.meta.source_name`, `data.nb.meta.destination_addr`, `data.nb.meta.num_of_drops`, `data.nb.meta.tx_bytes`.
 
-`TYPE_DROP` events are policy denials. Give them a higher rule level than `TYPE_START` and `TYPE_END` (the starter ruleset uses rule `100202` at level 7) so they stand out from normal flow telemetry.
+Streamed traffic events are aggregated flow records: `Message` is always `TYPE_UNKNOWN`, and what happened during the reporting window is in the counters `num_of_starts`, `num_of_ends` and `num_of_drops` (see [Streamed event fields](/manage/activity/traffic-events-logging#streamed-event-fields)). Write traffic rules against those counters, not against `Message`. The starter ruleset raises any record with dropped attempts to level 7 so denied traffic stands out from normal flow telemetry:
+
+```xml
+<rule id="100202" level="7">
+  <if_sid>100200</if_sid>
+  <field name="nb.meta.num_of_drops" type="pcre2">^[1-9][0-9]*$</field>
+  <description>NetBird traffic dropped: $(nb.meta.num_of_drops) attempts from $(nb.meta.source_addr) to $(nb.meta.destination_addr)</description>
+  <group>traffic,</group>
+</rule>
+```
+
+Keep `type="pcre2"`: Wazuh's default rule regex has no character classes, so `^[1-9]` without it never matches.
 
 ## Schema reference
 
@@ -100,44 +111,65 @@ NetBird emits **two distinct event shapes** through the same integration. Both a
 
 ### Traffic events
 
+A ping from peer `client` to peer `server`, as reported by `client`:
+
 ```json
 {
-    "ID":          "<flow uuid>",
-    "Timestamp":   "2026-05-08T10:33:41.723079Z",
-    "Message":     "TYPE_START",
+    "ID":          "<event uuid>",
+    "Timestamp":   "2026-11-06T11:03:49.647637725Z",
+    "Message":     "TYPE_UNKNOWN",
     "InitiatorID": "",
     "target_id":   "",
     "reference":   "",
     "meta": {
-        "flow_id":          "<uuid>",
-        "direction":        "EGRESS",
-        "source_addr":      "100.121.42.206:0",
-        "source_name":      "Jacks-MacBook-Air.local",
-        "source_type":      "PEER",
-        "destination_addr": "100.121.255.254:0",
-        "destination_name": "",
-        "destination_type": "PEER",
-        "protocol":         6,
-        "tx_bytes":         56,  "tx_packets": 1,
-        "rx_bytes":         0,   "rx_packets": 0,
-        "policy_name":      "",
-        "reporter_id":      "<peer-id-of-reporter>",
-        "user_id":          "oauth2|azure-oauth2|<user-uuid>"
+        "flow_id":                   "<uuid>",
+        "reporter_id":               "<peer-id-of-client>",
+        "direction":                 "EGRESS",
+        "protocol":                  1,
+        "icmp_type":                 8,
+        "icmp_code":                 0,
+        "source_id":                 "<peer-id-of-client>",
+        "source_name":               "client",
+        "source_dns_label":          "client",
+        "source_addr":               "100.85.134.48:0",
+        "source_connection_ip":      "203.0.113.10",
+        "source_geo_city":           "Stockholm",
+        "source_geo_country":        "SE",
+        "source_type":               "UNKNOWN",
+        "destination_id":            "<peer-id-of-server>",
+        "destination_name":          "server",
+        "destination_dns_label":     "server",
+        "destination_addr":          "100.85.232.180:0",
+        "destination_connection_ip": "203.0.113.20",
+        "destination_geo_city":      "Stockholm",
+        "destination_geo_country":   "SE",
+        "destination_type":          "UNKNOWN",
+        "num_of_starts":             0,
+        "num_of_ends":               2,
+        "num_of_drops":              0,
+        "tx_bytes":                  1008,
+        "tx_packets":                12,
+        "rx_bytes":                  0,
+        "rx_packets":                0,
+        "policy_id":                 "",
+        "policy_name":               "",
+        "user_id":                   "",
+        "received_timestamp":        "2026-11-06T11:04:40.54122069Z"
     }
 }
 ```
 
-Traffic events keep the same envelope as audit events: `ID` and `Timestamp` are populated; `InitiatorID`, `target_id`, and `reference` are intentionally empty (the actor lives in `meta.user_id`, source/destination identity in `meta.source_*` / `meta.destination_*`).
+Traffic events keep the same envelope as audit events: `ID` and `Timestamp` are populated; `InitiatorID`, `target_id`, and `reference` are empty (the actor lives in `meta.user_id`, source and destination identity in `meta.source_*` and `meta.destination_*`).
 
-- `destination_name` is usually empty; `destination_addr` (overlay IP) is always set.
+- Each event is one aggregated record from one reporting peer (`reporter_id`). Both peers of a connection can report it, so one connection can arrive as an `EGRESS` record from the source and an `INGRESS` record from the destination.
+- `source_type` and `destination_type` currently stream as `UNKNOWN` for aggregated records. Use the [traffic events API or Dashboard](/manage/activity/traffic-events-logging) when you need the endpoint type.
 - `protocol` is an IANA number (`1`=ICMP, `6`=TCP, `17`=UDP, `58`=ICMPv6).
-- A single flow can produce both a `TYPE_START` and a `TYPE_END` event sharing `meta.flow_id`. Filter on `data.nb.Message : "TYPE_START"` to count distinct flow starts and avoid double-counting lifecycle pairs.
 - Volume is an order of magnitude higher than audit events on a busy mesh; size your retention and rate limits accordingly.
 
 <Note>
-    Wazuh's JSON decoder strips empty-string and empty-object fields when it extracts events into `data.nb.*`. Fields shown as `""` or `{}` in the schema examples above (such as `destination_name`, `policy_name`, an empty `meta` on some audit events) won't appear in indexed alerts, so KQL queries like `data.nb.meta.destination_name : *` return zero hits. The original wire payload is preserved in `full_log` if you ever need the raw form; for queryable fields, filter on a populated one instead.
+    Wazuh's JSON decoder strips empty-string and empty-object fields when it extracts events into `data.nb.*`. Fields shown as `""` or `{}` in the schema examples above (such as `policy_name`, `user_id`, an empty `meta` on some audit events) won't appear in indexed alerts, so KQL queries like `data.nb.meta.policy_name : *` return zero hits. The original wire payload is preserved in `full_log` if you ever need the raw form; for queryable fields, filter on a populated one instead.
 </Note>
 
 ## Next steps
 
-- Monitor the receiver's availability by pointing an external uptime monitor (UptimeRobot, Prometheus blackbox-exporter, etc.) at a health endpoint on your receiver. NetBird's retry behaviour on 5xx is undocumented, so external monitoring is the best way to catch a downed receiver quickly. An availability check only shows that the receiver is up: it can't detect that events stopped arriving or stopped reaching the Wazuh indexer, so also alert on a gap in `rule.groups : "netbird"` alerts.
+- Monitor the receiver's availability by pointing an external uptime monitor (UptimeRobot, Prometheus blackbox-exporter, etc.) at a health endpoint on your receiver. Generic HTTP retries a failed delivery only twice, a few seconds apart, before dropping the event from the stream (see [Delivery](/manage/activity/event-streaming#delivery)), so a receiver that is down for longer loses those events from Wazuh, and external monitoring is the quickest way to notice. An availability check only shows that the receiver is up: it can't detect that events stopped arriving or stopped reaching the Wazuh indexer, so also alert on a gap in `rule.groups : "netbird"` alerts.
