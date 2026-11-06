@@ -4,22 +4,25 @@ Wire NetBird's [Event Streaming → Generic HTTP](/manage/activity/event-streami
 
 ## Prerequisites
 
-- A running Wazuh stack (4.14+) with a public, TLS-terminated webhook endpoint that NetBird Cloud can POST to. If you don't have one, see the [Wazuh receiver reference architecture](./wazuh-receiver) for a starter deployment built around `wazuh/wazuh-docker` + Caddy.
-- The shared secret your receiver expects in the `X-API-Key` HTTP header. If you're deploying the receiver from scratch, you'll generate this as part of its `.env`. If a receiver is already running, use the value of `NB_WEBHOOK_SECRET` from its `.env`.
-- The receiver writes each NetBird event as a single JSON line to a file the Wazuh manager tails via a `<localfile>` block with `<log_format>json</log_format>`, and ships with a starter ruleset under custom rule IDs `100100`–`100106` (audit) and `100200`–`100202` (traffic). The verification steps below assume that wiring.
+- A running Wazuh stack (4.14 or later): manager, indexer and dashboard.
+- A webhook receiver: a small service you run between NetBird and the Wazuh manager. It needs to:
+  - serve a public HTTPS endpoint that NetBird Cloud can reach;
+  - reject every request whose `X-API-Key` header doesn't carry your shared secret (generate a long random value, for example with `openssl rand -hex 32`);
+  - write each event as one JSON line, wrapped in the envelope described under [Schema reference](#schema-reference), to a file that the Wazuh manager tails through a `<localfile>` block with `<log_format>json</log_format>`.
+- Custom Wazuh rules that match those events. The verification steps below use the rule groups `netbird` (audit events) and `traffic` (traffic events), and the rule IDs shown are examples from a starter ruleset (`100100`–`100106` for audit, `100200`–`100202` for traffic). Adjust them to your own ruleset.
+- No other Event Streaming integration enabled on the account. NetBird allows only one enabled integration at a time.
 
-## Step 1 — Configure NetBird's Generic HTTP integration
+## Step 1: Configure NetBird's Generic HTTP integration
 
 In **https://app.netbird.io**:
 
-1. **Integrations → Event Streaming**, find **Generic HTTP**, click **Connect**.
+1. Go to **Integrations → Event Streaming**, find **Generic HTTP** and click **Connect**.
 2. Fill the **General** tab:
    - **Endpoint URL**: `https://YOUR-HOSTNAME/events`
    - **Authentication**: **Custom Authentication**
-   - **Header name**: `X-API-Key`
-   - **Header value**: the secret from the prerequisites
-3. Leave **Headers** and **Body Template** at their defaults.
-4. **Save Changes**.
+   - **HTTP Header Name & Value**: `X-API-Key` in the name field, the shared secret from the prerequisites in the value field
+3. Click **Continue** through **Headers** and **Body Template**, leaving both at their defaults.
+4. Click **Connect**.
 
 <p>
     <img src="/docs-static/img/manage/activity/event-streaming/wazuh/netbird-generic-http-config.png" alt="NetBird Generic HTTP integration configuration" className="imagewrapper-big"/>
@@ -29,9 +32,9 @@ In **https://app.netbird.io**:
     Don't use a custom body template. In testing, NetBird's body-template engine HTML-escapes string values (so `+` becomes `&#43;`, mangling ISO-8601 timestamps and URLs with special characters), and there's no JSON-encoding helper for `meta`. The default body is the right choice for Wazuh.
 </Note>
 
-On save NetBird POSTs a synthetic test event to your endpoint and rejects the save with a `412` if the receiver doesn't return `2xx` (observed in NetBird Cloud, May 2026). A successful save also generates an "integration created" audit event that streams *back* through the same integration; that's NetBird logging its own configuration change. Subsequent edits produce "integration updated" the same way.
+When you click **Connect** (or **Save Changes** on an existing integration), NetBird POSTs a synthetic test event to your endpoint and rejects the change with a `412` if the receiver doesn't return `2xx`. A successful save also generates an "integration created" audit event that streams *back* through the same integration; that's NetBird logging its own configuration change. Subsequent edits produce "integration updated" the same way.
 
-## Step 2 — Verify in the Wazuh dashboard
+## Step 2: Verify in the Wazuh dashboard
 
 Open the Wazuh dashboard, log in, then ☰ → **Explore → Discover**.
 
@@ -59,7 +62,7 @@ rule.groups : "traffic"
 
 Useful columns: `rule.id`, `rule.level`, `rule.description`, `data.nb.meta.source_name`, `data.nb.meta.destination_addr`, `data.nb.meta.tx_bytes`.
 
-`TYPE_DROP` events (rule `100202`) escalate to level 7 to make policy denials stand out from normal flow telemetry.
+`TYPE_DROP` events are policy denials. Give them a higher rule level than `TYPE_START` and `TYPE_END` (the starter ruleset uses rule `100202` at level 7) so they stand out from normal flow telemetry.
 
 ## Schema reference
 
@@ -89,7 +92,7 @@ NetBird emits **two distinct event shapes** through the same integration. Both a
 }
 ```
 
-- **Casing is mixed on the wire**: `ID`, `Timestamp`, `Message`, `InitiatorID` are PascalCase; `target_id`, `meta`, `reference` are snake_case. KQL queries against the indexer are case-sensitive, so match the on-the-wire form exactly: `data.nb.Message`, `data.nb.target_id`, etc. The same applies to Wazuh rule `<field name="...">` references.
+- **Casing is mixed on the wire**: `ID`, `Timestamp`, `Message`, `InitiatorID` are PascalCase; `target_id`, `meta`, `reference` are snake_case. KQL queries against the indexer are case-sensitive, so match the on-the-wire form exactly: `data.nb.Message`, `data.nb.target_id`, etc.
 - **`ID` may be a number or a string** (test events use a string identifier; real audit events use a numeric ID). Wazuh normalises both to strings in the indexed `data.nb.ID`, so KQL queries don't need to handle the mixed type.
 - **`Message`** is the most reliable field to pivot rules on; it's a stable English phrase like "peer added" or "policy created".
 - **`reference`** is the canonical URL into NetBird's activity log; useful as a click-through pivot from a Wazuh alert back to the source event.
@@ -137,5 +140,4 @@ Traffic events keep the same envelope as audit events: `ID` and `Timestamp` are 
 
 ## Next steps
 
-- Build out a starter deployment with a webhook receiver, Caddy in front, and the rules referenced here: [Wazuh receiver reference architecture](./wazuh-receiver).
-- Set up a freshness watchdog by pointing an external uptime monitor (UptimeRobot, Prometheus blackbox-exporter, etc.) at the receiver's `/healthz` endpoint. NetBird's retry behaviour on 5xx is undocumented, so external monitoring is the best way to catch a downed receiver quickly.
+- Set up a freshness watchdog by pointing an external uptime monitor (UptimeRobot, Prometheus blackbox-exporter, etc.) at a health endpoint on your receiver. NetBird's retry behaviour on 5xx is undocumented, so external monitoring is the best way to catch a downed receiver quickly.
