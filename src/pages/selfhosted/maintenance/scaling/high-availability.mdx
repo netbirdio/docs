@@ -626,6 +626,7 @@ services:
 | `NB_LICENSE_KEY` | Yes | Enterprise license key. Same value on every Signal instance. |
 | `NATS_ENDPOINTS` | Yes | Comma-separated list of NATS cluster endpoints from Step 3. Identical on every Signal instance. |
 | `SINGLE_NODE_MODE` | Yes | Must be `false`. When unset or set to `true`, Signal runs in single-node mode without NATS coordination. This mode is incompatible with HA. |
+| `NB_SIGNAL_PEER_QUEUE_SIZE` | No | Number of signaling messages from other Signal instances that can wait for one connected peer. Default `32`. When a peer's queue is full, new messages to that peer are dropped and the sending peers retry, so connections still form, only more slowly. The limit keeps a burst of signaling traffic from exhausting Signal's memory. Keep the default unless `dispatcher_messages_dropped_total` keeps increasing; see [Signal drops messages](#signal-drops-messages-dispatcher-messages-dropped-total-increases) for how to size it. A full queue uses about 1 KB of memory per message, so the worst case grows with this value times the number of connected peers. |
 
 When the NATS URLs carry a password, as in the [Step 3 example](#example-a-self-hosted-cluster-with-docker-compose), set `NATS_ENDPOINTS` in a file listed under `env_file`, readable by root only, instead of in `docker-compose.yml`.
 
@@ -884,6 +885,16 @@ Expected: `PONG`.
 ### Signal logs `NATS_ENDPOINTS environment variable not set`
 
 `SINGLE_NODE_MODE` is unset (or set to `true`) on the Signal instance, or `NATS_ENDPOINTS` is empty. In HA, every Signal instance must have `SINGLE_NODE_MODE=false` and a non-empty `NATS_ENDPOINTS` pointing at the NATS cluster.
+
+### Signal drops messages: `dispatcher_messages_dropped_total` increases
+
+A peer received signaling messages from other Signal instances faster than its connection accepted them, and its queue filled up. Signal drops further messages to that peer until the queue drains, and the sending peers retry. A peer with no connection to the other side retries with a short backoff until it connects, so those connections still form, only more slowly. A peer that already has a working relayed connection retries a direct connection only a few times and then once per hour, so it can stay on the relay longer than usual.
+
+This happens briefly when many peers reconnect at the same time, for example after a relay restart, and mostly affects peers with many connections. Short bursts during such events need no action. If the counter keeps increasing outside such events, double `NB_SIGNAL_PEER_QUEUE_SIZE` on every Signal instance (`64`, then `128` if it still increases) and check the counter again before raising it further. Apply the new value with `docker compose up -d`, one instance at a time: `docker compose restart` keeps the old value. Confirm it in the Signal log at startup: `buffering up to <N> inbound messages per peer`. A value that is not a positive whole number is ignored with a warning, and Signal uses `32`.
+
+Before raising it, check the instance has memory for what the queues can hold when every connected peer's queue is full at once. Plan for about 1 KB per queued message: connected peers × queue size × 1 KB. For example, with 10,000 peers on one instance the queues can hold up to about 320 MB at the default `32`, and about 2.6 GB at `256`. An empty queue costs 8 bytes per slot.
+
+Signal serves the counter on its metrics endpoint, `http://<signal-host>:9090/metrics` (set the port with `--metrics-port`). The counter appears only after the first dropped message. The compose example does not publish the metrics port; expose it only to your monitoring network.
 
 ### Signal messages don't reach peers connected to a different Signal instance
 
