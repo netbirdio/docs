@@ -35,41 +35,34 @@ This is the CLI configuration precedence (highest to lowest priority):
 We are preserving the unusual priority of environment variables for backwards compatibility with existing deployments.
 
 ## Global flags
-`netbird` has a set of global flags that are available in every command. They specify settings that are core or shared between two or more commands, e.g. `--setup-key` is used by `login` and `up` to authenticate the client against a management service.
+Global flags work with every command. Flags that only some commands use are documented with those commands. For example, `--setup-key` belongs to `up` and `login`.
 
 Below is the list of global flags:
 ```shell
-      --admin-url string        Deprecated and ignored. Existing scripts that pass it keep working, but the flag has no effect.
-  -A, --anonymize               anonymize IP addresses and non-netbird.io domains in logs and status output
-  -c, --config string           Overrides the default profile file location. Deprecated on `up` and `login`; use `--service-env NB_CONFIG=<path>` instead.
       --daemon-addr string      Daemon service address to serve CLI requests [unix|tcp|npipe]://[path|host:port|name] (default "unix:///var/run/netbird.sock", "npipe://netbird" on Windows)
-  -n, --hostname string         Sets a custom hostname for the device
       --log-file console        Sets NetBird log paths written to simultaneously. If "console" is specified the log will be output to stdout. If "syslog" is specified the log will be sent to the syslog daemon. You can pass the flag multiple times or separate entries by comma (default [/var/log/netbird/client.log])
   -l, --log-level string        Sets NetBird log level (default "info")
-  -m, --management-url string   Management Service URL [http|https]://[host]:[port] (default "https://api.netbird.io:443")
-      --preshared-key string    Sets WireGuard PreSharedKey property. If set, then only peers that have the same key can communicate.
-  -s, --service string          NetBird system service name (default "netbird")
-  -k, --setup-key string        Setup key obtained from the Management Service Dashboard (used to register peer)
-      --setup-key-file string   Path to a file containing a setup key (used to register peer). Ignored if --setup-key is provided.
 ```
 
 <Note>
-    `--admin-url` is deprecated and ignored. Existing scripts and service definitions that pass it keep working after an upgrade, but the flag does nothing and can be removed.
+    A command rejects flags it does not accept. For example, `netbird up --setup-key <key>` works, but `netbird status --setup-key <key>` fails with `unknown flag: --setup-key`.
 </Note>
 
 ### Environment Variables
-Every flag of a `netbird` command can be passed as an environment variable. We are using the following rule for the environment variables composition:
-* `PREFIX_FLAGNAME` and for flags with multiple parts: `PREFIX_FLAGNAMEPART1_FLAGNAMEPART2`
-* The prefix is always **NB**
-* The flag parts are separated by a dash ("-") when passing as flags and with an underscore ("_") when passing as an environment variable
+Every flag of a `netbird` command can also be set with an environment variable. The variable name follows these rules:
+* The name is the flag name with the **NB_** prefix, for example `NB_SETUP_KEY` for `--setup-key`.
+* Dashes in the flag name become underscores, and letters are uppercase.
+* A command reads only the variables for the flags it accepts. For example, `NB_SETUP_KEY` applies to `up` and `login`, and `netbird status` ignores it.
+* An environment variable overrides the same flag given on the command line. See [Configuration precedence](#configuration-precedence).
+* The legacy **WT_** prefix still works. When both are set, the `NB_` variable wins.
 
-For example, let's check how we can pass `--config` and `--management-url` as environment variables:
+For example, you can pass `--management-url` and `--setup-key` as environment variables:
 ```shell
-export NB_CONFIG="/opt/netbird/config.json"
 export NB_MANAGEMENT_URL="https://api.self-hosted.com:443"
+export NB_SETUP_KEY="AAAA-BBB-CCC-DDDDDD"
 netbird up
 ```
-The `up` command would process the variables, read the configuration file on `/opt/netbird/config.json` and attempt to connect to the management service running at `https://api.self-hosted.com:443`.
+The `up` command reads both variables, then registers the peer with the setup key against the management service at `https://api.self-hosted.com:443`.
 
 Here are some additional examples of environment variables:
 ```shell
@@ -116,13 +109,18 @@ The command will check if the peer is logged in and connect to the management se
       --external-ip-map strings             Sets external IPs maps between local addresses and interfaces. You can specify a comma-separated list with a single IP and IP/IP or IP/Interface Name. An empty string "" clears the previous configuration. E.g. --external-ip-map 12.34.56.78/10.0.0.1 or --external-ip-map 12.34.56.200,12.34.56.78/10.0.0.1,12.34.56.80/eth1 or --external-ip-map ""
       --extra-dns-labels strings            Sets DNS labels. You can specify a comma-separated list of up to 32 labels. An empty string "" clears the previous configuration. E.g. --extra-dns-labels vpc1 or --extra-dns-labels vpc1,mgmt1 or --extra-dns-labels ""
       --extra-iface-blacklist strings       Extra list of default interfaces to ignore for listening
-  -F, --foreground-mode                     Start service in foreground
+  -F, --foreground-mode                     Start service in foreground. Use --config to override the default profile file location
+  -n, --hostname string                     Sets a custom hostname for the device
       --interface-name string               WireGuard interface name (default "wt0")
+  -m, --management-url string               Management Service URL [http|https]://[host]:[port] (default "https://api.netbird.io:443")
       --mtu uint16                          Set MTU (Maximum Transmission Unit) for the WireGuard interface (default 1280)
   -N, --network-monitor                     Manage network monitoring. Defaults to true on Windows and macOS, false on Linux and FreeBSD. E.g. --network-monitor=false to disable or --network-monitor=true to enable.
       --no-browser                          Do not open the browser for SSO login
+      --preshared-key string                Sets WireGuard PreSharedKey property. If set, then only peers that have the same key can communicate.
       --profile string                      Profile name to use for the login. If not specified, the last used profile will be used.
       --rosenpass-permissive                [Deprecated] Enable Rosenpass in permissive mode to allow this peer to accept WireGuard connections without requiring Rosenpass functionality from peers that do not have Rosenpass enabled.
+  -k, --setup-key string                    Setup key obtained from the Management Service Dashboard (used to register peer)
+      --setup-key-file string               Path to a file containing a setup key (used to register peer). Ignored if --setup-key is provided.
       --ssh-jwt-cache-ttl int               SSH JWT token cache TTL in seconds (default 0, disabled). When enabled, the client caches the JWT so repeated SSH connections skip the OIDC login flow. The receiving SSH server rejects tokens older than 10 minutes, so values above 600 will result in authentication failures for cached tokens.
       --wireguard-port uint16               WireGuard interface listening port (default 51820)
 ```
@@ -142,6 +140,13 @@ sudo netbird up --log-file console
 <Note>
     On Windows, you may need to run the command from an elevated terminal session.
 </Note>
+In foreground mode, `--config` overrides the default profile file location. The flag is hidden from `netbird up --help` because it has no effect when the daemon runs as a service:
+```shell
+sudo netbird up --foreground-mode --config /opt/netbird/config.json
+```
+<Note>
+    Without `--foreground-mode`, `netbird up` ignores `--config` and prints a warning. To change the profile file location of the daemon, run `sudo netbird service reconfigure --config <path>`. If `NB_CONFIG` was saved with `--service-env`, it overrides `--config`. Replace it with `sudo netbird service reconfigure --service-env NB_CONFIG=<path>` instead.
+</Note>
 In case you need to use a setup key, use the `--setup-key` flag :
 ```shell
 netbird up --setup-key AAAA-BBB-CCC-DDDDDD
@@ -158,8 +163,13 @@ netbird up --setup-key AAAA-BBB-CCC-DDDDDD --extra-dns-labels vpc1,mgmt1
 Command to authenticate the NetBird client to a management service. If the peer is not logged in, by default, it will attempt to initiate an SSO login flow.
 #### Flags
 ```shell
-      --no-browser       Do not open the browser for SSO login
-      --profile string   Profile name to use for the login. If not specified, the last used profile will be used.
+  -n, --hostname string         Sets a custom hostname for the device
+  -m, --management-url string   Management Service URL [http|https]://[host]:[port] (default "https://api.netbird.io:443")
+      --no-browser              Do not open the browser for SSO login
+      --preshared-key string    Sets WireGuard PreSharedKey property. If set, then only peers that have the same key can communicate.
+      --profile string          Profile name to use for the login. If not specified, the last used profile will be used.
+  -k, --setup-key string        Setup key obtained from the Management Service Dashboard (used to register peer)
+      --setup-key-file string   Path to a file containing a setup key (used to register peer). Ignored if --setup-key is provided.
 ```
 #### Usage
 The minimal form of running the command is:
@@ -191,6 +201,8 @@ netbird down
 Retrieves the peer status from the daemon service.
 #### Flags
 ```shell
+  -A, --anonymize                          Anonymize public IP addresses, MAC addresses, and non-netbird.io domains in the status output. Private, CGNAT, and link-local IP ranges are kept (see --anonymize-level strict)
+      --anonymize-level string             Anonymization level, "default" or "strict". Strict also anonymizes private, CGNAT, and link-local IP ranges, peer names, and WireGuard public keys. Setting this flag implies --anonymize
   -C, --check string                       Run a health check and exit with code 0 on success, 1 on failure (live|ready|startup)
   -d, --detail                             Display detailed status information in human-readable format
   -T, --filter-by-connection-type string   Filter the detailed output by connection type (P2P|Relayed), e.g., --filter-by-connection-type P2P
@@ -719,6 +731,12 @@ The service command is a top-level command with subcommands to perform operation
 
 You should run the service command with elevated permissions.
 
+#### Flags
+These flags apply to all `service` subcommands:
+```shell
+  -s, --service string   NetBird system service name (default "netbird")
+```
+
 ### service install
 The install installs the daemon service on the system.
 #### Usage
@@ -730,22 +748,24 @@ You can use the global flags to configure the daemon service. For instance, you 
 ```shell
 sudo netbird service install --log-level debug
 ```
-You can set a custom configuration path with the flag `--config`
+You can set a custom profile file location for the daemon with the flag `--config`
 ```shell
 sudo netbird service install --config /opt/netbird/config.json
 ```
 
-#### Service-specific flags
+#### Flags
 ```shell
+  -c, --config string             Overrides the default profile file location (default "/var/lib/netbird/default.json")
       --disable-networks          Disables network selection.
       --disable-profiles          Disables profiles feature.
       --disable-update-settings   Disables update settings feature.
+  -m, --management-url string     Management Service URL [http|https]://[host]:[port] (default "https://api.netbird.io:443")
       --service-env strings       Sets extra environment variables for the service. You can specify a comma-separated list of KEY=VALUE pairs. E.g. --service-env NB_LOG_LEVEL=debug,CUSTOM_VAR=value
 ```
 
 These flags are intended for managed or shared machines where non-admin users should not be able to alter the client configuration through the CLI or UI:
 
-- `--disable-networks` prevents users from listing, selecting, or deselecting networks (including exit nodes) via CLI or UI. The flag is persisted in the service's `service.json` state file; there is no `NB_DISABLE_NETWORKS` environment-variable equivalent.
+- `--disable-networks` prevents users from listing, selecting, or deselecting networks (including exit nodes) via CLI or UI. The flag is persisted in the service's `service.json` state file.
 - `--disable-profiles` prevents users from adding, removing, or switching profiles. The client stays locked to the profile that was active at install time. Any attempt to switch profiles via CLI or UI is rejected.
 - `--disable-update-settings` prevents users from changing daemon settings (management URL, log level, DNS resolver address, etc.) via CLI or UI. To change them, unlock the service first (steps below).
 
@@ -771,7 +791,7 @@ sudo netbird service reconfigure --disable-profiles --disable-update-settings
 </Note>
 
 <Note>
-    These flags can also be set via environment variables: `NB_DISABLE_PROFILES` and `NB_DISABLE_UPDATE_SETTINGS`.
+    These flags can also be set via environment variables: `NB_DISABLE_NETWORKS`, `NB_DISABLE_PROFILES`, and `NB_DISABLE_UPDATE_SETTINGS`.
 </Note>
 
 ### service uninstall
@@ -822,7 +842,9 @@ sudo netbird service status
 Reconfigures the daemon service with new settings without manual uninstall/install. The command temporarily stops the service, updates its configuration, and restarts it if it was running.
 #### Flags
 ```shell
-      --service-env strings   Sets extra environment variables for the service. E.g. --service-env NB_LOG_LEVEL=debug,CUSTOM_VAR=value
+  -c, --config string           Overrides the default profile file location (default "/var/lib/netbird/default.json")
+  -m, --management-url string   Management Service URL [http|https]://[host]:[port] (default "https://api.netbird.io:443")
+      --service-env strings     Sets extra environment variables for the service. E.g. --service-env NB_LOG_LEVEL=debug,CUSTOM_VAR=value
 ```
 #### Usage
 ```shell
@@ -886,7 +908,8 @@ This will output:
 
 #### Flags
 ```shell
-  -A, --anonymize                  Anonymize IP addresses and non-netbird.io domains in the debug output
+  -A, --anonymize                  Anonymize public IP addresses, MAC addresses, and non-netbird.io domains in the debug output. Private, CGNAT, and link-local IP ranges are kept (see --anonymize-level strict)
+      --anonymize-level string     Anonymization level, "default" or "strict". Strict also anonymizes private, CGNAT, and link-local IP ranges, peer names, and WireGuard public keys. Setting this flag implies --anonymize
   -C, --log-file-count uint32      Number of rotated log files to include in debug bundle (default 1)
   -S, --system-info                Adds system information to the debug bundle (default true)
   -U, --upload-bundle              Uploads the debug bundle to a server
@@ -926,7 +949,8 @@ Log level restored to INFO
 
 #### Flags
 ```shell
-  -A, --anonymize                  Anonymize IP addresses and non-netbird.io domains in the debug output
+  -A, --anonymize                  Anonymize public IP addresses, MAC addresses, and non-netbird.io domains in the debug output. Private, CGNAT, and link-local IP ranges are kept (see --anonymize-level strict)
+      --anonymize-level string     Anonymization level, "default" or "strict". Strict also anonymizes private, CGNAT, and link-local IP ranges, peer names, and WireGuard public keys. Setting this flag implies --anonymize
   -C, --log-file-count uint32      Number of rotated log files to include in debug bundle (default 1)
   -S, --system-info                Adds system information to the debug bundle (default true)
   -U, --upload-bundle              Uploads the debug bundle to a server
