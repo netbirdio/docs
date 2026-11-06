@@ -626,6 +626,7 @@ services:
 | `NB_LICENSE_KEY` | Yes | Enterprise license key. Same value on every Signal instance. |
 | `NATS_ENDPOINTS` | Yes | Comma-separated list of NATS cluster endpoints from Step 3. Identical on every Signal instance. |
 | `SINGLE_NODE_MODE` | Yes | Must be `false`. When unset or set to `true`, Signal runs in single-node mode without NATS coordination. This mode is incompatible with HA. |
+| `NB_SIGNAL_PEER_QUEUE_SIZE` | No | Number of signaling messages from other Signal instances that can wait for one connected peer. Default `32`. When a peer's queue is full, new messages to that peer are dropped and the sending peers retry, so connections still form, only more slowly. The limit keeps a burst of signaling traffic from exhausting Signal's memory. Raise it if peers with many connections, such as routing peers, drop messages after many peers reconnect at once. Every connected peer reserves 8 bytes per slot even when its queue is empty, so increase it in steps. |
 
 When the NATS URLs carry a password, as in the [Step 3 example](#example-a-self-hosted-cluster-with-docker-compose), set `NATS_ENDPOINTS` in a file listed under `env_file`, readable by root only, instead of in `docker-compose.yml`.
 
@@ -884,6 +885,12 @@ Expected: `PONG`.
 ### Signal logs `NATS_ENDPOINTS environment variable not set`
 
 `SINGLE_NODE_MODE` is unset (or set to `true`) on the Signal instance, or `NATS_ENDPOINTS` is empty. In HA, every Signal instance must have `SINGLE_NODE_MODE=false` and a non-empty `NATS_ENDPOINTS` pointing at the NATS cluster.
+
+### Signal drops messages: `dispatcher_messages_dropped_total` increases
+
+A peer received signaling messages from other Signal instances faster than its connection accepted them, and its queue filled up. Signal drops further messages to that peer until the queue drains, and the sending peers retry. A peer with no connection to the other side retries with a short backoff until it connects, so those connections still form, only more slowly. A peer that already has a working relayed connection retries a direct connection only a few times and then once per hour, so it can stay on the relay longer than usual.
+
+This happens briefly when many peers reconnect at the same time, for example after a relay restart, and mostly affects peers with many connections. Short bursts during such events need no action. If the counter keeps increasing outside such events, raise `NB_SIGNAL_PEER_QUEUE_SIZE` on every Signal instance and restart them one at a time. Confirm the new value in the Signal log at startup: `buffering up to <N> inbound messages per peer`.
 
 ### Signal messages don't reach peers connected to a different Signal instance
 
