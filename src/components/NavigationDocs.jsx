@@ -544,6 +544,10 @@ export const docsNavigation = [
                     { title: 'What is Agent Network?', href: '/agent-network' },
                     { title: 'How It Works', href: '/agent-network/how-it-works' },
                     { title: 'Quickstart', href: '/agent-network/quickstart' },
+                    {
+                        title: 'Existing Self-Hosted Deployment',
+                        href: '/agent-network/existing-self-hosted',
+                    },
                     { title: 'Providers', href: '/agent-network/providers' },
                     { title: 'Clusters', href: '/agent-network/clusters' },
                     { title: 'Control Center', href: '/agent-network/control-center' },
