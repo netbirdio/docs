@@ -4,22 +4,25 @@ Wire NetBird's [Event Streaming → Generic HTTP](/manage/activity/event-streami
 
 ## Prerequisites
 
-- A running Wazuh stack (4.14+) with a public, TLS-terminated webhook endpoint that NetBird Cloud can POST to. If you don't have one, see the [Wazuh receiver reference architecture](./wazuh-receiver) for a starter deployment built around `wazuh/wazuh-docker` + Caddy.
-- The shared secret your receiver expects in the `X-API-Key` HTTP header. If you're deploying the receiver from scratch, you'll generate this as part of its `.env`. If a receiver is already running, use the value of `NB_WEBHOOK_SECRET` from its `.env`.
-- The receiver writes each NetBird event as a single JSON line to a file the Wazuh manager tails via a `<localfile>` block with `<log_format>json</log_format>`, and ships with a starter ruleset under custom rule IDs `100100`–`100106` (audit) and `100200`–`100202` (traffic). The verification steps below assume that wiring.
+- A running Wazuh stack (4.14 or later): manager, indexer and dashboard.
+- A webhook receiver: a small service you run between NetBird and the Wazuh manager. It needs to:
+  - serve a public HTTPS endpoint that NetBird Cloud can reach;
+  - reject every request whose `X-API-Key` header doesn't carry your shared secret (generate a long random value, for example with `openssl rand -hex 32`);
+  - write each event as one JSON line, wrapped in the envelope described under [Schema reference](#schema-reference), to a file that the Wazuh manager tails through a `<localfile>` block with `<log_format>json</log_format>`.
+- Custom Wazuh rules that match those events. The verification steps below use the rule groups `netbird` (audit events) and `traffic` (traffic events), and the rule IDs shown are examples from a starter ruleset (`100100`–`100106` for audit, `100200`–`100202` for traffic). Adjust them to your own ruleset.
+- No other Event Streaming integration enabled on the account. NetBird allows only one enabled integration at a time.
 
-## Step 1 — Configure NetBird's Generic HTTP integration
+## Step 1: Configure NetBird's Generic HTTP integration
 
 In **https://app.netbird.io**:
 
-1. **Integrations → Event Streaming**, find **Generic HTTP**, click **Connect**.
+1. Go to **Integrations → Event Streaming**, find **Generic HTTP** and click **Connect**.
 2. Fill the **General** tab:
    - **Endpoint URL**: `https://YOUR-HOSTNAME/events`
    - **Authentication**: **Custom Authentication**
-   - **Header name**: `X-API-Key`
-   - **Header value**: the secret from the prerequisites
-3. Leave **Headers** and **Body Template** at their defaults.
-4. **Save Changes**.
+   - **HTTP Header Name & Value**: `X-API-Key` in the name field, the shared secret from the prerequisites in the value field
+3. Click **Continue** through **Headers** and **Body Template**, leaving both at their defaults.
+4. Click **Connect**.
 
 <p>
     <img src="/docs-static/img/manage/activity/event-streaming/wazuh/netbird-generic-http-config.png" alt="NetBird Generic HTTP integration configuration" className="imagewrapper-big"/>
@@ -29,9 +32,9 @@ In **https://app.netbird.io**:
     Don't use a custom body template. In testing, NetBird's body-template engine HTML-escapes string values (so `+` becomes `&#43;`, mangling ISO-8601 timestamps and URLs with special characters), and there's no JSON-encoding helper for `meta`. The default body is the right choice for Wazuh.
 </Note>
 
-On save NetBird POSTs a synthetic test event to your endpoint and rejects the save with a `412` if the receiver doesn't return `2xx` (observed in NetBird Cloud, May 2026). A successful save also generates an "integration created" audit event that streams *back* through the same integration; that's NetBird logging its own configuration change. Subsequent edits produce "integration updated" the same way.
+When you click **Connect** (or **Save Changes** on an existing integration), NetBird POSTs a synthetic test event to your endpoint and rejects the change with a `412` if the receiver doesn't return `2xx`. A successful save also generates an "integration created" audit event that streams *back* through the same integration; that's NetBird logging its own configuration change. Subsequent edits produce "integration updated" the same way.
 
-## Step 2 — Verify in the Wazuh dashboard
+## Step 2: Verify in the Wazuh dashboard
 
 Open the Wazuh dashboard, log in, then ☰ → **Explore → Discover**.
 
@@ -57,9 +60,20 @@ If you've also enabled [Traffic Events Logging](/manage/activity/traffic-events-
 rule.groups : "traffic"
 ```
 
-Useful columns: `rule.id`, `rule.level`, `rule.description`, `data.nb.meta.source_name`, `data.nb.meta.destination_addr`, `data.nb.meta.tx_bytes`.
+Useful columns: `rule.id`, `rule.level`, `rule.description`, `data.nb.meta.source_name`, `data.nb.meta.destination_addr`, `data.nb.meta.num_of_drops`, `data.nb.meta.tx_bytes`.
 
-`TYPE_DROP` events (rule `100202`) escalate to level 7 to make policy denials stand out from normal flow telemetry.
+Streamed traffic events are aggregated flow records: `Message` is always `TYPE_UNKNOWN`, and what happened during the reporting window is in the counters `num_of_starts`, `num_of_ends` and `num_of_drops` (see [Streamed event fields](/manage/activity/traffic-events-logging#streamed-event-fields)). Write traffic rules against those counters, not against `Message`. The starter ruleset raises any record with dropped attempts to level 7 so denied traffic stands out from normal flow telemetry:
+
+```xml
+<rule id="100202" level="7">
+  <if_sid>100200</if_sid>
+  <field name="nb.meta.num_of_drops" type="pcre2">^[1-9][0-9]*$</field>
+  <description>NetBird traffic dropped: $(nb.meta.num_of_drops) attempts from $(nb.meta.source_addr) to $(nb.meta.destination_addr)</description>
+  <group>traffic,</group>
+</rule>
+```
+
+Keep `type="pcre2"`: with Wazuh's default rule regex, `^[1-9]` does not match, so dropped attempts fall through to the parent rule.
 
 ## Schema reference
 
@@ -89,7 +103,7 @@ NetBird emits **two distinct event shapes** through the same integration. Both a
 }
 ```
 
-- **Casing is mixed on the wire**: `ID`, `Timestamp`, `Message`, `InitiatorID` are PascalCase; `target_id`, `meta`, `reference` are snake_case. KQL queries against the indexer are case-sensitive, so match the on-the-wire form exactly: `data.nb.Message`, `data.nb.target_id`, etc. The same applies to Wazuh rule `<field name="...">` references.
+- **Casing is mixed on the wire**: `ID`, `Timestamp`, `Message`, `InitiatorID` are PascalCase; `target_id`, `meta`, `reference` are snake_case. KQL queries against the indexer are case-sensitive, so match the on-the-wire form exactly: `data.nb.Message`, `data.nb.target_id`, etc.
 - **`ID` may be a number or a string** (test events use a string identifier; real audit events use a numeric ID). Wazuh normalises both to strings in the indexed `data.nb.ID`, so KQL queries don't need to handle the mixed type.
 - **`Message`** is the most reliable field to pivot rules on; it's a stable English phrase like "peer added" or "policy created".
 - **`reference`** is the canonical URL into NetBird's activity log; useful as a click-through pivot from a Wazuh alert back to the source event.
@@ -97,45 +111,65 @@ NetBird emits **two distinct event shapes** through the same integration. Both a
 
 ### Traffic events
 
+A ping from peer `client` to peer `server`, as reported by `client`:
+
 ```json
 {
-    "ID":          "<flow uuid>",
-    "Timestamp":   "2026-05-08T10:33:41.723079Z",
-    "Message":     "TYPE_START",
+    "ID":          "<event uuid>",
+    "Timestamp":   "2026-11-06T11:03:49.647637725Z",
+    "Message":     "TYPE_UNKNOWN",
     "InitiatorID": "",
     "target_id":   "",
     "reference":   "",
     "meta": {
-        "flow_id":          "<uuid>",
-        "direction":        "EGRESS",
-        "source_addr":      "100.121.42.206:0",
-        "source_name":      "Jacks-MacBook-Air.local",
-        "source_type":      "PEER",
-        "destination_addr": "100.121.255.254:0",
-        "destination_name": "",
-        "destination_type": "PEER",
-        "protocol":         6,
-        "tx_bytes":         56,  "tx_packets": 1,
-        "rx_bytes":         0,   "rx_packets": 0,
-        "policy_name":      "",
-        "reporter_id":      "<peer-id-of-reporter>",
-        "user_id":          "oauth2|azure-oauth2|<user-uuid>"
+        "flow_id":                   "<uuid>",
+        "reporter_id":               "<peer-id-of-client>",
+        "direction":                 "EGRESS",
+        "protocol":                  1,
+        "icmp_type":                 8,
+        "icmp_code":                 0,
+        "source_id":                 "<peer-id-of-client>",
+        "source_name":               "client",
+        "source_dns_label":          "client",
+        "source_addr":               "100.85.134.48:0",
+        "source_connection_ip":      "203.0.113.10",
+        "source_geo_city":           "Stockholm",
+        "source_geo_country":        "SE",
+        "source_type":               "UNKNOWN",
+        "destination_id":            "<peer-id-of-server>",
+        "destination_name":          "server",
+        "destination_dns_label":     "server",
+        "destination_addr":          "100.85.232.180:0",
+        "destination_connection_ip": "203.0.113.20",
+        "destination_geo_city":      "Stockholm",
+        "destination_geo_country":   "SE",
+        "destination_type":          "UNKNOWN",
+        "num_of_starts":             0,
+        "num_of_ends":               2,
+        "num_of_drops":              0,
+        "tx_bytes":                  1008,
+        "tx_packets":                12,
+        "rx_bytes":                  0,
+        "rx_packets":                0,
+        "policy_id":                 "",
+        "policy_name":               "",
+        "user_id":                   "",
+        "received_timestamp":        "2026-11-06T11:04:40.54122069Z"
     }
 }
 ```
 
-Traffic events keep the same envelope as audit events: `ID` and `Timestamp` are populated; `InitiatorID`, `target_id`, and `reference` are intentionally empty (the actor lives in `meta.user_id`, source/destination identity in `meta.source_*` / `meta.destination_*`).
+Traffic events keep the same envelope as audit events: `ID` and `Timestamp` are populated; `InitiatorID`, `target_id`, and `reference` are empty (the actor lives in `meta.user_id`, source and destination identity in `meta.source_*` and `meta.destination_*`).
 
-- `destination_name` is usually empty; `destination_addr` (overlay IP) is always set.
+- Each event is one aggregated record from one reporting peer (`reporter_id`). Both peers of a connection can report it, so one connection can arrive as an `EGRESS` record from the source and an `INGRESS` record from the destination.
+- `source_type` and `destination_type` currently stream as `UNKNOWN` for aggregated records. Use the [traffic events API or Dashboard](/manage/activity/traffic-events-logging) when you need the endpoint type.
 - `protocol` is an IANA number (`1`=ICMP, `6`=TCP, `17`=UDP, `58`=ICMPv6).
-- A single flow can produce both a `TYPE_START` and a `TYPE_END` event sharing `meta.flow_id`. Filter on `data.nb.Message : "TYPE_START"` to count distinct flow starts and avoid double-counting lifecycle pairs.
 - Volume is an order of magnitude higher than audit events on a busy mesh; size your retention and rate limits accordingly.
 
 <Note>
-    Wazuh's JSON decoder strips empty-string and empty-object fields when it extracts events into `data.nb.*`. Fields shown as `""` or `{}` in the schema examples above (such as `destination_name`, `policy_name`, an empty `meta` on some audit events) won't appear in indexed alerts, so KQL queries like `data.nb.meta.destination_name : *` return zero hits. The original wire payload is preserved in `full_log` if you ever need the raw form; for queryable fields, filter on a populated one instead.
+    Wazuh's JSON decoder strips empty-string and empty-object fields when it extracts events into `data.nb.*`. Fields shown as `""` or `{}` in the schema examples above (such as `policy_name`, `user_id`, an empty `meta` on some audit events) won't appear in indexed alerts, so KQL queries like `data.nb.meta.policy_name : *` return zero hits. The original wire payload is preserved in `full_log` if you ever need the raw form; for queryable fields, filter on a populated one instead.
 </Note>
 
 ## Next steps
 
-- Build out a starter deployment with a webhook receiver, Caddy in front, and the rules referenced here: [Wazuh receiver reference architecture](./wazuh-receiver).
-- Set up a freshness watchdog by pointing an external uptime monitor (UptimeRobot, Prometheus blackbox-exporter, etc.) at the receiver's `/healthz` endpoint. NetBird's retry behaviour on 5xx is undocumented, so external monitoring is the best way to catch a downed receiver quickly.
+- Monitor the receiver's availability by pointing an external uptime monitor (UptimeRobot, Prometheus blackbox-exporter, etc.) at a health endpoint on your receiver. Generic HTTP retries a failed delivery only twice, a few seconds apart, before dropping the event from the stream (see [Delivery](/manage/activity/event-streaming#delivery)), so a receiver that is down for longer loses those events from Wazuh, and external monitoring is the quickest way to notice. An availability check only shows that the receiver is up: it can't detect that events stopped arriving or stopped reaching the Wazuh indexer, so also alert on a gap in `rule.groups : "netbird"` alerts.
