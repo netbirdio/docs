@@ -625,6 +625,10 @@ export const docsNavigation = [
                         href: '/selfhosted/enterprise/getting-started',
                     },
                     {
+                        title: 'Return to Community Edition',
+                        href: '/selfhosted/enterprise/return-to-community',
+                    },
+                    {
                         title: 'High Availability',
                         href: '/selfhosted/maintenance/scaling/high-availability',
                     },
