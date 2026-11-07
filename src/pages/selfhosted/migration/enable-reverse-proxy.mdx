@@ -68,6 +68,24 @@ cp ../*.env . 2>/dev/null || echo "No .env files found"
 
 The proxy authenticates with the management server using an access token. Generate one using the server CLI.
 
+<Warning>
+Upgraded with `migrate-to-enterprise.sh`? Before creating the token on the combined container, check which config the server runs with:
+
+```bash
+docker inspect netbird-server --format '{{json .Config.Cmd}}'
+```
+
+If this prints `["--config","/etc/netbird/config.yaml.enterprise"]`, the script moved your store from SQLite to PostgreSQL (its SQLite-to-PostgreSQL step, which its traffic flow option for traffic events requires), and `config.yaml` still points at the old SQLite store. A token created with `--config /etc/netbird/config.yaml` goes into that old store, and the proxy is refused with `invalid token`. Create the token with the file the server runs with instead:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml.enterprise admin token create \
+  --name "my-proxy"
+```
+
+and replace `config.yaml` with `config.yaml.enterprise` in the `list` and `revoke` commands below. If it prints anything else, use the commands as shown.
+</Warning>
+
 **Combined container** (`netbirdio/netbird-server`):
 
 ```bash

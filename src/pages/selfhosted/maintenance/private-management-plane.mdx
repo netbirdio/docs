@@ -1,0 +1,227 @@
+# Keep the Self-Hosted Dashboard and API Private
+
+import {Warning} from "@/components/mdx";
+
+You may want the dashboard and the API of your self-hosted NetBird server reachable only by admins. The quickstart makes every endpoint of the server public at one name, such as `netbird.example.com`. After the steps on this page, Traefik splits them:
+
+- **Client endpoints stay public:** Management, Signal, `/relay`, `/oauth2`, STUN, and on Enterprise `/flow.FlowService/`. NetBird clients connect to these from anywhere.
+- **Admin endpoints are reachable only from addresses you allowlist or over NetBird:** the dashboard, the REST API (`/api`), `/ws-proxy/` (the dashboard's browser SSH and RDP) and `/management.ProxyService/` (where the NetBird Proxy, NetBird's own reverse proxy feature, connects).
+
+Running example: the server, `netbird.example.com`, has the public address `203.0.113.10` and the private address `10.0.2.10`. The office LAN is `10.0.1.0/24`, with the admins' workstations at `10.0.1.20` and `10.0.1.21`. One admin, Dana, works from home with the NetBird client installed.
+
+## What must stay public
+
+| Path or port | Used for | If blocked from the internet |
+|---|---|---|
+| `/flow.FlowService/` (Enterprise) | Clients sending traffic events | Newly connected clients cannot send traffic events |
+| `/management.ManagementService/` (gRPC) | Every client's login and updates | No client can log in, and connected clients lose their Management connection |
+| `/oauth2` | SSO logins through the embedded identity provider, also when it forwards to an external identity provider; the client itself requests its login code here | SSO login fails before a browser opens; peers that join with a setup key are unaffected |
+| `/relay` | Connections that cannot go direct | Those connections fail; direct connections are unaffected |
+| `/signalexchange.SignalExchange/` (gRPC) | Setting up connections between peers | `netbird up` times out and no connection between peers forms |
+| UDP `3478` (STUN) | Peers learning their public address, for direct connections | Peers behind different NATs connect through the relay instead of directly |
+
+This page keeps all of them public. Two you could block if you accept the cost: STUN, if relayed connections are acceptable, and `/oauth2`, if every client joins with a setup key.
+
+TCP `80` does not need to be public. The quickstart's Traefik obtains and renews its Let's Encrypt certificate through the TLS-ALPN-01 challenge on port `443`. With port `80` blocked, no client is affected; only the plain HTTP to HTTPS redirect stops working.
+
+## What can be internal-only
+
+| Path | Used for | From the internet, once restricted |
+|---|---|---|
+| The dashboard (the web UI at `https://netbird.example.com/` and its pages) | Admins' browsers | `403` from any address not on the [allowlist](#allowlist-exact-sources-not-subnets); admins elsewhere reach it [over NetBird](#reach-the-private-dashboard-by-name) |
+| `/api` | The dashboard, scripts and other API tools | Tools calling the API from the internet get `403`, even with a valid access token |
+| `/management.ProxyService/` | The NetBird Proxy | A NetBird Proxy on another host is refused unless its address is on the allowlist |
+| `/ws-proxy/` | The browser client behind the dashboard's browser SSH and RDP | Browser SSH and RDP work only for admins who can open the dashboard |
+
+The NetBird clients you install never use `/ws-proxy/`. Only the browser client does: a NetBird client the dashboard runs in the browser tab for browser SSH and RDP. The admin's browser downloads the browser client from `pkgs.netbird.io` by default, so it needs that egress. To serve the browser client from another location, set `NETBIRD_WASM_PATH` in the dashboard container's environment to that URL.
+
+In the quickstart's layout, the NetBird Proxy connects to the server over the Docker network (`http://netbird-server:80`), not through Traefik, so a Proxy on the same host needs no allowlist entry. A NetBird Proxy on another host reaches the server through Traefik instead: put its address on the allowlist, or its connection is refused (`PermissionDenied` in its log).
+
+## Why the split happens in Traefik
+
+The client endpoints Management, Signal, `/relay` and `/oauth2`, and the admin endpoints `/api`, `/ws-proxy/` and `/management.ProxyService/`, all run in one `netbird-server` process, which has no setting to restrict an endpoint by source address. The dashboard runs in its own container, not in the same process as the API. Every endpoint except STUN (UDP `3478`), the dashboard included, is reached on TCP `443`, so a port firewall cannot separate them either; TCP `443` must stay open to everyone. Traefik receives every request for `netbird.example.com` on TCP `443` before `netbird-server` or the dashboard does, and it can match each request on both its path and its source address, so the split has to happen in Traefik.
+
+## When not to do this
+
+Keep the dashboard public if admins must manage NetBird from devices that cannot run the NetBird client, or if you need the dashboard's browser SSH and RDP from anywhere: both stop working from the internet with this split. The same goes for scripts, CI pipelines and other tools that call the API from the internet: with a valid access token they still get `403`, so run them from an allowlisted address or over NetBird.
+
+## Allowlist exact sources, not subnets
+
+The allowlist (`sourceRange` in the Traefik setup below) decides who counts as internal. Every address on it reaches everything in [What can be internal-only](#what-can-be-internal-only); the dashboard and the API still ask for a login. A host you allowlist for one path, such as an identity provider inside your network that pushes SCIM updates to `/api`, or a NetBird Proxy on another host, gets the same access as an admin workstation.
+
+The office admins reach the server at its private address: their DNS answers `netbird.example.com` with `10.0.2.10`, as in [Hairpin NAT and Split DNS](/selfhosted/maintenance/scaling/hairpin-nat-and-split-dns). Traefik then sees each workstation's own address, `10.0.1.20` or `10.0.1.21`, and those exact addresses go on the allowlist. Without that DNS answer, a request from the office goes to the public address and can pass the site firewall's hairpin NAT, arrive with a public address as its source, and get `403`.
+
+<Warning>
+Make sure that no one but admins and the hosts you added arrives from an address on the allowlist. A NetBird routing peer with masquerade, including one that acts as an exit node, replaces the source address of every user it routes with its own, so Traefik treats those users as internal. Two kinds of allowlist entry let them in:
+
+- **A whole subnet that NetBird routes into.** A remote user reaching the server through a NetBird network resource in that subnet gets the dashboard (`200`) and the API up to its login (`401`).
+- **The exact address of a host that runs a routing peer or exit node.** A remote user who reaches the server's private address, `10.0.2.10`, through that peer gets the dashboard (`200`) and the API up to its login (`401`), whether they reach it through a network resource or use the peer only as their exit node.
+
+Allowlist a routing peer's address only when that peer exists for admin access and routes nothing else. Never allowlist an address other devices share, such as an office NAT address: it admits every device behind it.
+</Warning>
+
+## Optional paths
+
+Make these public only for the feature that needs them; each is a narrow exception to the internal `/api` and dashboard. The only other API paths that need no login are `/api/instance` and `/api/setup`, used during the first setup; they stay internal. The routers are in [step 3](#set-up-the-split-in-traefik) below.
+
+- **The invite link for local users** (users who sign in with a password at the embedded identity provider). If invitees accept from the internal network, keep this internal. Otherwise, the invite link opens the dashboard's invite page, `/invite?token=…` (invite tokens start with `nbi_`), and these must be public:
+  - the two API paths the page calls, which need no login: `/api/users/invites/nbi_…` and `/api/users/invites/nbi_…/accept` (router `public-invite-api`);
+  - the page and the files it loads: `/invite`, `/_next/` and `/assets/` (router `public-invite-page`, which also matches `/invite.*`).
+
+  The rest of the dashboard and the API stay internal. The dashboard's static files become public; whether they contain anything sensitive was not checked.
+- **SSO on services published with the NetBird Proxy.** After a user signs in, the identity provider sends the browser to `/api/reverse-proxy/callback`. Make exactly that path public (router `public-proxy-callback`). Variants of it (a trailing slash, encoded or `..` segments, different case) and the rest of `/api` stay `403`. Password-protected services need nothing extra: the Proxy checks the password with the server over the Docker network.
+- **SCIM from a cloud identity provider.** SCIM lives under `/api/scim/v2`. A cloud identity provider needs that prefix public (router `public-scim`) and no allowlist entry: the SCIM token is its only check, and that token is refused (`401`) everywhere else in the API, so this does not open the admin API. An identity provider inside your network keeps SCIM internal instead: make it resolve `netbird.example.com` to `10.0.2.10`, for the same reason as the office admins (a hosts entry is enough), and add its private address to `sourceRange`.
+
+## Set up the split in Traefik
+
+The quickstart configures Traefik with Docker labels. When several routers match a request, Traefik uses the one with the highest priority. The split adds routers in a Traefik file provider and sets their priorities against the quickstart's:
+
+| Router | Priority | Why |
+|---|---|---|
+| `relay-exact-only` | `260` | Above everything, to stop `/relay…` side paths |
+| The optional public routers | `250` | Above `private-api`, to open single paths |
+| `private-api`, `private-proxy-service` | `200` | Above the quickstart's NetBird routers (`100`) |
+| The quickstart's NetBird routers | `100` | Unchanged: the public paths keep using them |
+| `private-dashboard` | `50` | Above the quickstart's dashboard (`1`), below the public paths |
+
+1. Give Traefik a watched file-provider directory. In `docker-compose.yml`, add to the `traefik` service's `command`:
+
+   ```yaml
+   - "--providers.file.directory=/etc/traefik/dynamic"
+   - "--providers.file.watch=true"
+   ```
+
+   and to its `volumes`:
+
+   ```yaml
+   - ./traefik-dynamic:/etc/traefik/dynamic:ro
+   ```
+
+   Traefik's file provider takes either a `filename` or a `directory`, not both. If you enabled the NetBird Proxy, your Traefik already loads `--providers.file.filename=/etc/traefik/dynamic.yaml`: replace that flag with the two above, and move the contents of `dynamic.yaml` (the `pp-v2` `serversTransport` that the NetBird Proxy needs) into `traefik-dynamic/proxy.yml`.
+
+2. Create `traefik-dynamic/private-admin.yml`. Replace `netbird.example.com` with your name, and list in `sourceRange` exactly the addresses admins come from (see [Allowlist exact sources](#allowlist-exact-sources-not-subnets)):
+
+   ```yaml
+   http:
+     middlewares:
+       admin-only:
+         ipAllowList:
+           sourceRange: ["10.0.1.20/32", "10.0.1.21/32"]
+       deny-all:
+         ipAllowList:
+           sourceRange: ["192.0.2.1/32"]
+     routers:
+       private-api:
+         rule: Host(`netbird.example.com`) && (PathPrefix(`/api`) || PathPrefix(`/ws-proxy/`))
+         entryPoints: [websecure]
+         priority: 200
+         middlewares: [admin-only]
+         service: netbird-server@docker
+         tls: {certResolver: letsencrypt}
+       private-proxy-service:
+         rule: Host(`netbird.example.com`) && PathPrefix(`/management.ProxyService/`)
+         entryPoints: [websecure]
+         priority: 200
+         middlewares: [admin-only]
+         service: netbird-server-h2c@docker
+         tls: {certResolver: letsencrypt}
+       private-dashboard:
+         rule: Host(`netbird.example.com`)
+         entryPoints: [websecure]
+         priority: 50
+         middlewares: [admin-only]
+         service: dashboard@docker
+         tls: {certResolver: letsencrypt}
+       relay-exact-only:
+         rule: Host(`netbird.example.com`) && PathPrefix(`/relay`) && !Path(`/relay`)
+         entryPoints: [websecure]
+         priority: 260
+         middlewares: [deny-all]
+         service: netbird-server@docker
+         tls: {certResolver: letsencrypt}
+   ```
+
+   `deny-all` allows only `192.0.2.1`, a documentation address that never reaches you, so every request it guards gets `403`. The `relay-exact-only` router closes a side door: the quickstart routes every path that starts with `/relay` to the server, and an encoded path such as `/relay%2F..%2Fapi/users` reaches the API handler, which answers with a redirect to `/api/users`. The redirect leaks nothing, since `/api/users` is `403` from the internet; the router stops such paths before they reach the API, and `/relay` itself keeps working.
+
+3. For each optional path you need, add its router to the same file, under `routers:`. They take priority `250` and no middleware:
+
+   ```yaml
+       public-invite-api:      # the invite link: both API paths
+         rule: Host(`netbird.example.com`) && PathPrefix(`/api/users/invites/nbi_`)
+         entryPoints: [websecure]
+         priority: 250
+         service: netbird-server@docker
+         tls: {certResolver: letsencrypt}
+       public-invite-page:     # the invite link: the page and its files
+         rule: Host(`netbird.example.com`) && (Path(`/invite`) || PathPrefix(`/invite.`) || PathPrefix(`/_next/`) || PathPrefix(`/assets/`))
+         entryPoints: [websecure]
+         priority: 250
+         service: dashboard@docker
+         tls: {certResolver: letsencrypt}
+       public-proxy-callback:  # SSO on NetBird Proxy services
+         rule: Host(`netbird.example.com`) && Path(`/api/reverse-proxy/callback`)
+         entryPoints: [websecure]
+         priority: 250
+         service: netbird-server@docker
+         tls: {certResolver: letsencrypt}
+       public-scim:            # SCIM from a cloud identity provider
+         rule: Host(`netbird.example.com`) && PathPrefix(`/api/scim/v2`)
+         entryPoints: [websecure]
+         priority: 250
+         service: netbird-server@docker
+         tls: {certResolver: letsencrypt}
+   ```
+
+4. Apply it: `docker compose up -d traefik`. Later edits to the file take effect without a restart.
+
+Keep these changes in `docker-compose.yml` and its directory. `migrate-to-enterprise.sh` recreates the stack with `docker compose up -d` without `-f`, so (unless `COMPOSE_FILE` is set) it loads `docker-compose.yml` and the `docker-compose.override.yml` it generates, and a restriction that depends on a Compose file you pass with an extra `-f` is dropped. Check the split again after every upgrade or migration (see [Verify](#verify)).
+
+### If a load balancer sits in front of Traefik
+
+The allowlist checks the address Traefik sees. Behind a load balancer, that is the balancer's address, not the client's: with the balancer's address on the allowlist, everyone gets in; without it, everyone gets `403`, admins included. With a TCP (layer 4) balancer, turn on PROXY protocol on the balancer and let Traefik trust it, by adding to the `traefik` service's `command`:
+
+```yaml
+- "--entrypoints.websecure.proxyProtocol.trustedIPs=10.0.2.5/32"
+```
+
+with your balancer's address instead of `10.0.2.5`. Until Traefik has this flag, every connection the balancer sends with PROXY protocol fails: the client gets no HTTP response. With the flag, Traefik sees each client's own address and the allowlist works as on this page. Connections that reach Traefik directly, not through the balancer, keep working with the flag set.
+
+## Reach the private dashboard by name
+
+Dana, at home, needs `https://netbird.example.com` to open the dashboard. Her browser resolves the name to the public address `203.0.113.10` and gets `403`, as it should. The way to let her in changes no DNS:
+
+1. Pick a dedicated routing peer for admin access, inside your network, whose outbound address no other device shares. An office NAT address is shared by every device behind it, so give the routing peer an outbound address of its own first. It must also route nothing else (see [Allowlist exact sources](#allowlist-exact-sources-not-subnets)).
+2. Add a [network route](/manage/network-routes) for the server's public address, `203.0.113.10/32`, through that routing peer, with masquerade on, distributed to your admins' group.
+3. Add an access policy from the admins' group to a group that contains only that routing peer, on TCP `443`. Without such a policy, the admins' devices do not receive the route.
+4. To find the address to allowlist, have Dana open the dashboard once (she still gets `403`) and read the source address of that request in `docker compose logs traefik`; the quickstart's Traefik logs every request with its source. Because the route leads to the server's public address, the source is the routing peer's outbound address. Add it to `sourceRange`.
+
+Dana's browser traffic to `203.0.113.10` now follows the route and reaches Traefik from the routing peer: the dashboard opens at once (`200`), and browser SSH works too. Her NetBird client's own management, signal and relay connections do not use the route and keep going to the public address; they reconnect when dropped and after a client restart. With NetBird down, her device goes over the internet again and gets `403`.
+
+Two DNS-based approaches look simpler. Do not use them for the server's name:
+
+- **A record for the server's name in a NetBird custom DNS zone.** The client answers its own server's name from a cache that takes precedence over custom zones, so the record is never served: other names in the same zone are, the server's name is not.
+- **Split DNS that answers the server's name with an address only reachable through NetBird**, served to remote devices through a nameserver group. The client picks up the new answer only at its next cache refresh, every 5 minutes, so for up to 5 minutes after each start the admin still gets `403`. Worse, the client also uses the cached answer for its own management, signal and relay connections, and that address is reachable only through the tunnel those connections build. If these connections are cut on the device, the client dials them again at that address, cannot reach it, and stays disconnected until you restart the client. A restart of the NetBird server does not cause this: the client reconnects to the public address.
+
+Split DNS that gives devices in your network the server's private address, as for the office admins, is a different case: they reach that address without NetBird.
+
+## Verify
+
+From a host on the internet:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://netbird.example.com/
+curl -s -o /dev/null -w '%{http_code}\n' https://netbird.example.com/api/users
+curl -s -o /dev/null -w '%{http_code}\n' https://netbird.example.com/oauth2/.well-known/openid-configuration
+```
+
+The first two print `403`; the third prints `200`. From an allowlisted admin address (an office workstation that resolves the name to `10.0.2.10`), and from Dana's device with NetBird up, the first prints `200` and the second `401` (the API still requires login). Then check that a client outside your network connects (`netbird status` shows Management and Signal `Connected`) and that new users can sign in through SSO.
+
+## Recap
+
+For Dana and `netbird.example.com`:
+
+- Public: Management, Signal, `/relay`, `/oauth2`, UDP `3478`, and on Enterprise `/flow.FlowService/`. Not TCP `80`.
+- Internal: the dashboard, `/api`, `/ws-proxy/`, `/management.ProxyService/`, behind an allowlist of exact admin addresses.
+- Optional: the invite page and its two API paths, `/api/reverse-proxy/callback`, `/api/scim/v2`.
+- Dana reaches the dashboard by name through a route for `203.0.113.10/32` via a dedicated routing peer, not through DNS for the server's name.
+- After every upgrade or migration, run the [Verify](#verify) checks again.

@@ -701,6 +701,10 @@ export const docsNavigation = [
                     { title: 'Remove', href: '/selfhosted/maintenance/remove' },
                     { title: 'Reverse Proxy', href: '/selfhosted/reverse-proxy' },
                     {
+                        title: 'Private Dashboard and API',
+                        href: '/selfhosted/maintenance/private-management-plane',
+                    },
+                    {
                         title: 'Management SQLite Store',
                         href: '/selfhosted/maintenance/sqlite-store',
                     },
