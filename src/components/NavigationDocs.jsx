@@ -506,6 +506,21 @@ export const docsNavigation = [
                 links: [{ title: 'Access Public API', href: '/manage/public-api' }],
             },
             {
+                title: 'MCP Server',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/manage/mcp-server' },
+                    {
+                        title: 'Connect AI Clients',
+                        href: '/manage/mcp-server/connect-clients',
+                    },
+                    {
+                        title: 'Self-Hosted Setup',
+                        href: '/selfhosted/maintenance/mcp-server',
+                    },
+                ],
+            },
+            {
                 title: 'For Partners',
                 isOpen: false,
                 links: [
@@ -672,6 +687,10 @@ export const docsNavigation = [
                     {
                         title: 'Admin CLI',
                         href: '/selfhosted/maintenance/admin-cli',
+                    },
+                    {
+                        title: 'MCP Server',
+                        href: '/selfhosted/maintenance/mcp-server',
                     },
                     {
                         title: 'Scaling Your Deployment',
