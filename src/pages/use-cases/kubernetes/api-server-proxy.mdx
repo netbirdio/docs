@@ -1,3 +1,5 @@
+import { Note } from '@/components/mdx'
+
 # API Server Proxy
 
 Managing access to a Kubernetes cluster can be challenging. Security requirements may prohibit exposing the API server to the public internet. While integrations with existing authorization systems may be impossible. The NetBird API server proxy solves both the access and authorization problem in a single solution by exposing the API server through NetBirds network while using the NetBird identity to append permissions to the incoming request. All done without the need to store any credentials on the local machine.
@@ -59,6 +61,50 @@ spec:
   clusterName: prod
   serviceAccountName: clusterproxy-prod
 ```
+
+## Customizing the Proxy Workload
+
+The operator runs the proxy as a Deployment with three replicas spread across nodes. Use `spec.workloadOverride` to change it, the same way as for a `NetworkRouter`:
+
+- `replicas` sets the number of proxy pods. It defaults to `3`.
+- `labels` and `annotations` are added to the Deployment.
+- `podTemplate` is merged into the pod template the operator generates, so you only list the fields you want to add or change. The proxy container is named `proxy`.
+
+A common reason to override the pod template is scheduling. By default the proxy pods only run on nodes without taints. On clusters where every node pool is tainted, the pods never schedule. If every worker node goes down, the proxy goes down with them and the cluster is no longer reachable through NetBird. Add tolerations so the proxy can run on tainted nodes, such as the control plane:
+
+```yaml
+apiVersion: netbird.io/v1alpha1
+kind: ClusterProxy
+metadata:
+  name: prod
+  namespace: netbird
+spec:
+  clusterName: prod
+  serviceAccountName: clusterproxy-prod
+  workloadOverride:
+    podTemplate:
+      spec:
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
+```
+
+`nodeSelector` and `affinity` go in the same place, for example to keep the proxy on a dedicated node pool:
+
+```yaml
+spec:
+  workloadOverride:
+    podTemplate:
+      spec:
+        nodeSelector:
+          kubernetes.io/os: linux
+          example.com/node-pool: system
+```
+
+<Note>
+The operator sets no tolerations, node selector or affinity, so the values in the override are used as given. Environment variables you add to the `proxy` container are merged by name with the ones the operator sets.
+</Note>
 
 ## Assigning Permissions
 
