@@ -30,7 +30,8 @@ networks and Reverse Proxy services keep working.
 - A self-hosted deployment installed with the [installation script](/selfhosted/selfhosted-quickstart):
   your `docker-compose.yml` has one `netbird-server` service, not separate `management`, `signal`
   and `relay` services, and Traefik in front. This guide doesn't cover other layouts.
-- `netbird-server` v0.82.0 or later and dashboard v2.90.0 or later. Upgrade first with
+- `netbird-server` v0.82.0 or later and dashboard v2.90.0 or later. If `docker-compose.yml` pins
+  image tags, set them to these versions or later first. Then upgrade with
   `docker compose pull && docker compose up -d`.
 - Shell access to the server and the directory that holds `docker-compose.yml`.
 - If you don't run the reverse proxy yet: the prerequisites of
@@ -52,7 +53,9 @@ Add one line to `proxy.env`:
 NB_PROXY_PRIVATE=true
 ```
 
-Recreate the proxy container:
+Private mode keeps your Reverse Proxy services working on the proxy's public listener. Recreating the
+container restarts the proxy, though, so those services are unavailable until it is back up. Plan the
+change for a quiet moment, then recreate the proxy container:
 
 ```bash
 docker compose up -d proxy
@@ -71,14 +74,14 @@ curl -s https://netbird.example.com/api/reverse-proxies/clusters \
 Once the proxy has reconnected, the entry whose `address` is your proxy domain shows
 `"online": true` and `"private": true`.
 
-Private mode does not take your existing Reverse Proxy services offline: they keep working on the
-proxy's public listener. To keep the agent network endpoint on a proxy that serves no public
-services, run a separate proxy cluster for it; see
+To keep the agent network endpoint on a proxy that serves no Reverse Proxy services, run a separate
+proxy cluster for it; see
 [Private proxy with LEGO](/use-cases/security/private-proxy-with-lego).
 
 <Note>
-    Without private mode, connecting a provider in Step 4 fails: **Connect Provider** reports that it
-    needs a reverse proxy cluster with private capabilities, and the API returns `422`.
+    Without private mode, you can't connect a provider in Step 4: **Connect Provider** reports that it
+    needs a reverse proxy cluster with private capabilities and doesn't let you continue. Through the
+    API, setting up Agent Network (`POST /api/agent-network/settings`) returns `422`.
 </Note>
 
 ## Step 3: Show the Agent Network Menu
@@ -123,6 +126,11 @@ curl https://<your-endpoint>/v1/messages \
   --header "anthropic-version: 2023-06-01" \
   --data '{"model":"claude-opus-4-8","max_tokens":1024,"messages":[{"role":"user","content":"What is NetBird?"}]}'
 ```
+
+The checks below assume one proxy serves both your Reverse Proxy services and the agent network
+endpoint, as set up in this guide. On a separate proxy cluster, skip the first check; the `403`
+results were not verified there, and a request that reaches a different proxy may get a different
+error.
 
 - Open one of your existing Reverse Proxy services. It still works.
 - From a peer in the policy's source group, the request returns `200` with the provider's reply,
