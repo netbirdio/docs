@@ -68,7 +68,7 @@ Make these public only for the feature that needs them; each is a narrow excepti
   - the two API paths the page calls, which need no login: `/api/users/invites/nbi_…` and `/api/users/invites/nbi_…/accept` (router `public-invite-api`);
   - the page and the files it loads: `/invite`, `/_next/` and `/assets/` (router `public-invite-page`, which also matches `/invite.*`).
 
-  The rest of the dashboard and the API stay internal. The dashboard's static files become public; whether they contain anything sensitive was not checked.
+  The rest of the dashboard and the API stay internal. The dashboard's static files become public. If `dashboard.env` sets `AUTH_CLIENT_SECRET`, the dashboard writes that secret into these files, where anyone on the internet could read it, so keep the invite link internal. The quickstart with the embedded identity provider leaves it empty.
 - **SSO on services published with the NetBird Proxy.** After a user signs in, the identity provider sends the browser to `/api/reverse-proxy/callback`. Make exactly that path public (router `public-proxy-callback`). Variants of it (a trailing slash, encoded or `..` segments, different case) and the rest of `/api` stay `403`. Password-protected services need nothing extra: the Proxy checks the password with the server over the Docker network.
 - **SCIM from a cloud identity provider.** SCIM lives under `/api/scim/v2`. A cloud identity provider needs that prefix public (router `public-scim`) and no allowlist entry: the SCIM token is its only check, and that token is refused (`401`) everywhere else in the API, so this does not open the admin API. An identity provider inside your network keeps SCIM internal instead: make it resolve `netbird.example.com` to `10.0.2.10`, for the same reason as the office admins (a hosts entry is enough), and add its private address to `sourceRange`.
 
@@ -142,6 +142,8 @@ The quickstart configures Traefik with Docker labels. When several routers match
    ```
 
    `deny-all` allows only `192.0.2.1`, a documentation address that never reaches you, so every request it guards gets `403`. The `relay-exact-only` router closes a side door: the quickstart routes every path that starts with `/relay` to the server, and an encoded path such as `/relay%2F..%2Fapi/users` reaches the API handler, which answers with a redirect to `/api/users`. The redirect leaks nothing, since `/api/users` is `403` from the internet; the router stops such paths before they reach the API, and `/relay` itself keeps working.
+
+   The example uses the names of the quickstart's built-in Traefik: the entrypoint `websecure`, the certificate resolver `letsencrypt` and the dashboard service `dashboard@docker`. If you chose an existing Traefik during setup, use your own entrypoint and certificate resolver, and `netbird-dashboard@docker` for the dashboard, here and in step 3. Traefik skips a router whose service does not exist: with the wrong dashboard service name, it skips `private-dashboard`, the quickstart's own dashboard router keeps serving the dashboard to everyone, and the first check in [Verify](#verify) prints `200` instead of `403`.
 
 3. For each optional path you need, add its router to the same file, under `routers:`. They take priority `250` and no middleware:
 
