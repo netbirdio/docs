@@ -16,11 +16,22 @@
         (confirm against the signed pkg before fleet roll-out)
 
     Distribution:
-      - sign with `productsign --sign "Developer ID Installer: ..." ...`
-        before fleet roll-out (Apple-Configurator-2 won't install an
-        unsigned profile on Sonoma+ without user override).
-      - For local dev install: `sudo profiles install -path netbird-macos.mobileconfig`.
-      - For MDM (Jamf/Kandji/Mosyle/Intune): upload as a Custom Profile.
+      - delivered through an MDM, the profile is signed by the MDM
+        channel itself; nothing to sign by hand,
+      - handed out any other way (Apple Configurator, double-click), it
+        installs unsigned and asks the user to confirm on recent macOS.
+        To avoid that, sign it as a CMS message with an identity the
+        target Macs trust:
+            security cms -S -N "Your Signing Identity" \
+                         -i netbird-macos.mobileconfig -o signed.mobileconfig
+        Configuration profiles are not signed with productsign, which
+        handles installer packages.
+      - For a local test: double-click the file, then install it from
+        System Settings > General > Device Management. macOS 11 and later
+        cannot install configuration profiles with the `profiles` command.
+      - For MDM (Kandji/Mosyle/Intune/Workspace ONE/JumpCloud): upload as
+        a custom profile. Jamf Pro: prefer io.netbird.client.plist in
+        Application & Custom Settings, or sign this profile before upload.
 
     Editing:
       - Replace UUID placeholders below with fresh UUIDs (`uuidgen` on
@@ -121,11 +132,41 @@
                                 <false/>
                                 -->
 
+                                <!-- ===== Lazy connections (bool) =====
+                                     true forces them on, false forces them off, an
+                                     absent key defers to the Management setting.
+                                     NB_LAZY_CONN wins over both. -->
+                                <!--
+                                <key>lazyConnection</key>
+                                <true/>
+                                -->
+
                                 <!-- ===== WireGuard UDP port (int) =====
                                      Range 1-65535. Omit to keep the default. -->
                                 <!--
                                 <key>wireguardPort</key>
                                 <integer>51820</integer>
+                                -->
+
+                                <!-- ===== Remote jobs =====
+                                     allowRemoteJobs is off by default; present at any
+                                     value it locks the client toggle, so false pins
+                                     remote jobs off. debugBundleUploadURL overrides the
+                                     upload service for bundles produced by remote jobs
+                                     and must be an https URL with a host. -->
+                                <!--
+                                <key>allowRemoteJobs</key>
+                                <false/>
+                                <key>debugBundleUploadURL</key>
+                                <string>https://uploads.example.com</string>
+                                -->
+
+                                <!-- ===== Local Prometheus metrics endpoint ===== -->
+                                <!--
+                                <key>enableLocalMetrics</key>
+                                <true/>
+                                <key>localMetricsAddress</key>
+                                <string>127.0.0.1:9191</string>
                                 -->
 
                                 <!-- ===== Split tunnel (Android-only at the daemon level)
@@ -138,13 +179,17 @@
                                 <string>com.acme.app1,com.acme.app2</string>
                                 -->
 
-                                <!-- ===== UI / kill switches (bool) ===== -->
+                                <!-- ===== UI / kill switches (bool) =====
+                                     disableAdvancedView is UI-only: it hides the
+                                     advanced section and rejects nothing. -->
                                 <!--
                                 <key>disableUpdateSettings</key>
                                 <true/>
                                 <key>disableProfiles</key>
                                 <true/>
                                 <key>disableNetworks</key>
+                                <true/>
+                                <key>disableAdvancedView</key>
                                 <true/>
                                 <key>disableMetricsCollection</key>
                                 <false/>

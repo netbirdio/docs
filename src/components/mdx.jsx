@@ -9,6 +9,20 @@ export { Button } from '@/components/Button'
 export { CodeGroup, Code as code, Pre as pre } from '@/components/Code'
 export { Badge } from '@/components/Badge'
 export { YouTube }
+export { Video } from '@/components/Video'
+
+export const table = function Table(props) {
+  return (
+    <div
+      className="my-8 overflow-x-auto [&>table]:my-0"
+      role="region"
+      aria-label="Scrollable table"
+      tabIndex={0}
+    >
+      <table {...props} />
+    </div>
+  )
+}
 
 export const h2 = function H2(props) {
   return <Heading level={2} {...props} />

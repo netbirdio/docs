@@ -55,6 +55,7 @@ export const docsNavigation = [
                     { title: 'Windows', href: '/get-started/install/windows' },
                     { title: 'MacOS', href: '/get-started/install/macos' },
                     { title: 'Docker', href: '/get-started/install/docker' },
+                    { title: 'OpenShift', href: '/get-started/install/openshift' },
                     { title: 'iOS', href: '/get-started/install/ios' },
                     { title: 'tvOS', href: '/get-started/install/tvos' },
                     { title: 'Android', href: '/get-started/install/android' },
@@ -68,6 +69,7 @@ export const docsNavigation = [
                     { title: 'Proxmox VE', href: '/get-started/install/proxmox-ve' },
                     { title: 'Synology', href: '/get-started/install/synology' },
                     { title: 'TrueNAS', href: '/get-started/install/truenas' },
+                    { title: 'Unraid', href: '/get-started/install/unraid' },
                     { title: 'pfSense', href: '/get-started/install/pfsense' },
                     { title: 'OPNsense', href: '/get-started/install/opnsense' },
                     { title: 'OpenWrt', href: '/get-started/install/openwrt' },
@@ -81,7 +83,14 @@ export const docsNavigation = [
     {
         title: 'MANAGE NETBIRD',
         links: [
-            { title: 'Control Center', href: '/manage/control-center' },
+            {
+                title: 'Control Center',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/manage/control-center' },
+                    { title: 'Draft Mode', href: '/manage/control-center/draft-mode' },
+                ],
+            },
             {
                 title: 'Peers',
                 isOpen: false,
@@ -90,7 +99,6 @@ export const docsNavigation = [
                         title: 'Add Peers',
                         href: '/manage/peers/add-machines-to-your-network',
                     },
-                    { title: 'Approve Peers', href: '/manage/peers/approve-peers' },
                     {
                         title: 'Setup Keys',
                         href: '/manage/peers/register-machines-using-setup-keys',
@@ -98,6 +106,48 @@ export const docsNavigation = [
                     {
                         title: 'Bootstrap via Config File',
                         href: '/manage/peers/bootstrap-via-config-file',
+                    },
+                    {
+                        title: 'MDM Deployment',
+                        isOpen: false,
+                        links: [
+                            {
+                                title: 'MDM Integration',
+                                href: '/client/mdm-integration',
+                            },
+                            {
+                                title: 'Enforce Settings on Windows',
+                                href: '/manage/peers/mdm-deployment/windows-mdm-policy',
+                            },
+                            {
+                                title: 'Enforce Settings on macOS',
+                                href: '/manage/peers/mdm-deployment/macos-mdm-policy',
+                            },
+                            {
+                                title: 'Enforce Settings on iOS',
+                                href: '/manage/peers/mdm-deployment/ios-mdm-policy',
+                            },
+                            {
+                                title: 'Deploy with Group Policy (GPO)',
+                                href: '/manage/peers/mdm-deployment/windows-gpo-deployment',
+                            },
+                            {
+                                title: 'macOS CLI-Only .pkg',
+                                href: '/manage/peers/mdm-deployment/macos-cli-pkg-deployment',
+                            },
+                            {
+                                title: 'Deploy with Jamf Pro',
+                                href: '/manage/peers/mdm-deployment/jamf-pro-netbird-integration',
+                            },
+                            {
+                                title: 'Deploy with Kandji',
+                                href: '/manage/peers/mdm-deployment/kandji-netbird-integration',
+                            },
+                            {
+                                title: 'Deploy with Intune',
+                                href: '/manage/peers/mdm-deployment/intune-netbird-integration',
+                            },
+                        ],
                     },
                     {
                         title: 'Browser Client',
@@ -110,31 +160,10 @@ export const docsNavigation = [
                             },
                         ],
                     },
+                    { title: 'Approve Peers', href: '/manage/peers/approve-peers' },
                     { title: 'SSH', href: '/manage/peers/ssh' },
                     { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                     { title: 'Remote Jobs', href: '/manage/peers/remote-jobs' },
-                    {
-                        title: 'Access Infrastructure',
-                        isOpen: true,
-                        links: [
-                            {
-                                title: 'Access Remote Webserver',
-                                href: '/manage/peers/access-infrastructure/secure-remote-webserver-access',
-                            },
-                            {
-                                title: 'Add Servers to the Network',
-                                href: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network',
-                            },
-                            {
-                                title: 'Access from Kubernetes',
-                                href: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments',
-                            },
-                            {
-                                title: 'Peer Approval for Remote Access',
-                                href: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access',
-                            },
-                        ],
-                    },
                     { title: 'Auto Update', href: '/manage/peers/auto-update' },
                 ],
             },
@@ -153,8 +182,16 @@ export const docsNavigation = [
                         isOpen: false,
                         links: [
                             {
+                                title: 'Understanding Posture Checks',
+                                href: '/manage/access-control/posture-checks',
+                            },
+                            {
                                 title: 'Disable route when in the office',
                                 href: '/manage/access-control/posture-checks/connecting-from-the-office',
+                            },
+                            {
+                                title: 'Requiring a device certificate',
+                                href: '/manage/access-control/posture-checks/device-certificates',
                             },
                         ],
                     },
@@ -220,6 +257,10 @@ export const docsNavigation = [
                         href: '/manage/network-routes/use-cases/site-to-site',
                     },
                     {
+                        title: 'Exit Nodes',
+                        href: '/use-cases/remote-access/exit-nodes',
+                    },
+                    {
                         title: 'Access Control',
                         href: '/manage/network-routes/access-control',
                     },
@@ -241,6 +282,10 @@ export const docsNavigation = [
                     {
                         title: 'Bring Your Own Proxy',
                         href: '/manage/reverse-proxy/bring-your-own-proxy',
+                    },
+                    {
+                        title: 'OpenShift',
+                        href: '/manage/reverse-proxy/openshift',
                     },
                     {
                         title: 'Custom Domains',
@@ -327,6 +372,10 @@ export const docsNavigation = [
                                 title: 'Keycloak',
                                 href: '/manage/team/idp-sync/keycloak-sync',
                             },
+                            {
+                                title: 'IIJ ID',
+                                href: '/manage/team/idp-sync/iij-id-sync',
+                            },
                         ],
                     },
                     {
@@ -344,6 +393,10 @@ export const docsNavigation = [
                         //                            { title: 'Auth0', href: '/manage/team/single-sign-on/auth0' },
                         //                            { title: 'JumpCloud', href: '/manage/team/single-sign-on/jumpcloud' },
                         //                        ]
+                    },
+                    {
+                        title: 'Sign-in Domains',
+                        href: '/manage/team/sign-in-domains',
                     },
                 ],
             },
@@ -394,17 +447,46 @@ export const docsNavigation = [
                 links: [
                     {
                         title: 'Authentication',
-                        href: '/manage/settings/enforce-periodic-user-authentication',
+                        isOpen: false,
+                        links: [
+                            {
+                                title: 'Peer Session Expiration',
+                                href: '/manage/settings/enforce-periodic-user-authentication',
+                            },
+                            {
+                                title: 'Multi-Factor Authentication',
+                                href: '/manage/settings/multi-factor-authentication',
+                            },
+                        ],
                     },
                     {
-                        title: 'Multi-Factor Authentication',
-                        href: '/manage/settings/multi-factor-authentication',
+                        title: 'Permissions',
+                        href: '/manage/settings/permissions',
                     },
-                    { title: 'IPv6 Overlay Addressing', href: '/manage/settings/ipv6' },
-                    { title: 'Auto Update', href: '/manage/peers/auto-update' },
-                    { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                     {
-                        title: 'Client Metrics',
+                        title: 'Groups',
+                        href: '/manage/settings/groups',
+                    },
+                    {
+                        title: 'Networks',
+                        isOpen: false,
+                        links: [
+                            {
+                                title: 'Network Settings',
+                                href: '/manage/settings/networks',
+                            },
+                            {
+                                title: 'IPv6 Overlay Addressing',
+                                href: '/manage/settings/ipv6',
+                            },
+                        ],
+                    },
+                    {
+                        title: 'Clients',
+                        href: '/manage/settings/clients',
+                    },
+                    {
+                        title: 'Metrics',
                         href: '/manage/client-metrics',
                     },
                     {
@@ -419,39 +501,6 @@ export const docsNavigation = [
                 ],
             },
             {
-                title: 'Integrations',
-                isOpen: false,
-                links: [
-                    {
-                        title: 'MDM for Deployment',
-                        isOpen: true,
-                        links: [
-                            {
-                                title: 'Deploy with Group Policy (GPO)',
-                                href: '/manage/integrations/mdm-deployment/windows-gpo-deployment',
-                            },
-                            {
-                                title: 'macOS CLI-Only .pkg',
-                                href: '/manage/integrations/mdm-deployment/macos-cli-pkg-deployment',
-                            },
-                            {
-                                title: 'Deploy with Jamf Pro',
-                                href: '/manage/integrations/mdm-deployment/jamf-pro-netbird-integration',
-                            },
-                            {
-                                title: 'Deploy with Kandji',
-                                href: '/manage/integrations/mdm-deployment/kandji-netbird-integration',
-                            },
-                            {
-                                title: 'Deploy with Intune',
-                                href: '/manage/integrations/mdm-deployment/intune-netbird-integration',
-                            },
-                        ],
-                    },
-                ],
-            },
-
-            {
                 title: 'Public API',
                 isOpen: false,
                 links: [{ title: 'Access Public API', href: '/manage/public-api' }],
@@ -461,15 +510,15 @@ export const docsNavigation = [
                 isOpen: false,
                 links: [
                     {
-                        title: 'Managed Service Providers',
+                        title: 'MSP Portal',
                         href: '/manage/for-partners/msp-portal',
                     },
                     {
-                        title: 'Distributors',
+                        title: 'Distributor Portal',
                         href: '/manage/for-partners/distributor-portal',
                     },
                     {
-                        title: 'Acronis NetBird integration',
+                        title: 'Deploy with Acronis',
                         href: '/manage/for-partners/acronis-integration',
                     },
                 ],
@@ -478,15 +527,30 @@ export const docsNavigation = [
     },
     {
         title: 'AGENT NETWORK',
+        // Featured highlight: any group with `featured: true` is pinned to the
+        // top of the sidebar, with an optional `badge` pill. isOpen:false keeps
+        // it collapsed by default, while the other top-level sections start
+        // expanded. To spotlight a different product later, move these lines to
+        // its group; remove them to drop the highlight entirely.
+        featured: true,
+        badge: 'New',
+        isOpen: false,
         links: [
             {
                 title: 'Getting Started',
                 href: '/agent-network',
+                isOpen: true,
                 links: [
                     { title: 'What is Agent Network?', href: '/agent-network' },
                     { title: 'How It Works', href: '/agent-network/how-it-works' },
                     { title: 'Quickstart', href: '/agent-network/quickstart' },
+                    {
+                        title: 'Existing Self-Hosted Deployment',
+                        href: '/agent-network/existing-self-hosted',
+                    },
                     { title: 'Providers', href: '/agent-network/providers' },
+                    { title: 'Clusters', href: '/agent-network/clusters' },
+                    { title: 'Control Center', href: '/agent-network/control-center' },
                 ],
             },
             {
@@ -529,6 +593,10 @@ export const docsNavigation = [
                     },
                     { title: 'Codex', href: '/agent-network/integrations/codex' },
                     { title: 'LiteLLM', href: '/agent-network/integrations/litellm' },
+                    {
+                        title: 'agentgateway',
+                        href: '/agent-network/integrations/agentgateway',
+                    },
                     { title: 'vLLM', href: '/agent-network/integrations/vllm' },
                     {
                         title: 'Google Vertex AI',
@@ -550,9 +618,12 @@ export const docsNavigation = [
             { title: 'Automated Setup', href: '/selfhosted/automated-setup' },
             {
                 title: 'Commercial License',
-                href: '/selfhosted/enterprise',
                 isOpen: false,
                 links: [
+                    {
+                        title: 'Overview',
+                        href: '/selfhosted/enterprise',
+                    },
                     {
                         title: 'Getting Started',
                         href: '/selfhosted/enterprise/getting-started',
@@ -560,6 +631,14 @@ export const docsNavigation = [
                     {
                         title: 'High Availability',
                         href: '/selfhosted/maintenance/scaling/high-availability',
+                    },
+                    {
+                        title: 'External Relays (Licensed)',
+                        href: '/selfhosted/enterprise/external-relays',
+                    },
+                    {
+                        title: 'Grafana Dashboard',
+                        href: '/selfhosted/enterprise/grafana-dashboard',
                     },
                 ],
             },
@@ -604,6 +683,10 @@ export const docsNavigation = [
                                 href: '/selfhosted/maintenance/scaling/set-up-external-relays',
                             },
                             {
+                                title: 'Hairpin NAT and Split DNS',
+                                href: '/selfhosted/maintenance/scaling/hairpin-nat-and-split-dns',
+                            },
+                            {
                                 title: 'Migrate SQLite to PostgreSQL',
                                 href: '/selfhosted/maintenance/scaling/migrate-sqlite-to-postgresql',
                             },
@@ -642,7 +725,7 @@ export const docsNavigation = [
                         href: '/selfhosted/maintenance/crowdsec',
                     },
                     {
-                        title: 'CrowdSec Dashboard Protection',
+                        title: 'CrowdSec AppSec',
                         href: '/selfhosted/maintenance/crowdsec-dashboard',
                     },
                 ],
@@ -826,6 +909,10 @@ export const docsNavigation = [
                         title: 'External IdP to Embedded IdP',
                         href: '/selfhosted/migration/external-to-embedded-idp',
                     },
+                    {
+                        title: 'MySQL to PostgreSQL',
+                        href: '/selfhosted/migration/mysql-to-postgresql',
+                    },
                 ],
             },
         ],
@@ -834,10 +921,13 @@ export const docsNavigation = [
         title: 'CLIENT',
         links: [
             { title: 'Desktop App', href: '/client/desktop-app' },
+            { title: 'nblink', href: '/client/nblink' },
             { title: 'Profiles', href: '/client/profiles' },
+            { title: 'Profile Ownership', href: '/client/profile-ownership' },
             { title: 'gRPC Daemon Socket', href: '/client/grpc-socket' },
             { title: 'HTTP/JSON Daemon Socket', href: '/client/json-socket' },
             { title: 'Environment Variables', href: '/client/environment-variables' },
+            { title: 'Local Metrics Endpoint', href: '/client/local-metrics' },
             { title: 'MDM Integration', href: '/client/mdm-integration' },
             {
                 title: 'Settings',
@@ -883,6 +973,10 @@ export const docsNavigation = [
                     {
                         title: 'Active Directory & Windows File Shares',
                         href: '/use-cases/remote-access/active-directory',
+                    },
+                    {
+                        title: 'Clientless RDP for Third Parties',
+                        href: '/use-cases/remote-access/clientless-rdp',
                     },
                     {
                         title: 'Cloud to On-Premise',
@@ -973,6 +1067,20 @@ export const docsNavigation = [
                         title: 'Private Proxy Without Inbound Ports',
                         href: '/use-cases/security/private-no-inbound',
                     },
+                    {
+                        title: 'Private Proxy with LEGO',
+                        href: '/use-cases/security/private-proxy-with-lego',
+                    },
+                ],
+            },
+            {
+                title: 'Deployment',
+                isOpen: false,
+                links: [
+                    {
+                        title: 'Roll Out with MDM',
+                        href: '/use-cases/deployment/mdm-rollout',
+                    },
                 ],
             },
             { title: 'Homelab', href: '/use-cases/homelab' },
@@ -1043,6 +1151,10 @@ export const docsNavigation = [
                                 title: 'Pending approval',
                                 href: '/help/troubleshooting-account-access',
                             },
+                            {
+                                title: 'User in another account',
+                                href: '/help/troubleshooting-user-in-another-account',
+                            },
                             { title: 'IdP & SSO setup', href: '/manage/team/single-sign-on' },
                             { title: 'User provisioning', href: '/manage/team/idp-sync' },
                             {
@@ -1062,6 +1174,10 @@ export const docsNavigation = [
                             {
                                 title: 'Resource Connectivity',
                                 href: '/help/troubleshooting-resource-connectivity',
+                            },
+                            {
+                                title: 'Performance',
+                                href: '/help/troubleshooting-performance',
                             },
                             {
                                 title: 'Reverse Proxy',
@@ -1187,16 +1303,25 @@ export function NavigationDocs({ className }) {
                 <TopLevelNavItem href="https://github.com/netbirdio/netbird">
                     Github
                 </TopLevelNavItem>
-                <TopLevelNavItem href="/slack-url">Support</TopLevelNavItem>
-                {docsNavigation.map((group, groupIndex) => (
-                    <NavigationStateProvider key={group.title} index={groupIndex}>
-                        <NavigationGroup
-                            group={group}
-                            index={groupIndex}
-                            className={groupIndex === 0 && 'md:mt-0'}
-                        />
-                    </NavigationStateProvider>
-                ))}
+                <TopLevelNavItem href="/help/community-support">Support</TopLevelNavItem>
+                {docsNavigation.map((group, groupIndex) =>
+                    group.featured ? (
+                        <NavigationStateProvider key={group.title} index={groupIndex}>
+                            <NavigationGroup group={group} index={groupIndex} className="mb-6 md:mt-0" />
+                        </NavigationStateProvider>
+                    ) : null
+                )}
+                {docsNavigation.map((group, groupIndex) =>
+                    group.featured ? null : (
+                        <NavigationStateProvider key={group.title} index={groupIndex}>
+                            <NavigationGroup
+                                group={group}
+                                index={groupIndex}
+                                className={groupIndex === 0 && 'md:mt-0'}
+                            />
+                        </NavigationStateProvider>
+                    )
+                )}
                 <li className="sticky bottom-0 z-10 mt-6 min-[416px]:hidden">
                     <Button
                         href="https://app.netbird.io/"
@@ -1239,6 +1364,10 @@ function NavigationGroup({ group, className, hasChildren }) {
     }, [router.pathname, isActiveGroup])
     const [, setActiveHighlight] = useNavigationState()
     const isInsideMobileNavigation = useIsInsideMobileNavigation()
+    const isFeatured = !!group.featured
+    // Show a dropdown chevron on every collapsible menu (top-level sections,
+    // nested groups, and the featured card), so it is obvious they expand.
+    const showChevron = (group.links?.length ?? 0) > 0
 
     return (
         <li className={clsx('relative', className, hasChildren ? '' : 'mt-6')}>
@@ -1246,9 +1375,11 @@ function NavigationGroup({ group, className, hasChildren }) {
                 // layout={"size"}
                 className={clsx(
                     'group flex items-center justify-between gap-2',
-                    hasChildren
+                    isFeatured
+                        ? '-mx-[9px] cursor-pointer select-none rounded-md border border-netbird/20 px-2 py-1.5 text-xs font-semibold text-zinc-900 transition hover:bg-netbird/5 dark:text-white'
+                        : hasChildren
                         ? 'cursor-pointer select-none py-1 pr-3 text-sm font-medium text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-white'
-                        : 'text-xs font-semibold text-zinc-900 dark:text-white',
+                        : 'cursor-pointer select-none text-xs font-semibold text-zinc-900 dark:text-white',
                     group.href === router.pathname && 'text-zinc-900 dark:text-white'
                 )}
                 onClick={() => {
@@ -1275,33 +1406,45 @@ function NavigationGroup({ group, className, hasChildren }) {
                 data-nb-active={hasChildren && isActiveGroup ? '1' : '0'}
             >
                 {group.title}
-                {hasChildren && (
-                    <span
-                        className="-m-1 flex items-center justify-center p-1"
-                        onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            setIsOpen(!isOpen)
-                            if (isOpen) {
-                                setActiveHighlight(group.title)
-                            } else {
-                                setActiveHighlight()
-                            }
-                        }}
-                    >
-            <ChevronDownIcon
-                className={clsx(
-                    'fill-zinc-700 group-hover:fill-zinc-900 dark:fill-zinc-300 dark:group-hover:fill-white',
-                    'transition',
-                    isOpen ? 'rotate-180 transform' : ''
-                )}
-                size={10}
-            />
-          </span>
-                )}
+                <span className="flex items-center gap-2">
+                    {isFeatured && group.badge && (
+                        <span className="rounded-full bg-netbird px-2 py-0.5 text-[10px] font-bold uppercase leading-none text-white">
+                            {group.badge}
+                        </span>
+                    )}
+                    {showChevron && (
+                        <button
+                            type="button"
+                            aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${group.title}`}
+                            aria-expanded={isOpen}
+                            className="-m-1 flex cursor-pointer items-center justify-center p-1"
+                            onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                setIsOpen(!isOpen)
+                                if (isOpen) {
+                                    setActiveHighlight(group.title)
+                                } else {
+                                    setActiveHighlight()
+                                }
+                            }}
+                        >
+                            <ChevronDownIcon
+                                className={clsx(
+                                    isFeatured
+                                        ? 'fill-netbird'
+                                        : 'fill-zinc-500 group-hover:fill-zinc-900 dark:fill-zinc-400 dark:group-hover:fill-white',
+                                    'transition-transform duration-200',
+                                    isOpen ? 'rotate-180 transform' : ''
+                                )}
+                                size={12}
+                            />
+                        </button>
+                    )}
+                </span>
             </motion.h2>
             <div className={clsx('relative', hasChildren ? '' : 'mt-3 pl-2')}>
-                {!hasChildren && (
+                {!hasChildren && isOpen && (
                     <>
                         <AnimatePresence>
                             {isActiveGroup && (

@@ -30,7 +30,7 @@ Find the peer in question and look at the **Connection type** field:
   Status: Connected
   -- detail --
   Connection type: Relayed
-  ICE candidate (Local/Remote): relay/relay
+  ICE candidate (Local/Remote): -/-
   ICE candidate endpoints (Local/Remote): -/-
   Relay server address: rels://us-nyc-2.relay.netbird.io:443
   Last WireGuard handshake: 25 seconds ago
@@ -41,7 +41,7 @@ Find the peer in question and look at the **Connection type** field:
 | Field | What it tells you |
 |---|---|
 | `Connection type: Relayed` | Traffic flows through a relay server instead of directly between the peers |
-| `ICE candidate (Local/Remote)` | How each side is connecting, the key diagnostic, explained below |
+| `ICE candidate (Local/Remote)` | The candidate pair ICE selected; reads `-/-` on a relayed connection, explained below |
 | `Relay server address` | Which relay server carries the connection |
 | `Last WireGuard handshake` | A recent handshake means the tunnel itself is healthy, relayed or not |
 
@@ -80,17 +80,27 @@ The authoritative endpoint and port list is in [Ports & Firewalls](/about-netbir
 
 ## Reading the ICE candidates
 
-The `ICE candidate (Local/Remote)` field shows how each side of the selected connection is reachable. It's the fastest way to tell which peer to investigate:
+The `ICE candidate (Local/Remote)` field shows the candidate pair ICE *selected*: the addresses the tunnel actually uses. It reports successful outcomes only. If hole punching didn't complete, there is no selected pair, and the field reads `-/-`.
 
 | Candidate | Meaning | Implication |
 |---|---|---|
-| `host` | A local interface address | Direct connectivity, P2P possible |
-| `srflx` | Public address discovered via STUN | NAT traversal worked on this side |
-| `prflx` | Address discovered during connectivity checks | P2P possible |
-| `relay` | A relay allocation | Hole punching failed on this side |
-| `-` | No candidate established | STUN unreachable or UDP blocked on this side |
+| `host` | A local interface address | P2P over directly reachable addresses |
+| `srflx` | Server-reflexive: this side's public address, discovered via STUN | P2P; hole punching worked through this side's NAT |
+| `prflx` | Peer-reflexive: an address learned during the connectivity checks themselves | P2P; the working address surfaced mid-checks |
+| `relay` | A TURN relay allocation | Legacy fallback: appears only when a peer's connection to the NetBird relay is down and TURN carries the traffic instead |
+| `-` | No candidate selected, ICE did not complete | Expected on every relayed connection |
 
-The most useful pattern: **when one side shows `srflx` or `host` and the other shows `relay` or `-`, focus your troubleshooting on the weaker side.** That peer's network is the one blocking the direct path.
+The mistake this field invites: reading `-` as "STUN is unreachable or UDP is blocked". That is one way to get here (this side never gathered a public candidate). The other is a symmetric NAT: STUN works, both sides gather `srflx` candidates, and the connectivity checks still fail because each NAT hands out a different port per destination, so the advertised addresses are never the ones packets actually arrive from. Both causes end in the same `-/-`, and **both peers show it**: a relayed connection never displays a good side and a bad side, so this field alone cannot tell you which network to fix. The [decision flow](#the-decision-flow) below can.
+
+The client log can also split the two causes directly. Raise the log level with `netbird debug log level debug` (or use the log inside a [debug bundle](/help/troubleshooting-client#debug-bundle)) and look for the candidate and state lines:
+
+```
+discovered local candidate udp4 srflx 203.0.113.10:51791 ...
+ICE ConnectionState has changed to Checking
+ICE ConnectionState has changed to Failed
+```
+
+If `srflx` lines appear and the state still cycles from `Checking` to `Failed`, STUN discovery works and something is blocking the direct path itself: a host firewall ([Step 4](#step-4-is-a-host-firewall-in-the-way)), an egress policy that allows UDP only to the NetBird endpoints, or a symmetric NAT. Clear the first two on both peers ([Step 5](#step-5-repeat-on-the-other-peer)) before concluding symmetric NAT ([Step 1](#step-1-environment-triage), [Step 6](#step-6-conclude-or-escalate)). If no `srflx` lines appear at all, this side never learned its public address, so STUN or UDP is blocked: go to [Step 3](#step-3-is-stun-reachable). A strong tell for symmetric NAT: the `srflx` port differs per STUN destination across those lines.
 
 ## The decision flow
 
@@ -120,7 +130,7 @@ Some networks are known to defeat hole punching, no matter how clean the firewal
 - **Cloud NAT gateways** (AWS NAT Gateway, GCP Cloud NAT): symmetric by design for instances without a public IP.
 - **Enterprise firewalls in strict mode**: Cisco ASA, Palo Alto, Fortinet and similar devices often default to symmetric NAT, sometimes labeled "strict NAT" in their settings.
 
-If **both** peers sit on networks like these, hole punching can't succeed and no amount of firewall tuning will change that. The relay is the expected outcome, and you can stop here (see [when relay is the right answer](#when-relay-is-the-right-answer)). If only one side does, or you're not sure, keep going: one predictable side is usually enough for P2P.
+If **both** peers sit on networks like these, hole punching can't succeed, and for mobile or cloud NAT no firewall tuning will change that. The relay is the expected outcome, and you can stop here (see [when relay is the right answer](#when-relay-is-the-right-answer)). An enterprise firewall you control is the exception: its NAT mode is often tunable, see [Corporate firewalls](/about-netbird/ports-and-firewalls#corporate-firewalls). If only one side is affected, or you're not sure, keep going: one predictable side is usually enough for P2P.
 
 <Note>
 A CGNAT tell: the public address your network presents is in `100.64.0.0/10`, a range reserved for carrier-grade NAT. Don't confuse it with your own NetBird IP. NetBird intentionally uses the same range for its overlay network, so only the address your *ISP-facing* connection shows counts.
@@ -139,7 +149,7 @@ Both must succeed. If they don't, fix outbound TCP/443 to these endpoints first,
 
 ### Step 3: Is STUN reachable?
 
-Hole punching starts with STUN, and STUN runs over UDP. The best evidence is already in `netbird status -d`. The `Relays:` section near the bottom reports reachability of every STUN, TURN, and relay endpoint:
+Hole punching starts with STUN, and STUN runs over UDP. The best evidence is already in `netbird status -d`. The `Relays:` section near the bottom reports reachability of every STUN and relay endpoint:
 
 ```
 Relays:
@@ -148,7 +158,7 @@ Relays:
   [rels://us-nyc-2.relay.netbird.io:443] is Available
 ```
 
-Any `Unavailable` entry for a `stun:` or `turn:` endpoint means outbound UDP is being dropped on the path, typically by the site's egress firewall. Ask whoever runs it to allow outbound UDP on ports 80, 443, 3478, and 5555 to `stun.netbird.io` and `turn.netbird.io`; the exact list and example rules are in [Ports & Firewalls](/about-netbird/ports-and-firewalls#outgoing-ports).
+Any `Unavailable` entry means the reported transport to that endpoint is being dropped on the path, typically by the site's egress firewall. Ask whoever runs it to allow the matching outbound traffic: UDP ports 80, 443, 3478, and 5555 to `stun.netbird.io`, and UDP ports 80 and 443 plus TCP ports 443 to 65535 to `turn.netbird.io`. The exact list and example rules are in [Ports & Firewalls](/about-netbird/ports-and-firewalls#outbound-ports). If the site runs a named enterprise firewall or SASE product (Palo Alto, Fortinet, Zscaler, and so on), [Corporate firewalls](/about-netbird/ports-and-firewalls#corporate-firewalls) lists what to allow per vendor.
 
 <Warning>
 Every fix on this page is an **outbound** firewall rule or an allowance on the host's `wt0` interface. NetBird never needs an inbound port opened on your perimeter firewall.
@@ -170,7 +180,7 @@ Can't shell into the far peer? Administrators can trigger a debug bundle remotel
 
 ### Step 6: Conclude, or escalate
 
-If every check passes on both peers and the connection is still relayed, you've proven by elimination that a symmetric NAT is in the path. Accept the relay. It's the [designed behavior for exactly this case](#when-relay-is-the-right-answer), and it costs latency, not security.
+If every check passes on both peers and the connection is still relayed, the most likely remaining cause is a symmetric NAT in the path. A firewall that permits outbound UDP only to the NetBird service endpoints, and not to the peers' own discovered addresses, produces the same result and is worth considering. Either way, check whether it is a corporate firewall you control: many enterprise firewalls randomize the source port per destination, or scope outbound UDP too tightly, and both are tunable. [Corporate firewalls](/about-netbird/ports-and-firewalls#corporate-firewalls) has the per-vendor settings. If the NAT is outside your control (mobile, cloud, or someone else's network), accept the relay. It's the [designed behavior for exactly this case](#when-relay-is-the-right-answer), and it costs latency, not security.
 
 If instead something looks wrong but you can't place it, collect evidence and escalate:
 
@@ -182,7 +192,7 @@ If instead something looks wrong but you can't place it, collect evidence and es
 
 A remote engineer's laptop reaches `build-server` in the office, but `netbird status -d` on the laptop shows the connection is relayed and latency is poor. Working the flow:
 
-1. **Confirm.** The laptop shows `Connection type: Relayed` and `ICE candidate (Local/Remote): srflx/relay`. The laptop's own side reached STUN fine (`srflx`); the weak side is the server.
+1. **Confirm.** The laptop shows `Connection type: Relayed` and `ICE candidate (Local/Remote): -/-`, like every relayed connection. The field can't say which side is the blocker, so work the flow on both peers.
 2. **Triage.** The laptop is on home fiber, the server on the office LAN. Neither is mobile, CGNAT, or behind a cloud NAT gateway, so this should be fixable. Continue.
 3. **Control plane, on the server.** `curl` to the Management API and `nc -zv signal.netbird.io 443` both succeed.
 4. **STUN, on the server.** The `Relays:` section shows `[stun:stun.netbird.io:3478] is Unavailable, reason: stun request: context deadline exceeded`. The office egress firewall is dropping outbound UDP.
@@ -210,14 +220,14 @@ Stop troubleshooting and accept the relay when:
 Some teams even prefer relayed connections in locked-down networks, because the only flows leaving the perimeter are outbound TCP/443. That's a legitimate posture: the cost is latency, never confidentiality. In all of these cases, relay is NetBird working as designed, not a fault.
 
 <Note>
-Guides elsewhere sometimes suggest forwarding a UDP port to a peer to force P2P past a symmetric NAT. It can work, but it gives up NetBird's core promise that you never open an inbound port on your network. Accept the relayed connection instead; carrying traffic past unfixable NATs without exposing anything is exactly what it's for.
+Guides elsewhere sometimes suggest forwarding a UDP port to a peer to force P2P past a symmetric NAT. It can work, but it gives up NetBird's core promise that you never open an inbound port on your network. Accept the relayed connection instead; carrying traffic past unfixable NATs without exposing anything is exactly what it's for. The one deliberate exception is pinning static ports for peers at sites you control, when branch firewall policy demands fixed rules; see [Static peer ports for site-to-site firewall rules](/about-netbird/ports-and-firewalls#static-peer-ports-for-site-to-site-firewall-rules).
 </Note>
 
 ## Rollout checklist
 
 To keep a whole fleet on direct connections rather than fixing peers one at a time:
 
-- **Allow outbound UDP to STUN/TURN** (`stun.netbird.io`, `turn.netbird.io`, ports 80, 443, 3478, 5555) at every site's egress firewall.
+- **Allow outbound UDP to the STUN and relay endpoints** (`stun.netbird.io`, `turn.netbird.io`, ports 80, 443, 3478, 5555) at every site's egress firewall.
 - **Wildcard `*.relay.netbird.io` on TCP/443** so the relay fallback survives rotation of the geo-distributed relay pool.
 - **Watch the `Relays:` section** of `netbird status -d` during rollout, fix `Unavailable` entries before users report slowness.
 - **Bake the `wt0` allowance into host-firewall baselines** (UFW/firewalld/Windows images), so host firewalls never silently block decrypted traffic.

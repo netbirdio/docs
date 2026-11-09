@@ -12,12 +12,12 @@ import {NavigationAPI} from "@/components/NavigationAPI";
 import {motion} from "framer-motion";
 import {Footer} from "@/components/Footer";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import { faPaperclip } from '@fortawesome/free-solid-svg-icons';
+import { faPaperclip, faClockRotateLeft } from '@fortawesome/free-solid-svg-icons';
 import { faGithub } from '@fortawesome/free-brands-svg-icons';
 import {toast} from "react-toastify";
 import {AnnouncementBanner} from "@/components/announcement-banner/AnnouncementBanner";
 import {useAnnouncements} from "@/components/announcement-banner/AnnouncementBannerProvider";
-import { EDIT_ON_GITHUB_INDEX_ROUTES } from '@/lib/edit-on-github-routes'
+import { EDIT_ON_GITHUB_INDEX_ROUTES, MDX_PAGE_ROUTES } from '@/lib/edit-on-github-routes'
 
 const navigation = [
   {
@@ -188,12 +188,12 @@ export function Layout({ children, title, tableOfContents }) {
       <AnnouncementBanner />
       <HeroPattern/>
       <div
-        className="relative mx-auto flex max-w-8xl sm:px-2 lg:px-8 xl:px-12 lg:ml-72 xl:ml-80"
+        className="relative flex md:px-2 lg:px-8 xl:px-12 lg:ml-[calc(var(--layout-offset)+18rem)] lg:max-w-[calc(var(--layout-max-width)-18rem)] xl:ml-[calc(var(--layout-offset)+20rem)] xl:max-w-[calc(var(--layout-max-width)-20rem)]"
         style={{ paddingTop: bannerHeight }}
       >
         <header
             // layoutScroll
-            className="contents lg:pointer-events-none lg:fixed lg:inset-0 lg:z-40 lg:flex"
+            className="contents lg:pointer-events-none lg:fixed lg:inset-y-0 lg:left-[var(--layout-offset)] lg:right-[var(--layout-offset)] lg:z-40 lg:flex"
             style={{ top: bannerHeight }}
         >
           <div className="contents lg:pointer-events-auto lg:block lg:w-72 lg:overflow-y-auto lg:border-r lg:border-zinc-900/10 lg:dark:border-neutral-700/50 lg:px-6 lg:pb-8 lg:pt-4 lg:bg-white/70 lg:dark:bg-[#181A1D]/95 lg:backdrop-blur-lg xl:w-80 lg:overflow-x-visible sidebar-scroll">
@@ -206,9 +206,9 @@ export function Layout({ children, title, tableOfContents }) {
           </div>
           <Header />
         </header>
-        <div className="min-w-0 max-w-2xl flex-auto px-4 py-16 lg:max-w-none lg:pl-8 lg:pr-0 xl:px-5">
-          <main className="py-16">
-            <Prose as="article">{children}</Prose>
+        <div className="min-w-0 flex-auto px-4 py-16 md:max-w-2xl lg:max-w-none lg:pl-8 lg:pr-0 xl:px-5">
+          <main className="py-8 lg:py-16">
+            <Prose as="article" className="max-md:max-w-none">{children}</Prose>
           </main>
           <Footer />
         </div>
@@ -227,16 +227,30 @@ export function Layout({ children, title, tableOfContents }) {
                 <span>Copy link</span>
               </button>
             </li>
-            <li key="edit-on-github">
-              <Link
-                  href={"https://github.com/netbirdio/docs/tree/main/src/pages" + (EDIT_ON_GITHUB_INDEX_ROUTES.has(router.pathname) ? router.pathname + "/index.mdx" : router.pathname + ".mdx")}
-                  className="dark:hover:text-slate-300 dark:text-slate-400 text-slate-500 hover:text-slate-700 font-normal'"
-                  style={{display: "flex", alignItems: 'center'}}
-              >
-                <FontAwesomeIcon icon={faGithub} style={iconStyle} className="icon pr-1" />
-                <span>Edit on Github</span>
-              </Link>
-            </li>
+            {MDX_PAGE_ROUTES.has(router.pathname) && (
+              <>
+                <li key="edit-on-github">
+                  <Link
+                      href={"https://github.com/netbirdio/docs/tree/main/src/pages" + (EDIT_ON_GITHUB_INDEX_ROUTES.has(router.pathname) ? router.pathname + "/index.mdx" : router.pathname + ".mdx")}
+                      className="dark:hover:text-slate-300 dark:text-slate-400 text-slate-500 hover:text-slate-700 font-normal'"
+                      style={{display: "flex", alignItems: 'center'}}
+                  >
+                    <FontAwesomeIcon icon={faGithub} style={iconStyle} className="icon pr-1" />
+                    <span>Edit on GitHub</span>
+                  </Link>
+                </li>
+                <li key="view-history">
+                  <Link
+                      href={"https://github.com/netbirdio/docs/commits/main/src/pages" + (EDIT_ON_GITHUB_INDEX_ROUTES.has(router.pathname) ? router.pathname + "/index.mdx" : router.pathname + ".mdx")}
+                      className="dark:hover:text-slate-300 dark:text-slate-400 text-slate-500 hover:text-slate-700 font-normal"
+                      style={{display: "flex", alignItems: 'center'}}
+                  >
+                    <FontAwesomeIcon icon={faClockRotateLeft} style={iconStyle} className="icon pr-1" />
+                    <span>View history</span>
+                  </Link>
+                </li>
+              </>
+            )}
           </ol>
           <nav aria-labelledby="on-this-page-title" className="w-80">
             {tableOfContents.length > 0 && (

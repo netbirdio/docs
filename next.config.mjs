@@ -27,7 +27,12 @@ const nextConfig = {
         return [
             {
                 source: '/slack-url',
-                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-43j76787p-otf3d0nMcJHAQYx46H3jsg',
+                destination: 'https://join.slack.com/t/netbirdio/shared_invite/zt-4bkyz66cn-Bs~A8lAgIPii5bDl6QUXyA',
+                permanent: false,
+            },
+            {
+                source: '/discord-url',
+                destination: 'https://discord.gg/mFhRpjFpMB',
                 permanent: false,
             },
             {
@@ -103,7 +108,16 @@ const nextConfig = {
             {
                 source: '/ipa/:path*',
                 destination: '/api/:path*',
-                permanent: true
+                permanent: true,
+                // Client-side navigations fetch page props from
+                // /_next/data/<buildId>/ipa/... — redirecting those requests
+                // strips pageProps (title, sections), so skip data requests.
+                missing: [
+                    {
+                        type: 'header',
+                        key: 'x-nextjs-data',
+                    },
+                ],
             },
             // documentation redirects for about
             {
@@ -251,22 +265,22 @@ const nextConfig = {
             },
             {
                 source: '/how-to/secure-remote-webserver-access',
-                destination: '/manage/peers/access-infrastructure/secure-remote-webserver-access',
+                destination: '/manage/peers/ssh',
                 permanent: true,
             },
             {
                 source: '/how-to/setup-keys-add-servers-to-network',
-                destination: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network',
+                destination: '/manage/peers/register-machines-using-setup-keys',
                 permanent: true,
             },
             {
                 source: '/how-to/access-internal-resources-from-autoscaled-environments',
-                destination: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments',
+                destination: '/use-cases/kubernetes',
                 permanent: true,
             },
             {
                 source: '/how-to/peer-approval-for-remote-worker-access',
-                destination: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access',
+                destination: '/manage/peers/approve-peers',
                 permanent: true,
             },
             {
@@ -487,18 +501,43 @@ const nextConfig = {
                 permanent: true,
             },
             {
+                source: '/manage/peers/access-infrastructure/secure-remote-webserver-access',
+                destination: '/manage/peers/ssh',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/access-infrastructure/setup-keys-add-servers-to-network',
+                destination: '/manage/peers/register-machines-using-setup-keys',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/access-infrastructure/access-internal-resources-from-autoscaled-environments',
+                destination: '/use-cases/kubernetes',
+                permanent: true,
+            },
+            {
+                source: '/manage/peers/access-infrastructure/peer-approval-for-remote-worker-access',
+                destination: '/manage/peers/approve-peers',
+                permanent: true,
+            },
+            {
+                source: '/manage/integrations/mdm-deployment/:path*',
+                destination: '/manage/peers/mdm-deployment/:path*',
+                permanent: true,
+            },
+            {
                 source: '/how-to/jamf-pro-netbird-integration',
-                destination: '/manage/integrations/mdm-deployment/jamf-pro-netbird-integration',
+                destination: '/manage/peers/mdm-deployment/jamf-pro-netbird-integration',
                 permanent: true,
             },
             {
                 source: '/how-to/kandji-netbird-integration',
-                destination: '/manage/integrations/mdm-deployment/kandji-netbird-integration',
+                destination: '/manage/peers/mdm-deployment/kandji-netbird-integration',
                 permanent: true,
             },
             {
                 source: '/how-to/intune-netbird-integration',
-                destination: '/manage/integrations/mdm-deployment/intune-netbird-integration',
+                destination: '/manage/peers/mdm-deployment/intune-netbird-integration',
                 permanent: true,
             },
             {
@@ -876,7 +915,12 @@ const nextConfig = {
             },
             {
                 source: '/selfhosted/activity-mysql-store',
-                destination: '/selfhosted/maintenance/activity-mysql-store',
+                destination: '/selfhosted/maintenance/activity-postgres-store',
+                permanent: true,
+            },
+            {
+                source: '/selfhosted/maintenance/activity-mysql-store',
+                destination: '/selfhosted/maintenance/activity-postgres-store',
                 permanent: true,
             },
             {

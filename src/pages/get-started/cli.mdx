@@ -39,10 +39,10 @@ We are preserving the unusual priority of environment variables for backwards co
 
 Below is the list of global flags:
 ```shell
-      --admin-url string        Admin Panel URL [http|https]://[host]:[port] (default "https://app.netbird.io:443")
+      --admin-url string        Deprecated and ignored. Existing scripts that pass it keep working, but the flag has no effect.
   -A, --anonymize               anonymize IP addresses and non-netbird.io domains in logs and status output
   -c, --config string           Overrides the default profile file location. Deprecated on `up` and `login`; use `--service-env NB_CONFIG=<path>` instead.
-      --daemon-addr string      Daemon service address to serve CLI requests [unix|tcp]://[path|host:port] (default "unix:///var/run/netbird.sock")
+      --daemon-addr string      Daemon service address to serve CLI requests [unix|npipe]://[path|name]. tcp://host:port is deprecated: it carries no caller identity, so the daemon refuses every request on it (default "unix:///var/run/netbird.sock", "npipe://netbird" on Windows)
   -n, --hostname string         Sets a custom hostname for the device
       --log-file console        Sets NetBird log paths written to simultaneously. If "console" is specified the log will be output to stdout. If "syslog" is specified the log will be sent to the syslog daemon. You can pass the flag multiple times or separate entries by comma (default [/var/log/netbird/client.log])
   -l, --log-level string        Sets NetBird log level (default "info")
@@ -52,6 +52,11 @@ Below is the list of global flags:
   -k, --setup-key string        Setup key obtained from the Management Service Dashboard (used to register peer)
       --setup-key-file string   Path to a file containing a setup key (used to register peer). Ignored if --setup-key is provided.
 ```
+
+<Note>
+    `--admin-url` is deprecated and ignored. Existing scripts and service definitions that pass it keep working after an upgrade, but the flag does nothing and can be removed.
+</Note>
+
 ### Environment Variables
 Every flag of a `netbird` command can be passed as an environment variable. We are using the following rule for the environment variables composition:
 * `PREFIX_FLAGNAME` and for flags with multiple parts: `PREFIX_FLAGNAMEPART1_FLAGNAMEPART2`
@@ -78,7 +83,7 @@ export NB_DISABLE_UPDATE_SETTINGS=true
 export NB_LOG_LEVEL=debug
 
 # Set custom daemon address
-export NB_DAEMON_ADDR="tcp://localhost:8080"
+export NB_DAEMON_ADDR="unix:///var/run/netbird.sock"
 ```
 
 Beyond flag-derived variables, the client also supports a number of advanced environment variables for tuning networking, firewall, ICE connectivity, and more. See the [Client Environment Variables](/client/environment-variables) reference for the full list.
@@ -103,7 +108,7 @@ The command will check if the peer is logged in and connect to the management se
       --dns-resolver-address string         Sets a custom address for NetBird's local DNS resolver. If set, the agent won't attempt to discover the best IP and port to listen on. An empty string "" clears the previous configuration. E.g. --dns-resolver-address 127.0.0.1:5053 or --dns-resolver-address ""
       --dns-router-interval duration        DNS route update interval (default 1m0s)
       --enable-lazy-connection              Deprecated and no longer used. Lazy connections are controlled by Management and the NB_LAZY_CONN environment variable.
-      --enable-rosenpass                    [Experimental] Enable Rosenpass feature. If enabled, the connection will be post-quantum secured via Rosenpass.
+      --enable-rosenpass                    [Deprecated] Enable Rosenpass feature. If enabled, the connection will be post-quantum secured via Rosenpass.
       --enable-ssh-local-port-forwarding    Enable local port forwarding for SSH server
       --enable-ssh-remote-port-forwarding   Enable remote port forwarding for SSH server
       --enable-ssh-root                     Enable root login for SSH server
@@ -117,7 +122,7 @@ The command will check if the peer is logged in and connect to the management se
   -N, --network-monitor                     Manage network monitoring. Defaults to true on Windows and macOS, false on Linux and FreeBSD. E.g. --network-monitor=false to disable or --network-monitor=true to enable.
       --no-browser                          Do not open the browser for SSO login
       --profile string                      Profile name to use for the login. If not specified, the last used profile will be used.
-      --rosenpass-permissive                [Experimental] Enable Rosenpass in permissive mode to allow this peer to accept WireGuard connections without requiring Rosenpass functionality from peers that do not have Rosenpass enabled.
+      --rosenpass-permissive                [Deprecated] Enable Rosenpass in permissive mode to allow this peer to accept WireGuard connections without requiring Rosenpass functionality from peers that do not have Rosenpass enabled.
       --ssh-jwt-cache-ttl int               SSH JWT token cache TTL in seconds (default 0, disabled). When enabled, the client caches the JWT so repeated SSH connections skip the OIDC login flow. The receiving SSH server rejects tokens older than 10 minutes, so values above 600 will result in authentication failures for cached tokens.
       --wireguard-port uint16               WireGuard interface listening port (default 51820)
 ```
@@ -188,13 +193,14 @@ Retrieves the peer status from the daemon service.
 ```shell
   -C, --check string                       Run a health check and exit with code 0 on success, 1 on failure (live|ready|startup)
   -d, --detail                             Display detailed status information in human-readable format
-  -t, --filter-by-connection-type string   Filter the detailed output by connection type (P2P|Relayed), e.g., --filter-by-connection-type P2P
-  -i, --filter-by-ips strings              Filter the detailed output by a list of one or more IPs (v4 or v6), e.g., --filter-by-ips 100.64.0.100,fd00::1
+  -T, --filter-by-connection-type string   Filter the detailed output by connection type (P2P|Relayed), e.g., --filter-by-connection-type P2P
+  -I, --filter-by-ips strings              Filter the detailed output by a list of one or more IPs (v4 or v6), e.g., --filter-by-ips 100.64.0.100,fd00::1
   -N, --filter-by-names strings            Filter the detailed output by a list of one or more peer FQDN or hostnames, e.g., --filter-by-names peer-a,peer-b.netbird.cloud
   -S, --filter-by-status string            Filter the detailed output by connection status (idle|connecting|connected), e.g., --filter-by-status connected
   -4, --ipv4                               Display only NetBird IPv4 of this peer, e.g., --ipv4 will output 100.64.0.33
   -6, --ipv6                               Display only NetBird IPv6 of this peer
   -j, --json                               Display detailed status information in JSON format
+  -t, --table                              Display peers in a table, supports the --filter-by-* flags (v0.82.0+)
   -y, --yaml                               Display detailed status information in YAML format
 ```
 #### Usage
@@ -427,6 +433,43 @@ Peers count: 2/3 Connected
     The peer with IP `100.119.85.4` wasn't returned because it was not connected
 </Note>
 
+#### Table view
+
+Available from v0.82.0. Use `--table` to list the peers in a compact table, one row per peer, instead of the multi-line block printed by `--detail`:
+```shell
+netbird status --table
+```
+Example output:
+```shell
+Peers (3/5 connected):
+NAME          IP            STATUS       CONN      LATENCY   RX / TX
+web-01        100.64.0.12   Connected    P2P       12ms      1.2 MiB / 3.4 MiB
+db-01         100.64.0.15   Connected    Relayed   48ms      54.0 KiB / 12.1 KiB
+laptop-anna   100.64.0.31   Connected    P2P       9ms       310.2 MiB / 22.8 MiB
+ci-runner     100.64.0.40   Connecting   -         -         0 B / 0 B
+old-nas       100.64.0.77   Idle         -         -         0 B / 0 B
+```
+The table shows the peer name without its domain suffix, and `-` for values that are not available, such as the latency of a peer that is not connected. Peers are sorted by their NetBird IP address in numeric order, so `100.64.0.9` comes before `100.64.0.10`.
+
+The `--filter-by-*` flags work with `--table` and can be combined. The connected count in the first line reflects the filtered peers:
+```shell
+netbird status --table --filter-by-status connected
+netbird status --table --filter-by-names web,db
+netbird status --table --filter-by-connection-type P2P
+netbird status --table --filter-by-ips 100.64.0.12,fd00::1
+```
+<Note>
+    `--table` cannot be combined with `--detail`, `--json`, `--yaml`, `--ipv4` or `--ipv6`. Use `--detail` to see the public key, ICE candidates, relay address, last handshake and networks of each peer.
+</Note>
+
+#### Which output to use
+
+| Output | Use it when |
+|---|---|
+| `--table` | You want a quick overview of many peers, for example to see who is connected, who is relayed, and how much traffic each peer carries. Combine it with the `--filter-by-*` flags to narrow the list. |
+| `--detail` | You are troubleshooting a specific peer and need the public key, ICE candidates and endpoints, relay address, last handshake, quantum resistance, networks and the daemon, management, signal and relay state. |
+| `--json` / `--yaml` | You are scripting or feeding the status into another tool. The output is machine-readable, while the table and `--detail` text are meant for people. |
+
 #### Health checks
 
 Use `netbird status --check` to run a health probe from a script or container orchestrator. These probes do not display the normal status report. A successful probe produces no output and exits with code `0`; a failed probe exits with code `1`.
@@ -509,9 +552,11 @@ For SFTP and SCP, use native clients (`sftp` and `scp` commands) which work with
 
 **Connection fails:**
 
-- Ensure SSH is enabled on the target peer:
+- Ensure SSH is enabled on the target peer, which requires root or an administrator.
+  The commands below use `sudo` for Linux and macOS; on Windows run the same ones
+  without it, from an elevated prompt:
   ```shell
-  netbird up --allow-server-ssh
+  sudo netbird down; sudo netbird up --allow-server-ssh
   ```
 - Verify SSH Access is enabled in the dashboard (Peers > your_peer > SSH Access)
 - Check that an ACL policy allows TCP port 22022
@@ -520,13 +565,16 @@ For SFTP and SCP, use native clients (`sftp` and `scp` commands) which work with
 
 - Complete the OIDC flow when prompted (browser window will open)
 - Verify your IdP is properly configured
-- To disable JWT authentication: `netbird up --allow-server-ssh --disable-ssh-auth`
+- To disable JWT authentication, as root or an administrator: `sudo netbird down; sudo netbird up --allow-server-ssh --disable-ssh-auth`.
+  This drops per-user authentication for SSH on that peer, leaving any peer the ACL
+  policy allows able to connect, so use it to isolate a problem and re-enable it with
+  `sudo netbird down; sudo netbird up --allow-server-ssh` afterwards.
 
 **Port forwarding not working:**
 
 - Ensure the server has the appropriate flags:
   ```shell
-  netbird up --allow-server-ssh \
+  sudo netbird down; sudo netbird up --allow-server-ssh \
     --enable-ssh-local-port-forwarding \
     --enable-ssh-remote-port-forwarding
   ```
@@ -537,7 +585,7 @@ For SFTP and SCP, use native clients (`sftp` and `scp` commands) which work with
 
 
 ### expose
-Command to expose a local port to the public internet via the NetBird reverse proxy. The service remains active as long as the command is running and is automatically removed when you stop it.
+Command to expose a local port to the public internet via the NetBird reverse proxy. The command keeps the service alive through periodic renewals and requests removal when it stops. If that request fails, the service remains configured until expiration and cleanup.
 
 <Note>
     Before using this command, make sure the NetBird client is connected (`netbird up`), and that the **Peer Expose** feature is enabled by your account administrator in **Settings** > **Clients**. See [Expose from CLI](/manage/reverse-proxy/expose-from-cli) for the complete guide.
@@ -593,10 +641,10 @@ Expose using a custom domain (must be pre-configured in your account):
 ```shell
 netbird expose 8080 --with-custom-domain app.example.com
 ```
-Press `Ctrl+C` to stop exposing the service. The service is automatically removed from the reverse proxy when the command exits.
+Press `Ctrl+C` to stop exposing the service. The daemon requests removal from the reverse proxy. If the stop request succeeds, the service is removed; otherwise, it remains configured until expiration and cleanup, normally 90–120 seconds after the last successful renewal. See [Session lifecycle](/manage/reverse-proxy/expose-from-cli#session-lifecycle) for details.
 
 <Note>
-    Each peer can have up to 10 active expose sessions simultaneously. The session is kept alive with automatic renewals every 30 seconds and expires after 90 seconds if the client disconnects unexpectedly.
+    Each peer can have up to 10 active expose sessions simultaneously. The session is renewed every 30 seconds and expires 90 seconds after its last successful renewal. The management server checks for expired sessions every 30 seconds; outages or a cleanup backlog can delay removal.
 </Note>
 
 ### networks
@@ -689,6 +737,7 @@ sudo netbird service install --config /opt/netbird/config.json
 
 #### Service-specific flags
 ```shell
+      --disable-networks          Disables network selection.
       --disable-profiles          Disables profiles feature.
       --disable-update-settings   Disables update settings feature.
       --service-env strings       Sets extra environment variables for the service. You can specify a comma-separated list of KEY=VALUE pairs. E.g. --service-env NB_LOG_LEVEL=debug,CUSTOM_VAR=value
@@ -696,17 +745,26 @@ sudo netbird service install --config /opt/netbird/config.json
 
 These flags are intended for managed or shared machines where non-admin users should not be able to alter the client configuration through the CLI or UI:
 
+- `--disable-networks` prevents users from listing, selecting, or deselecting networks (including exit nodes) via CLI or UI. The flag is persisted in the service's `service.json` state file; there is no `NB_DISABLE_NETWORKS` environment-variable equivalent.
 - `--disable-profiles` prevents users from adding, removing, or switching profiles. The client stays locked to the profile that was active at install time. Any attempt to switch profiles via CLI or UI is rejected.
-- `--disable-update-settings` prevents users from changing daemon settings (management URL, log level, DNS resolver address, etc.) via CLI or UI. The configuration can only be changed by an administrator who reinstalls the service or uses `service reconfigure`.
+- `--disable-update-settings` prevents users from changing daemon settings (management URL, log level, DNS resolver address, etc.) via CLI or UI. To change them, unlock the service first (steps below).
 
 Typical use: an IT admin deploys NetBird with a setup key and locks the configuration so end users cannot disconnect from the corporate account or point the client at a different management server.
 
+Run `netbird up` before you set `--disable-update-settings`. With it set, `netbird up` rejects any management URL other than the one saved on the machine, and a new install saves NetBird Cloud's URL (`https://api.netbird.io:443`). So if you lock first, `netbird up --management-url <self-hosted URL>` fails and the peer is not registered. To recover, unlock the service (step 1 below), run `sudo netbird up --setup-key <setup key> --management-url <self-hosted URL>`, then lock it again (step 3).
+
 ```shell
-sudo netbird service install \
-  --setup-key AAAA-BBB-CCC-DDDDDD \
-  --disable-profiles \
-  --disable-update-settings
+sudo netbird service install
+sudo netbird service start
+sudo netbird up --setup-key AAAA-BBB-CCC-DDDDDD   # self-hosted: add --management-url https://netbird.example.com:443
+sudo netbird service reconfigure --disable-profiles --disable-update-settings
 ```
+
+`service reconfigure` restarts the service with the new flags, and the peer reconnects without registering again. `service reconfigure` keeps the saved value of any `--disable-*` flag you leave out, so running it with no flags does not unlock the service. To change the configuration later:
+
+1. Unlock the service by passing every `--disable-*` flag you set as false: `sudo netbird service reconfigure --disable-profiles=false --disable-update-settings=false`.
+2. Make the change.
+3. Lock the service again: `sudo netbird service reconfigure --disable-profiles --disable-update-settings`.
 
 <Note>
     Install parameters (including `--disable-profiles`, `--disable-update-settings`, and `--service-env`) are persisted to a `service.json` file and survive uninstall/reinstall cycles. To clear saved parameters and revert to defaults, run `netbird service reset-params` followed by `netbird service reconfigure`.
@@ -833,6 +891,7 @@ This will output:
   -S, --system-info                Adds system information to the debug bundle (default true)
   -U, --upload-bundle              Uploads the debug bundle to a server
       --upload-bundle-url string   Service URL to get an upload URL for the debug bundle (default "https://upload.debug.netbird.io/upload-url")
+      --upload-bundle-insecure     Allow uploading to an http or untrusted-TLS upload server (self-hosted); requires root on Linux and macOS, or an administrator on Windows
 ```
 
 ### debug for
@@ -872,6 +931,7 @@ Log level restored to INFO
   -S, --system-info                Adds system information to the debug bundle (default true)
   -U, --upload-bundle              Uploads the debug bundle to a server
       --upload-bundle-url string   Service URL to get an upload URL for the debug bundle (default "https://upload.debug.netbird.io/upload-url")
+      --upload-bundle-insecure     Allow uploading to an http or untrusted-TLS upload server (self-hosted); requires root on Linux and macOS, or an administrator on Windows
 ```
 
 ### debug log

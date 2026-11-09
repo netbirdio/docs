@@ -1,0 +1,228 @@
+import {Note, Warning, Success} from "@/components/mdx"
+import {Tiles} from "@/components/Tiles"
+import {PathFlow} from "@/components/PathFlow"
+
+export const description = "A NetBird connection feels slow: a file transfer or a Remote Desktop session. Work through it to find whether the tunnel, your own connection, a routing peer, or the app is the real cause."
+
+# Troubleshooting performance
+
+A file transfer crawls, a Remote Desktop session lags, or a shared drive takes forever to open, and it is natural to reach for the newest thing in the path and assume NetBird is the cause. Usually it is worth asking two questions first, because the answer is often somewhere else. **What exactly is slow?** A big download behaves nothing like an interactive app or a first connection, and each points at a different cause. **And where is it slow?** On every peer, or only one, tells you whether to suspect NetBird at all or a single connection.
+
+More often than not the slow part is the internet connection underneath the tunnel, how sensitive the app is to delay, or one slow hop such as a single relayed connection or one busy routing peer. This page helps you find which, before you change anything.
+
+<Note>
+NetBird encrypts and carries your traffic, but it can only move it as fast as the slowest link along the way: your internet upload, Wi-Fi, a routing peer, or the machine on the other end. The tunnel adds a small, fixed overhead, and is rarely the bottleneck on its own.
+</Note>
+
+## The path your traffic takes
+
+Slowness can come from any hop between you and what you are reaching, so it helps to picture the whole path first. Any one of these can be the slow hop:
+
+<PathFlow
+  caption="Every hop can be the one that slows you down. NetBird is only one of them."
+  steps={[
+    { icon: 'laptop', title: 'You, at home', description: 'Your device running the NetBird client.' },
+    { icon: 'router', title: 'Home router', description: 'Your router and internet provider.' },
+    { icon: 'cloud', title: 'Internet', description: 'Public transit between networks.' },
+    { icon: 'firewall', title: 'Office firewall', description: 'The edge of the network you are reaching.' },
+    { icon: 'routingPeer', title: 'Routing peer', description: 'Or the peer you connect to directly.' },
+    { icon: 'resource', title: 'The resource', description: 'The server, app, or database you want.', destination: true },
+  ]}
+/>
+
+NetBird is only one link in that chain. Each of the others can be the real limit: a slow home upload, a busy Wi-Fi, an office firewall that inspects traffic, an overloaded routing peer, or a resource that is simply far away.
+
+## Quick test
+
+Two checks, about a minute, that settle most cases before you read any further:
+
+1. **Is the connection direct?** Run `netbird status -d` and find the slow peer. If its `Connection type` is **`Relayed`**, that alone explains the slowness. Fix it first with [Troubleshooting relayed connections](/help/troubleshooting-relayed-connections). If it is **`P2P`**, go on to the next check.
+2. **Is it your network?** Reconnect through a phone hotspot or a different internet connection and try the same thing again. If it is suddenly fine, the problem was your original network (Wi-Fi, router, or provider), not NetBird.
+
+Still slow, still direct, and slow on more than one network? Then it is worth working the checklist below.
+
+## Start here
+
+If the quick test did not settle it, work outward from your own device and stop at the first hop that explains the slowness. Each step links to its section below.
+
+1. **[Name what is slow](#three-kinds-of-slow).** Throughput, responsiveness, or a one-time delay. Each has different causes.
+2. **[Check the connection](#check-the-connection).** Is it direct or relayed, and is the reading fresh? Run `netbird status -d`.
+3. **[Measure the tunnel](#set-a-baseline-with-a-speed-test).** Test both directions and compare to your internet plan.
+4. **[Narrow down the hop](#narrow-down-the-hop).** Your own link, a routing peer, or the app, plus the usual traps like packet size and an inspecting firewall.
+5. **[Look below the tunnel](#below-the-tunnel).** If the tunnel already matches your plan, the limit is your own connection.
+6. **[Rule out startup delays](#startup-and-reconnect-delays).** A slow first connection or frequent reconnects feel like slowness but are not.
+
+## Three kinds of "slow"
+
+Before measuring anything, work out which of these you have, because they have completely different causes:
+
+- **Low throughput** (how many megabits per second move). Big file transfers and backups drag. This is what most people mean, and it is easy to [measure directly](#set-a-baseline-with-a-speed-test).
+- **Poor responsiveness** (delay, not volume). Remote Desktop (RDP), shared network drives (SMB), and accounting or ERP (enterprise resource planning) apps feel laggy even when raw speed is fine. They are sensitive to round-trip delay, not to bandwidth.
+- **"Slow" that is not really speed.** A long pause on the first connection, a delayed first name lookup, or an app that stalls then recovers. These are one-time or reconnect delays, not a throughput limit. See [Startup and reconnect delays](#startup-and-reconnect-delays).
+
+A speed test can look great while an app still feels awful, because that app is held back by delay, not by bandwidth. Keep the three apart, or you will spend time tuning the wrong thing.
+
+## Check the connection
+
+Start from the connection detail. On the client, run:
+
+```bash
+netbird status -d
+```
+
+Find the peer you are reaching and read four things:
+
+| Field | What to check |
+|---|---|
+| `Connection type` | `P2P` means a direct connection. `Relayed` means traffic goes through a relay, which adds delay and shares bandwidth. Sort that out first, see [Troubleshooting relayed connections](/help/troubleshooting-relayed-connections). |
+| `Latency` | The round trip to the peer. High latency hurts responsiveness far more than it hurts throughput. |
+| `Last WireGuard handshake` | Should be recent, and the transfer counters should move while you test. A stale handshake or frozen counters means you are reading an old snapshot. |
+| `Interface type` | `Kernel` is the efficient path on Linux. `Userspace` is normal on Windows and macOS, but on Linux it means kernel WireGuard is not active. |
+
+<Note>
+The status can be stale. A `Relayed` line with unchanging counters is often the last state before a drop, not the live one. Re-run `netbird status -d`, check that the handshake time is recent, and watch the counters climb while traffic flows.
+</Note>
+
+Two quick wins before digging deeper:
+
+- **Update the client first.** Throughput improvements land regularly, so reproduce the problem on the latest version before going further.
+- **On Linux, check the datapath.** `Interface type: Userspace` on Linux means the kernel WireGuard module is not loaded (a missing module, an unprivileged container, or `NB_WG_KERNEL_DISABLED` set). Kernel WireGuard carries less overhead, so it is worth having active. Load the module with `modprobe wireguard`, or see [Client Environment Variables](/client/environment-variables). On Windows and macOS, `Userspace` is expected and not something to chase.
+
+## Set a baseline with a speed test
+
+Don't guess, measure. A short throughput test tells you what the tunnel is actually delivering. [`iperf3`](https://iperf.fr) is a small, free tool for this, with downloads and install instructions for Windows, macOS, and Linux on [iperf.fr](https://iperf.fr). Run it as a server on one peer and as a client on the other, both over their NetBird IPs.
+
+```bash
+# on the receiving peer (say its NetBird IP is 100.92.0.5)
+iperf3 -s
+
+# on the other peer, measure your UPLOAD to it
+iperf3 -c 100.92.0.5
+
+# add -R to measure your DOWNLOAD from it
+iperf3 -c 100.92.0.5 -R
+```
+
+**The direction matters.** `iperf3 -c` measures your **upload**, and `-R` measures your **download**. Compare each to the internet plan on that side. If someone on a "300 down, 20 up" home plan sees about 20 up and 90-something down through the tunnel, the tunnel is doing its job and the plan is the ceiling, not NetBird.
+
+<Note>
+**Exit nodes.** When all traffic goes through an [exit node](/use-cases/remote-access/exit-nodes), your **download is limited by the exit node's upload**, and the whole flow rides a single tunnel on one CPU core. A slow exit node, or one on a thin connection, limits everyone behind it. See [Performance expectations](/use-cases/remote-access/exit-nodes#performance-expectations).
+</Note>
+
+### Speed is not responsiveness
+
+The speed test can report a healthy number while Remote Desktop or a file share still feels awful, because those care about delay. Run it alongside a longer ping and watch how steady it is, not just the average. Ping the peer inside the tunnel, and at the same time ping a public address outside it, so you can tell whose loss it is:
+
+```bash
+# inside the tunnel: the peer's NetBird IP
+ping -c 300 100.92.0.5
+
+# outside the tunnel: a public address, run at the same time
+# (use an IP, not a name, in case DNS is going over NetBird)
+ping -c 300 1.1.1.1
+```
+
+Look at how much the times jump around and whether any packets are lost. A low average with big swings, or any loss, makes interactive apps feel slow even when there is plenty of bandwidth. Now compare the two: if the peer inside the tunnel drops packets but the public address stays clean, the loss is on NetBird's path. If both drop, the loss is on your own connection or the wider internet, and NetBird is only carrying it. A few file-based apps (for example accounting software working on a company file over a network share) are not recommended over any VPN for this reason, and that is a limit of the app rather than of NetBird.
+
+One caveat: a clean ping does not prove everything is fine. Ping uses a different protocol (ICMP) than your app (usually TCP or UDP), and a firewall can treat them differently, so always test the real workload too, not just ping.
+
+## Narrow down the hop
+
+If the tunnel baseline is good but a real task is slow, find which hop owns it. Take a common setup: your client does not reach the ERP server directly, it reaches a routing peer that forwards traffic onward into the office network.
+
+<PathFlow
+  caption="The client reaches the routing peer over NetBird, then the routing peer forwards traffic to the server on the office network."
+  steps={[
+    { icon: 'laptop', title: 'You, at home', description: 'Your device running the NetBird client.' },
+    { icon: 'routingPeer', title: 'Routing peer (Peer B)', description: 'Advertises the office route and forwards your traffic into it.' },
+    { icon: 'database', title: 'ERP server', description: 'On the office network, with no NetBird client of its own.', destination: true },
+  ]}
+/>
+
+- **Test the leg past the routing peer.** A speed test to the routing peer's own NetBird address only measures the tunnel *to* it, not the traffic that continues *through* it to the server. From the routing peer, test straight to the server on the office network (a plain copy, or `iperf3` if you can run it there). If the tunnel to the routing peer is fast but the routing peer to the server is slow, the problem is past NetBird, on the office network or the server. You often cannot install a test tool on a production server, so treat "the tunnel is fast but the real task is slow" as a strong hint the bottleneck sits past the peer.
+- **The routing peer itself.** We recommend a Linux routing peer running kernel WireGuard, because it carries less overhead than the alternatives. A busy machine also makes a poor routing peer: a domain controller, for example, is already doing a lot, and its other work competes with forwarding traffic. See [Sizing routing peers](/manage/networks/sizing-routing-peers) for guidance.
+- **A firewall inspecting the traffic.** Many offices run a firewall that inspects traffic (deep packet inspection or intrusion prevention). Sitting between the home user and the routing peer, it can slow or stall transfers, and antivirus or endpoint protection (EDR) on the destination server can do the same. Try the transfer with that inspection temporarily set to leave the NetBird traffic alone, and see [Ports & Firewalls](/about-netbird/ports-and-firewalls).
+- **The transfer itself.** Copying thousands of small files is slow by nature, because each one has its own open-and-close, so a single large file is the fairer throughput test (on Windows, a multi-threaded copy like `robocopy /MT:16` also helps). If a plain copy drags but a large file flies, the transfer was the trap, not the tunnel.
+
+### Rule out packet size (MTU)
+
+NetBird sends conservative packet sizes by default (an MTU, the largest packet it sends, of 1280 bytes). That is deliberate, so traffic fits across almost any internet path without being chopped up. **Raising it is usually the wrong fix for a remote user**, because a packet bigger than the path allows gets fragmented or silently dropped, which shows up as stalls rather than a clear error. To check the path is not silently dropping large packets, run `tracepath <destination>`.
+
+The opposite can help in a few cases. If transfers stall part way, or a web app shows a blank page, only on certain connections, **lowering** the client's packet size can clear it: `netbird up --mtu 1200`. For the blank-web-app case, turning off HTTP/3 (also called QUIC) in the browser is a quick way to confirm the cause.
+
+Raising the MTU is worthwhile only inside a datacenter or cloud network where the whole path supports larger packets. That is a capacity lever for routing peers, covered in [Jumbo frames in a datacenter](/manage/networks/sizing-routing-peers#jumbo-frames-in-a-datacenter), not a remote-access fix.
+
+## Below the tunnel
+
+When the speed test matches the internet plan, the tunnel is not the limit. Look at the connection underneath it. The usual culprits:
+
+- **Try a different network.** The fastest way to rule out the local connection: reconnect through a phone hotspot or a different internet connection and repeat the test. If it is suddenly fine, the original network (the router, the provider, or the Wi-Fi) was the problem, not NetBird. This one check saves a lot of guessing.
+- **Check whether the loss is yours.** Using the [two pings above](#speed-is-not-responsiveness), one to the peer inside the tunnel and one to a public address outside it, see whether the public address drops packets too. If it does, the loss is on your own connection or the internet, not on NetBird, and no tunnel change will fix it.
+- **Home connections upload slowly.** Most home plans give far less upload than download. Your upload through the tunnel, and anyone pulling data from you or through you, is limited by that small upload figure.
+- **Wi-Fi versus a cable.** Wi-Fi adds delay and loss that a network cable does not. Retest on a wired connection before concluding anything.
+- **A saturated connection.** Run a continuous ping to the peer, then start a large transfer. If the ping was steady and jumps the moment the transfer starts, the line is overloaded and queueing traffic (sometimes called bufferbloat). That is a property of the local connection, and the fix is there (a router with better queue management), not in NetBird.
+
+## Startup and reconnect delays
+
+Some reports are not about speed at all. They are one-time or reconnection delays that feel like a speed problem, but no amount of bandwidth fixes them:
+
+- **A slow first name lookup.** The first request to a resource by name can pause for a while as the routing peer resolves it, and some apps make it worse by remembering a failed lookup. Later requests are quick. See [DNS Troubleshooting](/manage/dns/troubleshooting).
+- **Waking an idle connection.** NetBird brings a connection up when you first use it (see [Lazy connections](/manage/peers/lazy-connection)), so the very first request to a peer you have not talked to in a while can take a moment while the tunnel comes up. This is by design, and everything after it runs normally.
+- **A connection that keeps reconnecting.** If the link is unstable, or a laptop keeps switching between Wi-Fi and other networks, NetBird reconnects often, and each reconnect can interrupt transfers in progress. It reads as "slow and unstable" rather than steadily slow. If you suspect this, capture a [debug bundle](/help/troubleshooting-client#debug-bundle) and [reach out to support](/help/netbird-support) so the team can see the reconnection pattern.
+
+## Recap
+
+The whole path, at a glance:
+
+<PathFlow
+  compact
+  steps={[
+    { icon: 'laptop', title: 'You' },
+    { icon: 'router', title: 'Home router' },
+    { icon: 'cloud', title: 'Internet' },
+    { icon: 'firewall', title: 'Office firewall' },
+    { icon: 'routingPeer', title: 'Routing peer' },
+    { icon: 'resource', title: 'Resource', destination: true },
+  ]}
+/>
+
+Take it one hop at a time. Decide which kind of "slow" you have, then **read `netbird status -d`** for direct or relayed, latency, and a fresh handshake. **[Measure the tunnel](#set-a-baseline-with-a-speed-test)** both ways and compare to your internet plan, alongside a longer ping for steadiness, plus a second ping to a public address so you know whose loss it is. If the tunnel matches the plan, it is doing its job, and the answer is [below the tunnel](#below-the-tunnel) (upload, Wi-Fi, a saturated line) or in the app. The quickest single check is to retry on a different network, like a phone hotspot. If the tunnel does not match the plan, [narrow down the hop](#narrow-down-the-hop) by testing the leg past the routing peer, and rule out packet size and a firewall inspecting the traffic.
+
+Two things worth holding onto: some delay is normal when the two ends are far apart, and does not on its own mean something is wrong. And a clean ping does not prove the app's traffic is fine, because different protocols can be treated differently along the way.
+
+<Tiles
+    title="Go deeper"
+    description="Where the layers underneath this page are documented"
+    items={[
+        {
+            href: '/help/troubleshooting-relayed-connections',
+            name: 'Troubleshooting relayed connections',
+            description: 'Why a connection is relayed instead of direct, and how to get it back to direct.',
+        },
+        {
+            href: '/manage/networks/sizing-routing-peers',
+            name: 'Sizing routing peers',
+            description: 'Measured throughput per peer, the tuning levers, and jumbo frames in a datacenter.',
+        },
+        {
+            href: '/use-cases/remote-access/exit-nodes',
+            name: 'Exit nodes',
+            description: 'Why exit-node speed is single-tunnel and limited by the node.',
+        },
+        {
+            href: '/help/troubleshooting-resource-connectivity',
+            name: 'Troubleshooting resource connectivity',
+            description: 'When a service behind a routing peer is unreachable rather than slow.',
+        },
+        {
+            href: '/about-netbird/ports-and-firewalls',
+            name: 'Ports & Firewalls',
+            description: 'Endpoints to allow, and how firewalls and inspection interfere.',
+        },
+        {
+            href: '/help/troubleshooting-client',
+            name: 'Troubleshooting client issues',
+            description: 'Status detail, debug bundles, and the WireGuard datapath.',
+        },
+    ]}
+/>

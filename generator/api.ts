@@ -203,6 +203,15 @@ async function gen_v3(spec: OpenAPIV3.Document, dest: string) {
   })
 }
 
+// A property marked with `x-omit-from-example: true` in the spec is left out
+// of the composed request/response examples (e.g. one side of a mutually
+// exclusive pair, where including both would show an invalid payload). It
+// remains fully documented in the parameter list, which renders from the
+// schema directly.
+function isOmittedFromExample(schema): boolean {
+  return typeof schema === 'object' && schema !== null && schema['x-omit-from-example'] === true;
+}
+
 function extractInfo(obj, mode = 'example') {
   // Handle the root level object that represents an array
   if (obj.type === 'array' && obj.hasOwnProperty('items')) {
@@ -231,6 +240,9 @@ function extractInfo(obj, mode = 'example') {
       const result = {};
       for (const key in obj.properties) {
         if (obj.properties.hasOwnProperty(key)) {
+          if (mode === 'example' && isOmittedFromExample(obj.properties[key])) {
+            continue;
+          }
           result[key] = extractInfo(obj.properties[key], mode);
         }
       }
@@ -249,10 +261,15 @@ function extractInfo(obj, mode = 'example') {
   }
 
   // Special handling for objects that represent schemas (e.g., with 'type' and 'properties')
+  // Also reached with a bare `properties` map (see the array-items branch above),
+  // so the example omission applies here as well.
   if (typeof obj === 'object' && obj !== null) {
     const result = {};
     for (const key in obj) {
       if (obj.hasOwnProperty(key)) {
+        if (mode === 'example' && isOmittedFromExample(obj[key])) {
+          continue;
+        }
         result[key] = extractInfo(obj[key], mode);
       }
     }

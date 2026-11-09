@@ -13,7 +13,7 @@ Problems with the embedded identity provider (IdP) and SSO (single sign-on) on a
 
 1. **A user already exists.** `/setup` is only available when no users exist. If you've already created one, use the regular login page.
 2. **The embedded IdP is disabled.** Confirm it is enabled in your configuration.
-3. **Management isn't running.** Check `docker compose logs management`.
+3. **Management isn't running.** Check `docker compose logs netbird-server` (`management` on installs from before v0.65.0).
 
 **Confirm**: `/setup` loads (first run), or the regular login page loads (setup already done).
 
@@ -29,9 +29,22 @@ Problems with the embedded identity provider (IdP) and SSO (single sign-on) on a
 
 **Symptom**: You created a user but the password doesn't work.
 
-**Cause**: Passwords are shown only once at creation. If it wasn't saved, it can't be recovered.
+**Cause**: Passwords are shown only once at creation. If it wasn't saved, it can't be recovered, but you can set a new one.
 
-**Fix**: Recreate the user (delete and re-add, or create a new one with a new password via the API). For the owner account with no other admins, you may need to reset the database.
+**Fix**: Set a new password with the admin CLI (NetBird v0.75.0 and later). This works for the owner account too:
+
+```bash
+read -rsp 'New password: ' NB_PASSWORD; echo
+printf '%s\n' "$NB_PASSWORD" | docker exec -i netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml admin user change-password \
+  --email user@example.com \
+  --password-file -
+unset NB_PASSWORD
+```
+
+The password is read from a silent prompt, so it doesn't end up in your shell history.
+
+See [Change a local user's password](/selfhosted/maintenance/admin-cli#change-a-local-users-password) for the password rules and other options.
 
 **Confirm**: You can log in with the new credentials.
 
@@ -43,7 +56,7 @@ Problems with the embedded identity provider (IdP) and SSO (single sign-on) on a
 
 1. **The connector wasn't saved.** Check **Settings → Identity Providers**.
 2. **The redirect URI is wrong.** Ensure the IdP application has the exact redirect URI shown by NetBird.
-3. **A configuration error.** Review `docker compose logs management` for connector errors.
+3. **A configuration error.** Review `docker compose logs netbird-server` for connector errors.
 
 **Confirm**: The SSO button appears on the login page and starts the IdP flow.
 
@@ -61,9 +74,9 @@ Problems with the embedded identity provider (IdP) and SSO (single sign-on) on a
 
 **Symptom**: The Identity Providers tab is missing from Settings.
 
-**Cause**: The tab only appears when the embedded IdP is enabled.
+**Cause**: The tab only appears when the embedded IdP is enabled and your role is allowed to read identity providers.
 
-**Fix**: Check your deployment: quickstart enables it by default, the combined setup always has it on, and older multi-container deployments need `EmbeddedIdP.Enabled` set to `true` in `management.json`.
+**Fix**: Check your deployment: quickstart enables it by default, the combined setup always has it on, and older multi-container deployments need `EmbeddedIdP.Enabled` set to `true` in `management.json`. If the embedded IdP is on and the tab is still missing, sign in with a role that can manage identity providers, or ask an administrator to check your role's permissions.
 
 **Confirm**: The Identity Providers tab appears under Settings.
 

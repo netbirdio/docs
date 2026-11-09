@@ -60,3 +60,19 @@ export const LAST_UPDATED_BY_ROUTE = ${JSON.stringify(map, null, 2)};
 fs.mkdirSync(path.dirname(OUT_PATH), { recursive: true })
 fs.writeFileSync(OUT_PATH, content, 'utf8')
 console.log('Generated', OUT_PATH, 'with', Object.keys(map).length, 'dated routes')
+
+if (Object.keys(map).length === 0) {
+  const msg =
+    '[last-updated] no routes received a date, git history is unavailable or the clone is shallow'
+  // Hard-fail only where full history is guaranteed (the GitHub workflow
+  // checks out with fetch-depth: 0). Other CI environments like Vercel
+  // shallow-clone by design, so there a missing map is expected: warn and
+  // ship pages without "Updated" dates instead of breaking the deploy.
+  if (process.env.GITHUB_ACTIONS) {
+    console.error(
+      `${msg}. Failing the build: the workflow checks out with fetch-depth: 0, so an empty map means something is broken.`
+    )
+    process.exit(1)
+  }
+  console.warn(`${msg}. Pages will render without an "Updated" date.`)
+}

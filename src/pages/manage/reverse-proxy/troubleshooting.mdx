@@ -1,12 +1,14 @@
 import {Note} from "@/components/mdx"
 
-export const description = 'Troubleshoot common reverse proxy issues like 502 errors when routing peer traffic targets its own IP address.'
+export const description = 'Troubleshoot NetBird reverse proxy issues, including 403 errors with NetBird-Only Access, browser DNS conflicts, and unreachable backends.'
 
 # Reverse Proxy Troubleshooting
 
 This guide helps you diagnose and resolve common reverse proxy issues in NetBird. Follow the structured approach below to identify and fix problems quickly.
 
 If a service behind a routing peer is unreachable in general (not specific to the reverse proxy), see [Troubleshooting resource connectivity](/help/troubleshooting-resource-connectivity) to find which layer is dropping the traffic.
+
+If a NetBird-Only service returns `403 Forbidden`, especially when `curl` works but a browser fails, start with [403 Forbidden with NetBird-Only Access](#issue-5-403-forbidden-with-net-bird-only-access).
 
 ## Quick Diagnostics Checklist
 
@@ -307,6 +309,59 @@ Once you regain access to the dashboard, you can re-enable geo-restrictions on t
 
 - Leave geo-restrictions disabled on services that the management server needs to reach internally (such as your IdP).
 - Use a separate network path for the IdP that doesn't pass through the reverse proxy's geo-restriction layer.
+
+### Issue 4: TCP service is active but connections get no response
+
+**Symptoms**:
+- A TCP service shows as active and its listen port accepts connections
+- Clients connect but receive no response
+
+**Cause**:
+
+A service's status reflects the proxy's listener, not the backend: a TCP service stays active and keeps accepting connections even when nothing listens on its target port.
+
+**Solution**:
+
+Check the backend, not the service status: on the target host, confirm that the application is listening on the target port and binds to an interface the proxy can reach (step 6 of the [Quick Diagnostics Checklist](#quick-diagnostics-checklist), and Issue 2).
+
+### Issue 5: 403 Forbidden with NetBird-Only Access
+
+**Symptoms**:
+
+- A service with **NetBird-Only Access** returns `403 Forbidden` even though the client is connected and belongs to an allowed peer group.
+- The same URL may work with `curl` or another browser, while the affected browser still fails in a private window.
+
+NetBird supplies authorized peers with private DNS records pointing the service hostname to the proxy's NetBird address. The request must reach the proxy over the NetBird tunnel so it can identify the calling peer. Browser DNS-over-HTTPS (DoH) can bypass the system's NetBird DNS configuration. If the browser receives the public address instead, it reaches the public endpoint and fails the tunnel check. A private browsing window does not necessarily change the browser's DNS settings.
+
+**Check the connection from the affected device**:
+
+```bash
+netbird status -d
+curl -v --noproxy '*' https://service.example.com/
+```
+
+Replace `service.example.com` with the service hostname. The `--noproxy` option makes this a direct test, ignoring any HTTP proxy configured for curl. Inspect the `Trying` and `Connected to` lines: the destination should be one of the proxy cluster's NetBird addresses, rather than the public address of your proxy host or wildcard DNS record.
+
+The browser may still use an HTTP proxy configured in its own or the system's proxy settings, even when direct curl succeeds. That proxy may reach the service through its public endpoint, causing a 403 because the request lacks the calling peer's tunnel identity. Check those proxy settings and, if your organization's policy permits, bypass the proxy for the service hostname. Changing browser DNS settings alone may not fix a request routed through an HTTP proxy.
+
+If curl succeeds over the NetBird address but one browser fails, check that browser's DNS settings. Curl's result does not establish which resolver or destination the browser uses. If curl also resolves to the public address or cannot resolve the hostname, check that the client uses [NetBird-managed DNS](/manage/dns/troubleshooting#first-confirm-the-peer-is-in-managed-mode).
+
+**Use system DNS for the service hostname**:
+
+**Firefox:** Open **Settings > Privacy & Security > DNS over HTTPS**, then **Manage Exceptions** (under **Advanced settings** in some versions). Add the service hostname so Firefox uses system DNS for it. See Mozilla's [DNS-over-HTTPS settings and exceptions](https://support.mozilla.org/en-US/kb/dns-over-https#add-sites-to-the-exceptions-list).
+
+To confirm the cause in Firefox, you can temporarily set DNS over HTTPS to **Off** and retry. If that fixes access, add the hostname exception and restore your preferred protection level for other sites.
+
+**Chrome (desktop):** Open **Settings > Privacy and security > Security**. Under **Advanced**, turn **Use secure DNS** off to test with the system resolver. A custom public DNS provider does not receive the private records NetBird supplies to the client. If this restores access, keep Chrome using system DNS while accessing these private services. See Google's [Secure DNS settings](https://support.google.com/chrome/answer/10468685?hl=en&co=GENIE.Platform%3DDesktop).
+
+After changing either browser's settings, clear its DNS cache or fully restart it before retrying while connected to NetBird.
+
+**If any client still receives 403**:
+
+- Confirm that the calling **peer**, not just its user, belongs to a service access group. See [NetBird-Only access groups](/manage/reverse-proxy/authentication#net-bird-only-access-private-services).
+- Check the service's CIDR allowlists and blocklists against the caller's NetBird address. These restrictions still apply to tunnel traffic.
+- If you use a custom account IP range, check the deployed proxy version's address requirements. The current [tunnel authentication check](https://github.com/netbirdio/netbird/blob/main/proxy/internal/auth/middleware.go) accepts RFC1918 private IPv4, IPv6 ULA, and the default CGNAT range (`100.64.0.0/10`); addresses outside those ranges fail that check.
+- Use the [access logs](/manage/reverse-proxy/access-logs#deny-reasons) and backend logs to identify which component returned the 403. A backend can return 403 after proxy authentication succeeds; the status alone does not identify the cause.
 
 ## Advanced Debugging with Packet Capture
 

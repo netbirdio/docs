@@ -37,9 +37,9 @@ export const Header = forwardRef(function Header({ className }, ref) {
       ref={ref}
         className={clsx(
           className,
-          'fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-3 px-5 transition h-[64px] lg:left-72 lg:z-50 lg:px-8 xl:left-80 min-h-[64px] lg:pointer-events-auto',
+          'fixed inset-x-0 top-0 z-40 flex items-center justify-between gap-3 px-5 transition h-[64px] lg:left-[calc(var(--layout-offset)+18rem)] lg:right-[var(--layout-offset)] lg:z-50 lg:px-8 xl:left-[calc(var(--layout-offset)+20rem)] min-h-[64px] lg:pointer-events-auto',
           !isInsideMobileNavigation &&
-            'backdrop-blur-lg bg-white/70 dark:bg-[#181A1D]/95 lg:left-72 xl:left-80',
+            'backdrop-blur-lg bg-white/70 dark:bg-[#181A1D]/95',
           isInsideMobileNavigation &&
             'bg-white/70 dark:bg-[#181A1D]/95 backdrop-blur-lg'
         )}
@@ -68,7 +68,7 @@ export const Header = forwardRef(function Header({ className }, ref) {
             <TopLevelNavItem href="/api">API</TopLevelNavItem>
             <TopLevelNavItem href="https://netbird.io/knowledge-hub/">Learn</TopLevelNavItem>
             <TopLevelNavItem href="https://github.com/netbirdio/netbird">Github</TopLevelNavItem>
-            <TopLevelNavItem href="/slack-url">Support</TopLevelNavItem>
+            <TopLevelNavItem href="/help/community-support">Support</TopLevelNavItem>
           </ul>
         </nav>
         <div className="hidden md:block md:h-5 md:w-px md:bg-zinc-900/10 md:dark:bg-neutral-500/20" />

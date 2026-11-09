@@ -5,6 +5,10 @@ import {Note, Warning} from "@/components/mdx"
 
 When your network has on-premise DNS infrastructure — Active Directory, BIND, Unbound, or other internal DNS servers — you may need to configure NetBird to use them. This page covers when a nameserver configuration is needed and when it isn't.
 
+<Note>
+If you don't run internal DNS servers and just want friendly names for private resources, NetBird can host the records itself. See [Custom Zones](/manage/dns/custom-zones) and the [DNS Aliases for Routed Networks](/manage/dns/dns-aliases-for-routed-networks) guide.
+</Note>
+
 ## When You Don't Need a Nameserver
 
 If you just need access to a few internal resources by domain name, you don't need to configure a nameserver. Create a [Network resource](/manage/networks) with the internal domain name (e.g., `fileserver.corp.local`) and an [access control policy](/manage/access-control/manage-network-access) allowing your peers to reach it. The routing peer will resolve the DNS and route traffic to that resource. This works as long as the routing peer itself can resolve the domain.
@@ -94,11 +98,31 @@ For details, see [Manage Network Access](/manage/access-control/manage-network-a
 Each peer should have exactly **one** primary nameserver. If you don't configure a primary, peers use their original DNS settings for non-matched queries.
 </Note>
 
+A primary nameserver does more than catch unmatched queries. On macOS, a match-domain-only configuration registers a *scoped* resolver through system APIs and leaves the nameservers in `/etc/resolv.conf` untouched. Applications that use the system resolver follow the scoped entry, but tools that read `resolv.conf` directly (`dig`, `host`, and some language runtimes) keep querying your LAN or public nameservers and get `NXDOMAIN` for internal names. Adding a primary group puts NetBird's resolver into `resolv.conf`, so both kinds of tools query the same server. If your users report that browsers resolve internal names but `dig` does not, see [dig and host fail, but browsers and curl work](/manage/dns/troubleshooting#issue-5-dig-and-host-fail-but-browsers-and-curl-work-mac-os).
+
+<Note>
+From client **v0.78.0**, on Windows a primary nameserver makes NetBird the **exclusive** resolver while the peer is connected. Earlier clients only set the resolver on the tunnel adapter, leaving Windows free to query the other adapters' resolvers alongside it. Windows otherwise queries the resolvers of every network adapter in parallel and keeps the first answer that arrives, which both leaks queries to the local network and lets another resolver answer for a name NetBird is authoritative for. The client prevents that with a Name Resolution Policy Table rule covering every namespace.
+
+The cost is that names only the local network's resolver knows — a home router's own zone, or an internal domain not reachable through NetBird — stop resolving while connected. Declare those zones as match domain nameservers: a more specific rule takes precedence over the catch-all, so a declared zone keeps resolving. `.local` is exempt, so multicast DNS names keep working. Short names can also stop expanding when another adapter is preferred — see the note under [Search Domains](#search-domains).
+
+Setting `NB_USE_LEGACY_DNS_RESOLUTION=true` on a peer restores the pre-v0.78.0 behaviour — see [Client Environment Variables](/client/environment-variables).
+</Note>
+
 ### Search Domains
 
 Toggle **Mark match domains as search domains** to enable domain suffix searching. When enabled, typing `server` expands to `server.company.internal`. Only applies to match domain nameservers.
 
-### Example: Split-Horizon DNS
+<Note>
+**Don't convert a match-domain group to primary by emptying its domains.** Removing the match domains also removes the search domains, so short names like `server` stop expanding. Domain-joined Windows machines hide the regression because Active Directory supplies its own suffix, so it surfaces as "short names broke for some users." To add a primary, create a **second** nameserver group with the same servers and leave the existing match-domain group in place.
+</Note>
+
+<Note>
+**On Windows, from client v0.78.0**, making NetBird the exclusive resolver also ends the suffix search early. A short name is expanded by the DNS client using the suffix list of the **preferred** network interface — the one with the lowest interface metric — and Windows no longer falls through to another interface's suffixes when the name is not found there. So when an adapter other than NetBird's is preferred, a short name fails while its fully qualified form still resolves. Earlier clients kept searching the other adapters' suffixes, so the same short name resolved.
+
+NetBird's interface is usually the preferred one, but a tie on the metric is enough to lose it. When that happens, declaring the local network's zone as a match domain with search domains enabled puts both suffixes in the same list, and short names resolve again for either zone. Otherwise use the fully qualified name, or set `NB_USE_LEGACY_DNS_RESOLUTION=true` to go back to shared resolution.
+</Note>
+
+### Split-Horizon DNS
 
 A common setup with two nameservers:
 
@@ -110,6 +134,27 @@ Result:
 - `google.com` → Cloudflare
 - `app.company.internal` → Internal DNS (10.0.0.1)
 - `server` → Expanded to `server.company.internal` → Internal DNS
+
+### Route All Queries to Internal DNS
+
+If you are migrating from a VPN that pushed your internal DNS servers for everything (a common OpenVPN setup), the equivalent is the same two groups as in the split-horizon example, but both pointing at your **internal servers**:
+
+<Note>
+This setup requires internal DNS servers that resolve public domains too, by recursing or forwarding upstream. Active Directory DNS servers do this by default. If your servers are authoritative-only for the internal zone, making them primary cuts off public resolution; use the split-horizon setup above instead.
+</Note>
+
+**Primary (internal)**: Custom DNS with your internal DNS server IPs (e.g., 10.0.0.1, 10.0.0.2). Assign to your target group. Leave match domains empty.
+
+**Match domain (internal)**: Same servers. Add match domain `company.internal`. Enable search domains.
+
+<img src="/docs-static/img/manage/dns/nameservers-route-all-internal.png" alt="Two nameserver groups pointing at the same internal DNS servers: one primary with no match domains, one with match domain company.internal and search domains enabled" className="imagewrapper-big"/>
+
+Result:
+- All queries, public and internal, go to your internal DNS
+- `server` still expands to `server.company.internal`
+- Tools that read `/etc/resolv.conf` directly and tools that use the system resolver query the same server
+
+Two groups look redundant when they hold the same servers, but they do different jobs: the primary receives every query, while the match-domain group provides the search-domain expansion. A VPN "pushing DNS servers" maps to the **primary** group, not to a match-domain group.
 
 ### DNS Failover and Overlapping Domains
 

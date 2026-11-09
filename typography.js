@@ -43,14 +43,18 @@ module.exports = ({ theme }) => ({
 
       // Base
       color: 'var(--tw-prose-body)',
-      fontSize: theme('fontSize.sm')[0],
+      fontSize: '0.9375rem',
       lineHeight: theme('lineHeight.7'),
 
       // Layout
       '> *': {
-        maxWidth: theme('maxWidth.2xl'),
-        marginLeft: 10,
+        maxWidth: '100%',
+        marginLeft: 0,
         marginRight: 'auto',
+        '@screen md': {
+          maxWidth: theme('maxWidth.2xl'),
+          marginLeft: 10,
+        },
         '@screen lg': {
           maxWidth: theme('maxWidth.3xl'),
           marginLeft: 10,
@@ -165,26 +169,13 @@ module.exports = ({ theme }) => ({
 
       // Quotes
       blockquote: {
-        fontWeight: '500',
         fontStyle: 'italic',
         color: 'var(--tw-prose-quotes)',
-        borderLeftWidth: '0.375rem',
-        borderLeftColor: theme('colors.orange.500'),
-        backgroundColor: theme('colors.orange.50 / 0.3'),
-        quotes: '"\\201C""\\201D""\\2018""\\2019"',
-        marginTop: theme('spacing.8'),
-        marginBottom: theme('spacing.8'),
-        paddingTop: theme('spacing.4'),
-        paddingRight: theme('spacing.4'),
-        paddingBottom: theme('spacing.4'),
+        borderLeftWidth: '2px',
+        borderLeftColor: 'var(--tw-prose-quote-borders)',
         paddingLeft: theme('spacing.5'),
-        borderRadius: theme('borderRadius.md'),
-      },
-      'blockquote p:first-of-type::before': {
-        content: 'open-quote',
-      },
-      'blockquote p:last-of-type::after': {
-        content: 'close-quote',
+        marginTop: theme('spacing.6'),
+        marginBottom: theme('spacing.6'),
       },
 
       // Headings
@@ -221,7 +212,7 @@ module.exports = ({ theme }) => ({
       },
       h5: {
         color: 'var(--tw-prose-headings)',
-        fontSize: theme('fontSize.sm')[0],
+        fontSize: '0.9375rem',
         ...theme('fontSize.sm')[1],
         fontWeight: '600',
         marginTop: theme('spacing.6'),
@@ -229,7 +220,7 @@ module.exports = ({ theme }) => ({
       },
       h6: {
         color: 'var(--tw-prose-headings)',
-        fontSize: theme('fontSize.sm')[0],
+        fontSize: '0.9375rem',
         ...theme('fontSize.sm')[1],
         fontWeight: '600',
         marginTop: theme('spacing.6'),
@@ -408,10 +399,6 @@ module.exports = ({ theme }) => ({
       '--tw-prose-td-borders': 'var(--tw-prose-invert-td-borders)',
       '--tw-prose-th-bg': 'var(--tw-prose-invert-th-bg)',
       '--tw-prose-td-bg': 'var(--tw-prose-invert-td-bg)',
-      blockquote: {
-        borderLeftColor: theme('colors.orange.400'),
-        backgroundColor: theme('colors.orange.900 / 0.2'),
-      },
     },
   },
 })

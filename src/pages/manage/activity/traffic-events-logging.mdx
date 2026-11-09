@@ -153,11 +153,15 @@ choose the groups you want to include, and click `Save Groups`.
     <img src="/docs-static/img/manage/activity/traffic-events-logging/traffic-events-groups-logging-settings.png" alt="traffic-events-groups-logging-settings" className="imagewrapper-big"/>
 </p>
 
+Changes to these settings, including the group scope, are pushed to connected peers and take effect without restarting the NetBird client. Every change is also recorded in the [audit events log](/manage/activity).
+
 ## Log Retention
 
 While in experimental mode, logs are retained for **seven days**.
 Additionally, the current API returns a maximum of **50,000 flow records**.
 This limit may change.
+
+In self-hosted Enterprise deployments, the retention period is set by `NB_PERSISTENCE_RETENTION_PERIOD` on the enricher service. The installer sets it to `168h` (seven days).
 
 ## Report rate
 Aggregated flows might take up to **ten minutes** to become available through the API and Dashboard. An end count for some TCP connections can appear in a later window, depending on OS settings and connection termination.
@@ -169,6 +173,27 @@ By enabling this feature, you can seamlessly monitor and analyze NetBird network
 enhancing your ability to detect and respond to security events.
 
 For detailed instructions on supported integrations and how to set them up, refer to the [integrations guide](/manage/activity/event-streaming).
+
+### Streamed event fields
+
+A streamed traffic event uses the same envelope as a streamed audit event: an event ID, a timestamp, and a message. Clients from v0.75 send aggregated events, whose message is always `TYPE_UNKNOWN`, so read activity from the `num_of_*` counts instead. The initiator and target fields are empty, and the reference field is empty or, for Datadog, omitted. Envelope field names depend on the integration: Datadog uses `id` and `timestamp`, Generic HTTP uses `ID` and `Timestamp`. The flow details are in `meta`, under the same keys for every integration unless you set a custom Generic HTTP body template:
+
+* **User**: `user_id`, the ID of the user associated with the source peer.
+* **Flow**: `flow_id`, `reporter_id` (the peer that reported the event), `protocol`, `direction`, `policy_id`, `policy_name`, `icmp_type`, and `icmp_code`.
+* **Source and destination**: `source_id`, `source_name`, `source_addr`, `source_dns_label`, `source_connection_ip`, `source_geo_city`, and `source_geo_country`, with the same set of `destination_*` fields.
+* **Volume**: `rx_bytes`, `rx_packets`, `tx_bytes`, and `tx_packets`.
+* **Counts**: `num_of_starts`, `num_of_ends`, and `num_of_drops`.
+* **Timing**: `received_timestamp`, the time the event reached the NetBird servers.
+
+Compared with API responses, streamed events do not include the user's name or email, the aggregation window start and end, or the operating system of the source and destination. `user_id` is empty when the source peer has no associated user, such as a peer registered with a [setup key](/manage/peers/register-machines-using-setup-keys), and when the source is not a peer.
+
+### Streaming delivery
+
+Each traffic event is saved to the traffic events store before it is streamed, so an event that fails to stream is still visible in the Dashboard and API. The NetBird client resends each event until the NetBird servers acknowledge it. Once an event reaches the servers, every step up to saving it is retried: the servers acknowledge an event only after queueing it, and remove it from the queue only after saving it. If server processing falls behind, events wait in the queue and arrive late rather than being dropped.
+
+In rare cases, such as a server restart while an event is being processed, the same event can be streamed twice. Deduplicate on the event ID.
+
+Changes to a stream destination take up to five minutes to apply, and what happens when the destination is unreachable depends on the integration; see [Delivery](/manage/activity/event-streaming#delivery).
 
 ## Traffic Events Data
 
@@ -192,7 +217,7 @@ In addition to the data collected by the peers, the NetBird API provides additio
 * **Peer ID**: The unique identifier of the peer.
 * **Resource name**: The name of the resource or network route.
 * **Policy Name**: The name of the policy that allowed the flow.
-* **User ID, name, and email**: The name and email of the user associated with the source peer.
+* **User ID, name, and email**: The name and email of the user associated with the source peer. The API looks these up when you query it; [streamed events](#streamed-event-fields) carry the user ID only.
 * **Reporter ID**: The unique identifier of the peer that reported the traffic event.
 * **Received timestamp**: The timestamp when the event was received by the NetBird servers.
 
@@ -351,6 +376,14 @@ On Linux, you can force a routing peer into userspace mode with three [environme
 ```bash
 sudo netbird service reconfigure --service-env NB_WG_KERNEL_DISABLED=true,NB_FORCE_USERSPACE_FIREWALL=true,NB_FORCE_USERSPACE_ROUTER=true
 ```
+
+### Traffic that is not recorded
+
+Some traffic never produces a traffic event, whatever the peer mode:
+
+* **DNS queries over UDP.** The NetBird client does not record UDP traffic to port `53`, or to ports `5353` and `22054`, which the NetBird DNS forwarder uses on routing peers. This also applies to other UDP traffic on these ports, such as mDNS. DNS over TCP is recorded as an ordinary flow.
+* **Traffic through an exit node.** Flows matched to an exit node route (`0.0.0.0/0`) are not recorded, on the client or on the exit node. Traffic to a destination covered by a more specific route or Networks resource is still recorded.
+* **Access withdrawn by a failed posture check.** When a peer fails a [posture check](/manage/access-control/posture-checks), the policy stops applying and the connection between the peers is removed. No traffic reaches either peer's firewall, so there is nothing to record as allowed or blocked.
 
 ## Conclusion
 Traffic events logging provides a powerful tool for monitoring and analyzing network traffic across your infrastructure.

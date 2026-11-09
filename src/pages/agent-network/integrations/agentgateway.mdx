@@ -1,0 +1,155 @@
+import { Warning } from '@/components/mdx'
+
+export const description =
+  'Connect a private agentgateway listener to NetBird Agent Network with strict virtual-key authentication and trusted caller identity headers.'
+
+# agentgateway
+
+[agentgateway](https://agentgateway.dev/) is an AI-native data plane that routes requests
+to multiple model providers. Connecting it behind NetBird gives agents one keyless endpoint
+over the NetBird network while agentgateway continues to handle provider routing,
+authentication, and observability.
+
+NetBird supports the OpenAI and Anthropic request shapes through one agentgateway provider.
+Configure agentgateway routes for the paths you intend to expose, such as
+`/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, and `/v1/messages`.
+See the agentgateway provider documentation for
+[Kubernetes](https://agentgateway.dev/docs/kubernetes/latest/llm/providers/) or
+[standalone](https://agentgateway.dev/docs/standalone/latest/llm/providers/) deployments
+for details on configuring routing.
+
+## Prepare agentgateway
+
+Before connecting the provider in NetBird, configure an agentgateway listener that:
+
+- Is reachable from the NetBird Agent Network proxy.
+- Routes the OpenAI and Anthropic paths you want to support to the corresponding backends.
+- Uses strict API-key authentication with a dedicated virtual key for NetBird.
+- Is private and cannot be reached by clients through another network path.
+
+Agentgateway stores a SHA-256 hash of the virtual key. Enter the corresponding raw key in
+NetBird. The NetBird proxy sends it to agentgateway as an
+`Authorization: Bearer <virtual-key>` header on every upstream request.
+
+## Connect agentgateway as a Provider
+
+1. Go to **Agent Network → Providers** and click **Connect Provider**.
+2. Select **agentgateway**.
+3. Set **Upstream URL** to the private agentgateway proxy listener that the NetBird proxy
+   can reach.
+4. Paste the raw **Virtual API key** configured for strict API-key authentication in
+   agentgateway.
+5. Leave the model list empty to make agentgateway a catch-all, or add the exact model IDs
+   and pricing that NetBird should use for routing and cost reporting.
+6. Keep **Forward identity metadata** enabled and save the provider.
+
+NetBird stores the virtual key server-side. Clients use the generated Agent Network
+endpoint without receiving this key or the upstream providers' credentials.
+
+## Create a Policy
+
+Agent Network denies requests until a policy authorizes them:
+
+1. Go to **Agent Network → Policies** and add a policy.
+2. Select the source groups whose users or agents should reach agentgateway.
+3. Select the agentgateway provider as the destination.
+4. Optionally add [limits](/agent-network/policies/limits) and
+   [guardrails](/agent-network/policies/guardrails), then save the policy.
+
+See [Policies](/agent-network/policies) for the complete policy behavior.
+
+## Trusted Identity Headers
+
+For authorized requests, the NetBird proxy removes caller-supplied values and adds these
+headers from the authenticated NetBird identity:
+
+| Header | Value |
+| --- | --- |
+| `x-netbird-user-id` | The user's email, the peer name when no user email is available, or the internal user ID as a final fallback. |
+| `x-netbird-groups` | A sorted CSV of the display names of groups that authorized this request. |
+
+Agentgateway can map the headers into its standard request-log attributes:
+
+```yaml
+spec:
+  rawConfig:
+    config:
+      standardAttributes:
+        user: 'request.headers["x-netbird-user-id"]'
+        group: 'request.headers["x-netbird-groups"]'
+```
+
+<Warning>
+  The private agentgateway listener must remain reachable only through the NetBird proxy.
+  The virtual key authenticates NetBird, but it does not make identity headers received
+  through another network path trustworthy. Enforce this boundary with NetworkPolicy, a
+  service mesh, a firewall, or an equivalent private-network control.
+</Warning>
+
+`x-netbird-groups` contains display names for attribution. It is not a delimiter-safe set
+of stable group IDs and must not be used as an agentgateway authorization claim. Enforce
+user and group authorization with NetBird Agent Network policies.
+
+## Verify the Integration
+
+Run requests from a NetBird peer covered by the policy. Replace `<your-endpoint>` with the
+endpoint shown on **Agent Network → Providers** and choose models configured on your
+agentgateway backends.
+
+An OpenAI request uses the normal OpenAI path and body:
+
+```bash
+curl -fsS "https://<your-endpoint>/v1/chat/completions" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "<openai-model>",
+    "messages": [{"role": "user", "content": "Reply with connected."}],
+    "max_tokens": 16
+  }'
+```
+
+An Anthropic request uses the normal Anthropic path and body:
+
+```bash
+curl -fsS "https://<your-endpoint>/v1/messages" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "<anthropic-model>",
+    "messages": [{"role": "user", "content": "Reply with connected."}],
+    "max_tokens": 16
+  }'
+```
+
+Neither request includes a provider key or the agentgateway virtual key. NetBird identifies
+the caller from the peer connection, enforces the Agent Network policy, injects the virtual
+key and trusted identity headers, and forwards the request to agentgateway.
+
+If a request fails, check both systems:
+
+- A `403` from the Agent Network endpoint usually means the peer is not authorized by the
+  selected NetBird policy.
+- A `401` from agentgateway usually means the raw virtual key stored in NetBird does not
+  match the hash configured in agentgateway.
+- A model routed with zero cost usually needs an explicit model and pricing row in NetBird.
+
+## Next Steps
+
+The integration does not require agentgateway's request-log database, model catalog, or
+Admin UI. Add them if you also want agentgateway-side analytics:
+
+- Follow the agentgateway cost-dashboard guide for
+  [Kubernetes](https://agentgateway.dev/docs/kubernetes/latest/llm/cost-controls/dashboard/)
+  or
+  [standalone](https://agentgateway.dev/docs/standalone/latest/llm/cost-controls/dashboard/)
+  deployments. The dashboard can group requests, tokens, and cost by the
+  `agentgateway.user` and `agentgateway.group` attributes populated from NetBird's trusted
+  identity headers. Without a model catalog, request and token usage is still available,
+  but cost is reported as zero.
+- Review the agentgateway Admin UI guidance for
+  [Kubernetes](https://agentgateway.dev/docs/kubernetes/latest/observability/ui/) or
+  [standalone](https://agentgateway.dev/docs/standalone/latest/operations/ui/) before
+  making the UI reachable outside its default private interface.
+
+Because `x-netbird-groups` is a CSV string, agentgateway treats the complete sorted value
+as one group dimension. A request authorized by `Engineering,Platform` is attributed to
+that combined value rather than two separate groups.

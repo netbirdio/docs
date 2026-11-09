@@ -3,11 +3,11 @@ import { Tiles } from '@/components/Tiles'
 
 # How Routing Peers Work
 
-A routing peer is a NetBird agent that bridges your overlay network to private networks and resources that do not run the agent. This page covers what routing peers are, how traffic flows through them, the requirements they impose on the host, how high availability and access control behave, and how to harden them.
+A routing peer is a NetBird peer whose client bridges your overlay network to private networks and resources that do not run the client. This page covers what routing peers are, how traffic flows through them, the requirements they impose on the host, how high availability and access control behave, and how to harden them.
 
 ## What is a routing peer
 
-A routing peer is a NetBird peer installed inside a private network that forwards traffic between the NetBird overlay and resources that cannot or should not run the agent themselves. It is the bridge between your Zero Trust mesh and the LANs, VPCs, datacenter networks, or individual hosts you need to reach.
+A routing peer is a NetBird peer installed inside a private network that forwards traffic between the NetBird overlay and resources that cannot or should not run the client themselves. It is the bridge between your Zero Trust mesh and the LANs, VPCs, datacenter networks, or individual hosts you need to reach.
 
 A single peer can serve multiple roles at once. The same machine can be a client peer, a routing peer for one or more networks, and an exit node simultaneously.
 
@@ -15,10 +15,10 @@ Because routing peers are typically headless servers, register them with [setup 
 
 ## When to use a routing peer
 
-- **Site or LAN access.** NetBird peers need to reach resources on a remote subnet, office network, datacenter, or cloud VPC without installing the agent on every host.
+- **Site or LAN access.** NetBird peers need to reach resources on a remote subnet, office network, datacenter, or cloud VPC without installing the client on every host.
 - **Domain-based access.** Traffic must be routed by FQDN or wildcard domain to services whose IPs change.
 - **Exit node.** All internet-bound traffic from a group of peers must egress through a controlled location.
-- **Kubernetes.** Pods or services need to be reachable from NetBird peers without putting an agent on every node.
+- **Kubernetes.** Pods or services need to be reachable from NetBird peers without putting the client on every node.
 
 ## Networks vs Network Routes
 
@@ -37,7 +37,7 @@ NetBird offers two ways to configure routing peers. Both are actively maintained
 ## Mental model: how traffic flows
 
 <p>
-    <img src="/docs-static/img/manage/networks/netbird-network-routes.png" alt="Routing peer bridging NetBird overlay to a private network" className="imagewrapper-big"/>
+    <img src="/docs-static/img/manage/networks/networks-overview.png" alt="Three NetBird peers on the overlay network connect through a WireGuard tunnel to a routing peer in a private network. Access policies on the routing peer allow a database on TCP 5432, a web app on TCP 443, and an RDP workstation on TCP/UDP 3389; a printer with no policy is unreachable." className="imagewrapper-big"/>
 </p>
 
 The walkthrough below describes the **Linux kernel-mode** path, where forwarding and firewalling happen in the kernel via `nftables` / `iptables`. On other platforms, NetBird performs the same logical steps in a userspace filter, but the implementation differs.
@@ -52,11 +52,11 @@ The walkthrough below describes the **Linux kernel-mode** path, where forwarding
 
 ### Operating system
 
-Linux, Windows, macOS, FreeBSD, Android, tvOS, and Docker peers can act as routing peers. Linux is the most common production choice because the agent runs in kernel space and integrates with native kernel firewalls (`nftables` / `iptables`). On other platforms the forwarding path runs in userspace.
+Linux, Windows, macOS, FreeBSD, Android, tvOS, and Docker peers can act as routing peers. Linux is the most common production choice because it uses the kernel WireGuard data path by default and integrates with native kernel firewalls (`nftables` / `iptables`). On other platforms the forwarding path runs in userspace.
 
 ### IP forwarding
 
-The agent enables IP forwarding automatically on Linux. If the agent cannot modify sysctl on its own, set it yourself on the host and persist it:
+The client enables IP forwarding automatically on Linux. If the client cannot modify sysctl on its own, set it yourself on the host and persist it:
 
 ```bash
 # Runtime
@@ -98,19 +98,92 @@ The routing peer must have direct network reachability to the resources it serve
 
 ## High availability
 
-Multiple routing peers can serve the same network or route. Behavior depends on the **metric** you assign each routing peer in the dashboard. There are no tunable thresholds — the metric is the only high availability control.
+Multiple routing peers can serve the same network or route. Each peer that uses the network (a user's laptop, for example) picks one of those routing peers and sends all of that network's traffic through it until something makes it switch. The **metric** you assign each routing peer in the dashboard is the main control.
+
+The choice is made by the peer that uses the network, not by the routing peers, so what follows depends on the NetBird version of that peer.
+
+<Note>
+This section describes NetBird v0.82.0 and later. Earlier clients measure latency only once, when the connection to a routing peer is set up. They also move to another routing peer as soon as the connection to their routing peer falls back to relayed, and for latency differences of 10 ms or more, so with masquerade on they reset connections more often.
+</Note>
+
+### How a peer picks a routing peer
+
+A peer compares the routing peers it can use, in this order:
+
+1. **Connection status.** A connected routing peer beats one that is idle with [lazy connections](/manage/peers/lazy-connection). A routing peer with no working connection, because it has not connected yet or its connection dropped (`Connecting` in `netbird status`), is not considered.
+2. **Metric.** The lowest metric wins, whatever the connection type or latency.
+3. **Connection type.** Among equal metrics, a direct (peer-to-peer) connection beats a relayed one.
+4. **Latency.** Among equal metrics and the same connection type, the lowest latency wins.
+
+Latency is the round-trip time of the direct connection, sampled every few seconds and smoothed, so it keeps following the path while the connection stays up. A relayed connection has no latency measurement.
+
+### What makes a peer switch
+
+A peer repeats this comparison whenever a routing peer's connection state or latency changes, when the network's configuration is updated, when one of the delays below runs out, and every 30 seconds. It switches:
+
+- **At once, when its routing peer is detected as offline.** The peer moves to the next routing peer in the order above. A routing peer that fails without shutting down can take longer to be detected: see the note under [Relayed switch delay](#relayed-switch-delay).
+- **At once, when its routing peer's connection is idle and another routing peer's connection is open.**
+- **At once, when a routing peer with a lower metric comes back online**, even while that routing peer's connection is still relayed.
+- **After the relayed switch delay, when its routing peer is relayed and an equivalent routing peer is direct.** See [Relayed switch delay](#relayed-switch-delay).
+- **When another routing peer is clearly closer**, once all three of these hold:
+  - **Switch margin.** The latency gain has to be at least 20 ms, at least 20% of the current latency, and at least four times the combined uncertainty of the two latency values, which the client logs as the `+/-` figure next to each latency (for example `latency: 40ms +/- 2ms`). The uncertainty grows with the jitter of a path and is small on a stable one. On stable paths that have been connected for a while, this means a peer on a routing peer at 40 ms moves to one at 15 ms but not to one at 25 ms, and a peer on a routing peer at 150 ms moves only to one at 120 ms or less. A newly connected path starts with a high uncertainty that settles as measurements accumulate, so right after connecting, the gain has to be larger.
+  - **Dwell time.** After a switch made for latency, the next switch for latency waits at least 30 seconds; this never delays a failover.
+  - **Latency measurement.** The routing peer that would take over needs a latency measurement, so one whose direct connection just came up cannot take over until it has one. A current routing peer without a measurement is kept for up to 30 seconds while it gets one; after that, it counts as slower than any measured routing peer.
+
+### Relayed switch delay
+
+A direct connection often falls back to relayed for a few seconds and recovers. Since every switch resets connections with masquerade on, a relayed routing peer is kept for a while before the route moves to an equivalent routing peer with a direct connection:
+
+- **Its direct connection fell back to relayed.** The delay counts from the fallback. If the direct connection comes back within the delay, the route does not move.
+- **It came up relayed.** When the routing peers of a network connect at the same time, for example after waking up from idle or when the client reconnects, the relayed connections come up first and the direct ones follow, one routing peer after the other. The delay counts from the moment another routing peer turns direct, and starts over if no equivalent routing peer is direct any more.
+
+If the routing peer is still relayed when the delay runs out, the route moves to the direct one, so traffic does not stay relayed for longer than the delay, unless the delay is set to `never`.
+
+The delay is set with the `NB_HA_RELAYED_SWITCH_DELAY` [environment variable](/client/environment-variables) on the peer that uses the network:
+
+| Value | Behavior |
+|---|---|
+| unset | The default delay of 30 seconds. |
+| a duration, such as `10s` or `2m` | Keep a relayed routing peer for that long. |
+| `0` | Switch at once, as clients before v0.82.0 do. |
+| `never` | Keep a routing peer whose direct connection fell back to relayed for as long as it stays connected. A routing peer that came up relayed still moves after the default delay. |
+
+An invalid value is logged as a warning and the default is used.
+
+```shell
+sudo netbird service reconfigure --service-env NB_HA_RELAYED_SWITCH_DELAY=60s
+```
+
+<Note>
+When a routing peer fails without shutting down, for example on power loss or a network outage, its direct connection is detected as down within seconds, but its relayed connection only once the relay service notices that the routing peer is gone, which can take a minute. In between, the routing peer looks relayed rather than offline, and traffic to the network is dropped until the failover. If an equivalent routing peer has a direct connection, the relayed switch delay applies: with the default delay, the failover takes about 30 seconds longer than one where the routing peer shuts down cleanly, and a longer delay, or `never`, ends when the relay service notices. Where fast failover matters more than avoiding connection resets, set a shorter delay, such as `10s`. With different metrics, or when the other routing peers are relayed too, the delay plays no part: the failover waits until the relay service notices, whatever the delay.
+</Note>
+
+### What a switch does to open connections
+
+With masquerade on (the default), every switch resets established TCP connections through the network, whatever caused it: a failover, a failback, a fallback to relayed, or a closer routing peer. The new routing peer translates the traffic to a different source address, so applications such as SSH must reconnect. After a failover, expect the connection to stall before the reset while the peer notices that its routing peer is gone: several seconds, or longer when the routing peer failed without shutting down (see [Relayed switch delay](#relayed-switch-delay)). With masquerade off, connections are not translated and behave differently: see [High availability with masquerade off](/manage/networks/masquerade#high-availability-with-masquerade-off).
+
+If users report dropped connections while no routing peer went offline, look up the reason for each switch in the client log (see [Finding switches in the client log](#finding-switches-in-the-client-log)), and check whether connections stay relayed for longer than the relayed switch delay. [Troubleshooting relayed connections](/help/troubleshooting-relayed-connections) covers why a connection is relayed.
 
 ### Primary / failover (different metrics)
 
-The lower-metric peer carries all traffic. The higher-metric peer is held in reserve and only takes over when the primary becomes unreachable. Failover is automatic and immediate — clients begin sending traffic through the standby as soon as the primary stops responding. When the primary comes back online, clients switch back to it immediately. Established TCP connections through the previous peer reset and applications must reconnect.
+Use different metrics when you want every peer on one known routing peer, with the others in reserve. Peers stay on the primary even when its connection falls back to relayed, but they fail back to it as soon as it returns, which resets connections a second time with masquerade on. To give routing peers different metrics, add them to the Network individually; routing peers added as a group share one metric.
 
-**Example.** Routing Peer A has a lower metric than Routing Peer B. When Peer A goes down, all traffic fails over to Peer B. When Peer A comes back online, all traffic switches back to Peer A immediately.
+**Example.** Routing Peer A has a lower metric than Routing Peer B. Traffic uses Peer A, including while its connection is relayed. When Peer A goes down, traffic fails over to Peer B, and moves back as soon as Peer A reconnects.
 
-### Latency switching (equal metrics)
+### Nearest routing peer (equal metrics)
 
-When two routing peers share the same metric, each client picks the one with lower latency. A switch only happens when the latency difference exceeds **20 ms**, which prevents flapping between peers that are roughly equivalent.
+Use equal metrics when routing peers are spread across regions and you want each peer to use the closest one: for example, an EU-based and a US-based routing peer serving the same network, with users on both continents. Each peer picks the lowest-latency routing peer and keeps comparing latency while connected, but only moves for a clear gain, as described above. A direct connection still beats a relayed one whatever the latency, after the relayed switch delay. The trade-off: a fallback to relayed that lasts longer than the delay moves peers to another routing peer and resets their connections.
 
-Useful when routing peers are geographically distributed and you want each client to land on the closest one automatically — for example, an EU-based peer and a US-based peer serving the same network, with users on both continents.
+### Finding switches in the client log
+
+The client logs routing peer decisions at the default log level:
+
+- `new chosen route is … for network [<network>]` when a network gets its first routing peer.
+- `switching routing peer for network [<network>] from <key> to <key>: <reason>`, as a warning, on every switch. The reason is one of `current routing peer unavailable`, `connected peer preferred over idle`, `lower route metric`, `direct connection preferred over relayed`, `lower latency`, or `route assigned to a different routing peer`.
+- `keeping relayed routing peer …` or `keeping routing peer …` when a better-ranked routing peer is held back, with the rule that holds it: the relayed switch delay, the latency margin, the minimum time on a routing peer, or a missing latency measurement. Repeats of the same decision are logged at the debug level.
+- `network [<network>] has not been assigned a routing peer …` when none of its routing peers is available.
+
+Keys are WireGuard public keys. Switches and the loss of every routing peer are also recorded as `Routing peer changed` and `No routing peer available` events, which show in `netbird status -d` and in debug bundles whatever the log level. For an exit node (a default route), the loss of every routing peer is recorded as `Default route disconnected due to peer unreachability` instead. The client keeps only its 10 most recent events of any kind, and loses them when the client service restarts, so check soon after a report or read the client log.
 
 ### Failure domains
 
@@ -131,8 +204,10 @@ Turn masquerade off when:
 
 With masquerade off, you must add a return route on the destination network pointing the NetBird CIDR (default `100.64.0.0/10`) at the routing peer.
 
+High availability then needs one more thing from you. Clients still move to the standby peer on their own, but that return route keeps pointing at the peer that just failed, so replies are dropped even though the outbound direction has recovered. The destination network has to be able to follow the failover too. See [High availability with masquerade off](/manage/networks/masquerade#high-availability-with-masquerade-off).
+
 <Note>
-Masquerade can only be turned off on Linux routing peers. High availability also stops working with masquerade off, because return traffic must flow back through one specific routing peer's LAN address — the destination network has no way to follow a failover.
+Masquerade can only be turned off on Linux routing peers.
 </Note>
 
 ## Access control behavior
@@ -143,6 +218,10 @@ This is the subtlest part of the model and the source of most policy mistakes.
 
 - **Forward chain.** Packets routed *through* the peer to backend resources. Network resource policies (Networks) and ACL Groups (Routes) apply here.
 - **Input chain.** Packets destined to the routing peer's own IP. [Peer-to-peer policies](/manage/access-control/manage-network-access) apply here.
+
+<p>
+    <img src="/docs-static/img/manage/networks/through-or-to-the-routing-peer.png" alt="Two paths compared. Through the routing peer: a network resource policy, evaluated in the forward chain, lets a client reach a web app behind the routing peer on TCP 443. To the routing peer: a peer-to-peer policy, evaluated in the input chain, lets a client reach SSH on the routing peer's NetBird IP on TCP 22." className="imagewrapper-big"/>
+</p>
 
 If users need to reach both the resources behind a routing peer **and** services running on the routing peer itself (Pi-hole, monitoring, jump-host SSH), you need one policy of each kind.
 
@@ -165,7 +244,7 @@ For the full setup — the file-server scenario, the commands, the Active Direct
 
 ### Directionality is forced for routed traffic
 
-Policies whose destination is a network resource are always unidirectional from source to destination. The resource has no agent and cannot initiate connections back through the overlay. The bidirectional toggle is disabled in the UI for these policies.
+Policies whose destination is a network resource are always unidirectional from source to destination. The resource has no client and cannot initiate connections back through the overlay. The bidirectional toggle is disabled in the UI for these policies.
 
 ### Network Routes default-allow caveat
 
@@ -214,6 +293,9 @@ Specifics:
 - The minimum policy for an exit node to function is ICMP from source group to the routing peer group.
 - Auto Apply controls whether clients use the exit node automatically (v0.55.0+) or only when manually selected.
 - Set a DNS server with match domain `ALL` to prevent DNS-based location leaks. Local DNS servers may not be reachable from the exit node in any case.
+- The `0.0.0.0/0` route exposes any network the exit node can reach, including its local LAN, not just the internet.
+
+For setup steps and ways to limit what the exit node exposes (Block LAN access, network isolation), see [Configuring Exit Nodes for Internet Traffic](/use-cases/remote-access/exit-nodes#routing-peer). For combining an exit node with access to specific internal resources only, see [Selective Internal Access Behind an Exit Node](/use-cases/remote-access/exit-nodes#selective-internal-access-behind-an-exit-node).
 
 ## Observability and troubleshooting
 

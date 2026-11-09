@@ -30,6 +30,7 @@ function AppInner({ Component, pageProps }) {
   let router = useRouter()
   let tableOfContents = collectHeadings(pageProps.sections)
   const { isAccepted } = useCookieConsent()
+  const lastUpdated = pageProps.lastUpdated
 
   return (
     <>
@@ -41,6 +42,21 @@ function AppInner({ Component, pageProps }) {
             <title>{`${pageProps.title} - NetBird API`}</title> : <title>{`${pageProps.title} - NetBird Docs`}</title>
         }
         <meta name="description" content={pageProps.description} />
+        {lastUpdated && <meta property="article:modified_time" content={lastUpdated} />}
+        {lastUpdated && (
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify({
+                '@context': 'https://schema.org',
+                '@type': 'TechArticle',
+                headline: pageProps.title,
+                description: pageProps.description,
+                dateModified: lastUpdated,
+              }),
+            }}
+          />
+        )}
       </Head>
       <AnnouncementBannerProvider>
           <MDXProvider components={mdxComponents}>

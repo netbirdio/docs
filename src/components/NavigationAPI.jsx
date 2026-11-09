@@ -55,7 +55,6 @@ export const apiNavigation = [
   {
     title: 'Cloud Resources',
     links: [
-      { title: 'Ingress Ports', href: '/api/resources/ingress-ports' },
       {
         title: 'IDP (Azure API)',
         href: '/api/resources/idp-azure-integrations',
@@ -109,7 +108,7 @@ export function NavigationAPI({ tableOfContents, className }) {
         <TopLevelNavItem href="https://github.com/netbirdio/netbird">
           Github
         </TopLevelNavItem>
-        <TopLevelNavItem href="/slack-url">Support</TopLevelNavItem>
+        <TopLevelNavItem href="/help/community-support">Support</TopLevelNavItem>
         {apiNavigation.map((group, groupIndex) => (
           <NavigationStateProvider key={group.title} index={groupIndex}>
             <NavigationGroup

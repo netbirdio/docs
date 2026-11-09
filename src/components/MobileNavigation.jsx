@@ -7,6 +7,7 @@ import { Header } from '@/components/Header'
 import { NavigationAPI } from '@/components/NavigationAPI'
 import {NavigationDocs} from "@/components/NavigationDocs";
 import {useRouter} from "next/router";
+import { useAnnouncements } from '@/components/announcement-banner/AnnouncementBannerProvider'
 
 function MenuIcon(props) {
   return (
@@ -52,6 +53,7 @@ export const useMobileNavigationStore = create((set) => ({
 export function MobileNavigation() {
   let isInsideMobileNavigation = useIsInsideMobileNavigation()
   let { isOpen, toggle, close } = useMobileNavigationStore()
+  let { bannerHeight } = useAnnouncements()
   let ToggleIcon = isOpen ? XIcon : MenuIcon
 
   let router = useRouter()
@@ -78,7 +80,10 @@ export function MobileNavigation() {
               leaveFrom="opacity-100"
               leaveTo="opacity-0"
             >
-              <div className="fixed inset-0 top-14 bg-zinc-400/20 backdrop-blur-sm dark:bg-[#181A1D]/40" />
+              <div
+                className="fixed inset-0 bg-zinc-400/20 backdrop-blur-sm dark:bg-[#181A1D]/40"
+                style={{ top: `calc(${bannerHeight}px + 4rem)` }}
+              />
             </Transition.Child>
 
             <Dialog.Panel>
@@ -105,7 +110,8 @@ export function MobileNavigation() {
               >
                 <motion.div
                   layoutScroll
-                  className="fixed bottom-0 left-0 top-14 w-full overflow-y-auto bg-white/70 dark:bg-[#181A1D]/95 backdrop-blur-lg px-4 pb-4 pt-6 shadow-lg shadow-zinc-900/10 ring-1 ring-zinc-900/7.5 dark:ring-neutral-500/10 min-[416px]:max-w-sm sm:px-6 sm:pb-10"
+                  className="fixed bottom-0 left-0 w-full overflow-y-auto bg-white/70 dark:bg-[#181A1D]/95 backdrop-blur-lg px-4 pb-4 pt-6 shadow-lg shadow-zinc-900/10 ring-1 ring-zinc-900/7.5 dark:ring-neutral-500/10 min-[416px]:max-w-sm sm:px-6 sm:pb-10"
+                  style={{ top: `calc(${bannerHeight}px + 4rem)` }}
                 >
                   {router.route.startsWith("/ipa") ? <NavigationAPI tableOfContents={[]} /> :
                       <NavigationDocs />}

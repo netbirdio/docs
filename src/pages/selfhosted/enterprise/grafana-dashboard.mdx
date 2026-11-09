@@ -1,0 +1,50 @@
+export const description = 'Import and use the Grafana dashboard built for the self-hosted NetBird Enterprise Commercial License management stack.'
+
+# Enterprise Grafana Dashboard
+
+The self-hosted NetBird stack with an [Enterprise Commercial License](/selfhosted/enterprise/getting-started) runs more than the management service: NATS carries signalling between instances in [high availability](/selfhosted/maintenance/scaling/high-availability) mode, and the WebSocket proxy serves browser-based clients. The community [Management dashboard](/selfhosted/observability/dashboards) sees none of that, and when latency spikes on a multi-tenant or highly available deployment, the question is usually *which account or peer* is responsible — not just *whether* something is slow.
+
+The Enterprise dashboard answers both. It is maintained in the `netbirdio/netbird` repository as [`management-enterprise.json`](https://github.com/netbirdio/netbird/blob/main/infrastructure_files/observability/grafana/dashboards/management-enterprise.json) and imports directly into Grafana.
+
+## What it covers
+
+The dashboard is organized into five rows:
+
+| Row | What it shows |
+| --- | --- |
+| General | Connected peers (total, per instance, historical), gRPC `Sync` / `Login` / `GetServerKey` rates, latencies (global and per-account p95), blocked-request rates, store persistence and transaction latency, IdP request rates, HTTP API read/write rates and latencies, PAT usage, and update-channel operations, durations, recreated-channel percentage, and queue length. |
+| NATS | Subscriptions and connections per NATS node, message and byte throughput, slow-consumer events, and NATS memory use. In [high availability](/selfhosted/maintenance/scaling/high-availability) deployments NATS carries peer signalling between instances, so slow consumers above zero mean a signal node lost its connection and peers lost signalling until it reconnected. In a single-node stack NATS only carries traffic-flow events, and this row matters less. |
+| Debugging | Top accounts by `Sync` / `Login` requests exceeding the 7-second high-latency threshold, the count of affected accounts, and the top peers by `Sync` log lines: the tools for finding the tenant or peer behind a latency spike or reconnect loop. |
+| Network Map | Network map calculation, serialization, and posture check latencies, network map object counts, and map recomputations broken down by the resource that triggered them (policy, group, peer, route, and so on). Map recomputation is the dominant CPU cost during reconnect waves. |
+| Browser Client | Active WebSocket proxy connections, traffic by direction, and errors by type. The WebSocket proxy fronts gRPC for browser-based clients, so active connections equals connected web clients. |
+
+For the individual management metrics behind these panels, see the [Management metrics reference](/selfhosted/observability/management).
+
+## Prerequisites
+
+- Prometheus scraping the management `/metrics` endpoint (see [Service endpoints](/selfhosted/observability#service-endpoints)).
+- For the NATS row: Prometheus scraping the [prometheus-nats-exporter](https://github.com/nats-io/prometheus-nats-exporter), which exposes the `gnatsd_*` metrics the panels query.
+- For the per-peer `Sync` ranking in the Debugging row: a Loki datasource with management logs, selected through the `logs_datasource` variable. Without Loki that single panel stays empty; the rest of the dashboard works.
+
+## Importing the dashboard
+
+1. In Grafana, go to **Dashboards → New → Import**.
+2. Upload [`management-enterprise.json`](https://github.com/netbirdio/netbird/blob/main/infrastructure_files/observability/grafana/dashboards/management-enterprise.json) (or paste its contents) and click **Load**.
+3. Select your Prometheus datasource (and Loki datasource, if you have one) and complete the import.
+
+Some panels ship with values specific to the upstream deployment and need editing after import:
+
+- The **Highest Syncs by peer key** log panel pins a specific management instance in its Loki query.
+- The **IdP Requests**, **Update Channel operations**, **Update Channel methods p95 Duration**, and per-instance **HTTP request counter** panels filter some of their queries on a `$host` variable the dashboard does not define, so those series stay empty. Add a `host` variable matching your deployment's `host` label, or remove the `host="$host"` filter from those queries.
+
+## Dashboard variables
+
+| Variable | Purpose |
+| --- | --- |
+| `datasource` | Selects the Prometheus datasource. |
+| `logs_datasource` | Selects the Loki datasource for the log-based Debugging panel. |
+| `job` | Filters by Prometheus scrape job. |
+| `instance` | Filters by management instance when multiple are running. |
+| `interval` | Aggregation interval for selected panels (`5m` or `60s`). |
+
+Unlike the community dashboards, this dashboard does not define `cluster`, `environment`, or `host` variables. Some queries still reference `$host` (see the post-import edits above).

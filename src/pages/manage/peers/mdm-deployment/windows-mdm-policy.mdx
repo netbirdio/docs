@@ -1,0 +1,171 @@
+import { Note, Warning } from "@/components/mdx";
+
+export const description =
+  "Enforce NetBird client settings on Windows with Microsoft Intune: import the NetBird administrative templates, build and assign a configuration profile, and verify it. Plus a registry reference for Group Policy, JumpCloud, and .reg files.";
+
+# Enforce NetBird Settings on Windows
+
+On Windows, you enforce NetBird settings with Microsoft Intune: import NetBird's administrative templates once, build a configuration profile from them, and assign it to your devices. The client then applies the settings and locks them. Behind the scenes, the profile writes values to one registry key, `HKLM\Software\Policies\NetBird`, which is what the client reads. The [registry reference](#registry-reference) at the end of this page covers that key directly, for Group Policy, JumpCloud, or a `.reg` file.
+
+This page enforces settings on a client that is already installed. To install the client with Intune, follow [Deploying NetBird with Intune](/manage/peers/mdm-deployment/intune-netbird-integration) first. What each setting does, and how the client applies and locks a policy, is on the [MDM Integration](/client/mdm-integration) page.
+
+The examples use [the user device baseline](/client/mdm-integration#the-user-device-baseline): a self-hosted server at `https://netbird.example.com:443`, read-only settings, and no extra profiles. In Intune that is three policies: **Management URL**, **Disable update settings**, and **Disable profiles**.
+
+## Before you start
+
+- An Intune admin account with at least the **Policy and Profile Manager** role.
+- Windows devices enrolled in Intune, with the NetBird client installed, in a device group you can assign to.
+- The NetBird templates: <a href="/docs-static/files/netbird.admx" download>netbird.admx</a> and <a href="/docs-static/files/netbird.adml" download>netbird.adml</a>. They cover every setting, have no dependency on other templates, and stay within Intune's limits for imported templates.
+
+## Enforce settings with Intune
+
+### Step 1: Import the NetBird templates
+
+You do this once per tenant.
+
+1. In the Intune admin center, go to **Devices → Manage devices → Configuration**, open the **Import ADMX** tab, and select **Import**.
+2. Upload `netbird.admx` as the ADMX file and `netbird.adml` as the ADML file for the default language (`en-us`, the only language Intune accepts).
+3. Select **Next**, then **Create**.
+4. Select **Refresh** until the template's status is **Available**.
+
+<Note>
+**Updating the templates later.** Intune refuses to import a template whose settings are already imported. When NetBird ships updated templates, for example with new settings, delete the configuration profiles that use the NetBird template, delete the old template on the **Import ADMX** tab, and then import the new files. Note your profile settings before you delete them.
+</Note>
+
+### Step 2: Create the configuration profile
+
+1. Go to **Devices → Manage devices → Configuration → Create → New policy**.
+2. Set **Platform** to **Windows 10 and later** and **Profile type** to **Templates**, then select **Imported Administrative templates (Preview)** and **Create**.
+3. Give the profile a name you can find later, such as `NetBird: user device baseline`.
+4. Under **Configuration settings**, open **NetBird**. Each policy is named after its setting in plain words. For the user device baseline:
+   - **Management URL**: **Enabled**, value `https://netbird.example.com:443`.
+   - **Disable update settings**: **Enabled**.
+   - **Disable profiles**: **Enabled**.
+
+   Leave every other policy **Not configured**. A policy set to **Disabled** is not the same as **Not configured**: it pins the setting to `false`, out of the user's reach. See [How the client applies a policy](/client/mdm-integration#how-the-client-applies-a-policy).
+5. Under **Assignments**, assign the profile to a **device group**. NetBird's policies are machine settings, so a device group is what you want. To build the profile for each device role, use [Recommended policies](/client/mdm-integration#recommended-policies), and keep routing peers out of any group that gets **Block inbound** or **Disable server routes**.
+6. Select **Create**.
+
+### Step 3: Sync and verify
+
+Devices pick up the profile at their next Intune check-in. To speed up a test device, open **Settings → Accounts → Access work or school**, select the work account, select **Info**, and then **Sync**. The NetBird client applies the policy within a minute of it arriving, and restarts its connection to do so: expect a brief interruption.
+
+In the Intune admin center, open the profile and check its device and user check-in status. On the device itself:
+
+```
+reg query HKLM\Software\Policies\NetBird
+netbird debug config
+```
+
+`reg query` shows the values Intune wrote. In `netbird debug config`, the `mDMManagedFields` array lists every setting in the policy the client reads; for the user device baseline it contains `disableProfiles`, `disableUpdateSettings`, and `managementURL`. The client log at `C:\ProgramData\Netbird\client.log` has an `MDM policy changed: added=[...]` line once the client has applied the change. See [Verifying enforcement](/client/mdm-integration#verifying-enforcement) for more.
+
+### If you cannot import templates: custom OMA-URI
+
+Imported templates are the simpler path; prefer them. Without them, a custom OMA-URI profile (**Templates → Custom**) takes two kinds of setting, following Microsoft's [ADMX-backed policy ingestion](https://learn.microsoft.com/en-us/windows/client-management/win32-and-centennial-app-policy-configuration):
+
+1. **Ingest the template**: OMA-URI `./Device/Vendor/MSFT/Policy/ConfigOperations/ADMXInstall/NetBird/Policy/NetBirdAdmx`, data type **String**, value: the full contents of `netbird.admx`. This only makes the policies known to the device; it sets nothing.
+2. **Set each policy**: OMA-URI `./Device/Vendor/MSFT/Policy/Config/NetBird~Policy~NetBird/<PolicyName>`, where `<PolicyName>` is the policy's `name` in `netbird.admx`, with data type **String**. The value depends on what you want to pin:
+   - **On, or a value**: `<enabled/>`, plus a `<data id="..." value="..."/>` element for a policy that carries a value, with the element `id` from the same policy in `netbird.admx`.
+   - **Off**: `<disabled/>`. For the on/off policies the template writes `0`, which pins the setting off. `<enabled/>` always writes `1`, so never use it to turn a setting off.
+
+   For the user device baseline's server, the **Management URL** policy is `.../NetBird~Policy~NetBird/ManagementURL` with the value `<enabled/><data id="ManagementURL_Text" value="https://netbird.example.com:443"/>`.
+
+   To stop pinning a setting, it has to go back to **Not configured**, not `<disabled/>`. Removing an OMA-URI from a custom profile is not guaranteed to clear the value on the device, so check with `reg query HKLM\Software\Policies\NetBird` afterwards.
+
+The URIs above follow Microsoft's naming rules for this template; they have not been tested in an Intune tenant.
+
+### Intune troubleshooting
+
+**The template import fails.**
+If the error says the settings already exist, an earlier version of the NetBird template is imported: see **Updating the templates later** above. Otherwise, check that you uploaded `netbird.adml` with `netbird.admx`, as the `en-us` language file.
+
+**The profile shows an error or never reaches the device.**
+Check the profile's per-device status in the admin center, and that the device is in the assigned device group. On the device, trigger a sync from **Settings → Accounts → Access work or school → Info → Sync**, then run `reg query HKLM\Software\Policies\NetBird`. If the key is empty, the profile has not been applied yet.
+
+**The values are in the registry, but the setting did not change.**
+The client applies a change at its next reload, within a minute. If `mDMManagedFields` still does not list the setting, or lists it without the setting changing, see [Registry troubleshooting](#registry-troubleshooting).
+
+For problems that look the same on every platform, see [Troubleshooting](/client/mdm-integration#troubleshooting) on the MDM Integration page.
+
+## Registry reference
+
+Whatever writes it, the client reads its policy from `HKLM\Software\Policies\NetBird`: an Intune profile, a Group Policy object, a script, or `reg import` all end in the same key. This section is for working with that key directly, and for checking what Intune wrote.
+
+### Value types
+
+Each setting needs a value of the right registry type. Value names are matched without regard to case.
+
+| Registry type | Value names |
+| --- | --- |
+| `REG_SZ` (string) | `ManagementURL`, `PreSharedKey`, `DebugBundleUploadURL`, `LocalMetricsAddress`, `SplitTunnelMode`, `SplitTunnelApps` |
+| `REG_DWORD`, `0` or `1` (boolean) | `AllowRemoteJobs`, `AllowServerSSH`, `BlockInbound`, `DisableAdvancedView`, `DisableAutoConnect`, `DisableAutostart`, `DisableClientRoutes`, `DisableMetricsCollection`, `DisableNetworks`, `DisableProfiles`, `DisableServerRoutes`, `DisableUpdateSettings`, `EnableLocalMetrics`, `LazyConnection`, `RosenpassEnabled`, `RosenpassPermissive` |
+| `REG_DWORD` (integer) | `WireguardPort`, for example `0x0000ca6c` for `51820` |
+
+A boolean can also be a `REG_SZ` holding `true`/`false`, `1`/`0`, `yes`/`no`, or `on`/`off`. A string setting stored with any type other than `REG_SZ` or `REG_EXPAND_SZ` is ignored: a `ManagementURL` stored as a `REG_DWORD`, for example, has no effect. The client reads `REG_SZ`, `REG_EXPAND_SZ`, `REG_DWORD`, `REG_QWORD`, and `REG_MULTI_SZ` values. Any other type, such as `REG_BINARY`, is skipped with a warning in its log and is not listed in `mDMManagedFields`.
+
+<Note>
+**Standard users can read these values.** By default, the NetBird policy key inherits read access for Authenticated Users, so a `PreSharedKey` or `DebugBundleUploadURL` stored there is visible to them. Only administrators can change the values. An administrator on the device can always edit or delete the key, so give users standard accounts.
+</Note>
+
+The user device baseline as raw registry values:
+
+```
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\Software\Policies\NetBird]
+"ManagementURL"="https://netbird.example.com:443"
+"DisableUpdateSettings"=dword:00000001
+"DisableProfiles"=dword:00000001
+```
+
+### Group Policy
+
+For domain-joined devices, follow [Deploying NetBird with Group Policy (GPO)](/manage/peers/mdm-deployment/windows-gpo-deployment). It walks through the Central Store, creating the policy GPO, installing the MSI silently, and scoping, end to end. The same `netbird.admx` and `netbird.adml` templates appear under **Computer Configuration → Administrative Templates → NetBird**.
+
+To test the templates on a single machine with the local Group Policy editor:
+
+1. Copy `netbird.admx` to `C:\Windows\PolicyDefinitions\` and `netbird.adml` to `C:\Windows\PolicyDefinitions\en-US\`.
+2. Open `gpedit.msc` and go to **Computer Configuration → Administrative Templates → NetBird**.
+3. Open a policy, such as **Management URL**, set it to **Enabled**, enter the value, and click **OK**.
+4. Run `gpupdate /force`.
+
+### A `.reg` file
+
+For a device without an MDM, or a quick test, carry the whole policy in one `.reg` file, such as the user device baseline above, and apply it from an elevated prompt with `reg import netbird-policy.reg`. To build one from a reference machine that already has the policy you want, export the key with `reg export "HKLM\Software\Policies\NetBird" netbird-policy.reg /y`.
+
+<a href="/docs-static/files/netbird-policy.reg" download>netbird-policy.reg</a> is a sample that sets every setting, including `PreSharedKey` and `DisableClientRoutes`, which cut a laptop off from most of the network. Delete every line you do not mean to pin before you use it.
+
+`reg import` adds and overwrites values, but never removes them. To take a setting out of the policy, delete its value with `reg delete "HKLM\Software\Policies\NetBird" /v <ValueName> /f`.
+
+### JumpCloud
+
+NetBird ships a companion script for JumpCloud, <a href="/docs-static/files/netbird-policy.reg.ps1" download>netbird-policy.reg.ps1</a>, that applies a `.reg` file as the complete policy for the device.
+
+1. In the JumpCloud admin console, go to **Device Management → Commands → +**.
+2. Set **Type** to **Windows PowerShell** and **Run as** to **SYSTEM**.
+3. Paste `netbird-policy.reg.ps1` into the command body, unchanged.
+4. Attach your `.reg` file to the same command. JumpCloud copies attached files into the command's working directory before it runs the script.
+5. Bind the command to the target device group and run it.
+
+The script deletes the existing `HKLM\Software\Policies\NetBird` key before it imports the `.reg` file, so the file is the **complete** policy for the device: any setting it does not contain is no longer pinned. To remove the whole policy, attach a `.reg` file that contains only the header line.
+
+### Registry troubleshooting
+
+**`reg query` shows no values.**
+Nothing wrote them. For Group Policy, run `gpresult /h report.html` and look for errors on the NetBird GPO. For Intune, see [Intune troubleshooting](#intune-troubleshooting).
+
+**The values are in the registry, but `mDMManagedFields` does not list them.**
+Look for `MDM ignoring unknown registry value` in the client log: the value name does not match a setting. Then look for `MDM ignoring unsupported registry value type`: the value has a registry type the client does not read.
+
+**A setting is listed in `mDMManagedFields`, but it did not change.**
+The value has the wrong type for its setting, such as a `ManagementURL` stored as a `REG_DWORD`. Check it against [Value types](#value-types).
+
+**A setting stays pinned after you removed it from a `.reg` file.**
+`reg import` does not delete values. Delete the value with `reg delete`, or use the [JumpCloud](#jump-cloud) script, which replaces the whole key.
+
+## Recap
+
+- Import `netbird.admx` and `netbird.adml` into Intune once, build a configuration profile from **Imported Administrative templates**, and assign it to a device group.
+- The user device baseline enables three policies: **Management URL**, **Disable update settings**, and **Disable profiles**. Everything else stays **Not configured**.
+- Confirm in Intune, then on the device with `reg query` and `netbird debug config`.
+- Without Intune, the same settings are registry values under `HKLM\Software\Policies\NetBird`, written by Group Policy, JumpCloud, or a `.reg` file.
