@@ -64,10 +64,12 @@ The script writes the generated files into the current directory:
 | File | Purpose | Mode |
 | --- | --- | --- |
 | `.env` | Runtime configuration, license key, and generated secrets. `NETBIRD_CROWDSEC_APPSEC_ENABLED` records the AppSec choice. When AppSec is enabled, this also holds `CROWDSEC_DASHBOARD_BOUNCER_KEY` | `600` |
-| `crowdsec/acquis.d/appsec.yaml` | AppSec listener on port `7422`. Written only when AppSec is enabled, and left in place if the file already exists. The script does not chmod it | inherits umask |
+| `crowdsec/acquis.d/appsec.yaml` | AppSec listener on port `7422`, written only when AppSec is enabled | — |
 | `docker-compose.yml` | Compose stack for the NetBird server and optional traffic-flow services | `644` |
 | `config.yaml` | NetBird server configuration (YAML) | `600` |
 | `traefik/` | Traefik dynamic configuration, including the proxy's `proxy.yaml` | `755` |
+
+The script preserves an existing `crowdsec/acquis.d/appsec.yaml`. New files inherit the shell's `umask`; the script does not change their permissions.
 
 Reverse proxy and automatic HTTPS are configured through Traefik labels and command flags inside `docker-compose.yml`.
 
@@ -110,7 +112,9 @@ Enabling the NetBird Proxy adds:
 | Service | Image | Notes |
 | --- | --- | --- |
 | `proxy` | `ghcr.io/netbirdio/reverse-proxy:latest` | NetBird Proxy |
-| `crowdsec` | `crowdsecurity/crowdsec:v1.8.1` | Only when CrowdSec is enabled. AppSec, when enabled, adds the virtual-patching and generic rules collections, registers a separate dashboard bouncer, and waits until port `7422` accepts a connection. The named volumes stay. Only `./crowdsec/acquis.d` is bind-mounted |
+| `crowdsec` | `crowdsecurity/crowdsec:v1.8.1` | IP reputation blocking, when enabled |
+
+When AppSec is enabled, CrowdSec adds the virtual-patching and generic rules collections, registers a separate dashboard bouncer, and waits until port `7422` accepts a connection. It keeps the CrowdSec named volumes and bind-mounts only `./crowdsec/acquis.d`.
 
 ### 1.7 Enable features on an existing installation
 
@@ -123,7 +127,7 @@ curl -fsSL https://pkgs.netbird.io/getting-started-enterprise.sh | bash -s -- --
 
 The script shows the changes to `docker-compose.yml` and asks before applying them. If a step fails, it restores the previous files. After `--enable-traffic-events`, turn on traffic events in the dashboard settings.
 
-`--enable-proxy` asks about CrowdSec, and then about AppSec, only when the proxy is not already enabled. It keeps the CrowdSec and AppSec choices already stored in `.env` on a later run.
+When the proxy is not already enabled, `--enable-proxy` asks about CrowdSec. If you enable CrowdSec, it also asks about AppSec. Later runs keep the CrowdSec and AppSec choices stored in `.env`.
 
 If the proxy is already running, the script does not add CrowdSec or AppSec. Follow [Protect the dashboard with CrowdSec AppSec](/selfhosted/maintenance/crowdsec-dashboard) only when the stack already has the `crowdsec` service and NetBird Proxy is configured to use it. There is currently no documented in-place path for adding CrowdSec to an enterprise install whose proxy is already running. On an eligible enterprise stack, chain the AppSec middleware in front of `nb-security@docker` on the dashboard and on `/api` and `/oauth2`. The gRPC and relay routers stay on `nb-security@docker` only.
 
