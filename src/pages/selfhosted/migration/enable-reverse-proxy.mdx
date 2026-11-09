@@ -69,21 +69,19 @@ cp ../*.env . 2>/dev/null || echo "No .env files found"
 The proxy authenticates with the management server using an access token. Generate one using the server CLI.
 
 <Warning>
-Upgraded with `migrate-to-enterprise.sh`? Before creating the token on the combined container, check which config the server runs with:
+Upgraded with `migrate-to-enterprise.sh`? If the script moved your store from SQLite to PostgreSQL, `config.yaml` still points at the old SQLite store, and a token created with `--config /etc/netbird/config.yaml` goes into that store: the proxy is refused with `invalid token`. Before creating the token, check which config file the `netbird-server` container runs with:
 
 ```bash
-docker inspect netbird-server --format '{{json .Config.Cmd}}'
+docker inspect netbird-server --format '{{json .Config.Entrypoint}} {{json .Config.Cmd}}'
 ```
 
-If the output contains `config.yaml.enterprise`, the script moved your store from SQLite to PostgreSQL (its SQLite-to-PostgreSQL step, which its traffic flow option for traffic events requires), and `config.yaml` still points at the old SQLite store. A token created with `--config /etc/netbird/config.yaml` goes into that old store, and the proxy is refused with `invalid token`. Create the token with the file the server runs with instead:
+The token must go into the store the running server uses, which is the one in the file after `--config`. If that file is `/etc/netbird/config.yaml`, use the commands below this warning unchanged. If it is another file, such as `/etc/netbird/config.yaml.enterprise`, use that path in the `create`, `list` and `revoke` commands below. For `create`:
 
 ```bash
 docker exec -it netbird-server \
   /go/bin/netbird-server --config /etc/netbird/config.yaml.enterprise admin token create \
   --name "my-proxy"
 ```
-
-and replace `config.yaml` with `config.yaml.enterprise` in the `list` and `revoke` commands below. If the output does not contain `config.yaml.enterprise`, use the commands as shown.
 </Warning>
 
 **Combined container** (`netbirdio/netbird-server`):
