@@ -725,6 +725,7 @@ export const docsNavigation = [
                     },
                     { title: 'Backup', href: '/selfhosted/maintenance/backup' },
                     { title: 'Upgrade', href: '/selfhosted/maintenance/upgrade' },
+                    { title: 'Database Migrations', href: '/selfhosted/maintenance/database-migrations' },
                     { title: 'Remove', href: '/selfhosted/maintenance/remove' },
                     { title: 'Reverse Proxy', href: '/selfhosted/reverse-proxy' },
                     {
