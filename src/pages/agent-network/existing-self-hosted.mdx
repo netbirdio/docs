@@ -1,0 +1,158 @@
+import { Note } from '@/components/mdx'
+
+export const description =
+  'Enable Agent Network for an existing self-hosted NetBird deployment.'
+
+# Enable Agent Network for an Existing Self-Hosted Deployment
+
+Agent Network lets AI agents on your NetBird peers call an LLM provider, such as Anthropic or
+OpenAI, through an **agent network endpoint** that NetBird serves. The provider's API key stays on
+the NetBird server, not on the peers. See [What is Agent Network?](/agent-network).
+
+For a new deployment, follow the [Agent Network Quickstart](/agent-network/quickstart); this guide
+is for a self-hosted deployment you already run. Your peers, groups, access control policies,
+networks and Reverse Proxy services keep working.
+
+<Note>
+    NetBird Agent Network is currently in beta.
+</Note>
+
+## What You're Adding
+
+1. **The NetBird reverse proxy in private mode.** The agent network endpoint is served by the `proxy`
+   container with `NB_PROXY_PRIVATE=true`. The proxy runs its own NetBird client. In private mode it
+   also accepts connections from your peers on that client's address, so agents reach the endpoint
+   over the WireGuard tunnel.
+2. **The Agent Network menu.** One setting turns on the **Agent Network** menu in the dashboard.
+
+## Before You Begin
+
+- A self-hosted deployment installed with the [installation script](/selfhosted/selfhosted-quickstart):
+  your `docker-compose.yml` has one `netbird-server` service, not separate `management`, `signal`
+  and `relay` services, and Traefik in front. This guide doesn't cover other layouts.
+- `netbird-server` v0.82.0 or later and dashboard v2.90.0 or later. If `docker-compose.yml` pins
+  image tags, set them to these versions or later first. Then upgrade with
+  `docker compose pull && docker compose up -d`.
+- Shell access to the server and the directory that holds `docker-compose.yml`.
+- If you don't run the reverse proxy yet: the prerequisites of
+  [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy#prerequisites), including a
+  wildcard DNS record for the proxy domain and port 443 reachable.
+
+## Step 1: Add the Reverse Proxy
+
+If your deployment already runs the `proxy` container, skip to Step 2.
+
+Otherwise, follow [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy) through
+**Step 6: Verify in the dashboard**. It adds the `proxy` service and its `proxy.env` file.
+
+## Step 2: Turn On Private Mode
+
+Add one line to `proxy.env`:
+
+```bash
+NB_PROXY_PRIVATE=true
+```
+
+Private mode keeps your Reverse Proxy services working on the proxy's public listener. Recreating the
+container restarts the proxy, though, so those services are unavailable until it is back up. Plan the
+change for a quiet moment, then recreate the proxy container:
+
+```bash
+docker compose up -d proxy
+```
+
+Then check the result in the API. The API lists proxies as **clusters**; with one proxy, your cluster
+is that proxy. Call it with your own
+[personal access token](/ipa/guides/authentication#using-personal-access-tokens), not the proxy
+access token:
+
+```bash
+curl -s https://netbird.example.com/api/reverse-proxies/clusters \
+  --header "Authorization: Token <your-personal-access-token>"
+```
+
+Once the proxy has reconnected, the entry whose `address` is your proxy domain shows
+`"online": true` and `"private": true`.
+
+To keep the agent network endpoint on a proxy that serves no Reverse Proxy services, run a separate
+proxy cluster for it; see
+[Private proxy with LEGO](/use-cases/security/private-proxy-with-lego).
+
+<Note>
+    Without private mode, you can't connect a provider in Step 4: **Connect Provider** reports that it
+    needs a reverse proxy cluster with private capabilities and doesn't let you continue. Through the
+    API, setting up Agent Network (`POST /api/agent-network/settings`) returns `422`.
+</Note>
+
+## Step 3: Show the Agent Network Menu
+
+Add one line to `dashboard.env`:
+
+```bash
+NETBIRD_AGENT_NETWORK_ENABLED=true
+```
+
+Mind the suffix: `NETBIRD_AGENT_NETWORK` is the installation script's option, and the dashboard
+doesn't read it.
+
+Recreate the dashboard container:
+
+```bash
+docker compose up -d dashboard
+```
+
+Reload the dashboard. The **Agent Network** menu appears, and the other sections stay as they are.
+
+If you manage the account through the API, the account setting
+`settings.dashboard_features.agent_network: true` turns the menu on as well; see the
+[Accounts API reference](/ipa/resources/accounts). You need only one of the two.
+
+## Step 4: Finish the Setup in the Agent Network Quickstart
+
+In the Agent Network Quickstart, start at
+[Add Your Device to the Network](/agent-network/quickstart#add-your-device-to-the-network) and
+follow it through **Create a Policy**. Those sections add the device that runs your agent, connect a
+provider, configure your agent and create a policy that lets a source group of users or peers use
+the provider. Then come back to **Verify** below.
+
+## Verify
+
+Send a test request to your agent network endpoint, with a model your provider account can use.
+For Anthropic:
+
+```bash
+curl https://<your-endpoint>/v1/messages \
+  --header "Content-Type: application/json" \
+  --header "anthropic-version: 2023-06-01" \
+  --data '{"model":"claude-opus-4-8","max_tokens":1024,"messages":[{"role":"user","content":"What is NetBird?"}]}'
+```
+
+The checks below assume one proxy serves both your Reverse Proxy services and the agent network
+endpoint, as set up in this guide. On a separate proxy cluster, skip the first check; the `403`
+results were not verified there, and a request that reaches a different proxy may get a different
+error.
+
+- Open one of your existing Reverse Proxy services. It still works.
+- From a peer in the policy's source group, the request returns `200` with the provider's reply,
+  without any provider key on the peer.
+- From a peer outside the source group, or from a machine that is not a NetBird peer, the same
+  request returns `403`.
+
+So the endpoint is reachable from the internet, but only to be refused. Its hostname is in public
+DNS, and a request from outside NetBird reaches your server and gets `403`, never a reply from the
+provider. Only peers in the policy's source group get through: NetBird DNS resolves the hostname
+for them to the proxy's NetBird address.
+
+## Moving to Enterprise Later
+
+If you later migrate the deployment to the Enterprise edition with the
+[migration script](/selfhosted/enterprise/getting-started#3-migrate-an-existing-community-combined-deployment),
+Agent Network keeps working: the proxy, its `proxy.env` with private mode, the `dashboard.env`
+setting, the proxy access token, your agent network endpoint, providers and policies carry over.
+
+## Recap
+
+- Add the reverse proxy with the Enable Reverse Proxy guide, if you don't have one yet.
+- Put `NB_PROXY_PRIVATE=true` in `proxy.env` before you connect a provider.
+- Put `NETBIRD_AGENT_NETWORK_ENABLED=true` in `dashboard.env` and recreate the dashboard to show the menu.
+- Connect a provider and create a policy, as in the Agent Network Quickstart.

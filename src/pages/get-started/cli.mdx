@@ -42,7 +42,7 @@ Below is the list of global flags:
       --admin-url string        Deprecated and ignored. Existing scripts that pass it keep working, but the flag has no effect.
   -A, --anonymize               anonymize IP addresses and non-netbird.io domains in logs and status output
   -c, --config string           Overrides the default profile file location. Deprecated on `up` and `login`; use `--service-env NB_CONFIG=<path>` instead.
-      --daemon-addr string      Daemon service address to serve CLI requests [unix|tcp|npipe]://[path|host:port|name] (default "unix:///var/run/netbird.sock", "npipe://netbird" on Windows)
+      --daemon-addr string      Daemon service address to serve CLI requests [unix|npipe]://[path|name]. tcp://host:port is deprecated: it carries no caller identity, so the daemon refuses every request on it (default "unix:///var/run/netbird.sock", "npipe://netbird" on Windows)
   -n, --hostname string         Sets a custom hostname for the device
       --log-file console        Sets NetBird log paths written to simultaneously. If "console" is specified the log will be output to stdout. If "syslog" is specified the log will be sent to the syslog daemon. You can pass the flag multiple times or separate entries by comma (default [/var/log/netbird/client.log])
   -l, --log-level string        Sets NetBird log level (default "info")
@@ -83,7 +83,7 @@ export NB_DISABLE_UPDATE_SETTINGS=true
 export NB_LOG_LEVEL=debug
 
 # Set custom daemon address
-export NB_DAEMON_ADDR="tcp://localhost:8080"
+export NB_DAEMON_ADDR="unix:///var/run/netbird.sock"
 ```
 
 Beyond flag-derived variables, the client also supports a number of advanced environment variables for tuning networking, firewall, ICE connectivity, and more. See the [Client Environment Variables](/client/environment-variables) reference for the full list.
@@ -747,16 +747,24 @@ These flags are intended for managed or shared machines where non-admin users sh
 
 - `--disable-networks` prevents users from listing, selecting, or deselecting networks (including exit nodes) via CLI or UI. The flag is persisted in the service's `service.json` state file; there is no `NB_DISABLE_NETWORKS` environment-variable equivalent.
 - `--disable-profiles` prevents users from adding, removing, or switching profiles. The client stays locked to the profile that was active at install time. Any attempt to switch profiles via CLI or UI is rejected.
-- `--disable-update-settings` prevents users from changing daemon settings (management URL, log level, DNS resolver address, etc.) via CLI or UI. The configuration can only be changed by an administrator who reinstalls the service or uses `service reconfigure`.
+- `--disable-update-settings` prevents users from changing daemon settings (management URL, log level, DNS resolver address, etc.) via CLI or UI. To change them, unlock the service first (steps below).
 
 Typical use: an IT admin deploys NetBird with a setup key and locks the configuration so end users cannot disconnect from the corporate account or point the client at a different management server.
 
+Run `netbird up` before you set `--disable-update-settings`. With it set, `netbird up` rejects any management URL other than the one saved on the machine, and a new install saves NetBird Cloud's URL (`https://api.netbird.io:443`). So if you lock first, `netbird up --management-url <self-hosted URL>` fails and the peer is not registered. To recover, unlock the service (step 1 below), run `sudo netbird up --setup-key <setup key> --management-url <self-hosted URL>`, then lock it again (step 3).
+
 ```shell
-sudo netbird service install \
-  --setup-key AAAA-BBB-CCC-DDDDDD \
-  --disable-profiles \
-  --disable-update-settings
+sudo netbird service install
+sudo netbird service start
+sudo netbird up --setup-key AAAA-BBB-CCC-DDDDDD   # self-hosted: add --management-url https://netbird.example.com:443
+sudo netbird service reconfigure --disable-profiles --disable-update-settings
 ```
+
+`service reconfigure` restarts the service with the new flags, and the peer reconnects without registering again. `service reconfigure` keeps the saved value of any `--disable-*` flag you leave out, so running it with no flags does not unlock the service. To change the configuration later:
+
+1. Unlock the service by passing every `--disable-*` flag you set as false: `sudo netbird service reconfigure --disable-profiles=false --disable-update-settings=false`.
+2. Make the change.
+3. Lock the service again: `sudo netbird service reconfigure --disable-profiles --disable-update-settings`.
 
 <Note>
     Install parameters (including `--disable-profiles`, `--disable-update-settings`, and `--service-env`) are persisted to a `service.json` file and survive uninstall/reinstall cycles. To clear saved parameters and revert to defaults, run `netbird service reset-params` followed by `netbird service reconfigure`.
