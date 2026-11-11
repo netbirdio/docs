@@ -1133,6 +1133,10 @@ export const docsNavigation = [
                                 href: '/help/troubleshooting-client/android',
                             },
                             { title: 'iOS', href: '/help/troubleshooting-client/ios' },
+                            {
+                                title: 'Antivirus & EDR Alerts',
+                                href: '/help/troubleshooting-client/antivirus-alerts',
+                            },
                         ],
                     },
                     {

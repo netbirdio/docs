@@ -1,0 +1,58 @@
+import {Note} from "@/components/mdx"
+
+export const description =
+  "Why antivirus and EDR products sometimes flag the NetBird client, how to check an alert, and where to report a false positive to Microsoft Defender, CrowdStrike, SentinelOne, ESET, and Bitdefender."
+
+# Antivirus and EDR alerts
+
+Antivirus and endpoint detection and response (EDR) products sometimes flag the NetBird client as malicious, often in the days after a new release. This page explains why, how to check an alert, and how to report a false positive.
+
+## Why NetBird gets flagged
+
+A VPN client has to make deep changes to a device. NetBird runs as a privileged service, creates a network interface, changes routes, DNS, and firewall rules, accepts connections from other peers, and can [update itself](/manage/peers/auto-update). Security products judge software largely by heuristics and machine learning models, and these behaviors match what their models associate with malware. A new release also starts with little reputation, so the same behavior that was trusted yesterday can be flagged today.
+
+These detections are the security product's assumptions, not findings in NetBird. Signed, unchanged NetBird builds still get flagged, and no change on our side can fully prevent it. We report the false positives we see to the vendors, and they keep confirming them as false positives, but only the vendor can change its detection. Reports from users can help them do that faster.
+
+## Check the alert
+
+Do not dismiss an alert without checking it:
+
+1. **Publisher (Windows and macOS):** the file is signed by **NetBird GmbH**.
+   - On Windows, open the file's **Properties > Digital Signatures**, or run `(Get-AuthenticodeSignature "<path>").SignerCertificate.Subject`. The result should start with `CN=NetBird GmbH`. Two files in the install folder are exceptions: the `wintun.dll` network driver library is signed by its developer, **WireGuard LLC**, and `netbird_uninstall.exe` is not signed.
+   - On macOS, run `codesign -dvv /Applications/NetBird.app`. The output should include `Authority=Developer ID Application: NetBird GmbH`. For the installer package, run `pkgutil --check-signature <installer>.pkg` and look for `Developer ID Installer: NetBird GmbH`.
+2. **Source:** NetBird came from the [official installation guides](/get-started/install) or [GitHub releases](https://github.com/netbirdio/netbird/releases). On Windows, use the `.exe` or `.msi` installer or an archive ending in `_signed`. The other Windows archives contain unsigned binaries. On Linux, this is the main check.
+3. **Timing:** the alert lines up with an expected change, such as an update you just rolled out.
+
+If all three hold, the alert is most likely a false positive. These checks cannot rule out a compromised release, so if anything looks off, or you are unsure, see [If you suspect a genuine threat](#if-you-suspect-a-genuine-threat).
+
+## Report a false positive
+
+Report the detection to your vendor, with the NetBird version, the detection name, the file name, and its SHA-256 hash (`Get-FileHash <path>` on Windows, `shasum -a 256 <path>` on macOS, `sha256sum <path>` on Linux).
+
+| Vendor | Where to report |
+|---|---|
+| Microsoft Defender Antivirus | [Submit a file for malware analysis](https://www.microsoft.com/en-us/wdsi/filesubmission) and mark it as incorrectly detected. |
+| Microsoft Defender for Endpoint | [Actions & submissions > Submissions](https://security.microsoft.com/reportsubmission) in the Defender portal, submitted as **Clean**. Requires Defender XDR or Defender for Endpoint Plan 2. |
+| CrowdStrike Falcon | No public form. Open a case with CrowdStrike support. |
+| SentinelOne | No public form. Open a case with SentinelOne support, or with your MSP. |
+| ESET | [Submit a false positive to ESET](https://support.eset.com/en/kb141), or **Tools > Submit sample for analysis** in the product. |
+| Bitdefender | [Submission form](https://www.bitdefender.com/submit), or the [business submission form](https://www.bitdefender.com/business/submit.html). |
+
+For other products, search the vendor's documentation for "false positive submission".
+
+## Allow NetBird in the meantime
+
+If you need the client running before the vendor responds, add an exception scoped to the NetBird files or install folder, never to broad folders such as `C:\Program Files`, and never by turning protection off.
+
+- **File-hash exceptions** break with every release.
+- **Publisher certificate exceptions**, where your product supports them (for example, [certificate indicators](https://learn.microsoft.com/en-us/defender-endpoint/indicator-certificates) in Defender for Endpoint), survive updates, but may need updating when NetBird renews its signing certificate. They do not cover `wintun.dll` or the unsigned uninstaller.
+
+An exception does not always silence alerts or incidents that are already raised. Check your vendor's documentation for what it covers.
+
+<Note>
+Add an exception only after the checks in [Check the alert](#check-the-alert) pass.
+</Note>
+
+## If you suspect a genuine threat
+
+Quarantine the file and report it to [security@netbird.io](mailto:security@netbird.io) or through [GitHub private vulnerability reporting](https://github.com/netbirdio/netbird/security/advisories/new). Include the alert details, your security product and version, the NetBird version and download source, the file path and SHA-256 hash, and any recent upgrades or configuration changes.
