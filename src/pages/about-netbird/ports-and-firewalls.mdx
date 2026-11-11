@@ -238,7 +238,7 @@ sudo firewall-cmd --reload
 
 ### Windows Firewall
 
-NetBird adds a Windows Firewall rule named `Netbird` when the client connects. The installers add no rule. The rule allows inbound traffic to the peer's NetBird IP, so it only covers traffic inside the tunnel. For direct connections between peers see [Direct connections stay relayed on Windows](#direct-connections-stay-relayed-on-windows).
+NetBird adds a Windows Firewall rule named `Netbird` when the client connects. The rule allows inbound traffic to the peer's NetBird IP, so it only covers traffic inside the tunnel. For direct connections between peers see [Direct connections stay relayed on Windows](#direct-connections-stay-relayed-on-windows).
 
 If traffic is blocked despite NetBird showing peers as connected, check for:
 
@@ -270,39 +270,28 @@ Get-NetFirewallProfile | Format-List Name, Enabled, DefaultInboundAction
 
 ### Direct connections stay relayed on Windows
 
-Windows Firewall can drop the direct packets other peers send, so the peer falls back to a relay. These packets arrive on the physical network adapter at the WireGuard port. The default port is `51820`, and NetBird also uses it to set up connections. The `Netbird` rule doesn't cover this port and NetBird doesn't open it by design. Many setups connect directly anyway. If a peer stays relayed, allow the port yourself.
+Windows Firewall can drop the direct packets other peers send, so the peer falls back to a relay. These packets arrive on the physical network adapter at the WireGuard port, and the `Netbird` rule doesn't cover them. Many setups connect directly anyway, with or without NAT between the peers.
 
-In `netbird status -d` the affected peer shows `Connection type: Relayed`.
+**Symptoms**:
+- `netbird status -d` shows `Connection type: Relayed` for a peer that should connect directly
+- P2P works after disabling Windows Firewall
 
-**Fix**
-
-Run in PowerShell as Administrator.
-
+**Solution**: Add a firewall rule to allow inbound UDP for WireGuard P2P traffic, scoped to the NetBird process:
 ```powershell
-New-NetFirewallRule -DisplayName "NetBird P2P" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 51820
+New-NetFirewallRule -DisplayName "NetBird P2P" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 49152-65535 -Program "C:\Program Files\Netbird\netbird.exe"
 ```
 
-The rule allows inbound UDP on the WireGuard port. It applies to all network profiles. It opens no port on your router. Use the port from the `Wireguard port` line of `netbird status` for `-LocalPort`. It differs from `51820` if you changed it or if another program already held `51820` when NetBird started.
+This rule:
+- Allows inbound UDP on the ephemeral port range, which includes the default WireGuard port `51820`
+- Is scoped to only the NetBird process for security
+- Does not expose any other services
 
-**Check the result**
+To check the result, ping the peer's NetBird IP, then run `netbird status -d`. The peer should show `Connection type: P2P`. With lazy connections a peer stays `Idle` until traffic flows, which is why the ping comes first.
 
-Ping the peer's NetBird IP, then run `netbird status -d`. The peer should now show `Connection type: P2P`. With lazy connections a peer stays `Idle` until traffic flows, which is why the ping comes first. If it still shows `Relayed`, run `netbird down` and `netbird up`.
-
-**Block rules**
-
-A block rule always wins over an allow rule. If the peer stays relayed, list the enabled inbound block rules and look for any that cover NetBird or the WireGuard port. Remove them or ask your administrator to.
-
-```powershell
-Get-NetFirewallRule -Direction Inbound -Action Block -Enabled True | Format-Table DisplayName, Profile
-```
-
-**Linux**
-
-If UFW or firewalld blocks inbound UDP on the physical interface, allow the WireGuard port. Linux can't limit the rule to one process, so it applies to anything on that port.
-
+**Linux**: The same principle applies. If UFW or firewalld is blocking inbound UDP on the physical interface, you may need to allow it. Linux cannot scope firewall rules to a specific process like Windows can, so a broader rule is required:
 ```bash
-# UFW, use your port if you changed it
-sudo ufw allow in proto udp to any port 51820
+# UFW — allows inbound UDP on ephemeral ports (less restrictive than the Windows equivalent)
+sudo ufw allow in proto udp to any port 49152:65535
 ```
 
 Consider whether this is acceptable for your security posture, or use NetBird's relay fallback instead.
@@ -365,4 +354,4 @@ Get-NetFirewallProfile
 | UFW (Linux) | `sudo ufw status` | `sudo ufw allow in on wt0` |
 | firewalld (Linux) | `sudo firewall-cmd --get-zone-of-interface=wt0` | `sudo firewall-cmd --permanent --zone=trusted --add-interface=wt0 && sudo firewall-cmd --reload` |
 | Windows | `Get-NetFirewallRule \| Where-Object { $_.DisplayName -like "*NetBird*" }` | Check Group Policy or third-party software |
-| Windows (P2P relayed) | `netbird status -d` shows `Connection type: Relayed` | `New-NetFirewallRule -DisplayName "NetBird P2P" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 51820` |
+| Windows (P2P relayed) | `netbird status -d` shows `Connection type: Relayed` | `New-NetFirewallRule -DisplayName "NetBird P2P" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 49152-65535 -Program "C:\Program Files\Netbird\netbird.exe"` |
