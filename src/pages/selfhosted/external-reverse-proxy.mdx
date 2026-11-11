@@ -569,7 +569,7 @@ server:
     - uri: "stun:stun.cloudflare.com:3478"
 ```
 
-If you run [external relays](/selfhosted/enterprise/external-relays) with STUN, list a DNS-only name for each relay's STUN in `server.stuns` instead (creating one is in [If the relay's domain is proxied by Cloudflare](/selfhosted/enterprise/external-relays#if-the-relays-domain-is-proxied-by-cloudflare)).
+If you run [external relays](/selfhosted/enterprise/external-relays) with STUN and their names are proxied too, list a DNS-only name for each relay's STUN in `server.stuns` instead (creating one is in [Running the Relay Behind Cloudflare's Proxy](/selfhosted/maintenance/scaling/set-up-external-relays#running-the-relay-behind-cloudflares-proxy)).
 
 **Connection IPs.** Management records each peer's connection IP, which peer details and location-based posture checks use. Behind Cloudflare, every peer's connection IP shows as a Cloudflare address until `netbird-server` trusts the `X-Forwarded-For` header from Cloudflare's [published IP ranges](https://www.cloudflare.com/ips/) (IPv4 and IPv6). Those ranges go in `server.reverseProxy.trustedHTTPProxies` in `config.yaml` in your install directory, not in `trustedPeers`, which lists only the sources allowed to connect to `netbird-server` with forwarded headers.
 
@@ -617,88 +617,7 @@ Once a peer reconnects, its connection IP (`connection_ip` in `GET /api/peers`) 
 
 ### Close the direct path
 
-If your server accepts TCP 80 or 443 from anywhere, anyone who learns the server's IP address can bypass Cloudflare and the WAF. Allow inbound TCP 80 and 443 only from Cloudflare's [published IP ranges](https://www.cloudflare.com/ips/) and drop the rest. NetBird keeps working through Cloudflare, and requests sent straight to the server's address time out.
-
-With nftables, the hook depends on where your reverse proxy runs:
-
-- **Proxy in Docker with published ports**, such as the Traefik that `getting-started-enterprise.sh` installs: Docker forwards IPv4 connections to the container, so a rule on the `input` hook never sees them. IPv6 is different: the installer's Docker network has no IPv6 (Docker's default), so if the server has an IPv6 address, Docker's userland proxy (`docker-proxy`, on by default) accepts IPv6 connections on the host. They reach `input` and never cross `forward`. Filter on both hooks, and match only the external interfaces, so traffic between containers on the Docker network keeps flowing.
-- **Proxy installed on the host**: filter on the `input` hook.
-
-The script below filters both hooks, for a proxy in Docker. For a proxy installed on the host, delete the `chain forward` block. The script takes the external interfaces from the IPv4 and IPv6 default routes, so it also covers a server whose IPv6 traffic uses a different interface from its IPv4 traffic. It reads Cloudflare's ranges from Cloudflare's published lists. Running it again replaces the table:
-
-```bash
-EXT=$( (ip -4 route show default; ip -6 route show default) | grep -o 'dev [^ ]*' | cut -d' ' -f2 | sort -u | sed 's/.*/"&"/' | paste -sd, -)
-V4=$(curl -fsS https://www.cloudflare.com/ips-v4 | grep -v '^$' | paste -sd, -)
-V6=$(curl -fsS https://www.cloudflare.com/ips-v6 | grep -v '^$' | paste -sd, -)
-nft -f - <<NFT
-# replaces the table if the script ran before
-table inet cloudflare_only
-delete table inet cloudflare_only
-table inet cloudflare_only {
-  chain forward {
-    # connections Docker forwards to a published port
-    type filter hook forward priority -10; policy accept;
-    iifname { $EXT } tcp dport { 80, 443 } ip saddr { $V4 } accept
-    iifname { $EXT } tcp dport { 80, 443 } ip6 saddr { $V6 } accept
-    iifname { $EXT } tcp dport { 80, 443 } drop
-  }
-  chain input {
-    # connections the host accepts itself: IPv6 through docker-proxy, or a proxy installed on the host
-    type filter hook input priority -10; policy accept;
-    iifname { $EXT } tcp dport { 80, 443 } ip saddr { $V4 } accept
-    iifname { $EXT } tcp dport { 80, 443 } ip6 saddr { $V6 } accept
-    iifname { $EXT } tcp dport { 80, 443 } drop
-  }
-}
-NFT
-```
-
-#### Keep the lock after a restart
-
-The rules last until the server restarts. To load them at every boot, before Docker publishes its ports, save the table and enable a systemd unit that loads it:
-
-```bash
-nft list table inet cloudflare_only > /etc/cloudflare-only.nft
-cat > /etc/systemd/system/cloudflare-only.service <<'UNIT'
-[Unit]
-Description=Allow TCP 80 and 443 only from Cloudflare
-Before=docker.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStartPre=-/usr/sbin/nft delete table inet cloudflare_only
-ExecStart=/usr/sbin/nft -f /etc/cloudflare-only.nft
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-systemctl daemon-reload
-systemctl enable cloudflare-only.service
-```
-
-Run these steps while the script's rules are loaded, because the first line saves what is loaded now. If the server has restarted since you ran the script, run the script again first. The rules are already active, so you do not need to start the unit.
-
-The unit loads the saved file, not the script. Each time you run the script again, also run `nft list table inet cloudflare_only > /etc/cloudflare-only.nft`, or the next boot loads the old rules.
-
-If the unit cannot load the saved file, it fails and Docker still starts, with the direct path open. After the server restarts, check with `nft list table inet cloudflare_only`: it prints the rules, with Cloudflare's ranges, or `Error: No such file or directory` when they are not loaded.
-
-To keep Docker down instead when the rules are not loaded, add a drop-in that makes Docker check for them before it starts:
-
-```bash
-mkdir -p /etc/systemd/system/docker.service.d
-cat > /etc/systemd/system/docker.service.d/cloudflare-only.conf <<'UNIT'
-[Unit]
-Wants=cloudflare-only.service
-After=cloudflare-only.service
-
-[Service]
-ExecStartPre=/usr/sbin/nft list table inet cloudflare_only
-UNIT
-systemctl daemon-reload
-```
-
-With the drop-in, a saved file that cannot be loaded keeps Docker, and every container in it, down. After you fix the file, run `systemctl start docker`. Restarting or stopping `cloudflare-only.service` does not restart or stop Docker, so the containers keep running.
+Proxying hides your server's IP address in DNS but does not block connections to it: anyone who learns the address can still connect directly, bypassing Cloudflare and, if you use it, the WAF. To close that path, allow inbound TCP 80 and 443 only from Cloudflare's [published IP ranges](https://www.cloudflare.com/ips/), IPv4 and IPv6. NetBird keeps working through Cloudflare. Set this in the firewall in front of the server, such as your cloud provider's security group, rather than on the host: with NetBird in Docker, host firewall rules miss connections to Docker's published ports unless they are written for them.
 
 ---
 
