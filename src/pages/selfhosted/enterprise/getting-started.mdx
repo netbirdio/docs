@@ -287,7 +287,18 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
      - "--certificatesresolvers.letsencrypt.acme.dnschallenge=true"
      - "--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare"
      ```
-  2. Create a Cloudflare API token that can edit DNS records in your NetBird domain's zone only. Put `CF_DNS_API_TOKEN=<token>` in a file `cloudflare.env` next to `docker-compose.yml`, owned by root with mode `600`, and add `env_file: [cloudflare.env]` to the `traefik` service.
+  2. Create a Cloudflare API token with the permissions **Zone / Zone / Read** and **Zone / DNS / Edit**, limited to your NetBird domain's zone. Save the token alone in a file `cf_dns_token` next to `docker-compose.yml`, owned by root with mode `600`. Give it to Traefik as a Compose secret, so the token is not in the container's environment or in `docker inspect`: add the `environment` and `secrets` keys to the `traefik` service, and the top-level `secrets` block:
+     ```yaml
+     services:
+       traefik:
+         environment:
+           CF_DNS_API_TOKEN_FILE: /run/secrets/cf_dns_token
+         secrets: [cf_dns_token]
+
+     secrets:
+       cf_dns_token:
+         file: ./cf_dns_token
+     ```
   3. Run `docker compose up -d traefik`.
 - **Verification:** `docker compose logs traefik` shows `dns01: trying to solve the challenge`, then `Validations succeeded; requesting certificates` and `Server responded with a certificate`. For the rest of running behind Cloudflare (gRPC, STUN, client IPs), see [Behind Cloudflare's proxy](/selfhosted/external-reverse-proxy#behind-cloudflares-proxy).
 
