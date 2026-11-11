@@ -89,7 +89,7 @@ NetBird reads two kinds of environment variables, depending on which process rea
 
 ### Client environment variables
 
-Every flag of a `netbird` command can also be set with an environment variable:
+Every flag of a `netbird` command except `--help` can also be set with an environment variable:
 * The name is the flag name with the **NB_** prefix, dashes turned into underscores, in uppercase. For example, `NB_SETUP_KEY` for `--setup-key`.
 * A command reads only the variables for the flags it accepts. `NB_SETUP_KEY` applies to `up` and `login`, and `netbird status` ignores it.
 * The legacy **WT_** prefix still works. When both are set, the `NB_` variable wins.
@@ -275,6 +275,10 @@ Retrieves the peer status from the daemon service.
   -t, --table                              Display peers in a table, supports the --filter-by-* flags (v0.82.0+)
   -y, --yaml                               Display detailed status information in YAML format
 ```
+
+<Warning>
+    `--anonymize-level strict` does not anonymize the NetBird IPv4 address of remote peers (`netbirdIp`), or peer names under `netbird.io`. Remove them from the output before you share it.
+</Warning>
 #### Usage
 The minimal form of running the command is:
 ```shell
@@ -808,6 +812,8 @@ Every `service` subcommand accepts this flag, which is not saved:
 
 The daemon settings, such as `--disable-profiles` or `--allow-group`, are flags of `install` and `reconfigure` only. `start`, `stop`, `restart`, `status`, and `uninstall` act on the installed service and reject them with `unknown flag`.
 
+`service.json` is stored in the state directory: `/var/lib/netbird` on Linux and macOS, `/var/db/netbird` on FreeBSD, and `%ProgramData%\Netbird` on Windows. If a service uses a custom `NB_STATE_DIR`, set the same variable when you run `install`, `reconfigure`, or `reset-params` for it, for example `sudo NB_STATE_DIR=/opt/netbird netbird service reset-params --service custom-name`. Otherwise the command reads or removes the `service.json` of the default state directory.
+
 ### service install
 Installs the daemon service. The minimal form is:
 ```shell
@@ -826,7 +832,7 @@ sudo netbird service install --config /opt/netbird/config.json
 `service install` and `service reconfigure` accept the same flags. With `reconfigure`, a flag you leave out keeps its saved value.
 ```shell
       --allow-group strings       Restricts the daemon control socket and the JSON socket to the given group.
-  -c, --config string             Overrides the default profile file location (default "/var/lib/netbird/default.json")
+  -c, --config string             Overrides the default profile file location (default "/var/lib/netbird/default.json", "%ProgramData%\Netbird\default.json" on Windows)
       --disable-networks          Disables network selection.
       --disable-profiles          Disables profiles feature.
       --disable-update-settings   Disables update settings feature.
@@ -843,12 +849,13 @@ sudo netbird service install --config /opt/netbird/config.json
 - `--allow-group`: see [Restrict daemon access to a group](/client/profile-ownership#restrict-daemon-access-to-a-group).
 - `--enable-json-socket` and `--json-socket`: see [JSON socket](/client/json-socket).
 - `--enable-capture` allows `netbird debug capture` to record packets on the NetBird interface.
+- `--config`: if `NB_CONFIG` was saved with `--service-env`, it overrides `--config`. Change it with `sudo netbird service reconfigure --service-env NB_CONFIG=<path>` instead.
 
 An MDM policy overrides these flags. See [Configuration precedence](#configuration-precedence).
 
 #### Lock the configuration of a managed device
 
-An IT admin can deploy NetBird with a setup key and lock the configuration, so users cannot disconnect from the corporate account or point the client at another management service:
+An IT admin can deploy NetBird with a setup key and lock the configuration, so users cannot switch profiles, change the client settings, or point the client at another management service. Users can still run `netbird down` if they are the owner of the profile:
 
 ```shell
 sudo netbird service install
@@ -1122,6 +1129,6 @@ A deprecated flag still works, but it is hidden from `--help` and prints a depre
 | `--enable-lazy-connection` | `up` | Deprecated, has no effect | The lazy connection setting in the dashboard, or `NB_LAZY_CONN` on the daemon. See [Client Environment Variables](/client/environment-variables). |
 | `--enable-rosenpass`, `--rosenpass-permissive` | `up` | Deprecated. Rosenpass support may be removed in a future release. | No replacement. See [Post-quantum cryptography](/client/post-quantum-cryptography). |
 | `--login` | `ssh` | Deprecated | `--user` |
-| `-i`, `--identity` | `ssh` | Deprecated, has no effect | No replacement |
+| `-i`, `--identity` | `ssh` | Deprecated. It still loads the key file as an extra SSH authentication method. | No replacement. Keep it while you rely on key authentication. |
 | `--admin-url` | All commands | Removed | No replacement. The flag had no effect. |
 | `-c`, `--config` | All commands except `service install`, `service reconfigure`, and `up` | Removed. On `up`, it is hidden and only applies with `--foreground-mode`. | `sudo netbird service reconfigure --config <path>` to change the daemon's profile file location |
