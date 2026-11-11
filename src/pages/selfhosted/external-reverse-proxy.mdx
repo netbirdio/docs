@@ -105,6 +105,10 @@ The combined container includes an embedded STUN server that still needs to be d
 </Note>
 
 <Note>
+On a commercial-license install with traffic events enabled, also route `/flow.FlowService/` (gRPC, h2c) to `netbird-receiver:80`. See [Traffic events route (commercial license)](#traffic-events-route-commercial-license).
+</Note>
+
+<Note>
 The `/api/*` route also serves the [MCP server](/selfhosted/maintenance/mcp-server) and its OAuth sign-in. If your proxy answers unknown paths with `200` and an HTML page instead of `404`, also route `/.well-known/oauth-protected-resource/api/mcp`, `/.well-known/oauth-authorization-server/api/mcp/auth` and `/.well-known/openid-configuration/api/mcp/auth` to management. Do not route all of `/.well-known/`. See [Reverse Proxy](/selfhosted/maintenance/mcp-server#reverse-proxy) on the MCP page.
 </Note>
 
@@ -510,6 +514,131 @@ location ~ ^/(api|oauth2)/ {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
 }
+```
+
+---
+
+#### Traffic events route (commercial license)
+
+When traffic events are enabled, the installer's Traefik sends `/flow.FlowService/` requests to `netbird-receiver`. Traffic events are enabled if you answered yes to the installer's `Enable traffic flow` prompt, or ran `getting-started-enterprise.sh --enable-traffic-events` on an existing install. If you replace that Traefik with Nginx, add a location for `/flow.FlowService/`. Without it, `/flow.FlowService/` requests fall through to the `/*` catch-all and reach the dashboard container, clients log `failed to send flow event to server: stream not initialized`, and the dashboard shows no traffic events.
+
+With Nginx running in Docker on the installer's `netbird` network, add this to the `server` block that listens on 443:
+
+```nginx
+# Traffic events
+location /flow.FlowService/ {
+    grpc_pass grpc://netbird-receiver:80;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+```
+
+With Nginx running on the host, also publish the `receiver` service (container `netbird-receiver`) on localhost, in the Compose override that publishes the ports in the [port reference](#container-port-reference-combined). This example uses port 8082; set the location's `grpc_pass` to `grpc://127.0.0.1:8082` to match:
+
+```yaml
+services:
+  receiver:
+    ports:
+      - '127.0.0.1:8082:80'
+```
+
+---
+
+## Behind Cloudflare's proxy
+
+If you do not need Cloudflare in front of the NetBird server, set its DNS record to **DNS only** and skip this section. Otherwise you can put the server behind Cloudflare's proxy by proxying its DNS record (the orange cloud), optionally with Cloudflare's web application firewall (WAF). NetBird's gRPC, WebSocket and HTTP traffic work through the proxy once you apply the settings below and the [changes after them](#what-changes-behind-the-proxy). Then [close the direct path](#close-the-direct-path).
+
+**The WAF.** Cloudflare's Free Managed Ruleset does not block NetBird traffic. For gRPC, Cloudflare's WAF checks the request headers when the connection opens and does not run managed rules on the stream that follows ([gRPC connections](https://developers.cloudflare.com/network/grpc-connections/)).
+
+### Cloudflare settings NetBird needs
+
+- **gRPC on.** In the Cloudflare dashboard, open the zone, go to **Network** and switch **gRPC** on. While it is off, Cloudflare answers every gRPC request itself with `403 Forbidden` and a `text/html` response, so no client reaches Management or Signal even though the dashboard and the API load normally. The client log shows `rpc error: code = PermissionDenied desc = unexpected HTTP status code received from server: 403 (Forbidden); transport: received unexpected content-type "text/html; charset=UTF-8"`.
+- **SSL/TLS encryption mode: Full (strict).** Set it in the zone's **SSL/TLS** settings. Full (strict) needs a valid certificate on your server (see **Certificates** below). Full also works, but Cloudflare then does not check your server's certificate. Do not use **Flexible**: it sends plain HTTP to your server, which redirects to HTTPS, so pages answer `301`, the sign-in loops back to itself, and clients fail with `308 (Permanent Redirect)`.
+
+
+### What changes behind the proxy
+
+**STUN.** Clients receive the STUN server as `stun:<your domain>:3478`. Cloudflare's proxy does not forward UDP 3478, so that address stops answering and `netbird status -d` shows it as `Unavailable`. In `config.yaml` (in your install directory), set `server.stuns` to a STUN server that clients reach directly, then run `docker compose restart netbird-server`. Setting `server.stuns` turns off the embedded STUN server.
+
+```yaml
+server:
+  stuns:
+    - uri: "stun:stun.cloudflare.com:3478"
+```
+
+If you run [external relays](/selfhosted/enterprise/external-relays) with STUN, list a DNS-only name for each relay's STUN in `server.stuns` instead (creating one is in [If the relay's domain is proxied by Cloudflare](/selfhosted/enterprise/external-relays#if-the-relays-domain-is-proxied-by-cloudflare)).
+
+**Connection IPs.** Management records each peer's connection IP, which peer details and location-based posture checks use. Behind Cloudflare, every peer's connection IP shows as a Cloudflare address until `netbird-server` trusts the `X-Forwarded-For` header from Cloudflare's [published IP ranges](https://www.cloudflare.com/ips/) (IPv4 and IPv6). Those ranges go in `server.reverseProxy.trustedHTTPProxies` in `config.yaml` in your install directory, not in `trustedPeers`, which lists only the sources allowed to connect to `netbird-server` with forwarded headers.
+
+With the installer's Traefik:
+
+1. In `config.yaml`, `trustedPeers` and `trustedHTTPProxies` already list Traefik, `172.30.0.10/32`. Add each Cloudflare range to `trustedHTTPProxies`:
+
+   ```yaml
+   server:
+     reverseProxy:
+       trustedPeers:
+         - "172.30.0.10/32"          # the installer's Traefik
+       trustedHTTPProxies:
+         - "172.30.0.10/32"          # the installer's Traefik
+         - "<Cloudflare range>"      # one line per range, IPv4 and IPv6
+   ```
+2. Traefik must trust the ranges too. Add this line to the `traefik` service's `command:` list in `docker-compose.yml`, with the ranges comma-separated, then run `docker compose up -d traefik`:
+
+   ```yaml
+   - "--entrypoints.websecure.forwardedHeaders.trustedIPs=<range>,<range>,..."
+   ```
+3. Run `docker compose restart netbird-server`.
+
+With Nginx from this page's templates, Nginx's configuration file does not change: it already forwards Cloudflare's `X-Forwarded-For` header.
+
+1. Set or look up the Nginx address, the address `netbird-server` sees Nginx connect from:
+   - Nginx in Docker on the installer's `netbird` network: assign the Nginx container a fixed address, so it stays the same when the container is recreated. Pick an unused address in the network's subnet (`docker network inspect netbird` shows the subnet and the addresses in use). In Compose, set it as `ipv4_address` under the service's `netbird` network and run `docker compose up -d` for the Nginx service; with `docker run`, use `--ip`.
+   - Nginx installed on the host: look up the `netbird` network's `Gateway` address (`docker network inspect netbird`). Traffic from the host reaches the containers from that address.
+2. In `config.yaml`, `trustedPeers` and `trustedHTTPProxies` still list the installer's Traefik, `172.30.0.10/32`. Replace it in both with `<Nginx address>/32`, and add each Cloudflare range to `trustedHTTPProxies`:
+
+   ```yaml
+   server:
+     reverseProxy:
+       trustedPeers:
+         - "<Nginx address>/32"
+       trustedHTTPProxies:
+         - "<Nginx address>/32"
+         - "<Cloudflare range>"      # one line per range, IPv4 and IPv6
+   ```
+3. Run `docker compose restart netbird-server`.
+
+Once a peer reconnects, its connection IP (`connection_ip` in `GET /api/peers`) is its own public address.
+
+**Certificates.** Traefik's default TLS-ALPN-01 challenge cannot pass through Cloudflare's proxy: issuance fails with `Cannot negotiate ALPN protocol "acme-tls/1" for tls-alpn-01 challenge`. Use the DNS-01 challenge, which proves the domain with a DNS record instead of a connection to your server. For the commercial-license stack, see [Traefik cannot issue a TLS certificate behind Cloudflare's proxy](/selfhosted/enterprise/getting-started#traefik-cannot-issue-a-tls-certificate-behind-cloudflares-proxy).
+
+### Close the direct path
+
+If your server accepts TCP 80 or 443 from anywhere, anyone who learns the server's IP address can bypass Cloudflare and the WAF. Allow inbound TCP 80 and 443 only from Cloudflare's [published IP ranges](https://www.cloudflare.com/ips/) and drop the rest. NetBird keeps working through Cloudflare, and requests sent straight to the server's address time out.
+
+With nftables, the hook depends on where your reverse proxy runs:
+
+- **Proxy in Docker with published ports**, such as the Traefik that `getting-started-enterprise.sh` installs: Docker forwards those connections to the container, so a rule on the host's incoming (`input`) traffic never sees them and the server stays open. Filter on the `forward` hook instead, and match only the external interface, so traffic between containers on the Docker network keeps flowing.
+- **Proxy installed on the host**: filter on the `input` hook.
+
+The script below is for a proxy in Docker. For a proxy installed on the host, change `chain forward` and `hook forward` to `chain input` and `hook input`. It reads the external interface from the default route and Cloudflare's ranges from Cloudflare's published lists:
+
+```bash
+EXT=$(ip route show default | awk '{print $5; exit}')
+V4=$(curl -fsS https://www.cloudflare.com/ips-v4 | grep -v '^$' | paste -sd, -)
+V6=$(curl -fsS https://www.cloudflare.com/ips-v6 | grep -v '^$' | paste -sd, -)
+nft -f - <<NFT
+table inet cloudflare_only {
+  chain forward {
+    # use "chain input" with "hook input" for a proxy installed on the host
+    type filter hook forward priority -10; policy accept;
+    iifname "$EXT" tcp dport { 80, 443 } ip saddr { $V4 } accept
+    iifname "$EXT" tcp dport { 80, 443 } ip6 saddr { $V6 } accept
+    iifname "$EXT" tcp dport { 80, 443 } drop
+  }
+}
+NFT
 ```
 
 ---

@@ -277,6 +277,20 @@ Each entry follows the same structure: **Symptom → Cause → Resolution → Ve
 - **Resolution:** Confirm the DNS A record for `NETBIRD_DOMAIN` points at the host, and that the firewall / cloud security group allows inbound TCP/443.
 - **Verification:** `docker compose logs traefik` shows `Validations succeeded; requesting certificates` followed by `Server responded with a certificate`; `curl -sI https://<your-domain>/` returns a valid response with a trusted certificate.
 
+### Traefik cannot issue a TLS certificate behind Cloudflare's proxy
+
+- **Symptom:** The domain is proxied by Cloudflare (the orange cloud is on), and `docker compose logs traefik` shows `Cannot negotiate ALPN protocol "acme-tls/1" for tls-alpn-01 challenge`.
+- **Cause:** Cloudflare answers the TLS connection itself and does not negotiate the `acme-tls/1` protocol that the TLS-ALPN-01 challenge needs, so Let's Encrypt cannot validate the domain through it.
+- **Resolution:** Switch Traefik to the DNS-01 challenge, which proves the domain with a DNS record instead of a connection. For Cloudflare DNS, in the `traefik` service of `docker-compose.yml`:
+  1. Replace `--certificatesresolvers.letsencrypt.acme.tlschallenge=true` with these two flags:
+     ```yaml
+     - "--certificatesresolvers.letsencrypt.acme.dnschallenge=true"
+     - "--certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare"
+     ```
+  2. Create a Cloudflare API token that can edit DNS records in your NetBird domain's zone only. Put `CF_DNS_API_TOKEN=<token>` in a file `cloudflare.env` next to `docker-compose.yml`, owned by root with mode `600`, and add `env_file: [cloudflare.env]` to the `traefik` service.
+  3. Run `docker compose up -d traefik`.
+- **Verification:** `docker compose logs traefik` shows `dns01: trying to solve the challenge`, then `Validations succeeded; requesting certificates` and `Server responded with a certificate`. For the rest of running behind Cloudflare (gRPC, STUN, client IPs), see [Behind Cloudflare's proxy](/selfhosted/external-reverse-proxy#behind-cloudflares-proxy).
+
 ### First-login owner-setup page is not shown
 
 - **Symptom:** The dashboard loads, but the regular sign-in screen appears instead of the owner-setup flow.

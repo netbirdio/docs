@@ -228,6 +228,17 @@ WARN relay/server/server.go:78: Not starting QUIC listener: valid TLS config is 
 
 That is expected here. Peers connect over WebSocket, so neither the proxy nor the relay host needs 443/udp. The proxy needs 443/tcp, plus whatever it uses to obtain its own certificate, often 80/tcp. The relay host needs 3478/udp for STUN.
 
+### If the relay's domain is proxied by Cloudflare
+
+When the relay's DNS record is proxied by Cloudflare (the orange cloud), Cloudflare connects to the relay on 443 over HTTPS, so the relay keeps its own TLS. Set the zone's SSL/TLS encryption mode to **Full (strict)**, as for the main server. Four things differ from a relay on a DNS-only name:
+
+- **Peers connect over WebSocket only.** QUIC does not pass Cloudflare's proxy, so `netbird status -d` shows the relay as `Available via ws` and the relay logs no QUIC clients.
+- **Serve the certificate from files.** The relay cannot obtain its own Let's Encrypt certificate while the name is proxied: Cloudflare answers `525` and the relay logs `acme/autocert: missing certificate`. Use a certificate issued another way, for example through the DNS-01 challenge, which needs no connection to the host, and configure it as in [If you already have TLS certificates](#if-you-already-have-tls-certificates).
+- **Give STUN a DNS-only name.** STUN is UDP and does not pass the proxy, so `stun:<relay domain>:3478` stops answering. Create a DNS-only record for the relay host, such as `stun-us.example.com`. In [Step 6](#step-6-point-the-main-server-at-the-relays), list it in the main server's `server.stuns` as `uri: "stun:stun-us.example.com:3478"` instead of the relay's proxied name.
+- **The relay records Cloudflare's addresses.** Adding Cloudflare's ranges to `NB_TRUSTED_PROXIES` does not change that, because the relay takes a forwarded address only when both `X-Real-Ip` and `X-Real-Port` are present.
+
+If the main server is behind Cloudflare too, see [Behind Cloudflare's proxy](/selfhosted/external-reverse-proxy#behind-cloudflares-proxy).
+
 ## Step 4: Start each relay
 
 ```bash
