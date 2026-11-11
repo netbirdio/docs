@@ -520,7 +520,7 @@ location ~ ^/(api|oauth2)/ {
 
 #### Traffic events route (commercial license)
 
-When traffic events are enabled, the installer's Traefik sends `/flow.FlowService/` requests to `netbird-receiver`. Traffic events are enabled if you answered yes to the installer's `Enable traffic flow` prompt, or ran `getting-started-enterprise.sh --enable-traffic-events` on an existing install. If you replace that Traefik with Nginx, add a location for `/flow.FlowService/`. Without it, `/flow.FlowService/` requests fall through to the `/*` catch-all and reach the dashboard container, clients log `failed to send flow event to server: stream not initialized`, and the dashboard shows no traffic events.
+When traffic events are enabled, the installer's Traefik sends `/flow.FlowService/` requests to the receiver container. Traffic events are enabled if you answered yes to the installer's `Enable traffic flow` prompt, or ran `getting-started-enterprise.sh --enable-traffic-events` on an existing install. If you replace that Traefik with Nginx, add a location for `/flow.FlowService/`. Without it, `/flow.FlowService/` requests fall through to the `/*` catch-all and reach the dashboard container, clients log `failed to send flow event to server: stream not initialized`, and the dashboard shows no traffic events.
 
 With Nginx running in Docker on the installer's `netbird` network, add this to the `server` block that listens on 443:
 
@@ -534,7 +534,9 @@ location /flow.FlowService/ {
 }
 ```
 
-With Nginx running on the host, also publish the `receiver` service (container `netbird-receiver`) on localhost, in the Compose override that publishes the ports in the [port reference](#container-port-reference-combined). This example uses port 8082; set the location's `grpc_pass` to `grpc://127.0.0.1:8082` to match:
+With Nginx in Docker on a deployment migrated with `migrate-to-enterprise.sh`, the receiver container is `netbird-flow-receiver`, so use `grpc_pass grpc://netbird-flow-receiver:80;`.
+
+With Nginx running on the host, also publish the receiver service on localhost (`receiver` on a fresh install, `flow-receiver` on a migrated deployment; use that name under `services:` below), in the Compose override that publishes the ports in the [port reference](#container-port-reference-combined). This example uses port 8082; set the location's `grpc_pass` to `grpc://127.0.0.1:8082` to match:
 
 ```yaml
 services:
@@ -619,10 +621,10 @@ If your server accepts TCP 80 or 443 from anywhere, anyone who learns the server
 
 With nftables, the hook depends on where your reverse proxy runs:
 
-- **Proxy in Docker with published ports**, such as the Traefik that `getting-started-enterprise.sh` installs: Docker forwards those connections to the container, so a rule on the host's incoming (`input`) traffic never sees them and the server stays open. Filter on the `forward` hook instead, and match only the external interface, so traffic between containers on the Docker network keeps flowing.
+- **Proxy in Docker with published ports**, such as the Traefik that `getting-started-enterprise.sh` installs: Docker forwards IPv4 connections to the container, so a rule on the `input` hook never sees them. IPv6 is different: the installer's Docker network has no IPv6 (Docker's default), so if the server has an IPv6 address, Docker's userland proxy (`docker-proxy`, on by default) accepts IPv6 connections on the host. They reach `input` and never cross `forward`. Filter on both hooks, and match only the external interface, so traffic between containers on the Docker network keeps flowing.
 - **Proxy installed on the host**: filter on the `input` hook.
 
-The script below is for a proxy in Docker. For a proxy installed on the host, change `chain forward` and `hook forward` to `chain input` and `hook input`. It reads the external interface from the default route and Cloudflare's ranges from Cloudflare's published lists:
+The script below filters both hooks, for a proxy in Docker. For a proxy installed on the host, delete the `chain forward` block. The script reads the external interface from the default route and Cloudflare's ranges from Cloudflare's published lists:
 
 ```bash
 EXT=$(ip route show default | awk '{print $5; exit}')
@@ -631,8 +633,15 @@ V6=$(curl -fsS https://www.cloudflare.com/ips-v6 | grep -v '^$' | paste -sd, -)
 nft -f - <<NFT
 table inet cloudflare_only {
   chain forward {
-    # use "chain input" with "hook input" for a proxy installed on the host
+    # connections Docker forwards to a published port
     type filter hook forward priority -10; policy accept;
+    iifname "$EXT" tcp dport { 80, 443 } ip saddr { $V4 } accept
+    iifname "$EXT" tcp dport { 80, 443 } ip6 saddr { $V6 } accept
+    iifname "$EXT" tcp dport { 80, 443 } drop
+  }
+  chain input {
+    # connections the host accepts itself: IPv6 through docker-proxy, or a proxy installed on the host
+    type filter hook input priority -10; policy accept;
     iifname "$EXT" tcp dport { 80, 443 } ip saddr { $V4 } accept
     iifname "$EXT" tcp dport { 80, 443 } ip6 saddr { $V6 } accept
     iifname "$EXT" tcp dport { 80, 443 } drop

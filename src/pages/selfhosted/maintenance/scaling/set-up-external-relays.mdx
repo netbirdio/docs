@@ -161,12 +161,13 @@ That is expected here. Peers connect over WebSocket, so neither the proxy nor th
 
 ## Running the Relay Behind Cloudflare's Proxy
 
-When the relay's DNS record is proxied by Cloudflare (the orange cloud), Cloudflare connects to the relay on 443 over HTTPS. Unlike the proxy in the previous section, it does not need the relay to serve plain HTTP: the relay keeps its own TLS. Set the zone's SSL/TLS encryption mode to **Full (strict)**. Four things differ from a relay on a DNS-only name:
+When the relay's DNS record is proxied by Cloudflare (the orange cloud), Cloudflare connects to the relay on 443 over HTTPS. Unlike the proxy in the previous section, it does not need the relay to serve plain HTTP: the relay keeps its own TLS. Set the zone's SSL/TLS encryption mode to **Full (strict)**. Five things differ from a relay on a DNS-only name:
 
 - **Peers connect over WebSocket only.** QUIC does not pass Cloudflare's proxy, so `netbird status -d` shows the relay as `Available via ws` and the relay logs no QUIC clients.
 - **Serve the certificate from files.** The relay cannot obtain its own Let's Encrypt certificate while the name is proxied: Cloudflare answers `525` and the relay logs `acme/autocert: missing certificate`. Use a certificate issued another way, for example through the DNS-01 challenge, which needs no connection to the host, and configure it as in [Alternative: TLS with Existing Certificates](#alternative-tls-with-existing-certificates).
 - **Give STUN a DNS-only name.** STUN is UDP and does not pass the proxy, so `stun:<relay domain>:3478` stops answering. Create a DNS-only record for the relay host, such as `stun-us.example.com`. In [Edit config.yaml](#edit-config-yaml), list it in the main server's `stuns` as `uri: "stun:stun-us.example.com:3478"` instead of the relay's proxied name.
 - **The relay records Cloudflare's addresses.** Adding Cloudflare's ranges to `NB_TRUSTED_PROXIES` does not change that, because the relay takes a forwarded address only when both `X-Real-Ip` and `X-Real-Port` are present.
+- **Lock the relay host to Cloudflare.** With the name proxied, the relay still answers anyone who connects to the relay host's own address, on 443/tcp and on 443/udp (QUIC), bypassing Cloudflare. Run the script in [Close the direct path](/selfhosted/external-reverse-proxy#close-the-direct-path) on the relay host with both chains, as for a proxy in Docker, and add `iifname "$EXT" udp dport 443 drop` as the last line of each chain. Peers connect over WebSocket on 443/tcp (the first point), so dropping 443/udp does not affect them, and STUN on 3478/udp is not affected either.
 
 If the main server is behind Cloudflare too, see [Behind Cloudflare's proxy](/selfhosted/external-reverse-proxy#behind-cloudflares-proxy).
 
