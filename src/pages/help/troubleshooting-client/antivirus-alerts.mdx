@@ -17,13 +17,14 @@ These detections are the security product's assumptions, not findings in NetBird
 
 Do not dismiss an alert without checking it:
 
-1. **Publisher (Windows and macOS):** the file is signed by **NetBird GmbH**.
-   - On Windows, open the file's **Properties > Digital Signatures**, or run `(Get-AuthenticodeSignature "<path>").SignerCertificate.Subject`. The result should start with `CN=NetBird GmbH`. Two files in the install folder are exceptions: the `wintun.dll` network driver library is signed by its developer, **WireGuard LLC**, and `netbird_uninstall.exe` is not signed.
-   - On macOS, run `codesign -dvv /Applications/NetBird.app`. The output should include `Authority=Developer ID Application: NetBird GmbH`. For the installer package, run `pkgutil --check-signature <installer>.pkg` and look for `Developer ID Installer: NetBird GmbH`.
-2. **Source:** NetBird came from the [official installation guides](/get-started/install) or [GitHub releases](https://github.com/netbirdio/netbird/releases). On Windows, use the `.exe` or `.msi` installer or an archive ending in `_signed`. The other Windows archives contain unsigned binaries. On Linux, this is the main check.
+1. **Signature:** the file is intact and comes from NetBird.
+   - On Windows, run `Get-AuthenticodeSignature "<path>" | Format-List Status, SignerCertificate`. `Status` must be `Valid` (a modified file shows `HashMismatch`), and the subject should start with `CN=NetBird GmbH`. In the file's **Properties > Digital Signatures > Details**, the same check reads "This digital signature is OK". Two files in the install folder are exceptions: the `wintun.dll` network driver library is signed by its developer, **WireGuard LLC**, and `netbird_uninstall.exe` is not signed.
+   - On macOS, run `codesign --verify --deep --strict --verbose=2 /Applications/NetBird.app`, which should report `valid on disk`, then `codesign -dvv /Applications/NetBird.app`, whose output should include `Authority=Developer ID Application: NetBird GmbH`. For the installer package, run `pkgutil --check-signature <installer>.pkg` and look for `Developer ID Installer: NetBird GmbH`.
+   - On Linux, if you installed from the NetBird package repository, run `dpkg --verify netbird` (Debian, Ubuntu) or `rpm -V netbird` (Fedora, RHEL). No output means the installed files match the package. Add `netbird-ui` if you use the desktop app.
+2. **Source:** NetBird came from the [official installation guides](/get-started/install) or [GitHub releases](https://github.com/netbirdio/netbird/releases). On Windows, use the `.exe` or `.msi` installer or an archive ending in `_signed`. The other Windows archives contain unsigned binaries.
 3. **Timing:** the alert lines up with an expected change, such as an update you just rolled out.
 
-If all three hold, the alert is most likely a false positive. These checks cannot rule out a compromised release, so if anything looks off, or you are unsure, see [If you suspect a genuine threat](#if-you-suspect-a-genuine-threat).
+If all three hold, the alert is most likely a false positive. Source and timing alone do not prove a file is unchanged, so do not add an exception for a file whose signature or package check you cannot complete. These checks also cannot rule out a compromised release, so if anything looks off, or you are unsure, see [If you suspect a genuine threat](#if-you-suspect-a-genuine-threat).
 
 ## Report a false positive
 
@@ -45,7 +46,7 @@ For other products, search the vendor's documentation for "false positive submis
 If you need the client running before the vendor responds, add an exception scoped to the NetBird files or install folder, never to broad folders such as `C:\Program Files`, and never by turning protection off.
 
 - **File-hash exceptions** break with every release.
-- **Publisher certificate exceptions**, where your product supports them (for example, [certificate indicators](https://learn.microsoft.com/en-us/defender-endpoint/indicator-certificates) in Defender for Endpoint), survive updates, but may need updating when NetBird renews its signing certificate. They do not cover `wintun.dll` or the unsigned uninstaller.
+- **Publisher certificate exceptions**, where your product supports them (for example, [certificate indicators](https://learn.microsoft.com/en-us/defender-endpoint/indicator-certificates) in Defender for Endpoint), survive updates, but may need updating when NetBird renews its signing certificate. They trust every file signed with that certificate, not only the NetBird install folder, so limit them to the devices that run NetBird and, where your product supports it, set an expiry. They do not cover `wintun.dll` or the unsigned uninstaller.
 
 An exception does not always silence alerts or incidents that are already raised. Check your vendor's documentation for what it covers.
 
