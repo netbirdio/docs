@@ -1,86 +1,136 @@
 
 # NetBird Agent command line interface (CLI)
 
-The NetBird client installation adds a binary called `netbird` to your system. This binary runs as a daemon service to connect
-your computer or server to the NetBird network as a peer. But it can also be used as a client to control the daemon service.
+The NetBird client installation adds a binary called `netbird` to your system. The same binary plays two roles:
 
-This section will explore the commands available in `netbird`.
+- **The daemon** runs as a system service with root privileges (LocalSystem on Windows). It manages the NetBird interface, routing, firewall, and DNS. `netbird service install` registers it, and the service manager starts it.
+- **The CLI** is what you type. Commands such as `up`, `status`, and `profile` send a request to the daemon and print the answer. The exception is `netbird up --foreground-mode`, which runs the client inside the CLI process instead of the daemon.
+
+Knowing which of the two reads a setting explains most surprises with flags and environment variables. For example, a variable you export in your shell reaches the CLI, but not the daemon that is already running as a service.
+
 ## Syntax
 Use the following syntax to run `netbird` commands from your terminal window:
 ```shell
 netbird [command] [subcommand] [flags]
 ```
-* `command`: Specifies the operation that you want to perform or a top-level command: `up`, `login`, `down`, `status`, `ssh`, `expose`, `networks`, `profile`, `debug`, `service`, and `version`
-* `subcommand`: Specifies the operation to be executed for a top-level command like `service`: `install`, `uninstall`, `start`, and `stop`
-* `flags`:  Specifies optional flags. For example, you can use the `--setup-key` flag to specify the setup key to be used in the commands `login` and `up`
+* `command`: The operation to perform, such as `up`, `status`, or `service`. See [Commands at a glance](#commands-at-a-glance).
+* `subcommand`: The operation for a command that groups several, such as `install` in `netbird service install`.
+* `flags`: Options for the command, such as `--setup-key` for `up` and `login`.
 
-<Note>
-    To see detailed command information, use the flag `--help` after each command
-</Note>
+Run any command with `--help` to see its flags. A command rejects flags it does not accept. For example, `netbird up --setup-key <key>` works, but `netbird status --setup-key <key>` fails with `unknown flag: --setup-key`.
 
 ### Flag value syntax
 
-- **Boolean flags** that default to `false` can be enabled by simply passing the flag: `--block-inbound`.
+- **Boolean flags** that default to `false` can be enabled by passing the flag: `--block-inbound`.
 - **Boolean flags** that default to `true` must use `=false` to disable: `--strict-host-key-checking=false`, `--network-monitor=false`.
 - **String flags** that support clearing a previous value accept an empty string: `--dns-resolver-address ""`.
+- Some flags cannot be used together, for example `--setup-key` and `--setup-key-file`. Others only work with another flag, for example `--upload-bundle-url` requires `--upload-bundle`. The command fails with an error that names both flags.
+
+## Commands at a glance
+
+| Command | What it does | Flags |
+| --- | --- | --- |
+| [`up`](#up) | Logs in if needed and connects to the NetBird network. Saves the client settings you pass to the active profile. | Client settings such as `--management-url`, `--setup-key`, `--hostname`, and `--wireguard-port`. See [up](#up). |
+| [`login`](#login) | Logs in without connecting, or refreshes an SSO session with `--extend`. | `--extend`, `--hostname`, `--management-url`, `--no-browser`, `--preshared-key`, `--profile`, `--qr`, `--setup-key`, `--setup-key-file` |
+| [`down`](#down) | Disconnects from the NetBird network. | None |
+| [`status`](#status) | Shows the connection status of this peer and its peers. | `--detail`, `--table`, `--json`, `--yaml`, `--ipv4`, `--ipv6`, `--filter-by-*`, `--anonymize`, `--anonymize-level`, `--check` |
+| [`ssh`](#ssh) | Connects to a peer over NetBird SSH. | `--user`, `--port`, `--tty`, `-L`, `-R`, `--known-hosts`, `--strict-host-key-checking`, `--no-browser`, `--no-cache` |
+| [`expose`](#expose) | Exposes a local port through the NetBird reverse proxy. | `--protocol`, `--with-pin`, `--with-password`, `--with-user-groups`, `--with-custom-domain`, `--with-name-prefix`, `--with-external-port` |
+| [`networks`](#networks) | Lists, selects, and deselects networks and exit nodes. | `select --append` |
+| [`profile`](#profile) | Adds, lists, selects, renames, removes, and claims profiles. | `list --show-id`, `list --show-owner`, `claim --owner` |
+| [`service`](#service) | Installs and manages the daemon service. | Daemon settings on `install` and `reconfigure`. See [service install](#service-install). |
+| [`debug`](#debug) | Creates debug bundles, changes the log level, and traces or captures packets. | See [debug](#debug). |
+| [`version`](#version) | Prints the client version. | None |
+| `deregister` | Removes this peer from the management service. | `--profile` |
+| `state` | Lists, cleans, or deletes the daemon's stored state. | None |
+| `kubernetes` | Lists Kubernetes clusters and writes a kubeconfig for them. | None |
+
+Every command also accepts the [global flags](#global-flags).
+
+## Client and daemon settings
+
+A setting belongs to either the client or the daemon. That decides which command sets it and where it is saved.
+
+| | Client settings | Daemon settings |
+| --- | --- | --- |
+| What they control | How this device connects: the management URL, DNS, routes, the SSH server, and the WireGuard port | How the service runs: the profile and settings locks, socket access, the JSON socket, and packet capture |
+| Set with | Flags of `netbird up` and `netbird login` | Flags of `netbird service install` and `netbird service reconfigure` |
+| Saved in | The active profile, `<profile>.json` | `service.json` |
+| Applied | When the daemon receives the `up` or `login` request | When the service starts |
 
 ## Configuration precedence
 
-This is the CLI configuration precedence (highest to lowest priority):
+When a setting is set in more than one place, the higher layer wins:
 
-1. environment variables (eg: `NB_WIREGUARD_PORT`)
-2. command line flags (eg: `--wireguard-port`)
-3. configuration file entries `<profile>.json` (formerly: `config.json`), eg: `WgPort` key
+1. **MDM policy**, on Windows and macOS. It overrides every other layer, with one exception: `NB_LAZY_CONN` overrides the `lazyConnection` MDM key. See [MDM integration](/client/mdm-integration).
+2. **Environment variable**, for example `NB_WIREGUARD_PORT`.
+3. **CLI flag**, for example `--wireguard-port`.
+4. **Saved configuration**: the profile for client settings (for example the `WgPort` key), or `service.json` for daemon settings.
+5. **Default** built into the client.
 
-We are preserving the unusual priority of environment variables for backwards compatibility with existing deployments.
+Environment variables override flags for backward compatibility with existing deployments.
+
+For a few client settings, such as the MTU and lazy connections, the management service can also send a value. It applies only when none of the layers 1 to 4 sets one.
+
+<Note>
+    The client settings you pass to `netbird up` or `netbird login` are saved to the profile, including values that come from an environment variable. Unsetting the variable later does not revert the setting. Pass the flag again with the value you want.
+</Note>
+
+## Environment variables
+
+NetBird reads two kinds of environment variables, depending on which process reads them:
+
+| | Client environment variables | Daemon environment variables |
+| --- | --- | --- |
+| Read by | The `netbird` command you run | The daemon service |
+| How to set them | In the shell, before the command | With `--service-env` on `netbird service install` or `netbird service reconfigure` |
+| Names | One for each flag of the command, such as `NB_SETUP_KEY` | One for each daemon flag, such as `NB_DISABLE_PROFILES`, plus the [advanced variables](/client/environment-variables) such as `NB_WG_KERNEL_DISABLED` |
+| How long they apply | For that command. `up` and `login` save the values to the profile. | Until you change them with `--service-env` |
+
+### Client environment variables
+
+Every flag of a `netbird` command can also be set with an environment variable:
+* The name is the flag name with the **NB_** prefix, dashes turned into underscores, in uppercase. For example, `NB_SETUP_KEY` for `--setup-key`.
+* A command reads only the variables for the flags it accepts. `NB_SETUP_KEY` applies to `up` and `login`, and `netbird status` ignores it.
+* The legacy **WT_** prefix still works. When both are set, the `NB_` variable wins.
+* A flag set with a variable counts as set when the command checks for flags that cannot be used together. For example, `netbird login --extend` fails when `NB_SETUP_KEY` is set, because `--extend` cannot be used with `--setup-key`.
+
+For example, to register a peer with a self-hosted management service:
+```shell
+export NB_MANAGEMENT_URL="https://api.self-hosted.com:443"
+export NB_SETUP_KEY="AAAA-BBB-CCC-DDDDDD"
+netbird up
+```
+
+<Note>
+    `sudo` does not pass the variables exported in your shell by default. Set them on the command instead: `sudo NB_SETUP_KEY=AAAA-BBB-CCC-DDDDDD netbird up`.
+</Note>
+
+### Daemon environment variables
+
+The service manager starts the daemon with its own environment, so a variable you export in your shell does not reach it. Set daemon variables with `--service-env`, which saves them in `service.json`:
+```shell
+sudo netbird service reconfigure --service-env NB_WG_KERNEL_DISABLED=true
+```
+
+`--service-env` merges new keys with the saved ones and overwrites existing keys. `--service-env ""` clears all of them. A daemon flag variable set this way, such as `NB_DISABLE_PROFILES`, overrides the value of the matching flag saved by `service install`.
+
+With `netbird up --foreground-mode`, the client runs inside the CLI process, so daemon variables set in the shell apply:
+```shell
+sudo NB_WG_KERNEL_DISABLED=true netbird up --foreground-mode
+```
+
+See [Client Environment Variables](/client/environment-variables) for the advanced variables.
 
 ## Global flags
-Global flags work with every command. Flags that only some commands use are documented with those commands. For example, `--setup-key` belongs to `up` and `login`.
-
-Below is the list of global flags:
+Every command accepts these flags:
 ```shell
       --daemon-addr string      Daemon service address to serve CLI requests [unix|npipe]://[path|name]. tcp://host:port is deprecated: it carries no caller identity, so the daemon refuses every request on it (default "unix:///var/run/netbird.sock", "npipe://netbird" on Windows)
       --log-file console        Sets NetBird log paths written to simultaneously. If "console" is specified the log will be output to stdout. If "syslog" is specified the log will be sent to the syslog daemon. You can pass the flag multiple times or separate entries by comma (default [/var/log/netbird/client.log])
   -l, --log-level string        Sets NetBird log level (default "info")
 ```
 
-<Note>
-    A command rejects flags it does not accept. For example, `netbird up --setup-key <key>` works, but `netbird status --setup-key <key>` fails with `unknown flag: --setup-key`.
-</Note>
-
-### Environment Variables
-Every flag of a `netbird` command can also be set with an environment variable. The variable name follows these rules:
-* The name is the flag name with the **NB_** prefix, for example `NB_SETUP_KEY` for `--setup-key`.
-* Dashes in the flag name become underscores, and letters are uppercase.
-* A command reads only the variables for the flags it accepts. For example, `NB_SETUP_KEY` applies to `up` and `login`, and `netbird status` ignores it.
-* An environment variable overrides the same flag given on the command line. See [Configuration precedence](#configuration-precedence).
-* The legacy **WT_** prefix still works. When both are set, the `NB_` variable wins.
-* A flag set with a variable counts as set when the command checks for flags that cannot be used together. For example, `netbird login --extend` fails when `NB_SETUP_KEY` is set, because `--extend` cannot be used with `--setup-key`.
-
-For example, you can pass `--management-url` and `--setup-key` as environment variables:
-```shell
-export NB_MANAGEMENT_URL="https://api.self-hosted.com:443"
-export NB_SETUP_KEY="AAAA-BBB-CCC-DDDDDD"
-netbird up
-```
-The `up` command reads both variables, then registers the peer with the setup key against the management service at `https://api.self-hosted.com:443`.
-
-Here are some additional examples of environment variables:
-```shell
-# Disable profiles feature
-export NB_DISABLE_PROFILES=true
-
-# Disable update settings functionality
-export NB_DISABLE_UPDATE_SETTINGS=true
-
-# Set custom log level
-export NB_LOG_LEVEL=debug
-
-# Set custom daemon address
-export NB_DAEMON_ADDR="unix:///var/run/netbird.sock"
-```
-
-Beyond flag-derived variables, the client also supports a number of advanced environment variables for tuning networking, firewall, ICE connectivity, and more. See the [Client Environment Variables](/client/environment-variables) reference for the full list.
+On `service install` and `service reconfigure`, these flags configure the daemon and are saved in `service.json`. On other commands, they apply to that command only.
 
 ## Commands
 ### up
@@ -89,6 +139,7 @@ Single command to log in and start the NetBird client. It can send a signal to t
 The command will check if the peer is logged in and connect to the management service. If the peer is not logged in, by default, it will attempt to initiate an SSO login flow.
 #### Flags
 ```shell
+      --allow-remote-jobs                   Allow the management server to run remote jobs (e.g. debug bundles) on this peer
       --allow-server-ssh                    Allow SSH server on peer
       --block-inbound                       Block inbound connections. If enabled, the client will not allow any inbound connections to the local machine nor routed networks. This overrides any policies received from the management service.
       --block-lan-access                    Block access to local networks (LAN) when using this peer as a router or exit node
@@ -101,8 +152,7 @@ The command will check if the peer is logged in and connect to the management se
       --disable-ssh-auth                    Disable SSH JWT authentication. If enabled, any peer with network access can connect without user authentication.
       --dns-resolver-address string         Sets a custom address for NetBird's local DNS resolver. If set, the agent won't attempt to discover the best IP and port to listen on. An empty string "" clears the previous configuration. E.g. --dns-resolver-address 127.0.0.1:5053 or --dns-resolver-address ""
       --dns-router-interval duration        DNS route update interval (default 1m0s)
-      --enable-lazy-connection              Deprecated and no longer used. Lazy connections are controlled by Management and the NB_LAZY_CONN environment variable.
-      --enable-rosenpass                    [Deprecated] Enable Rosenpass feature. If enabled, the connection will be post-quantum secured via Rosenpass.
+      --enable-local-metrics                Enables a local Prometheus /metrics endpoint exposing connection state (peers, latency, P2P vs relay).
       --enable-ssh-local-port-forwarding    Enable local port forwarding for SSH server
       --enable-ssh-remote-port-forwarding   Enable remote port forwarding for SSH server
       --enable-ssh-root                     Enable root login for SSH server
@@ -113,13 +163,14 @@ The command will check if the peer is logged in and connect to the management se
   -F, --foreground-mode                     Start service in foreground. Use --config to override the default profile file location
   -n, --hostname string                     Sets a custom hostname for the device
       --interface-name string               WireGuard interface name (default "wt0")
+      --local-metrics-address string        Listen address of the local Prometheus /metrics endpoint. (default "127.0.0.1:9191")
   -m, --management-url string               Management Service URL [http|https]://[host]:[port] (default "https://api.netbird.io:443")
       --mtu uint16                          Set MTU (Maximum Transmission Unit) for the WireGuard interface (default 1280)
   -N, --network-monitor                     Manage network monitoring. Defaults to true on Windows and macOS, false on Linux and FreeBSD. E.g. --network-monitor=false to disable or --network-monitor=true to enable.
       --no-browser                          Do not open the browser for SSO login
       --preshared-key string                Sets WireGuard PreSharedKey property. If set, then only peers that have the same key can communicate.
       --profile string                      Profile name to use for the login. If not specified, the last used profile will be used.
-      --rosenpass-permissive                [Deprecated] Enable Rosenpass in permissive mode to allow this peer to accept WireGuard connections without requiring Rosenpass functionality from peers that do not have Rosenpass enabled.
+      --qr                                  Show a QR code for the SSO login URL, for headless machines without browser access
   -k, --setup-key string                    Setup key obtained from the Management Service Dashboard (used to register peer). Cannot be used with --setup-key-file.
       --setup-key-file string               Path to a file containing a setup key (used to register peer). Cannot be used with --setup-key.
       --ssh-jwt-cache-ttl int               SSH JWT token cache TTL in seconds (default 0, disabled). When enabled, the client caches the JWT so repeated SSH connections skip the OIDC login flow. The receiving SSH server rejects tokens older than 10 minutes, so values above 600 will result in authentication failures for cached tokens.
@@ -170,6 +221,7 @@ Command to authenticate the NetBird client to a management service. If the peer 
       --no-browser              Do not open the browser for SSO login
       --preshared-key string    Sets WireGuard PreSharedKey property. If set, then only peers that have the same key can communicate.
       --profile string          Profile name to use for the login. If not specified, the last used profile will be used.
+      --qr                      Show a QR code for the SSO login URL, for headless machines without browser access
   -k, --setup-key string        Setup key obtained from the Management Service Dashboard (used to register peer). Cannot be used with --setup-key-file.
       --setup-key-file string   Path to a file containing a setup key (used to register peer). Cannot be used with --setup-key.
 ```
@@ -736,35 +788,40 @@ This will output:
 ```
 
 ### service
-The service command is a top-level command with subcommands to perform operations related to the daemon service.
+The `service` command installs and manages the daemon service. Run it with elevated permissions, with `sudo` or from an elevated terminal on Windows.
 
-You should run the service command with elevated permissions.
+| Subcommand | What it does |
+| --- | --- |
+| [`install`](#service-install) | Installs the daemon service with the daemon settings you pass, and saves them in `service.json`. |
+| [`reconfigure`](#service-reconfigure) | Changes the daemon settings of an installed service. It stops the service, saves the new settings, and starts the service again if it was running. |
+| `start`, `stop`, `restart` | Starts, stops, or restarts the service with its saved settings. |
+| `status` | Shows the status of the daemon service. |
+| `uninstall` | Removes the service. `service.json` is kept, so a later `install` reuses the saved settings. |
+| `reset-params` | Deletes `service.json`, so the next `install` or `reconfigure` starts from the defaults. |
 
-#### Flags
-These flags apply to all `service` subcommands:
+Every `service` subcommand accepts this flag, which is not saved:
 ```shell
   -s, --service string   NetBird system service name (default "netbird")
 ```
 
-The daemon settings, such as `--disable-profiles`, `--enable-json-socket`, and `--allow-group`, are flags of `service install` and `service reconfigure`. Those commands save them in `service.json` and pass them to the service. `service start`, `service stop`, `service restart`, `service status`, and `service uninstall` act on the installed service and reject these flags with `unknown flag`. To change a daemon setting, run `sudo netbird service reconfigure` with the new value.
+The daemon settings, such as `--disable-profiles` or `--allow-group`, are flags of `install` and `reconfigure` only. `start`, `stop`, `restart`, `status`, and `uninstall` act on the installed service and reject them with `unknown flag`.
 
 ### service install
-The install installs the daemon service on the system.
-#### Usage
-The minimal form of running the command is:
+Installs the daemon service. The minimal form is:
 ```shell
 sudo netbird service install
 ```
-You can use the global flags to configure the daemon service. For instance, you can set a debug log level with the flag `--log-level`
+To set a debug log level for the daemon:
 ```shell
 sudo netbird service install --log-level debug
 ```
-You can set a custom profile file location for the daemon with the flag `--config`
+To use a custom profile file location for the daemon:
 ```shell
 sudo netbird service install --config /opt/netbird/config.json
 ```
 
 #### Flags
+`service install` and `service reconfigure` accept the same flags. With `reconfigure`, a flag you leave out keeps its saved value.
 ```shell
       --allow-group strings       Restricts the daemon control socket and the JSON socket to the given group.
   -c, --config string             Overrides the default profile file location (default "/var/lib/netbird/default.json")
@@ -775,20 +832,21 @@ sudo netbird service install --config /opt/netbird/config.json
       --enable-json-socket        Enables the HTTP/JSON API socket.
       --json-socket string        HTTP/JSON API socket address. Requires --enable-json-socket (default "unix:///var/run/netbird-http.sock")
   -m, --management-url string     Management Service URL [http|https]://[host]:[port] (default "https://api.netbird.io:443")
-      --service-env strings       Sets extra environment variables for the service. You can specify a comma-separated list of KEY=VALUE pairs. E.g. --service-env NB_LOG_LEVEL=debug,CUSTOM_VAR=value
+      --service-env strings       Sets extra environment variables for the service. You can specify a comma-separated list of KEY=VALUE pairs. New keys are merged with previously saved env vars, and existing keys are overwritten. Use --service-env "" to clear all saved env vars. E.g. --service-env NB_LOG_LEVEL=debug,CUSTOM_VAR=value
 ```
 
-These flags are intended for managed or shared machines where non-admin users should not be able to alter the client configuration through the CLI or UI:
+- `--disable-networks` prevents users from listing, selecting, or deselecting networks, including exit nodes, through the CLI or UI.
+- `--disable-profiles` prevents users from adding, removing, or switching profiles. The client stays on the profile that was active when the flag was set.
+- `--disable-update-settings` prevents users from changing client settings, such as the management URL or the DNS resolver address, through the CLI or UI.
+- `--allow-group`: see [Restrict daemon access to a group](/client/profile-ownership#restrict-daemon-access-to-a-group).
+- `--enable-json-socket` and `--json-socket`: see [JSON socket](/client/json-socket).
+- `--enable-capture` allows `netbird debug capture` to record packets on the NetBird interface.
 
-- `--disable-networks` prevents users from listing, selecting, or deselecting networks (including exit nodes) via CLI or UI. The flag is persisted in the service's `service.json` state file.
-- `--disable-profiles` prevents users from adding, removing, or switching profiles. The client stays locked to the profile that was active at install time. Any attempt to switch profiles via CLI or UI is rejected.
-- `--disable-update-settings` prevents users from changing daemon settings (management URL, log level, DNS resolver address, etc.) via CLI or UI. To change them, unlock the service first (steps below).
+An MDM policy overrides these flags. See [Configuration precedence](#configuration-precedence).
 
-For `--allow-group`, see [Restrict daemon access to a group](/client/profile-ownership#restrict-daemon-access-to-a-group). For `--enable-json-socket` and `--json-socket`, see [JSON socket](/client/json-socket). `--enable-capture` allows `netbird debug capture` to record packets on the NetBird interface.
+#### Lock the configuration of a managed device
 
-Typical use: an IT admin deploys NetBird with a setup key and locks the configuration so end users cannot disconnect from the corporate account or point the client at a different management server.
-
-Run `netbird up` before you set `--disable-update-settings`. With it set, `netbird up` rejects any management URL other than the one saved on the machine, and a new install saves NetBird Cloud's URL (`https://api.netbird.io:443`). So if you lock first, `netbird up --management-url <self-hosted URL>` fails and the peer is not registered. To recover, unlock the service (step 1 below), run `sudo netbird up --setup-key <setup key> --management-url <self-hosted URL>`, then lock it again (step 3).
+An IT admin can deploy NetBird with a setup key and lock the configuration, so users cannot disconnect from the corporate account or point the client at another management service:
 
 ```shell
 sudo netbird service install
@@ -797,90 +855,18 @@ sudo netbird up --setup-key AAAA-BBB-CCC-DDDDDD   # self-hosted: add --managemen
 sudo netbird service reconfigure --disable-profiles --disable-update-settings
 ```
 
-`service reconfigure` restarts the service with the new flags, and the peer reconnects without registering again. `service reconfigure` keeps the saved value of any `--disable-*` flag you leave out, so running it with no flags does not unlock the service. To change the configuration later:
+Run `netbird up` before you set `--disable-update-settings`. With it set, `netbird up` rejects any management URL other than the one saved on the machine, and a new install saves NetBird Cloud's URL (`https://api.netbird.io:443`). If you lock first, `netbird up --management-url <self-hosted URL>` fails and the peer is not registered. To recover, unlock the service (step 1 below), run `sudo netbird up --setup-key <setup key> --management-url <self-hosted URL>`, then lock it again (step 3).
+
+`service reconfigure` restarts the service with the new flags, and the peer reconnects without registering again. Because a flag you leave out keeps its saved value, running `reconfigure` with no flags does not unlock the service. To change the configuration later:
 
 1. Unlock the service by passing every `--disable-*` flag you set as false: `sudo netbird service reconfigure --disable-profiles=false --disable-update-settings=false`.
 2. Make the change.
 3. Lock the service again: `sudo netbird service reconfigure --disable-profiles --disable-update-settings`.
 
-<Note>
-    Install parameters (including `--disable-profiles`, `--disable-update-settings`, and `--service-env`) are persisted to a `service.json` file and survive uninstall/reinstall cycles. To clear saved parameters and revert to defaults, run `netbird service reset-params` followed by `netbird service reconfigure`.
-</Note>
-
-<Note>
-    Each of these flags can also be set with its environment variable, for example `NB_DISABLE_PROFILES` or `NB_ENABLE_JSON_SOCKET`.
-</Note>
-
-### service uninstall
-The uninstall uninstalls the daemon service from the system.
-#### Usage
-The minimal form of running the command is:
-```shell
-sudo netbird service uninstall
-```
-
-### service start
-Starts the daemon service
-#### Usage
-The minimal form of running the command is:
-```shell
-sudo netbird service start
-```
-
-<Note>
-    The service starts with the settings saved by `service install` or `service reconfigure`, such as `--disable-profiles`. `service start` does not accept these flags. To change them, use `service reconfigure`.
-</Note>
-
-### service stop
-Stops the daemon service
-#### Usage
-The minimal form of running the command is:
-```shell
-sudo netbird service stop
-```
-
-### service restart
-Restarts the daemon service
-#### Usage
-The minimal form of running the command is:
-```shell
-sudo netbird service restart
-```
-
-### service status
-Shows the status of the daemon service
-#### Usage
-The minimal form of running the command is:
-```shell
-sudo netbird service status
-```
-
 ### service reconfigure
-Reconfigures the daemon service with new settings without manual uninstall/install. The command temporarily stops the service, updates its configuration, and restarts it if it was running.
-#### Flags
-`service reconfigure` accepts the same flags as [`service install`](#service-install). A flag you leave out keeps its saved value.
-```shell
-      --allow-group strings       Restricts the daemon control socket and the JSON socket to the given group.
-  -c, --config string             Overrides the default profile file location (default "/var/lib/netbird/default.json")
-      --disable-networks          Disables network selection.
-      --disable-profiles          Disables profiles feature.
-      --disable-update-settings   Disables update settings feature.
-      --enable-capture            Enables packet capture with netbird debug capture.
-      --enable-json-socket        Enables the HTTP/JSON API socket.
-      --json-socket string        HTTP/JSON API socket address. Requires --enable-json-socket (default "unix:///var/run/netbird-http.sock")
-  -m, --management-url string     Management Service URL [http|https]://[host]:[port] (default "https://api.netbird.io:443")
-      --service-env strings       Sets extra environment variables for the service. You can specify a comma-separated list of KEY=VALUE pairs. E.g. --service-env NB_LOG_LEVEL=debug,CUSTOM_VAR=value
-```
-#### Usage
+Changes the daemon settings of an installed service without uninstalling it. It accepts the [same flags as `service install`](#service-install), and a flag you leave out keeps its saved value:
 ```shell
 sudo netbird service reconfigure --service-env NB_LOG_LEVEL=debug
-```
-
-### service reset-params
-Removes the saved `service.json` file so the next install uses default parameters.
-#### Usage
-```shell
-sudo netbird service reset-params
 ```
 
 ### debug
@@ -1124,3 +1110,16 @@ Trace an inbound ICMP echo request:
 ```shell
 netbird debug trace in 100.64.1.2 self -p icmp --icmp-type 8 --icmp-code 0
 ```
+
+## Deprecated and removed flags
+
+A deprecated flag still works, but it is hidden from `--help` and prints a deprecation notice when you use it. A removed flag fails with `unknown flag`. Update scripts that use either.
+
+| Flag | Command | Status | Use instead |
+| --- | --- | --- | --- |
+| `--enable-lazy-connection` | `up` | Deprecated, has no effect | The lazy connection setting in the dashboard, or `NB_LAZY_CONN` on the daemon. See [Client Environment Variables](/client/environment-variables). |
+| `--enable-rosenpass`, `--rosenpass-permissive` | `up` | Deprecated. Rosenpass support may be removed in a future release. | No replacement. See [Post-quantum cryptography](/client/post-quantum-cryptography). |
+| `--login` | `ssh` | Deprecated | `--user` |
+| `-i`, `--identity` | `ssh` | Deprecated, has no effect | No replacement |
+| `--admin-url` | All commands | Removed | No replacement. The flag had no effect. |
+| `-c`, `--config` | All commands except `service install`, `service reconfigure`, and `up` | Removed. On `up`, it is hidden and only applies with `--foreground-mode`. | `sudo netbird service reconfigure --config <path>` to change the daemon's profile file location |
