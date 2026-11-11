@@ -683,6 +683,23 @@ The unit loads the saved file, not the script. Each time you run the script agai
 
 If the unit cannot load the saved file, it fails and Docker still starts, with the direct path open. After the server restarts, check with `nft list table inet cloudflare_only`: it prints the rules, with Cloudflare's ranges, or `Error: No such file or directory` when they are not loaded.
 
+To keep Docker down instead when the rules are not loaded, add a drop-in that makes Docker check for them before it starts:
+
+```bash
+mkdir -p /etc/systemd/system/docker.service.d
+cat > /etc/systemd/system/docker.service.d/cloudflare-only.conf <<'UNIT'
+[Unit]
+Wants=cloudflare-only.service
+After=cloudflare-only.service
+
+[Service]
+ExecStartPre=/usr/sbin/nft list table inet cloudflare_only
+UNIT
+systemctl daemon-reload
+```
+
+With the drop-in, a saved file that cannot be loaded keeps Docker, and every container in it, down. After you fix the file, run `systemctl start docker`. Restarting or stopping `cloudflare-only.service` does not restart or stop Docker, so the containers keep running.
+
 ---
 
 ## Multi-Container Setup (Legacy)
