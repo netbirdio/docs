@@ -55,6 +55,7 @@ Every flag of a `netbird` command can also be set with an environment variable. 
 * A command reads only the variables for the flags it accepts. For example, `NB_SETUP_KEY` applies to `up` and `login`, and `netbird status` ignores it.
 * An environment variable overrides the same flag given on the command line. See [Configuration precedence](#configuration-precedence).
 * The legacy **WT_** prefix still works. When both are set, the `NB_` variable wins.
+* A flag set with a variable counts as set when the command checks for flags that cannot be used together. For example, `netbird login --extend` fails when `NB_SETUP_KEY` is set, because `--extend` cannot be used with `--setup-key`.
 
 For example, you can pass `--management-url` and `--setup-key` as environment variables:
 ```shell
@@ -119,8 +120,8 @@ The command will check if the peer is logged in and connect to the management se
       --preshared-key string                Sets WireGuard PreSharedKey property. If set, then only peers that have the same key can communicate.
       --profile string                      Profile name to use for the login. If not specified, the last used profile will be used.
       --rosenpass-permissive                [Deprecated] Enable Rosenpass in permissive mode to allow this peer to accept WireGuard connections without requiring Rosenpass functionality from peers that do not have Rosenpass enabled.
-  -k, --setup-key string                    Setup key obtained from the Management Service Dashboard (used to register peer)
-      --setup-key-file string               Path to a file containing a setup key (used to register peer). Ignored if --setup-key is provided.
+  -k, --setup-key string                    Setup key obtained from the Management Service Dashboard (used to register peer). Cannot be used with --setup-key-file.
+      --setup-key-file string               Path to a file containing a setup key (used to register peer). Cannot be used with --setup-key.
       --ssh-jwt-cache-ttl int               SSH JWT token cache TTL in seconds (default 0, disabled). When enabled, the client caches the JWT so repeated SSH connections skip the OIDC login flow. The receiving SSH server rejects tokens older than 10 minutes, so values above 600 will result in authentication failures for cached tokens.
       --wireguard-port uint16               WireGuard interface listening port (default 51820)
 ```
@@ -163,13 +164,14 @@ netbird up --setup-key AAAA-BBB-CCC-DDDDDD --extra-dns-labels vpc1,mgmt1
 Command to authenticate the NetBird client to a management service. If the peer is not logged in, by default, it will attempt to initiate an SSO login flow.
 #### Flags
 ```shell
+      --extend                  Refresh the SSO session expiry without tearing down the tunnel (requires an active connection). Cannot be used with --setup-key or --setup-key-file.
   -n, --hostname string         Sets a custom hostname for the device
   -m, --management-url string   Management Service URL [http|https]://[host]:[port] (default "https://api.netbird.io:443")
       --no-browser              Do not open the browser for SSO login
       --preshared-key string    Sets WireGuard PreSharedKey property. If set, then only peers that have the same key can communicate.
       --profile string          Profile name to use for the login. If not specified, the last used profile will be used.
-  -k, --setup-key string        Setup key obtained from the Management Service Dashboard (used to register peer)
-      --setup-key-file string   Path to a file containing a setup key (used to register peer). Ignored if --setup-key is provided.
+  -k, --setup-key string        Setup key obtained from the Management Service Dashboard (used to register peer). Cannot be used with --setup-key-file.
+      --setup-key-file string   Path to a file containing a setup key (used to register peer). Cannot be used with --setup-key.
 ```
 #### Usage
 The minimal form of running the command is:
@@ -187,6 +189,10 @@ netbird login --setup-key AAAA-BBB-CCC-DDDDDD
 Passing a management url and a setup key:
 ```shell
 netbird login --setup-key AAAA-BBB-CCC-DDDDDD --management-url https://api.self-hosted.com:443
+```
+To refresh the SSO session of a connected peer before it expires, without disconnecting:
+```shell
+netbird login --extend
 ```
 
 ### down
@@ -517,7 +523,6 @@ Connect to a remote peer via SSH with an interactive shell or execute a command.
   -L stringArray                   Local port forwarding [bind_address:]port:host:hostport
   -R stringArray                   Remote port forwarding [bind_address:]port:host:hostport
   -o, --known-hosts string         Path to known_hosts file (default: ~/.ssh/known_hosts)
-      --login string               SSH username (alias for --user)
       --no-browser                 Do not open the browser for SSO login
       --no-cache                   Skip cached JWT token and force fresh authentication
   -p, --port int                   Remote SSH port (default 22)
@@ -525,6 +530,10 @@ Connect to a remote peer via SSH with an interactive shell or execute a command.
   -t, --tty                        Force pseudo-terminal allocation
   -u, --user string                SSH username
 ```
+
+<Note>
+    `--login` is deprecated and hidden from the help output. It still sets the SSH username and prints a deprecation notice. Use `--user` instead.
+</Note>
 
 **Arguments:**
 * `[user@]host`: The remote user and NetBird peer hostname or IP address
@@ -929,8 +938,8 @@ This will output:
   -C, --log-file-count uint32      Number of rotated log files to include in debug bundle (default 1)
   -S, --system-info                Adds system information to the debug bundle (default true)
   -U, --upload-bundle              Uploads the debug bundle to a server
-      --upload-bundle-url string   Service URL to get an upload URL for the debug bundle (default "https://upload.debug.netbird.io/upload-url")
-      --upload-bundle-insecure     Allow uploading to an http or untrusted-TLS upload server (self-hosted); requires root on Linux and macOS, or an administrator on Windows
+      --upload-bundle-url string   Service URL to get an upload URL for the debug bundle (default "https://upload.debug.netbird.io/upload-url"). Requires --upload-bundle.
+      --upload-bundle-insecure     Allow uploading to an http or untrusted-TLS upload server (self-hosted). Requires --upload-bundle, and root on Linux and macOS, or an administrator on Windows
 ```
 
 ### debug for
@@ -970,8 +979,8 @@ Log level restored to INFO
   -C, --log-file-count uint32      Number of rotated log files to include in debug bundle (default 1)
   -S, --system-info                Adds system information to the debug bundle (default true)
   -U, --upload-bundle              Uploads the debug bundle to a server
-      --upload-bundle-url string   Service URL to get an upload URL for the debug bundle (default "https://upload.debug.netbird.io/upload-url")
-      --upload-bundle-insecure     Allow uploading to an http or untrusted-TLS upload server (self-hosted); requires root on Linux and macOS, or an administrator on Windows
+      --upload-bundle-url string   Service URL to get an upload URL for the debug bundle (default "https://upload.debug.netbird.io/upload-url"). Requires --upload-bundle.
+      --upload-bundle-insecure     Allow uploading to an http or untrusted-TLS upload server (self-hosted). Requires --upload-bundle, and root on Linux and macOS, or an administrator on Windows
 ```
 
 ### debug log
