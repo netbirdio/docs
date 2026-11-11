@@ -467,7 +467,7 @@ If you're using a managed cloud load balancer, configure the equivalent of each 
 
 ### With TLS pass-through
 
-The load balancer forwards TCP (Layer 4) to each backend host. A reverse proxy such as Traefik on the backend host terminates TLS and routes requests to the NetBird replica and, on Management hosts, to the dashboard. On each Management replica, set `server.tls` to empty and `server.listenAddress` to `":80"`.
+The load balancer forwards TCP (Layer 4) to each backend host. A reverse proxy such as Traefik on the backend host terminates TLS and routes requests to the NetBird replica and, on Management hosts, to the dashboard. On each Management replica, set `server.tls` to empty and `server.listenAddress` to `":80"`. On each Signal host, run Signal on port 10000 behind the proxy, with no certificate and no published port; [Step 6](#step-6-deploy-the-signal-pool) shows the compose change.
 
 **Health checks.** Send each check over TLS with the pool's FQDN as the `Host` header. The reverse proxy routes by host name, so it answers a wrong or missing `Host` header with HTTP 404 or 400, and the check fails on a healthy backend. Set the `Host` header explicitly: some load balancers send the backend's IP address and port by default (NetScaler, for example).
 
@@ -476,7 +476,7 @@ The load balancer forwards TCP (Layer 4) to each backend host. A reverse proxy s
 
 A TCP check is not enough under pass-through: the proxy accepts connections even when its replica is down, so peers reaching that backend get `502 Bad Gateway`.
 
-**Certificates.** Every backend in a pool needs a certificate for the pool's FQDN. Either obtain one certificate and copy it to every backend (and again after each renewal), or let every backend obtain its own with the DNS-01 challenge, which does not go through the load balancer. With DNS-01 on every backend, a certificate request made within about 30 seconds after another backend's request for the same name finished can fail with `Incorrect TXT record`, for example when the backends start one after the other with no certificate yet (with Cloudflare DNS and Let's Encrypt). To avoid the `Incorrect TXT record` failure, have every backend's ACME client wait 60 seconds after publishing its TXT record before it asks Let's Encrypt to validate. In Traefik's static configuration, set `certificatesResolvers.<name>.acme.dnsChallenge.propagation.delayBeforeChecks` to `60s`, where `<name>` is the name of your certificate resolver. Do not use the TLS-ALPN-01 or HTTP-01 challenge from each backend through the load balancer: Let's Encrypt's validation connections can reach a backend that did not request the certificate, and the request then fails (`remote error: tls: unrecognized name` with TLS-ALPN-01, a 404 for the challenge with HTTP-01).
+**Certificates.** The reverse proxy on every backend host needs a certificate for the pool's FQDN. Either obtain one certificate and copy it to every backend (and again after each renewal), or let every backend obtain its own with the DNS-01 challenge, which does not go through the load balancer. With DNS-01 on every backend, a certificate request made within about 30 seconds after another backend's request for the same name finished can fail with `Incorrect TXT record`, for example when the backends start one after the other with no certificate yet (with Cloudflare DNS and Let's Encrypt). To avoid the `Incorrect TXT record` failure, have every backend's ACME client wait 60 seconds after publishing its TXT record before it asks Let's Encrypt to validate. In Traefik's static configuration, set `certificatesResolvers.<name>.acme.dnsChallenge.propagation.delayBeforeChecks` to `60s`, where `<name>` is the name of your certificate resolver. Do not use the TLS-ALPN-01 or HTTP-01 challenge from each backend through the load balancer: Let's Encrypt's validation connections can reach a backend that did not request the certificate, and the request then fails (`remote error: tls: unrecognized name` with TLS-ALPN-01, a 404 for the challenge with HTTP-01).
 
 ## Step 5: Deploy the Relay pool
 
@@ -626,7 +626,7 @@ services:
     container_name: netbird-signal
     restart: unless-stopped
     ports:
-      - "443:443"   # Signal gRPC (registered with the Signal LB)
+      - "443:443"   # Signal gRPC (registered with the Signal LB); with TLS pass-through, see below
     environment:
       - NB_LICENSE_KEY=<your enterprise license key>
       - NATS_ENDPOINTS=nats://nats-1.example.com:4222,nats://nats-2.example.com:4222,nats://nats-3.example.com:4222
@@ -649,7 +649,10 @@ services:
 
 When the NATS URLs carry a password, as in the [Step 3 example](#example-a-self-hosted-cluster-with-docker-compose), set `NATS_ENDPOINTS` in a file listed under `env_file`, readable by root only, instead of in `docker-compose.yml`.
 
-Signal gRPC requires TLS. Either terminate TLS at the Signal load balancer and forward plain HTTP/2 (h2c) to backends on port 443, or pass TLS through to the backends. With TLS pass-through, mount certificates into each Signal container and adjust the `--port` or listen address as needed.
+Peers reach Signal only over TLS, but Signal itself serves cleartext HTTP/2 (h2c) and needs no certificate. Terminate TLS in front of it in one of two ways:
+
+- **At the Signal load balancer**, which forwards h2c to port 443 on each Signal host. The compose example above is for this case.
+- **With TLS pass-through**, at a reverse proxy on each Signal host (see [With TLS pass-through](#with-tls-pass-through)). In the compose example, set `--port` to `"10000"` and remove the `ports:` entry. Add the proxy as a service in the same compose file, so it shares Signal's network, publish port 443 from the proxy, and route the Signal FQDN as cleartext HTTP/2 to `netbird-signal:10000` (`netbird-signal` is the `container_name` above; in Traefik, `h2c://netbird-signal:10000`).
 
 Start Signal on each host:
 
