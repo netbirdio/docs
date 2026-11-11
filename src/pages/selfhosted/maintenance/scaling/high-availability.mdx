@@ -435,19 +435,23 @@ Signal instances reference the same list via the `NATS_ENDPOINTS` environment va
 
 Use the load balancer your organization already operates. NetBird works with any Layer 7 load balancer that supports HTTP/2 and gRPC, including HAProxy, NGINX, AWS Application Load Balancer, Google Cloud Load Balancing, Azure Application Gateway, and Envoy.
 
+<Warning>
+Do not let NetScaler terminate TLS in front of the Management and Signal replicas. Use TLS pass-through instead (see [With TLS pass-through](#with-tls-pass-through)). When NetScaler (CPX 14.1-73.30) terminates TLS, it drops the replicas' gRPC trailers, whether it forwards in cleartext (h2c) or re-encrypts (HTTP/2 over TLS). The trailers are the fields that end each response and carry the gRPC status code. Peers' Management and Signal connections then fail with `COMPRESSION_ERROR`. Deleting the `Trailer` response header (the header that announces the trailers) on NetScaler is not a fix: peers can then connect to Management and Signal, but every gRPC error reaches the peer as a success. For example, Management answers a new peer's first login with an error asking for the setup key; the peer sees a success instead, never sends the key, and cannot log in.
+</Warning>
+
 Plan one load-balancer frontend for each of the Management and Signal pools. These can be separate load balancers or two frontends on a shared load balancer. Each frontend needs its own DNS name and backend pool. Configure the frontends and empty backend pools now, then add instances as you deploy the Signal and Management services in Steps 6 and 7. The Relay pool does not go behind a load balancer; see Step 5.
 
 | Pool | Public FQDN | Backend port | Frontend protocol | Health check |
 |---|---|---|---|---|
-| Signal | e.g. `signal.example.com` | 443 | HTTPS, HTTP/2, gRPC | TCP/443 (or gRPC health if supported) |
+| Signal | e.g. `signal.example.com` | 443 | HTTPS, HTTP/2, gRPC | `GET /` → HTTP 405 only (Signal answers `GET /` with 405; treat any other status as a failure) |
 | Management | e.g. `netbird.example.com` | 443 | HTTPS, HTTP/2, gRPC | `GET /oauth2/.well-known/openid-configuration` → HTTP 200 |
 
 Common requirements for every pool:
 
 | Requirement | Notes |
 |---|---|
-| **TLS termination** | **Prefer terminating TLS at the load balancer.** Set `server.tls` to empty on the Management replicas. If your environment requires TLS pass-through, configure TLS on every backend instead. |
-| **HTTP/2 + gRPC support end-to-end** | Required for Management and Signal pools. Make sure your load balancer supports long-lived connections. |
+| **TLS termination** | **Prefer terminating TLS at the load balancer.** Set `server.tls` to empty on the Management replicas. If your load balancer cannot meet the HTTP/2 + gRPC requirement below (NetScaler, see the warning above) or your environment requires TLS pass-through, terminate TLS on a reverse proxy on every backend host instead; see [With TLS pass-through](#with-tls-pass-through). |
+| **HTTP/2 + gRPC support end-to-end** | Whatever terminates TLS (the load balancer, or under TLS pass-through the reverse proxy on each backend host) must support HTTP/2 and gRPC for the Management and Signal pools, including forwarding the gRPC trailers. |
 | **Connection-level affinity** | This is the default for Layer 4 load balancers and Layer 7 load balancers that use HTTP/2 streaming. A long-lived connection stays on one backend for its lifetime. **No application-level sticky sessions are required.** NATS reconciles cross-instance Signal state, while PostgreSQL and Redis hold Management state. |
 | **Active health checks** | Mark backends out of the pool on failure within seconds, not minutes. |
 | **Connection draining on rolling upgrade** | When you remove a backend, the LB should let in-flight gRPC streams finish before tearing them down. |
@@ -457,7 +461,22 @@ For the full set of paths and protocols NetBird exposes to each load balancer, s
 
 The Management check confirms that a replica is up and serving. It keeps returning 200 while PostgreSQL or Redis is unreachable, so monitor those separately.
 
+Use the HTTP checks from the pool table rather than a TCP check: a TCP check keeps a backend in the pool while it still accepts connections but no longer answers requests, for example a replica that has hung. Do not use a gRPC health check (the `grpc.health.v1` health checking protocol): the Management and Signal servers do not implement it, so the load balancer marks healthy backends down.
+
 If you're using a managed cloud load balancer, configure the equivalent of each row above using your provider's UI or infrastructure as code. If you're using a self-hosted reverse proxy, create one backend pool per service, attach health checks, and enable HTTP/2 or WebSocket support as appropriate for each pool.
+
+### With TLS pass-through
+
+The load balancer forwards TCP (Layer 4) to each backend host. A reverse proxy such as Traefik on the backend host terminates TLS and routes requests to the NetBird replica and, on Management hosts, to the dashboard. On each Management replica, set `server.tls` to empty and `server.listenAddress` to `":80"`.
+
+**Health checks.** Send each check over TLS with the pool's FQDN as the `Host` header. The reverse proxy routes by host name, so it answers a wrong or missing `Host` header with HTTP 404 or 400, and the check fails on a healthy backend. Set the `Host` header explicitly: some load balancers send the backend's IP address and port by default (NetScaler, for example).
+
+- **Management:** `GET /oauth2/.well-known/openid-configuration` over TLS, `Host` set to the Management FQDN, no SNI needed; healthy on HTTP 200.
+- **Signal:** `GET /` over TLS, `Host` set to the Signal FQDN, no SNI needed; healthy on HTTP 405 only. When the Signal replica behind the proxy is down, the proxy answers 502.
+
+A TCP check is not enough under pass-through: the proxy accepts connections even when its replica is down, so peers reaching that backend get `502 Bad Gateway`.
+
+**Certificates.** Every backend in a pool needs a certificate for the pool's FQDN. Either obtain one certificate and copy it to every backend (and again after each renewal), or let every backend obtain its own with the DNS-01 challenge, which does not go through the load balancer. With DNS-01 on every backend, a certificate request made within about 30 seconds after another backend's request for the same name finished can fail with `Incorrect TXT record`, for example when the backends start one after the other with no certificate yet (with Cloudflare DNS and Let's Encrypt). To avoid the `Incorrect TXT record` failure, have every backend's ACME client wait 60 seconds after publishing its TXT record before it asks Let's Encrypt to validate. In Traefik's static configuration, set `certificatesResolvers.<name>.acme.dnsChallenge.propagation.delayBeforeChecks` to `60s`, where `<name>` is the name of your certificate resolver. Do not use the TLS-ALPN-01 or HTTP-01 challenge from each backend through the load balancer: Let's Encrypt's validation connections can reach a backend that did not request the certificate, and the request then fails (`remote error: tls: unrecognized name` with TLS-ALPN-01, a 404 for the challenge with HTTP-01).
 
 ## Step 5: Deploy the Relay pool
 
