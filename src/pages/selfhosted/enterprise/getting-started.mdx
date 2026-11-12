@@ -415,21 +415,21 @@ echo | openssl s_client -connect <your-domain>:443 -servername <your-domain> 2>/
 
 ## Appendix: Outbound connections
 
-Allow HTTPS (`443/tcp`) from the NetBird host to the host names below, and DNS (`53/udp` and `53/tcp`) from the NetBird host to its resolver. The list covers everything this script installs. It does not cover the NetBird Proxy and CrowdSec that `--enable-proxy` adds.
+Allow HTTPS (`443/tcp`, or your identity provider's own ports) from the NetBird host to the host names below, and DNS (`53/udp` and `53/tcp`) from the NetBird host to its resolver. The list covers everything this script installs. It does not cover the NetBird Proxy and CrowdSec that `--enable-proxy` adds.
 
-Keep these open permanently: `pkgs.netbird.io` (unless you change the geolocation settings), `acme-v02.api.letsencrypt.org`, `license.netbird.io`, and the host name of your identity provider's issuer URL if you connect one. Open `github.com` and `release-assets.githubusercontent.com` only while you download the script, and the host names in the GitHub registry and Docker Hub rows only while you pull images (at install, and when an upgrade pulls new images). `api.github.com`, `metrics.netbird.io` and `update.traefik.io` are optional.
+Keep these open permanently: `pkgs.netbird.io` (its row says when you can close it), `acme-v02.api.letsencrypt.org`, `license.netbird.io`, and your identity provider's host names if you connect one. Open `github.com` and `release-assets.githubusercontent.com` only while you download the script, and the host names in the GitHub registry and Docker Hub rows only while you pull images (at install, and when an upgrade pulls new images). `api.github.com`, `metrics.netbird.io` and `update.traefik.io` are optional.
 
 | Host name | Used for | Needed |
 |---|---|---|
-| `pkgs.netbird.io` | Downloading the install script. On every start, the server also checks this host for updates to its GeoLite2 (IP geolocation) database. | Always. With the geolocation settings changed (see [Geolocation database](/selfhosted/maintenance/geo-support)), only when you download the script |
+| `pkgs.netbird.io` | Downloading the install script. On every start, the server also checks this host for updates to its GeoLite2 (IP geolocation) database. | Always, unless geolocation is off with `NB_DISABLE_GEOLOCATION=true`, or the server has started once with this host open (so it has both geolocation databases) and you then set `disableGeoliteUpdate: true` (see [Geolocation database](/selfhosted/maintenance/geo-support)). In either case, only when you download the script |
+| `acme-v02.api.letsencrypt.org` | Issuing and renewing Traefik's Let's Encrypt certificate | Always |
+| `license.netbird.io` | License validation by the `netbird-server`, `receiver` and `enricher` services | Always |
+| The host names and ports of your identity provider's issuer, `token_endpoint` and `jwks_uri`, as its OpenID configuration lists them (443 when a URL names no port). With Keycloak, all three are on the issuer's host | The server reads the provider's OpenID configuration when you add the provider and every time the server starts; the server calls the token and key URLs during sign-in | Always, if you connect one |
 | `github.com`, `release-assets.githubusercontent.com` | Downloading the install script: `pkgs.netbird.io` redirects to the script's release on GitHub | When you download the script |
 | `ghcr.io`, `pkg-containers.githubusercontent.com` | Pulling the NetBird images (`netbird-server-cloud`, `dashboard-cloud`, `flow-receiver-cloud`, `flow-enricher-cloud`) from GitHub's registry | When you pull images |
 | `registry-1.docker.io`, `auth.docker.io`, `production.cloudfront.docker.com` | Pulling the Traefik, Postgres and NATS images from Docker Hub. If a pull fails with these three allowed, check Docker's [allowlist page](https://docs.docker.com/desktop/setup/allow-list/) | When you pull images |
-| `acme-v02.api.letsencrypt.org` | Issuing and renewing Traefik's Let's Encrypt certificate | Always |
-| `license.netbird.io` | License validation by the `netbird-server`, `receiver` and `enricher` services | Always |
 | `api.github.com` | The server's version check, for the latest dashboard release | Optional |
-| `metrics.netbird.io` | Anonymous usage metrics | Optional. To turn them off, set `disableAnonymousMetrics: true` under `server:` in `config.yaml` |
+| `metrics.netbird.io` | Anonymous usage metrics | Optional. To turn them off, set `disableAnonymousMetrics: true` under `server:` in `config.yaml`, then run `docker compose restart netbird-server` |
 | `update.traefik.io` | Traefik's own check for new Traefik versions | Optional |
-| The host name of your identity provider's issuer URL | The server reads the provider's OpenID configuration when you add the provider and every time the server starts | Always, if you connect one |
 
 If the `netbird-server`, `receiver` or `enricher` service restarts while `license.netbird.io` is unreachable, that service starts with the license invalid: the API endpoints of licensed features return `403` with `failed to validate user permissions: license invalid`, and the enricher skips traffic events. Once `license.netbird.io` is reachable again, each service validates the license at its next retry; you do not need to restart it.
