@@ -538,20 +538,18 @@ On a deployment migrated with `migrate-to-enterprise.sh`, use `grpc_pass grpc://
 
 ## Behind Cloudflare's proxy
 
-Cloudflare decrypts the HTTPS traffic it proxies, so it can read dashboard and REST API traffic. Inside that HTTPS, peers encrypt their messages to Management and Signal with their WireGuard keys, so Cloudflare cannot read them. Traffic between peers, direct or through a relay, travels in WireGuard tunnels, which Cloudflare cannot read either.
+To put the NetBird server behind Cloudflare's proxy (the orange cloud), make the changes below, then close the direct path. Cloudflare decrypts the HTTPS it proxies, so it can read dashboard and REST API traffic. Management, Signal and peer traffic stay encrypted with the peers' WireGuard keys.
 
-If you do not need Cloudflare in front of the NetBird server, set its DNS record to **DNS only** and skip this section. Otherwise proxy the record (the orange cloud), optionally with Cloudflare's web application firewall (WAF), apply the settings and [changes](#what-changes-behind-the-proxy) below, then [close the direct path](#close-the-direct-path). Cloudflare's Free Managed Ruleset does not block NetBird traffic.
+### Cloudflare settings
 
-### Cloudflare settings NetBird needs
+- **gRPC on**, under the zone's **Network** settings. While it is off, the dashboard loads but clients fail with `403 (Forbidden)` and `received unexpected content-type "text/html; charset=UTF-8"`.
+- **SSL/TLS encryption mode: Full (strict).** With **Flexible**, the sign-in loops and clients fail with `308 (Permanent Redirect)`.
 
-- **gRPC on.** In the Cloudflare dashboard, open the zone, go to **Network** and switch **gRPC** on. While it is off, Cloudflare answers every gRPC request itself, so no client reaches Management or Signal even though the dashboard and the API load normally. The client log shows `rpc error: code = PermissionDenied desc = unexpected HTTP status code received from server: 403 (Forbidden); transport: received unexpected content-type "text/html; charset=UTF-8"`.
-- **SSL/TLS encryption mode: Full (strict).** Set it in the zone's **SSL/TLS** settings. Full (strict) needs a valid certificate on your server (see **Certificates** below). Full also works but does not check your server's certificate. **Flexible** breaks NetBird: Cloudflare connects to your server over plain HTTP, the dashboard sign-in loops, and clients fail with `308 (Permanent Redirect)`.
+### Server changes
 
-### What changes behind the proxy
+Edit the server's configuration file (`config.yaml` in your install directory, or `config.yaml.enterprise` if it exists), then run `docker compose restart netbird-server`.
 
-The server's configuration file is `config.yaml` in your install directory, or `config.yaml.enterprise` if the directory has one: `migrate-to-enterprise.sh` creates it when it adds Postgres or traffic events, and the server then reads only that file.
-
-**STUN.** Clients receive the STUN server as `stun:<your domain>:3478`. Cloudflare's proxy does not forward UDP 3478, so that address stops answering and `netbird status -d` shows it as `Unavailable`. In the server's configuration file, set `server.stuns` to a STUN server that clients reach directly, then run `docker compose restart netbird-server`. Setting `server.stuns` turns off the embedded STUN server.
+**STUN.** Cloudflare does not proxy UDP 3478, so point clients at a STUN server they reach directly:
 
 ```yaml
 server:
@@ -559,32 +557,23 @@ server:
     - uri: "stun:stun.cloudflare.com:3478"
 ```
 
-If you run [external relays](/selfhosted/enterprise/external-relays) with STUN and their names are proxied too, list a DNS-only name for each relay's STUN in `server.stuns` instead (creating one is in [Running the Relay Behind Cloudflare's Proxy](/selfhosted/maintenance/scaling/set-up-external-relays#running-the-relay-behind-cloudflares-proxy)).
-
-**Connection IPs.** Behind Cloudflare, every peer's connection IP (shown in peer details and used by location-based posture checks) is a Cloudflare address until `netbird-server`, and with the installer's Traefik also Traefik, trusts Cloudflare's [published IP ranges](https://www.cloudflare.com/ips/), IPv4 and IPv6. In the server's configuration file, `trustedPeers` lists the proxy that connects to `netbird-server`, and `trustedHTTPProxies` lists that proxy and Cloudflare's ranges:
+**Client IPs.** Until the server trusts Cloudflare's [IP ranges](https://www.cloudflare.com/ips/), every peer's connection IP is a Cloudflare address. Add them to `trustedHTTPProxies`:
 
 ```yaml
 server:
   reverseProxy:
-    trustedPeers:
-      - "172.30.0.10/32"          # your proxy: the installer's Traefik, or your Nginx address
     trustedHTTPProxies:
-      - "172.30.0.10/32"          # the same proxy
-      - "<Cloudflare range>"      # one line per range, IPv4 and IPv6
+      - "172.30.0.10/32"    # your reverse proxy: the installer's Traefik
+      - "173.245.48.0/20"   # one line per Cloudflare range, IPv4 and IPv6
 ```
 
-- **The installer's Traefik:** both lists already hold Traefik's fixed address, `172.30.0.10/32`. Add Cloudflare's ranges to `trustedHTTPProxies`. Traefik must trust the ranges too: add `--entrypoints.websecure.forwardedHeaders.trustedIPs=<range>,<range>,...` to the `traefik` service's `command:` list in `docker-compose.yml`. Then run `docker compose up -d traefik` and `docker compose restart netbird-server`.
-- **Nginx from this page's templates:** in both lists, replace `172.30.0.10` with the address `netbird-server` sees Nginx connect from (keep `/32`), and add Cloudflare's ranges to `trustedHTTPProxies`. For Nginx in Docker on the installer's `netbird` network, give the container a fixed, unused address in the network's subnet (`ipv4_address` in Compose, `--ip` with `docker run`; `docker network inspect netbird` shows the subnet) and use it in both lists. For Nginx on the host, use the `netbird` network's `Gateway` address. Nginx's own configuration does not change. Then run `docker compose restart netbird-server`.
+With the installer's Traefik, also add `--entrypoints.websecure.forwardedHeaders.trustedIPs=<ranges>` to the `traefik` service's `command:` and run `docker compose up -d traefik`. With Nginx, replace `172.30.0.10` in both `trustedPeers` and `trustedHTTPProxies` with the address `netbird-server` sees Nginx connect from.
 
-Once a peer reconnects, its `connection_ip` in `GET /api/peers` is its own public address.
-
-**Certificates.** Traefik's default TLS-ALPN-01 challenge cannot pass through Cloudflare's proxy: issuance fails with `Cannot negotiate ALPN protocol "acme-tls/1" for tls-alpn-01 challenge`. Use the DNS-01 challenge, which proves the domain with a DNS record instead of a connection to your server. For the commercial-license stack, see [Traefik cannot issue a TLS certificate behind Cloudflare's proxy](/selfhosted/enterprise/getting-started#traefik-cannot-issue-a-tls-certificate-behind-cloudflares-proxy).
+**Certificates.** Let's Encrypt's TLS-ALPN-01 challenge cannot pass Cloudflare's proxy. Use the DNS-01 challenge instead ([commercial-license stack](/selfhosted/enterprise/getting-started#traefik-cannot-issue-a-tls-certificate-behind-cloudflares-proxy)).
 
 ### Close the direct path
 
-Proxying hides your server's IP address in DNS but does not block connections to it: anyone who learns the address can still connect directly, bypassing Cloudflare and, if you use it, the WAF. To close that path, allow inbound TCP 80 and 443 only from Cloudflare's [published IP ranges](https://www.cloudflare.com/ips/), IPv4 and IPv6. NetBird keeps working through Cloudflare; any other site on the same address that is not behind Cloudflare is blocked too. Set this in the firewall in front of the server, such as your cloud provider's security group, rather than on the host: with NetBird in Docker, host firewall rules miss connections to Docker's published ports unless they are written for them.
-
-Every Cloudflare customer shares these ranges, so someone who points their own Cloudflare zone at your server's address still reaches it. Zone-level [Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/) with your own certificate blocks that; setting it up is not covered on this page.
+Proxying hides the server's address in DNS but does not block it. In the firewall in front of the server, such as a cloud security group (host rules miss Docker's published ports), allow TCP 80 and 443 only from Cloudflare's IP ranges. Every Cloudflare customer shares those ranges; zone-level [Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/) with your own certificate closes that gap.
 
 ---
 
