@@ -231,14 +231,14 @@ If you prefer not to self-host an Identity and Access Management solution, you c
 When you add Keycloak, and again every time the NetBird server starts, the server fetches Keycloak's OpenID configuration from the issuer URL, not through your browser. If your organization's own certificate authority (an internal CA) issued Keycloak's certificate, the server does not trust that certificate, even when every browser in your organization does. You then see one of these errors:
 
 - Adding Keycloak fails with `identity provider issuer is unreachable: … x509: certificate signed by unknown authority`.
-- The **Keycloak** button on the login page shows `Connector failed to initialize` (NetBird calls the Keycloak provider a connector) for a provider that worked before, once the `netbird-server` container is recreated without the CA mount: for example, the mount was in `docker-compose.yml` and you replaced that file.
+- A provider that worked before shows `Connector failed to initialize` when you click its button on the login page. This happens when the `netbird-server` container is recreated without the CA mount, for example after `docker-compose.yml` was replaced.
 
 Only the `netbird-server` container needs your CA file; the dashboard and the other containers do not. The CA file adds to the public CAs the server already trusts, so connections to public services, such as the license check on a commercial license, keep working.
 
 1. On the NetBird host, check which certificates Keycloak sends:
 
    ```bash
-   openssl s_client -connect keycloak.example.com:443 -servername keycloak.example.com -showcerts </dev/null | grep -E '^ *[0-9] s:'
+   openssl s_client -connect keycloak.example.com:443 -servername keycloak.example.com -showcerts </dev/null 2>/dev/null | grep -E '^ *[0-9] s:'
    ```
 
    Lines `0 s:`, `1 s:` and so on are the certificates Keycloak sends, its own first; only `0 s:` means it sends no intermediate CA. The CA file needs only your root CA certificate if Keycloak sends every intermediate CA between its certificate and the root, or if your root CA signed Keycloak's certificate directly. Otherwise, either configure Keycloak with a certificate chain file of its own certificate followed by every intermediate CA (preferred; the CA file then holds only the root), or add each intermediate CA certificate that Keycloak does not send to the CA file, after the root.
@@ -255,16 +255,16 @@ Only the `netbird-server` container needs your CA file; the dashboard and the ot
 4. Recreate the container with `docker compose up -d netbird-server`. Then add Keycloak again if adding it failed, or sign in with the **Keycloak** button if an existing provider stopped working.
 
 <Note>
-Copying the CA file into `/usr/local/share/ca-certificates/` inside the container has no effect: certificates there reach the server only through `update-ca-certificates`, which the container never runs.
+Mounting the CA file into `/usr/local/share/ca-certificates/` has no effect: the container does not run `update-ca-certificates`.
 </Note>
 
 ## Troubleshooting
 
 ### "identity provider issuer is unreachable" or "Connector failed to initialize" error
 
-- If the message includes `x509: certificate signed by unknown authority`: the NetBird server does not trust Keycloak's certificate. See [Keycloak with a certificate from an internal CA](#keycloak-with-a-certificate-from-an-internal-ca).
-- If the message includes `context deadline exceeded`: the NetBird server cannot reach Keycloak's issuer URL. Allow HTTPS from the NetBird host to Keycloak's host name and port.
-- `Connector failed to initialize` on the login page: the server could not load the Keycloak provider when it last started. Look for `failed to open connector` in `docker compose logs netbird-server`.
+- `Connector failed to initialize` on the login page: the server could not load Keycloak's OpenID configuration. It tries again each time you click the button, so a fix outside the NetBird host, such as a firewall rule, needs no restart. The cause is in the latest `failed to open connector` line of `docker compose logs netbird-server`.
+- If that line, or the error when adding Keycloak, includes `x509: certificate signed by unknown authority`: the NetBird server does not trust Keycloak's certificate. See [Keycloak with a certificate from an internal CA](#keycloak-with-a-certificate-from-an-internal-ca).
+- If that line or the error includes `context deadline exceeded`: the NetBird server cannot reach Keycloak's issuer URL. Allow HTTPS from the NetBird host to Keycloak's host name and port.
 
 ### "Invalid redirect URI" error
 
