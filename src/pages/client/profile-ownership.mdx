@@ -450,6 +450,57 @@ Error: resolve allowed group "netbird": look up account: The trust relationship 
 
 **Fix:** If the directory server was not available, run the command again when the server is available. The daemon tries again at each request. If the account was renamed or deleted, ask an administrator to run `sudo netbird profile claim <profile> --owner <user>`.
 
+On a Windows device joined to Microsoft Entra ID, the cause is different. See [Profiles have no owner on a Microsoft Entra ID joined device](#profiles-have-no-owner-on-a-microsoft-entra-id-joined-device).
+
+### Profiles have no owner on a Microsoft Entra ID joined device
+
+**Symptom:** On a Windows device joined to Microsoft Entra ID, a profile that you created before version 0.83.0 has no owner after the upgrade. The NetBird app shows no status, no networks, and an empty **Exit Node** menu. The `netbird` command works when you run it in an elevated terminal. The daemon log shows these lines:
+
+```text
+profile migration did not finish, retrying on next start: resolve "<DOMAIN>\\<user>": No mapping between account names and security IDs was done.
+cannot resolve sid:S-1-12-1-... to an account name, its legacy profiles stay unowned: No mapping between account names and security IDs was done.
+```
+
+The default profile is not affected. The daemon claims it for the user at the console without looking up the account name.
+
+**Cause:** NetBird 0.83.0 looks up the account name to find the owner of an old profile. On an Entra ID joined device, this lookup fails for Entra accounts, although the accounts are valid. The daemon tries again at each request and at each start, but the lookup fails every time. Devices joined to an on-premises Active Directory domain are not known to be affected.
+
+To check how your device is joined, run `dsregcmd /status`. An Entra ID joined device shows `AzureAdJoined : YES` and `DomainJoined : NO`.
+
+**Fix:** Give the profile an owner by its security identifier (SID). A claim by SID does not look up the account name.
+
+1. As the user who should own the profile, open a terminal that is **not** elevated and get your SID:
+
+   ```shell
+   whoami /user
+   ```
+
+   The SID starts with `S-1-12-1-`.
+
+2. In an elevated terminal, find the profiles that show `unowned` in the owner column:
+
+   ```shell
+   netbird profile list --show-owner --show-id
+   ```
+
+   Claim only the profiles that this user created. An old profile is stored in a folder named after the account that created it, without the backslash, for example `C:\ProgramData\Netbird\AzureADbob\<id>.json` for `AzureAD\bob`. If you are not sure whose profile it is, do not claim it. Ask the administrator of the device to find out who created it.
+
+   If two profiles have the same name, use the ID or an ID prefix as `<profile>` in the next command.
+
+3. Claim the profile for that SID:
+
+   ```shell
+   netbird profile claim <profile> --owner "sid:<SID>"
+   ```
+
+   The command prints `Profile <id> claimed for sid:S-1-12-1-...`.
+
+Do not use `--owner <DOMAIN>\<user>` on these devices. That form looks up the account name and fails for the same reason. Repeat the steps for each old profile of this user that has no owner. A claim gives the user the configuration of the profile and control of its connection, so never claim another user's profile for them.
+
+Do not turn off profile ownership to fix this problem. A claim by SID fixes it for the user and keeps the isolation between users.
+
+**Confirm:** The NetBird app shows the status and the networks again. The daemon log no longer shows `DENY` lines for that user.
+
 ### An integration lost access to the daemon
 
 **Symptom:** A monitoring tool, a script, or a scheduled job gets less status information than before, or the daemon refuses its requests.
