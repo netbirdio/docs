@@ -693,6 +693,10 @@ export const docsNavigation = [
                         href: '/selfhosted/maintenance/admin-cli',
                     },
                     {
+                        title: 'Peer Authentication',
+                        href: '/selfhosted/maintenance/peer-authentication',
+                    },
+                    {
                         title: 'MCP Server',
                         href: '/selfhosted/maintenance/mcp-server',
                     },
