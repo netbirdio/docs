@@ -506,6 +506,21 @@ export const docsNavigation = [
                 links: [{ title: 'Access Public API', href: '/manage/public-api' }],
             },
             {
+                title: 'MCP Server',
+                isOpen: false,
+                links: [
+                    { title: 'Overview', href: '/manage/mcp-server' },
+                    {
+                        title: 'Connect AI Clients',
+                        href: '/manage/mcp-server/connect-clients',
+                    },
+                    {
+                        title: 'Self-Hosted Setup',
+                        href: '/selfhosted/maintenance/mcp-server',
+                    },
+                ],
+            },
+            {
                 title: 'For Partners',
                 isOpen: false,
                 links: [
@@ -544,6 +559,10 @@ export const docsNavigation = [
                     { title: 'What is Agent Network?', href: '/agent-network' },
                     { title: 'How It Works', href: '/agent-network/how-it-works' },
                     { title: 'Quickstart', href: '/agent-network/quickstart' },
+                    {
+                        title: 'Existing Self-Hosted Deployment',
+                        href: '/agent-network/existing-self-hosted',
+                    },
                     { title: 'Providers', href: '/agent-network/providers' },
                     { title: 'Clusters', href: '/agent-network/clusters' },
                     { title: 'Control Center', href: '/agent-network/control-center' },
@@ -625,6 +644,10 @@ export const docsNavigation = [
                         href: '/selfhosted/enterprise/getting-started',
                     },
                     {
+                        title: 'Return to Community Edition',
+                        href: '/selfhosted/enterprise/return-to-community',
+                    },
+                    {
                         title: 'High Availability',
                         href: '/selfhosted/maintenance/scaling/high-availability',
                     },
@@ -674,6 +697,10 @@ export const docsNavigation = [
                         href: '/selfhosted/maintenance/peer-authentication',
                     },
                     {
+                        title: 'MCP Server',
+                        href: '/selfhosted/maintenance/mcp-server',
+                    },
+                    {
                         title: 'Scaling Your Deployment',
                         href: '/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment',
                         isOpen: false,
@@ -704,6 +731,10 @@ export const docsNavigation = [
                     { title: 'Upgrade', href: '/selfhosted/maintenance/upgrade' },
                     { title: 'Remove', href: '/selfhosted/maintenance/remove' },
                     { title: 'Reverse Proxy', href: '/selfhosted/reverse-proxy' },
+                    {
+                        title: 'Private Dashboard and API',
+                        href: '/selfhosted/maintenance/private-management-plane',
+                    },
                     {
                         title: 'Management SQLite Store',
                         href: '/selfhosted/maintenance/sqlite-store',
@@ -923,6 +954,7 @@ export const docsNavigation = [
             { title: 'Desktop App', href: '/client/desktop-app' },
             { title: 'nblink', href: '/client/nblink' },
             { title: 'Profiles', href: '/client/profiles' },
+            { title: 'Profile Ownership', href: '/client/profile-ownership' },
             { title: 'gRPC Daemon Socket', href: '/client/grpc-socket' },
             { title: 'HTTP/JSON Daemon Socket', href: '/client/json-socket' },
             { title: 'Environment Variables', href: '/client/environment-variables' },
@@ -1109,6 +1141,10 @@ export const docsNavigation = [
                                 href: '/help/troubleshooting-client/android',
                             },
                             { title: 'iOS', href: '/help/troubleshooting-client/ios' },
+                            {
+                                title: 'Antivirus & EDR Alerts',
+                                href: '/help/troubleshooting-client/antivirus-alerts',
+                            },
                         ],
                     },
                     {
