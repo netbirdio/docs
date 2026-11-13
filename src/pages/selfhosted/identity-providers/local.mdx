@@ -73,12 +73,11 @@ For a full list of available configuration options, see the [config.yaml.example
 This section applies to deployments using the older multi-container architecture. If you deployed using `getting-started.sh`, you are on the combined setup and should use the `config.yaml` instructions above. See the [migration guide](/selfhosted/migration/combined-container) to upgrade.
 </Note>
 
-Update your `management.json`, replacing `netbird.example.com` with your domain:
+Add or change these keys in your `management.json` and keep its other keys (the last note below says when to delete `HttpConfig`). In this block and the dashboard block below, replace `netbird.example.com` with your domain:
 
 ```json
 {
-  "Datadir": "/var/lib/netbird",
-  "DataStoreEncryptionKey": "<base64-encoded 32-byte key>",
+  "DataStoreEncryptionKey": "<your existing key, or a new one: see below>",
   "EmbeddedIdP": {
     "Enabled": true,
     "Issuer": "https://netbird.example.com/oauth2",
@@ -91,12 +90,23 @@ Update your `management.json`, replacing `netbird.example.com` with your domain:
 }
 ```
 
-The `/oauth2`, `/nb-auth` and `/nb-silent-auth` paths match the dashboard's default `AUTH_AUTHORITY`, `AUTH_REDIRECT_URI` and `AUTH_SILENT_REDIRECT_URI`; replace only the domain.
+The dashboard must use the same values. In the dashboard container's environment ([dashboard.env](/selfhosted/maintenance/configuration-files#dashboardenv)), replace your previous identity provider's settings with these lines. `AUTH_AUTHORITY` is the `Issuer` above, `AUTH_REDIRECT_URI` and `AUTH_SILENT_REDIRECT_URI` are the paths of the two `DashboardRedirectURIs`, and `AUTH_CLIENT_SECRET` stays empty:
+
+```bash
+AUTH_AUDIENCE=netbird-dashboard
+AUTH_CLIENT_ID=netbird-dashboard
+AUTH_CLIENT_SECRET=
+AUTH_AUTHORITY=https://netbird.example.com/oauth2
+USE_AUTH0=false
+AUTH_SUPPORTED_SCOPES=openid profile email groups
+AUTH_REDIRECT_URI=/nb-auth
+AUTH_SILENT_REDIRECT_URI=/nb-silent-auth
+```
 
 - **`Issuer` is required.** Without it, Management exits at startup with `issuer is required`.
 - **`DataStoreEncryptionKey`:** if your `management.json` already has one, keep it, because the stored data is encrypted with it. Otherwise, generate one with `openssl rand -base64 32`. If you leave it empty, Management generates one and writes it into `management.json`; with the file mounted read-only, Management exits with `failed to save config with new encryption key`. Back up `management.json` once it holds the key.
 - **`SessionCookieEncryptionKey`:** generate one with `openssl rand -base64 32`. Without it, the embedded IdP's session cookie is not encrypted.
-- **A leftover `HttpConfig` section** from a previous identity provider does not stop Management from starting. Management overrides its identity provider fields and logs the warning `overriding HttpConfig with EmbeddedIdP config`. If the section sets `CertFile` and `CertKey`, keep it: Management still uses them for its own TLS. Otherwise, delete it to clear the warning.
+- **A leftover `HttpConfig` section** from a previous identity provider does not stop Management from starting. Management overrides its identity provider fields and logs the warning `overriding HttpConfig with EmbeddedIdP config`. If the section sets `LetsEncryptDomain`, or `CertFile` and `CertKey`, keep the section: Management still uses those keys for its own TLS and keeps running with the warning. If it sets neither, delete the section to clear the warning.
 
 ### Generating an Encryption Key
 
