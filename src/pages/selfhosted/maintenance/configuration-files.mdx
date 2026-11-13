@@ -43,7 +43,7 @@ The Docker Compose file defines all NetBird services, their dependencies, networ
 
 | Service | Image | Internal Port | External (Exposed) | Description |
 |---------|-------|---------------|-------------------|-------------|
-| `traefik` | `traefik:v3.6` | 80, 443 | 80:80, 443:443 | Handles TLS termination via Let's Encrypt and routes incoming HTTPS requests to the appropriate NetBird services. Only included when using the built-in Traefik option (option 0). |
+| `traefik` | `traefik:v3.7.18` | 80, 443 | 80:80, 443:443 | Handles TLS termination via Let's Encrypt and routes incoming HTTPS requests to the appropriate NetBird services. Only included when using the built-in Traefik option (option 0). |
 | `dashboard` | `netbirdio/dashboard` | 80 | 8080:80 | The web-based management console where administrators configure networks, manage peers, create access policies, and view activity logs. Includes an embedded nginx server for serving the UI. |
 | `netbird-server` | `netbirdio/netbird-server` | 80, 3478/udp | 8081:80, 3478:3478/udp | Combined server that includes management, signal, relay, and embedded STUN in a single container. Configured via `config.yaml`. |
 
@@ -57,21 +57,27 @@ The `netbird-server` container combines what were previously separate management
 
 ### Traefik Service
 
-The Traefik service is only present when using the built-in reverse proxy option (option 0 during setup). It handles automatic TLS certificate provisioning via Let's Encrypt and routes requests to the correct backend services.
+The Traefik service is only present when using the built-in reverse proxy option (option 0 during setup).
 
 ```yaml
 traefik:
-  image: traefik:v3.6
+  image: traefik:v3.7.18
   container_name: netbird-traefik
   restart: unless-stopped
-  networks: [netbird]
+  networks:
+    netbird:
+      ipv4_address: 172.30.0.10
   command:
     - "--providers.docker=true"
     - "--providers.docker.exposedbydefault=false"
-    - "--providers.docker.network=netbird"
+    - "--providers.docker.network=${COMPOSE_PROJECT_NAME:-}_netbird"
     - "--entrypoints.web.address=:80"
     - "--entrypoints.websecure.address=:443"
+    - "--entrypoints.web.http.aliasHeadersStrategy=delete"
+    - "--entrypoints.websecure.http.aliasHeadersStrategy=delete"
     - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=0"
+    - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=0"
+    - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=0"
     - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
     - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
     - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
@@ -90,7 +96,7 @@ traefik:
 ```
 
 <Note>
-The `readTimeout=0` setting on the websecure entrypoint disables read timeouts, which is required for long-lived gRPC and WebSocket connections used by the signal and relay services.
+Without the three `respondingTimeouts` settings, Traefik resets each peer's long-lived Signal connection every 60 seconds and the peer has to reconnect. The installers require Traefik v3.7.13 or later for the `aliasHeadersStrategy` settings; see [Traefik header handling](/selfhosted/maintenance/upgrade#traefik-header-handling).
 </Note>
 
 ### Dashboard Service
