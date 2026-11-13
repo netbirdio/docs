@@ -150,7 +150,7 @@ NetBird automatically manages host-based firewall rules to allow traffic on the 
 
 | Platform | Firewall Manager | Automatic Rule |
 |----------|------------------|----------------|
-| Windows  | Windows Firewall | Allows all traffic on NetBird interface |
+| Windows  | Windows Firewall | Allows inbound traffic to the peer's NetBird IP |
 | Linux    | iptables/nftables | Adds rules for NetBird traffic |
 
 ### Network firewall vs. host-based firewall
@@ -238,7 +238,7 @@ sudo firewall-cmd --reload
 
 ### Windows Firewall
 
-NetBird creates a Windows Firewall rule automatically during installation/connection. This rule allows traffic on the NetBird IP address (the `wt0` interface after decryption).
+NetBird adds a Windows Firewall rule named `Netbird` when the client connects. The rule allows inbound traffic to the peer's NetBird IP, so it only covers traffic inside the tunnel. For direct connections between peers see [Direct connections stay relayed on Windows](#direct-connections-stay-relayed-on-windows).
 
 If traffic is blocked despite NetBird showing peers as connected, check for:
 
@@ -268,19 +268,12 @@ If the rule exists but traffic is still blocked, Group Policy may be overriding 
 Get-NetFirewallProfile | Format-List Name, Enabled, DefaultInboundAction
 ```
 
-### Environments without NAT (flat networks, routed VLANs)
+### Direct connections stay relayed on Windows
 
-In most environments, NAT provides stateful connection tracking. When Peer A sends UDP to Peer B, the return traffic is allowed because the NAT device tracks it as part of an established connection.
-
-However, in environments **without NAT between peers** (e.g., flat office networks, routed VLANs without masquerading), Windows Firewall may block inbound WireGuard P2P traffic because:
-
-1. There is no NAT state tracking the "connection"
-2. Windows Firewall sees the inbound UDP packets as unsolicited inbound traffic
-3. The default NetBird rule only covers traffic on the `wt0` interface (after decryption), not the raw WireGuard packets arriving on the physical interface
+Windows Firewall can drop the direct packets other peers send, so the peer falls back to a relay. These packets arrive on the physical network adapter at the WireGuard port, and the `Netbird` rule doesn't cover them. Many setups connect directly anyway, with or without NAT between the peers.
 
 **Symptoms**:
-- P2P works when one peer is behind NAT but fails when both peers are on the same flat network
-- `netbird status -d` shows connection type as "Relayed" instead of "P2P" for local peers
+- `netbird status -d` shows `Connection type: Relayed` for a peer that should connect directly
 - P2P works after disabling Windows Firewall
 
 **Solution**: Add a firewall rule to allow inbound UDP for WireGuard P2P traffic, scoped to the NetBird process:
@@ -289,18 +282,18 @@ New-NetFirewallRule -DisplayName "NetBird P2P" -Direction Inbound -Action Allow 
 ```
 
 This rule:
-- Allows inbound UDP on the ephemeral port range (used for WireGuard)
+- Allows inbound UDP on the ephemeral port range, which includes the default WireGuard port `51820`
 - Is scoped to only the NetBird process for security
 - Does not expose any other services
 
-<Note>
-This is only needed in environments without NAT between peers. If your peers connect through NAT (typical for remote access scenarios), the default rules are sufficient.
-</Note>
+If the `Wireguard port` line in `netbird status` shows a port below `49152`, use that port for `-LocalPort`.
 
-**Linux in non-NAT environments**: The same principle applies. If UFW or firewalld is blocking inbound UDP on the physical interface, you may need to allow it. Linux cannot scope firewall rules to a specific process like Windows can, so a broader rule is required:
+To check the result, ping the peer's NetBird IP, then run `netbird status -d`. The peer should show `Connection type: P2P`. With lazy connections a peer stays `Idle` until traffic flows, which is why the ping comes first.
+
+**Linux**: The same principle applies. If UFW or firewalld is blocking inbound UDP on the physical interface, you may need to allow it. Linux cannot scope firewall rules to a specific process like Windows can, so allow only the port from the `Wireguard port` line in `netbird status`. Check it again if NetBird restarts, since it can move to another port when its port is taken.
 ```bash
-# UFW — allows inbound UDP on ephemeral ports (less restrictive than the Windows equivalent)
-sudo ufw allow in proto udp to any port 49152:65535
+# UFW, replace 51820 with the port from netbird status
+sudo ufw allow in proto udp to any port 51820
 ```
 
 Consider whether this is acceptable for your security posture, or use NetBird's relay fallback instead.
@@ -363,4 +356,4 @@ Get-NetFirewallProfile
 | UFW (Linux) | `sudo ufw status` | `sudo ufw allow in on wt0` |
 | firewalld (Linux) | `sudo firewall-cmd --get-zone-of-interface=wt0` | `sudo firewall-cmd --permanent --zone=trusted --add-interface=wt0 && sudo firewall-cmd --reload` |
 | Windows | `Get-NetFirewallRule \| Where-Object { $_.DisplayName -like "*NetBird*" }` | Check Group Policy or third-party software |
-| Windows (no NAT) | P2P shows as Relayed for local peers | `New-NetFirewallRule -DisplayName "NetBird P2P" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 49152-65535 -Program "C:\Program Files\Netbird\netbird.exe"` |
+| Windows (P2P relayed) | `netbird status -d` shows `Connection type: Relayed` | `New-NetFirewallRule -DisplayName "NetBird P2P" -Direction Inbound -Action Allow -Protocol UDP -LocalPort 49152-65535 -Program "C:\Program Files\Netbird\netbird.exe"` |
