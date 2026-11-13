@@ -87,6 +87,7 @@ None of these settings stops a user from disconnecting NetBird. See [What a poli
 | Keep every connection open on a device | [`lazyConnection`](#lazyConnection) to `false` | Overrides the account setting for that device. `NB_LAZY_CONN` on the device beats this key. |
 | Force lazy connections on a device | [`lazyConnection`](#lazyConnection) to `true` | Same precedence as above. |
 | Use a fixed WireGuard port | [`wireguardPort`](#wireguardPort) | Only when another program needs the default port or your firewall rules expect a specific one. |
+| Keep peer connections off some interfaces | [`extraIFaceBlackList`](#extraIFaceBlackList) | Adds to the device's own list instead of replacing it. Does not change which network the device routes through. |
 
 ## Recommended policies
 
@@ -116,6 +117,7 @@ Leave these keys out unless you have a specific reason:
 - `preSharedKey`, `rosenpassEnabled`, `rosenpassPermissive`: each has to match on every peer, or devices lose their connections. See [Encryption keys](#encryption-keys).
 - `disableClientRoutes`: cuts a device off from every network resource and exit node.
 - `wireguardPort`: the default suits almost every fleet.
+- `extraIFaceBlackList`: the built-in list already covers Docker, other VPNs, and loopback.
 - `lazyConnection`: leave lazy connections to the account setting, so one dashboard switch controls the whole fleet. Push `false` only for devices that must hold every connection open.
 - `enableLocalMetrics`, `localMetricsAddress`: only for devices you scrape with Prometheus.
 - `splitTunnelMode`, `splitTunnelApps`, `disableMetricsCollection`: no effect yet.
@@ -162,7 +164,7 @@ A policy pins the client's configuration. It does not make the tunnel mandatory:
 
 ## Policy keys reference
 
-The client recognizes 24 keys. They are grouped below by the job they do, starting with the ones nearly every rollout needs. A key that has no meaning on a platform (for example `allowServerSSH` on iOS) is ignored there, so one payload is safe to send to every platform.
+The client recognizes 25 keys. They are grouped below by the job they do, starting with the ones nearly every rollout needs. A key that has no meaning on a platform (for example `allowServerSSH` on iOS) is ignored there, so one payload is safe to send to every platform.
 
 Key names are camelCase in plist and app-configuration payloads. On Windows, the registry value names and the Group Policy templates use PascalCase (`ManagementURL`, `BlockInbound`); both forms are recognized, and names are matched without regard to case. In the Group Policy editor, each policy is named after its key in plain words, such as **Block inbound** for `blockInbound`.
 
@@ -253,8 +255,14 @@ Most fleets never need these keys.
 | --- | --- | --- |
 | <span id="lazyConnection"></span>`lazyConnection` | boolean | Overrides what the management server decides about [lazy connections](/manage/peers/lazy-connection) for this device. `true` forces them on and `false` forces them off, for every peer the device connects to. Leaving the key out follows the account's **Lazy connections** setting, which is on by default for accounts created by management v0.74.0 or later; older accounts keep the setting they had. The `NB_LAZY_CONN` environment variable, if set on the device, takes precedence over this key. |
 | <span id="wireguardPort"></span>`wireguardPort` | integer | The local UDP port the WireGuard interface listens on. Default `51820`. Values outside `1` to `65535` are ignored, and the client keeps its previous port. |
+| <span id="extraIFaceBlackList"></span>`extraIFaceBlackList` | list of strings | Interface name prefixes whose local addresses the client never offers to peers as a way to connect. A list in a plist or app-configuration payload, or one string with comma-separated entries (a `REG_SZ` or a `REG_MULTI_SZ` on Windows). Added to the built-in list and to the device's own [`--extra-iface-blacklist`](/get-started/cli) entries. Ignored on iOS. |
 
 Set `wireguardPort` only when another program on the device needs the default port, or your firewall rules expect a specific one.
+
+- **`extraIFaceBlackList` adds, it does not pin.** Unlike every other key, it does not replace the device's own setting and locks nothing: the built-in list and any entries a user or script added with `--extra-iface-blacklist` stay in effect, and this key never rejects a request to add more. Removing the key from the policy removes only its own entries. They are never written to the on-disk profile, which is why the `IFaceBlackList` setting in the profile file does not show them.
+- **Each entry is a case-sensitive name prefix, with no wildcards.** `vEthernet` excludes every Hyper-V and WSL adapter on Windows, and `bridge` excludes `bridge100` on macOS. Keep entries specific: a short entry such as `en` on macOS takes the device's LAN and Wi-Fi addresses out, and peers that could have connected directly over the LAN fall back to a public address or a relay. An entry that matches no interface, such as `VXLAN` or `vmnet*`, is applied without a warning.
+- **It narrows the candidates, not the routing.** The client still reaches the Relay, Signal, and Management services, and peers through a public address, over whatever interface the operating system routes through. To keep NetBird off a network entirely, change the device's routing, not this key.
+- **On Linux, there is no policy channel.** Set the same entries with `netbird up --extra-iface-blacklist vxlan,gre`, or ship them in the `IFaceBlackList` setting of a [configuration file](/manage/peers/bootstrap-via-config-file). That setting replaces the built-in list, so include the defaults you want to keep.
 
 ### Keys with no effect yet
 
