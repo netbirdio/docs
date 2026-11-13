@@ -804,29 +804,47 @@ entryPoints:
           scheme: https
 ```
 
+**5. No timeouts on the `websecure` entrypoint.** Peers keep long-lived connections to Signal, the service they use to set up peer-to-peer connections, and to Management. Without these settings, Traefik resets each peer's Signal connection every 60 seconds and the peer has to reconnect:
+```yaml
+# As command args
+- "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=0"
+- "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=0"
+- "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=0"
+```
+
+**6. Header handling** (Traefik v3.7.13 or later). These settings make Traefik drop request headers whose names contain characters other than letters, digits and hyphens, such as `X_Forwarded_For`, which some backends read as `X-Forwarded-For`. NetBird relies on the forwarded headers Traefik sets to learn each client's address. Traefik releases older than v3.7.12 fail to start with these settings, and v3.7.13 also includes the fix for CVE-2026-88004. See [Traefik header handling](/selfhosted/maintenance/upgrade#traefik-header-handling):
+```yaml
+# As command args
+- "--entrypoints.web.http.aliasHeadersStrategy=delete"
+- "--entrypoints.websecure.http.aliasHeadersStrategy=delete"
+```
+
 ##### Example Traefik Docker Compose
 
-If you don't have Traefik set up yet, here's a complete example:
+If you don't have Traefik set up yet, use this example:
 
 ```yaml
 services:
   traefik:
-    image: traefik:v3.2
+    image: traefik:v3.7.14
     command:
-      - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedByDefault=false"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=0"
+      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=0"
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=0"
+      - "--entrypoints.web.http.aliasHeadersStrategy=delete"
+      - "--entrypoints.websecure.http.aliasHeadersStrategy=delete"
       - "--certificatesresolvers.letsencrypt.acme.email=your-email@example.com"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
       - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080"  # Traefik dashboard (optional)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./letsencrypt:/letsencrypt
@@ -837,6 +855,8 @@ networks:
   traefik-network:
     name: traefik-network
 ```
+
+The example pins `traefik:v3.7.14`. Requirements 5 and 6 above explain the example's two NetBird-specific groups of settings.
 
 <Note>
 When using `getting-started.sh` with Traefik, the script will ask for your network name, entrypoint, and certresolver. It will then generate a docker-compose.yml with all the correct labels pre-configured.

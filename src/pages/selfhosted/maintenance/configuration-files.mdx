@@ -57,21 +57,27 @@ The `netbird-server` container combines what were previously separate management
 
 ### Traefik Service
 
-The Traefik service is only present when using the built-in reverse proxy option (option 0 during setup). It handles automatic TLS certificate provisioning via Let's Encrypt and routes requests to the correct backend services.
+The Traefik service is only present when using the built-in reverse proxy option (option 0 during setup).
 
 ```yaml
 traefik:
-  image: traefik:v3.6
+  image: traefik:v3.7.14
   container_name: netbird-traefik
   restart: unless-stopped
-  networks: [netbird]
+  networks:
+    netbird:
+      ipv4_address: 172.30.0.10
   command:
     - "--providers.docker=true"
     - "--providers.docker.exposedbydefault=false"
-    - "--providers.docker.network=netbird"
+    - "--providers.docker.network=${COMPOSE_PROJECT_NAME:-}_netbird"
     - "--entrypoints.web.address=:80"
     - "--entrypoints.websecure.address=:443"
+    - "--entrypoints.web.http.aliasHeadersStrategy=delete"
+    - "--entrypoints.websecure.http.aliasHeadersStrategy=delete"
     - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=0"
+    - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=0"
+    - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=0"
     - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
     - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
     - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
@@ -90,7 +96,9 @@ traefik:
 ```
 
 <Note>
-The `readTimeout=0` setting on the websecure entrypoint disables read timeouts, which is required for long-lived gRPC and WebSocket connections used by the signal and relay services.
+Without the three `respondingTimeouts` settings, Traefik resets each peer's long-lived Signal connection every 60 seconds and the peer has to reconnect.
+
+The `aliasHeadersStrategy` settings make Traefik drop request headers whose names contain characters other than letters, digits and hyphens, such as `X_Forwarded_For`, which some backends read as `X-Forwarded-For`. NetBird relies on the forwarded headers Traefik sets to learn each client's address. Traefik releases older than v3.7.12 fail to start with these settings. `getting-started.sh` and `getting-started-enterprise.sh` install v3.7.14 and stop with an error when `TRAEFIK_IMAGE` or `NETBIRD_TRAEFIK_TAG` names a version older than v3.7.13, the release that also fixes CVE-2026-88004. See [Traefik header handling](/selfhosted/maintenance/upgrade#traefik-header-handling).
 </Note>
 
 ### Dashboard Service
