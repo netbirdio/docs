@@ -7,25 +7,20 @@ export const description =
 
 Nginx Proxy Manager (NPM) can terminate TLS for NetBird, but its standard forwarding fields are not enough. NetBird uses path-specific HTTP, WebSocket, and native gRPC backends, so you must paste the complete routing block into the Proxy Host's **Advanced** tab.
 
-This guide covers both the combined-container and multi-container NetBird layouts. Start with [Manual setup](/selfhosted/manual-setup) or [Manual multi-container setup](/selfhosted/manual-setup/multi-container).
+This guide covers both NetBird layouts. Prepare NetBird first:
+
+- **Combined container:** follow steps 1 to 4 of [Manual setup](/selfhosted/manual-setup) and create the Compose file from [Use another reverse proxy](/selfhosted/manual-setup#use-another-reverse-proxy).
+- **Multi-container:** follow [Manual multi-container setup](/selfhosted/manual-setup/multi-container) through step 7.
+
+The configurations route `/management.ProxyService/` for completeness, but the [NetBird Proxy](/manage/reverse-proxy) feature does not work behind Nginx Proxy Manager. It needs TLS passthrough, which only Traefik provides; see [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy).
 
 <Warning>
 Do not expose NPM's administration port 81 to the Internet. The Compose example binds it to loopback. Use an SSH tunnel or a private NetBird connection to administer it.
 </Warning>
 
-## 1. Create or reuse the proxy network
+## 1. Start NetBird and trust NPM's address
 
-The examples place NPM at a fixed address so NetBird can trust exactly one proxy:
-
-```bash
-docker network create \
-  --driver bridge \
-  --subnet 172.30.0.0/24 \
-  --gateway 172.30.0.1 \
-  netbird-proxy
-```
-
-If the manual NetBird Compose project already created `netbird-proxy`, do not recreate it.
+NPM joins the `netbird-proxy` network that the NetBird Compose file creates, at the fixed address `172.30.0.10`, so NetBird can trust exactly one proxy. NPM requires the backend services to be running before you can create proxy hosts, so start the NetBird containers first, then configure NPM.
 
 Combined `config.yaml`:
 
@@ -120,22 +115,7 @@ Keep the SSH session open while configuring NPM. The public NetBird hostname sho
 
 ## Combined container layout
 
-The Dashboard and `netbird-server` must share `netbird-proxy` with NPM. No HTTP backend ports need to be public:
-
-```yaml
-services:
-  dashboard:
-    networks: [netbird-proxy]
-
-  netbird-server:
-    networks: [netbird-proxy]
-    ports:
-      - "3478:3478/udp"
-
-networks:
-  netbird-proxy:
-    external: true
-```
+The Compose file from [Use another reverse proxy](/selfhosted/manual-setup#use-another-reverse-proxy) already puts the Dashboard and `netbird-server` on `netbird-proxy`. NPM reaches them by container name, so you can remove their `127.0.0.1` port mappings. Keep `3478:3478/udp` on `netbird-server`.
 
 ### Create the Proxy Host
 
@@ -181,6 +161,7 @@ location ~ ^/(relay|ws-proxy/) {
 # Native Signal, Management, and optional NetBird Proxy gRPC.
 location ~ ^/(signalexchange\.SignalExchange|management\.(ManagementService|ProxyService))/ {
     grpc_pass grpc://netbird-server:80;
+    grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     grpc_read_timeout 1d;
     grpc_send_timeout 1d;
     grpc_socket_keepalive on;
@@ -198,9 +179,11 @@ location ~ ^/(api|oauth2)/ {
 
 The Proxy Host's normal destination remains the Dashboard catch-all. The Advanced locations override it for every backend path.
 
+Each gRPC location sets `X-Forwarded-For` with `grpc_set_header`. Without it, `grpc_pass` forwards whatever `x-forwarded-for` value the client sent, and because NetBird trusts NPM's address, Management would record that client-supplied value as the peer's IP address.
+
 ## Multi-container layout
 
-Join `dashboard`, `management`, `signal`, and `relay` to `netbird-proxy`; keep UDP 3478 published from Relay.
+The multi-container Compose file already puts `dashboard`, `management`, `signal`, and `relay` on `netbird-proxy`. Keep UDP 3478 published from Relay.
 
 ### Create the Proxy Host
 
@@ -239,6 +222,7 @@ location /ws-proxy/signal {
 # Signal native gRPC.
 location /signalexchange.SignalExchange/ {
     grpc_pass grpc://netbird-signal:10000;
+    grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     grpc_read_timeout 1d;
     grpc_send_timeout 1d;
     grpc_socket_keepalive on;
@@ -269,6 +253,7 @@ location /ws-proxy/management {
 # Management and optional NetBird Proxy native gRPC.
 location ~ ^/management\.(ManagementService|ProxyService)/ {
     grpc_pass grpc://netbird-management:80;
+    grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     grpc_read_timeout 1d;
     grpc_send_timeout 1d;
     grpc_socket_keepalive on;
@@ -279,7 +264,7 @@ Do not use NPM's Custom Locations screen for these routes. The Advanced block pr
 
 ## Reaching backends through the host
 
-The shared Docker network is recommended. Inside the NPM container, `127.0.0.1` means the NPM container itself—not the Docker host.
+The shared Docker network is recommended. Inside the NPM container, `127.0.0.1` means the NPM container itself, not the Docker host.
 
 If NPM cannot join the NetBird network, add the Linux host gateway to its Compose service:
 
@@ -311,11 +296,10 @@ From a machine outside the server network:
 NETBIRD_DOMAIN="netbird.example.com"
 
 curl -fsSI "http://${NETBIRD_DOMAIN}/"
-curl -fsSI "https://${NETBIRD_DOMAIN}/setup"
 curl -fsS "https://${NETBIRD_DOMAIN}/oauth2/.well-known/openid-configuration"
 ```
 
-Run the native gRPC and Relay WebSocket probes from [Manual multi-container setup](/selfhosted/manual-setup/multi-container#9-verify-the-complete-deployment). Then create the first NetBird owner and enroll two clients. Confirm Management and Signal are connected and that secure Relay is available in `netbird status --detail`.
+Run the setup-state, native gRPC, and Relay WebSocket probes from [Verify before creating the first owner](/selfhosted/external-reverse-proxy#verify-before-creating-the-first-owner). Then create the first NetBird owner and enroll two clients. Confirm Management and Signal are connected and that secure Relay is available in `netbird status --detail`.
 
 ## Troubleshooting Nginx Proxy Manager
 

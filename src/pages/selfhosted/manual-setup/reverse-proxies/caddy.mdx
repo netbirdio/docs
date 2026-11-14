@@ -5,13 +5,20 @@ export const description =
 
 Caddy provides automatic HTTPS and concise protocol-aware routing for NetBird. This guide covers Caddy installed on the host and Caddy in Docker for both NetBird layouts.
 
-Start with [Manual setup](/selfhosted/manual-setup) for the combined container or [Manual multi-container setup](/selfhosted/manual-setup/multi-container) for the multi-container layout.
+Prepare NetBird first:
+
+- **Combined container:** follow steps 1 to 4 of [Manual setup](/selfhosted/manual-setup) and create the Compose file from [Use another reverse proxy](/selfhosted/manual-setup#use-another-reverse-proxy).
+- **Multi-container:** follow [Manual multi-container setup](/selfhosted/manual-setup/multi-container) through step 7.
+
+Both Compose files publish the NetBird backends on `127.0.0.1` for a host-installed Caddy and create the `netbird-proxy` network for Caddy in Docker.
 
 ## How Caddy routes NetBird
 
 Caddy automatically obtains and renews a public certificate when the hostname resolves to the server and TCP 80/443 are reachable. It forwards WebSocket upgrades automatically. Native gRPC upstreams must use `h2c://` because NetBird's internal gRPC listeners use cleartext HTTP/2 behind the TLS-terminating proxy.
 
 UDP 3478 bypasses Caddy and remains published directly from `netbird-server` or `relay`.
+
+The Caddyfiles route `/management.ProxyService/` for completeness, but the [NetBird Proxy](/manage/reverse-proxy) feature does not work behind Caddy. It needs TLS passthrough, which only Traefik provides; see [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy).
 
 ## 1. Configure trusted proxy addresses
 
@@ -69,19 +76,7 @@ The package creates and enables `caddy.service`. Do not start another service on
 
 ## Combined container layout
 
-The NetBird Compose file must publish the private HTTP backends only on loopback and publish STUN publicly:
-
-```yaml
-services:
-  dashboard:
-    ports:
-      - "127.0.0.1:8080:80"
-
-  netbird-server:
-    ports:
-      - "127.0.0.1:8081:80"
-      - "3478:3478/udp"
-```
+The Compose file from [Use another reverse proxy](/selfhosted/manual-setup#use-another-reverse-proxy) publishes the Dashboard on `127.0.0.1:8080` and `netbird-server` on `127.0.0.1:8081`, and `config.yaml` must trust `172.30.0.1/32`.
 
 Replace `/etc/caddy/Caddyfile` with:
 
@@ -120,7 +115,7 @@ Caddy evaluates the named routes before the final catch-all. Do not move the Das
 
 ## Multi-container layout
 
-Use this Caddyfile with the loopback ports from [Manual multi-container setup](/selfhosted/manual-setup/multi-container):
+Use this Caddyfile with the loopback ports from [Manual multi-container setup](/selfhosted/manual-setup/multi-container), and set `NETBIRD_TRUSTED_PROXY=172.30.0.1/32` in its step 3:
 
 ```text
 netbird.example.com {
@@ -164,17 +159,9 @@ The `relay` service must still publish `3478:3478/udp` directly.
 
 ## Caddy running in Docker
 
-Create or reuse the private network and assign Caddy the same fixed proxy address used in NetBird's trust settings:
+Caddy in Docker joins the `netbird-proxy` network that the NetBird Compose file creates, at the fixed address `172.30.0.10`. Start NetBird first, and set both trusted proxy lists in NetBird to `172.30.0.10/32`. You can remove the NetBird `127.0.0.1` port mappings, because Caddy reaches the containers by name.
 
-```bash
-docker network create \
-  --driver bridge \
-  --subnet 172.30.0.0/24 \
-  --gateway 172.30.0.1 \
-  netbird-proxy
-```
-
-Example Caddy Compose file:
+Create a directory for Caddy, for example `$HOME/caddy`, with this Compose file and a `Caddyfile` from one of the next two sections:
 
 ```yaml
 services:
@@ -254,11 +241,10 @@ netbird.example.com {
 }
 ```
 
-Join every referenced NetBird service to `netbird-proxy`, remove unnecessary HTTP port publishing, keep UDP 3478 published, and set both trusted proxy lists to `172.30.0.10/32`.
-
-Validate before starting:
+Validate before starting, from the Caddy directory:
 
 ```bash
+cd "$HOME/caddy"
 docker run --rm \
   -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
   caddy:2 \
@@ -290,11 +276,10 @@ From another network:
 NETBIRD_DOMAIN="netbird.example.com"
 
 curl -fsSI "http://${NETBIRD_DOMAIN}/"
-curl -fsSI "https://${NETBIRD_DOMAIN}/setup"
 curl -fsS "https://${NETBIRD_DOMAIN}/oauth2/.well-known/openid-configuration"
 ```
 
-Then run the gRPC and WebSocket checks from [Manual multi-container setup](/selfhosted/manual-setup/multi-container#9-verify-the-complete-deployment). Create the first owner and enroll two clients to verify Management, Signal, STUN, and Relay.
+Then run the setup-state, gRPC, and WebSocket checks from [Verify before creating the first owner](/selfhosted/external-reverse-proxy#verify-before-creating-the-first-owner). Create the first owner and enroll two clients to verify Management, Signal, STUN, and Relay.
 
 ## Troubleshooting Caddy
 
@@ -314,7 +299,7 @@ The Dashboard catch-all handled the request. Keep the `@grpc` matcher above the 
 
 ### WebSockets disconnect
 
-Caddy handles upgrade headers automatically. If connections still close, inspect any upstream load balancer or CDN and ensure the hostname is DNS-only. Verify that the matched upstream is NetBird Server, Signal, Management, or Relay—not Dashboard.
+Caddy handles upgrade headers automatically. If connections still close, inspect any upstream load balancer or CDN and ensure the hostname is DNS-only. Verify that the matched upstream is NetBird Server, Signal, Management, or Relay, not the Dashboard.
 
 ### Caddy cannot reach a Docker backend
 

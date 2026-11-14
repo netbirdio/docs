@@ -11,14 +11,14 @@ The resulting deployment uses the embedded identity provider for local users, SQ
 
 This is the recommended manual starting point: the combined server and embedded identity provider keep the NetBird core together, while Traefik obtains and renews the public TLS certificate. If you are still choosing an architecture, read [Plan a manual NetBird deployment](/selfhosted/manual-setup/planning) first. External identity providers, databases, other reverse proxies, and scaling services can be integrated later without replacing the combined server.
 
-This is the current **combined-container** flow and includes a complete Traefik deployment. To use another proxy, prepare `config.yaml` and `dashboard.env` here, then follow the matching combined-layout guide:
+This is the current **combined-container** flow and includes a complete Traefik deployment. To use another proxy, follow steps 1 to 4, use the Compose file in [Use another reverse proxy](#use-another-reverse-proxy) instead of step 5, then follow the matching combined-layout guide:
 
 - [Nginx](/selfhosted/manual-setup/reverse-proxies/nginx#combined-container-layout)
 - [Caddy](/selfhosted/manual-setup/reverse-proxies/caddy#combined-container-layout)
 - [Nginx Proxy Manager](/selfhosted/manual-setup/reverse-proxies/nginx-proxy-manager#combined-container-layout)
 - [Traefik with an existing instance](/selfhosted/manual-setup/reverse-proxies/traefik#combined-container-layout)
 
-If you maintain separate Management, Signal, Relay, and Dashboard containers, use [Manual multi-container setup](/selfhosted/manual-setup/multi-container) instead.
+If you maintain an older deployment with separate Management, Signal, Relay, and Dashboard containers, use [Manual multi-container setup](/selfhosted/manual-setup/multi-container) instead.
 
 ## Prerequisites
 
@@ -29,11 +29,11 @@ If you maintain separate Management, Signal, Relay, and Dashboard containers, us
 - `curl` and `openssl` installed on the server.
 - Shell access to an account that can run Docker commands.
 
-If your DNS provider can proxy HTTP traffic, configure this hostname as DNS-only. All NetBird clients must be able to reach the hostname directly.
+If your DNS provider can proxy HTTP traffic, configure this hostname as DNS-only while you follow this guide. To run behind Cloudflare's proxy later, see [Behind Cloudflare's proxy](/selfhosted/external-reverse-proxy#behind-cloudflares-proxy).
 
 | Port | Protocol | Purpose |
 |---|---|---|
-| `80` | TCP | Redirects HTTP to HTTPS. |
+| `80` | TCP | Redirects HTTP to HTTPS. Optional: Traefik's TLS-ALPN challenge uses port 443, so certificates still work if you keep port 80 closed. |
 | `443` | TCP | Serves the Dashboard, REST API, embedded identity provider, Management gRPC, Signal, and Relay. Traefik also uses this port for the TLS-ALPN certificate challenge. |
 | `3478` | UDP | Serves the embedded STUN service for NAT discovery. |
 
@@ -101,7 +101,7 @@ Edit both values before continuing. Docker Compose automatically reads this file
 
 ## 3. Create the NetBird server configuration
 
-The combined `netbird-server` container runs Management, Signal, Relay, STUN, and the embedded identity provider. The following command generates separate random values for Relay authentication and encryption of sensitive values in the SQLite store, then writes `config.yaml`.
+The combined `netbird-server` container runs Management, Signal, Relay, STUN, and the embedded identity provider. The following command generates separate random values for Relay authentication, the embedded identity provider's session cookies, and encryption of sensitive values in the SQLite store, then writes `config.yaml`.
 
 ```bash
 set -a
@@ -110,6 +110,7 @@ set +a
 
 NETBIRD_RELAY_AUTH_SECRET="$(openssl rand -base64 32 | tr -d '=')"
 NETBIRD_STORE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+NETBIRD_SESSION_COOKIE_KEY="$(openssl rand -base64 32)"
 
 cat > config.yaml <<EOF
 server:
@@ -128,6 +129,7 @@ server:
   auth:
     issuer: "https://${NETBIRD_DOMAIN}/oauth2"
     signKeyRefreshEnabled: true
+    sessionCookieEncryptionKey: "${NETBIRD_SESSION_COOKIE_KEY}"
     dashboardRedirectURIs:
       - "https://${NETBIRD_DOMAIN}/nb-auth"
       - "https://${NETBIRD_DOMAIN}/nb-silent-auth"
@@ -145,14 +147,16 @@ server:
     encryptionKey: "${NETBIRD_STORE_ENCRYPTION_KEY}"
 EOF
 
-unset NETBIRD_RELAY_AUTH_SECRET NETBIRD_STORE_ENCRYPTION_KEY
+unset NETBIRD_RELAY_AUTH_SECRET NETBIRD_STORE_ENCRYPTION_KEY NETBIRD_SESSION_COOKIE_KEY
 chmod 600 config.yaml
 ```
 
-`trustedHTTPProxies` and `trustedPeers` trust only Traefik's fixed address on the private Compose network. If `172.30.0.0/24` overlaps an existing Docker or host network, choose an unused subnet and update both settings and the network configuration in `docker-compose.yml`.
+`trustedHTTPProxies` and `trustedPeers` trust only Traefik's fixed address on the private Compose network. If you will put Nginx or Caddy on the host instead, replace `172.30.0.10/32` with `172.30.0.1/32` in both lists; the [reverse proxy overview](/selfhosted/external-reverse-proxy#trust-only-the-real-proxy) explains why. If `172.30.0.0/24` overlaps an existing Docker or host network, choose an unused subnet and update both settings and the network configuration in `docker-compose.yml`.
+
+`sessionCookieEncryptionKey` encrypts the embedded identity provider's session cookies. It must be 16, 24, or 32 bytes, as a raw string or base64; the command above generates 32 random bytes in base64.
 
 <Warning>
-**Data-loss warning:** Keep `config.yaml` and `server.store.encryptionKey` secure and backed up. NetBird uses the encryption key to protect setup keys, API tokens, and other sensitive stored values. Losing it requires those encrypted credentials to be regenerated.
+**Data-loss warning:** Keep `config.yaml` secure and backed up, including `server.store.encryptionKey` and `server.auth.sessionCookieEncryptionKey`. NetBird uses the store key to protect setup keys, API tokens, and other sensitive stored values. Losing it requires those encrypted credentials to be regenerated. Changing the session cookie key signs every user out of the Dashboard.
 </Warning>
 
 ## 4. Create the Dashboard configuration
@@ -192,7 +196,7 @@ Create `docker-compose.yml` with the following content. The `latest` tags match 
 cat > docker-compose.yml <<'YAML'
 services:
   traefik:
-    image: traefik:v3.6
+    image: traefik:v3.7.14
     container_name: netbird-traefik
     restart: unless-stopped
     networks:
@@ -207,6 +211,8 @@ services:
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.allowACMEByPass=true"
+      - "--entrypoints.web.http.aliasHeadersStrategy=delete"
+      - "--entrypoints.websecure.http.aliasHeadersStrategy=delete"
       - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=0"
       - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=0"
       - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=0"
@@ -302,9 +308,74 @@ YAML
 chmod 600 docker-compose.yml
 ```
 
+`traefik:v3.7.14` is the version the installer uses. Do not use a release older than v3.7.13: earlier versions lack the `aliasHeadersStrategy` option and its header-sanitization fix, and the v3.6 line is end of life.
+
 The only public container ports are TCP 80 and 443 on Traefik and UDP 3478 on `netbird-server`. The Dashboard and the server's internal HTTP listener remain reachable only through the private `netbird` Docker network.
 
 Traefik sends gRPC paths to the server over h2c and sends the REST API, embedded identity provider, Relay, and WebSocket paths over HTTP. The Dashboard router has the lowest priority and handles all remaining paths.
+
+### Use another reverse proxy
+
+Skip the Traefik Compose file above if you will put Nginx, Caddy, Nginx Proxy Manager, or an existing Traefik instance in front of NetBird. Create this file instead; it runs only the Dashboard and `netbird-server`:
+
+```bash
+cat > docker-compose.yml <<'YAML'
+services:
+  dashboard:
+    image: netbirdio/dashboard:latest
+    container_name: netbird-dashboard
+    restart: unless-stopped
+    networks: [netbird-proxy]
+    ports:
+      - "127.0.0.1:8080:80"
+    env_file:
+      - ./dashboard.env
+    logging:
+      driver: json-file
+      options:
+        max-size: 500m
+        max-file: "2"
+
+  netbird-server:
+    image: netbirdio/netbird-server:latest
+    container_name: netbird-server
+    restart: unless-stopped
+    networks: [netbird-proxy]
+    ports:
+      - "127.0.0.1:8081:80"
+      - "3478:3478/udp"
+    volumes:
+      - netbird_data:/var/lib/netbird
+      - ./config.yaml:/etc/netbird/config.yaml:ro
+    command: ["--config", "/etc/netbird/config.yaml"]
+    logging:
+      driver: json-file
+      options:
+        max-size: 500m
+        max-file: "2"
+
+volumes:
+  netbird_data:
+
+networks:
+  netbird-proxy:
+    name: netbird-proxy
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
+YAML
+
+chmod 600 docker-compose.yml
+```
+
+This file creates the `netbird-proxy` network that every proxy guide uses, so start NetBird before the proxy. It reuses the `172.30.0.0/24` subnet from the Traefik file; don't create both networks on one host. The proxy reaches NetBird in one of two ways:
+
+- **A proxy installed on the host** (Nginx or Caddy) uses the loopback ports: the Dashboard on `127.0.0.1:8080` and `netbird-server` on `127.0.0.1:8081`. NetBird sees it connect from the network gateway, so `config.yaml` must trust `172.30.0.1/32`.
+- **A proxy in Docker** (Traefik, Nginx Proxy Manager, or a Caddy or Nginx container) joins `netbird-proxy` at `172.30.0.10` and uses the container names `netbird-dashboard` and `netbird-server`. Keep `172.30.0.10/32` in `config.yaml`. You can remove the two loopback port mappings.
+
+Continue with step 6, then configure your proxy from its guide before running the step 7 checks.
 
 ## 6. Validate and start NetBird
 
@@ -341,6 +412,10 @@ Logs can contain hostnames, addresses, user details, and tokens. Review and reda
 
 ## 7. Verify HTTPS and the NetBird endpoints
 
+<Warning>
+**Security warning:** Until the first owner exists, anyone who can reach `/setup` can create that account and control the deployment. Complete this step and step 8 without a break, or run `docker compose down` and come back later.
+</Warning>
+
 Load the domain from `.env`, then test the public HTTPS path from the server:
 
 ```bash
@@ -349,10 +424,10 @@ set -a
 set +a
 
 curl -fsS "https://${NETBIRD_DOMAIN}/oauth2/.well-known/openid-configuration" > /dev/null
-curl -fsSI "https://${NETBIRD_DOMAIN}/setup"
+curl -fsS "https://${NETBIRD_DOMAIN}/api/instance"
 ```
 
-The first command exits successfully when Traefik can route to the embedded identity provider. The second command should return an HTTP `200` response before the first user is created.
+The first command exits successfully when Traefik can route to the embedded identity provider. The second should print `{"setup_required":true}`, which means the server is reachable and no owner exists yet. Don't use `/setup` for this check: it is a Dashboard page that returns `200` either way.
 
 Also open `https://netbird.example.com/setup` from a different network and replace the hostname with your actual domain. This external test confirms that public DNS, the network firewall, Traefik, and the Dashboard path work together; a successful test from the server alone does not prove outside clients can connect.
 
@@ -367,7 +442,7 @@ The first visit to `/setup` displays **Create the first admin account to get sta
 3. Enter and confirm a password of at least eight characters. Use a long, unique password.
 4. Click **Create Admin Account**.
 
-The setup page is available only while the deployment has no users. After NetBird creates the first owner, `/setup` redirects to the regular login page.
+The setup page is available only while the deployment has no users. After NetBird creates the first owner, `/api/instance` returns `{"setup_required":false}`, and `/setup` redirects to the Dashboard, which asks you to sign in.
 
 For non-interactive provisioning, use [Automated setup with a Personal Access Token](/selfhosted/automated-setup) instead of exposing credentials in shell history or deployment files.
 
@@ -390,8 +465,8 @@ Do not add `--volumes` unless you intend to permanently delete the NetBird datab
 ## Next steps
 
 - Compare all [supported reverse proxy configurations](/selfhosted/external-reverse-proxy), including combined-container and multi-container layouts.
-- Use [Manual multi-container setup](/selfhosted/manual-setup/multi-container) when separate Management, Signal, and Relay services better fit your operational requirements.
+- Use [Manual multi-container setup](/selfhosted/manual-setup/multi-container) to rebuild or maintain a deployment that runs Management, Signal, and Relay as separate services.
 - Review the [configuration files reference](/selfhosted/maintenance/configuration-files) before changing server, authentication, storage, or reverse proxy settings.
 - Connect an external identity provider through [Authentication and IdPs](/selfhosted/identity-providers).
-- Add the optional [NetBird Proxy](/selfhosted/migration/enable-reverse-proxy) when you need to publish selected NetBird resources.
+- Add the optional [NetBird Proxy](/selfhosted/migration/enable-reverse-proxy) when you need to publish selected NetBird resources. It requires Traefik.
 - Use [self-hosted installation troubleshooting](/selfhosted/troubleshooting/installation) if the containers, certificate, or setup page do not reach the expected state.

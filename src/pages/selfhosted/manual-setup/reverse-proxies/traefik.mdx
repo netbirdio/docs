@@ -10,7 +10,12 @@ This guide configures an existing or dedicated Traefik instance for either NetBi
 - **Combined container:** `dashboard` plus `netbird-server`. This is recommended for most setups.
 - **Multi-container:** separate `dashboard`, `management`, `signal`, and `relay` services.
 
-Start with [Manual setup](/selfhosted/manual-setup) for the combined layout or [Manual multi-container setup](/selfhosted/manual-setup/multi-container) for the multi-container layout. The examples below assume that Traefik and NetBird share the external Docker network `netbird-proxy`, with Traefik fixed at `172.30.0.10`.
+If you are starting from scratch, the [manual combined-container setup](/selfhosted/manual-setup) already includes a complete Traefik deployment, and you don't need this page. Use it to put NetBird behind a Traefik instance you run separately, for either layout:
+
+- **Combined container:** follow steps 1 to 4 of [Manual setup](/selfhosted/manual-setup) and create the Compose file from [Use another reverse proxy](/selfhosted/manual-setup#use-another-reverse-proxy).
+- **Multi-container:** follow [Manual multi-container setup](/selfhosted/manual-setup/multi-container) through step 7.
+
+Both NetBird Compose files create the Docker network `netbird-proxy` (`172.30.0.0/24`). Traefik joins it as an external network at the fixed address `172.30.0.10`, so start NetBird first.
 
 ## What Traefik must handle
 
@@ -20,19 +25,9 @@ Traefik terminates public TLS on TCP 443. It uses normal HTTP upstreams for the 
 Do not route gRPC requests to the Dashboard fallback. A Dashboard that loads successfully does not prove that clients can connect. Keep the gRPC routers at a higher priority and set their upstream scheme to `h2c`.
 </Warning>
 
-## 1. Create or reuse the proxy network
+## 1. Trust Traefik's address
 
-If the base NetBird Compose project has not created the network yet, create it once:
-
-```bash
-docker network create \
-  --driver bridge \
-  --subnet 172.30.0.0/24 \
-  --gateway 172.30.0.1 \
-  netbird-proxy
-```
-
-If you use another subnet, change Traefik's fixed address and NetBird's trusted proxy configuration together.
+NetBird must trust Traefik's fixed address on `netbird-proxy`. If you changed the subnet, change Traefik's address and these settings together.
 
 For a combined `config.yaml`:
 
@@ -61,12 +56,25 @@ Trust the exact proxy address, not the entire Docker subnet.
 
 ## 2. Configure Traefik
 
-This dedicated Compose file enables Docker discovery, HTTP-to-HTTPS redirects, long-lived stream timeouts, and Let's Encrypt TLS-ALPN validation. Set a real hostname and contact email in the NetBird project's `.env` before starting it.
+Traefik needs v3.7.13 or newer. Older releases, including the end-of-life v3.6 line, lack the `aliasHeadersStrategy` option and its header-sanitization fix. The NetBird installer uses `traefik:v3.7.14` and refuses anything older than v3.7.13.
+
+This dedicated Compose file enables Docker discovery, HTTP-to-HTTPS redirects, long-lived stream timeouts, and Let's Encrypt TLS-ALPN validation. Put it in its own directory, for example `$HOME/traefik`, with a `.env` file beside it that sets the contact email:
+
+```bash
+install -d -m 700 "$HOME/traefik"
+cd "$HOME/traefik"
+printf 'LETSENCRYPT_EMAIL=%s\n' 'you@your-domain.example' > .env
+chmod 600 .env
+```
+
+Replace the address with a real one. Docker Compose reads `.env` from the directory of the Compose file, not from the NetBird directory. If it can't find the variable, it warns that `LETSENCRYPT_EMAIL` is not set and Traefik registers its ACME account with no contact address.
+
+Save this as `$HOME/traefik/docker-compose.yml`:
 
 ```yaml
 services:
   traefik:
-    image: traefik:v3.6
+    image: traefik:v3.7.14
     container_name: netbird-traefik
     restart: unless-stopped
     networks:
@@ -81,6 +89,8 @@ services:
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.allowACMEByPass=true"
+      - "--entrypoints.web.http.aliasHeadersStrategy=delete"
+      - "--entrypoints.websecure.http.aliasHeadersStrategy=delete"
       - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=0"
       - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=0"
       - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=0"
@@ -110,21 +120,15 @@ networks:
 Mounting the Docker socket gives Traefik read access to sensitive Docker metadata. Keep `exposedByDefault=false`, do not publish Traefik's insecure API, and consider a Docker socket proxy when your threat model requires stronger isolation.
 </Warning>
 
-If Traefik already exists, merge the equivalent entrypoint, provider, certificate-resolver, and timeout settings into its static configuration. Use its existing network, HTTPS entrypoint, and resolver names in the labels below.
+If Traefik already exists, upgrade it to v3.7.13 or newer, then merge the equivalent entrypoint, provider, certificate-resolver, and timeout settings into its static configuration, including `aliasHeadersStrategy=delete` on every entrypoint. Use its existing network, HTTPS entrypoint, and resolver names in the labels below.
 
 ## Combined container layout
 
-Use these labels on the `dashboard` and `netbird-server` services. Do not publish their HTTP ports when Traefik shares their Docker network; publish only UDP 3478 from `netbird-server`.
+Add these labels to the `dashboard` and `netbird-server` services in the Compose file from [Use another reverse proxy](/selfhosted/manual-setup#use-another-reverse-proxy). Traefik reaches both over `netbird-proxy`, so you can remove their `127.0.0.1` port mappings. Keep `3478:3478/udp` on `netbird-server`.
 
 ```yaml
 services:
   dashboard:
-    image: netbirdio/dashboard:latest
-    container_name: netbird-dashboard
-    restart: unless-stopped
-    networks: [netbird-proxy]
-    env_file:
-      - ./dashboard.env
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.netbird-dashboard.rule=Host(`${NETBIRD_DOMAIN}`)"
@@ -135,16 +139,6 @@ services:
       - "traefik.http.services.netbird-dashboard.loadbalancer.server.port=80"
 
   netbird-server:
-    image: netbirdio/netbird-server:latest
-    container_name: netbird-server
-    restart: unless-stopped
-    networks: [netbird-proxy]
-    ports:
-      - "3478:3478/udp"
-    volumes:
-      - netbird_data:/var/lib/netbird
-      - ./config.yaml:/etc/netbird/config.yaml:ro
-    command: ["--config", "/etc/netbird/config.yaml"]
     labels:
       - "traefik.enable=true"
 
@@ -167,25 +161,19 @@ services:
       - "traefik.http.services.netbird-server.loadbalancer.server.port=80"
       - "traefik.http.services.netbird-server-h2c.loadbalancer.server.port=80"
       - "traefik.http.services.netbird-server-h2c.loadbalancer.server.scheme=h2c"
-
-volumes:
-  netbird_data:
-
-networks:
-  netbird-proxy:
-    external: true
 ```
 
 The two Traefik services intentionally target the same backend port. Only their upstream protocols differ.
 
+`/management.ProxyService/` is in the gRPC rule for the [NetBird Proxy](/manage/reverse-proxy) feature. The route alone doesn't enable it: the feature also needs a TCP router with TLS passthrough, the proxy-protocol transport, and the file provider described in [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy).
+
 ## Multi-container layout
 
-Add these labels to the services from [Manual multi-container setup](/selfhosted/manual-setup/multi-container). Traefik, Dashboard, Management, Signal, and Relay must all join `netbird-proxy`.
+Add these labels to the services from [Manual multi-container setup](/selfhosted/manual-setup/multi-container). The services already join `netbird-proxy`. Every router has an explicit priority so the Dashboard catch-all stays last if you edit the rules.
 
 ```yaml
 services:
   dashboard:
-    networks: [netbird-proxy]
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.netbird-dashboard.rule=Host(`${NETBIRD_DOMAIN}`)"
@@ -196,7 +184,6 @@ services:
       - "traefik.http.services.netbird-dashboard.loadbalancer.server.port=80"
 
   signal:
-    networks: [netbird-proxy]
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.netbird-signal-ws.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/ws-proxy/signal`)"
@@ -216,7 +203,6 @@ services:
       - "traefik.http.services.netbird-signal-grpc.loadbalancer.server.scheme=h2c"
 
   relay:
-    networks: [netbird-proxy]
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.netbird-relay.rule=Host(`${NETBIRD_DOMAIN}`) && PathPrefix(`/relay`)"
@@ -227,7 +213,6 @@ services:
       - "traefik.http.services.netbird-relay.loadbalancer.server.port=80"
 
   management:
-    networks: [netbird-proxy]
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.netbird-management-grpc.rule=Host(`${NETBIRD_DOMAIN}`) && (PathPrefix(`/management.ManagementService/`) || PathPrefix(`/management.ProxyService/`))"
@@ -245,25 +230,22 @@ services:
       - "traefik.http.services.netbird-management.loadbalancer.server.port=80"
       - "traefik.http.services.netbird-management-h2c.loadbalancer.server.port=80"
       - "traefik.http.services.netbird-management-h2c.loadbalancer.server.scheme=h2c"
-
-networks:
-  netbird-proxy:
-    external: true
 ```
 
 The `relay` service must still publish `3478:3478/udp` directly. Traefik handles only its secure WebSocket endpoint on TCP 443.
 
 ## Start and verify
 
-Validate both Compose projects before starting them:
+Validate both Compose projects, then start NetBird first so it creates `netbird-proxy`:
 
 ```bash
 cd "$HOME/netbird"
 docker compose config --quiet
 docker compose up -d
 
-docker compose -f /path/to/traefik/docker-compose.yml config --quiet
-docker compose -f /path/to/traefik/docker-compose.yml up -d
+cd "$HOME/traefik"
+docker compose config --quiet
+docker compose up -d
 ```
 
 From an external machine, verify OIDC and the certificate:
@@ -278,7 +260,7 @@ openssl s_client \
   | openssl x509 -noout -subject -issuer -dates
 ```
 
-Then run the gRPC and WebSocket checks from [Manual multi-container setup](/selfhosted/manual-setup/multi-container#9-verify-the-complete-deployment), create the first owner, and enroll two clients.
+Then run the setup-state, gRPC, and WebSocket checks from [Verify before creating the first owner](/selfhosted/external-reverse-proxy#verify-before-creating-the-first-owner), create the first owner, and enroll two clients.
 
 ## Troubleshooting Traefik
 

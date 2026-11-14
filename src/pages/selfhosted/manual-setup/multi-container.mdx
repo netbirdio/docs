@@ -7,7 +7,7 @@ export const description =
 
 This guide manually deploys NetBird with separate `management`, `signal`, `relay`, and `dashboard` containers. It uses the embedded identity provider, SQLite, and the current NetBird images.
 
-The [combined `netbird-server` manual setup](/selfhosted/manual-setup) is recommended for most installations because it reduces the number of services and configuration files to manage. Choose this multi-container layout when separate service lifecycles, per-service resource controls, or your infrastructure topology make distinct Management, Signal, and Relay services a better fit.
+This is the architecture NetBird used before v0.65.0. The images are still published and run this layout, but `getting-started.sh` no longer generates it, and new deployments should use the [combined `netbird-server` setup](/selfhosted/manual-setup). Use this guide to rebuild or maintain an existing multi-container deployment, or when you have a specific need to run Management, Signal, and Relay as separate services. To consolidate later, see [Migrate to the combined container](/selfhosted/migration/combined-container).
 
 The guide prepares the NetBird services and loopback backend ports. Finish the deployment with one of the tested reverse proxy guides:
 
@@ -32,11 +32,13 @@ One public hostname serves every HTTP, WebSocket, and gRPC endpoint. The reverse
 | `/management.ProxyService/*` | gRPC over h2c | `management:80` |
 | Every other path | HTTP | `dashboard:80` |
 
+`/management.ProxyService/*` serves the [NetBird Proxy](/manage/reverse-proxy) feature. The route alone doesn't enable it: the feature also needs Traefik with TLS passthrough, as described in [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy).
+
 The public listener requirements are:
 
 | Port | Protocol | Owner | Purpose |
 |---|---|---|---|
-| `80` | TCP | Reverse proxy | HTTP redirect and ACME HTTP challenge, when used. |
+| `80` | TCP | Reverse proxy | HTTP redirect and ACME HTTP-01 challenge. Optional with Traefik's TLS-ALPN challenge. |
 | `443` | TCP | Reverse proxy | Dashboard, API, embedded IdP, Management, Signal, and secure Relay. |
 | `3478` | UDP | `relay` | STUN for NAT discovery. This bypasses the HTTP reverse proxy. |
 
@@ -60,7 +62,7 @@ A Docker-based Traefik or Nginx Proxy Manager deployment reaches the services by
 - A hostname such as `netbird.example.com` whose A record points directly to the server. If an AAAA record exists, IPv6 must reach the same server.
 - Inbound TCP 80 and 443 and inbound UDP 3478 allowed by provider, network, and host firewalls.
 - `curl`, `jq`, and `openssl`.
-- No CDN or HTTP proxy in front of the NetBird hostname.
+- The NetBird hostname set to DNS-only at your DNS provider, with no CDN in front of it. For Cloudflare's proxy, see [Behind Cloudflare's proxy](/selfhosted/external-reverse-proxy#behind-cloudflares-proxy).
 
 A small deployment can run with 1 CPU and 1 GB of memory when swap is available. At least 2 GB is recommended to give image pulls, upgrades, and diagnostics more headroom.
 
@@ -136,7 +138,7 @@ Do not use `0.0.0.0/0`. Trusting every source allows clients to forge forwarding
 
 ## 4. Create `management.json`
 
-Generate independent Relay and data-store encryption secrets, then render the Management configuration:
+Generate independent secrets for Relay, data-store encryption, and the embedded identity provider's session cookies, then render the Management configuration:
 
 ```bash
 set -a
@@ -145,6 +147,7 @@ set +a
 
 NETBIRD_RELAY_AUTH_SECRET="$(openssl rand -base64 32 | tr -d '=')"
 NETBIRD_STORE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+NETBIRD_SESSION_COOKIE_KEY="$(openssl rand -base64 32)"
 
 cat > management.json <<EOF
 {
@@ -173,6 +176,7 @@ cat > management.json <<EOF
   "EmbeddedIdP": {
     "Enabled": true,
     "Issuer": "https://${NETBIRD_DOMAIN}/oauth2",
+    "SessionCookieEncryptionKey": "${NETBIRD_SESSION_COOKIE_KEY}",
     "DashboardRedirectURIs": [
       "https://${NETBIRD_DOMAIN}/nb-auth",
       "https://${NETBIRD_DOMAIN}/nb-silent-auth"
@@ -181,11 +185,14 @@ cat > management.json <<EOF
 }
 EOF
 
+unset NETBIRD_SESSION_COOKIE_KEY
 chmod 600 management.json
 ```
 
+`SessionCookieEncryptionKey` encrypts the embedded identity provider's session cookies. It must be 16, 24, or 32 bytes, as a raw string or base64.
+
 <Warning>
-Back up `management.json`, especially `DataStoreEncryptionKey`, and the Management data volume. Losing the key makes stored setup keys, API tokens, and other encrypted values unusable.
+Back up `management.json` and the Management data volume. Losing `DataStoreEncryptionKey` makes stored setup keys, API tokens, and other encrypted values unusable. Changing `SessionCookieEncryptionKey` signs every user out of the Dashboard.
 </Warning>
 
 ## 5. Create Relay and Dashboard environments
@@ -238,6 +245,8 @@ chmod 600 dashboard.env
 ```
 
 `LETSENCRYPT_DOMAIN=none` keeps certificate handling in the selected reverse proxy.
+
+Relay logs the proxy's address for peers that connect over WebSocket. Since v0.75.0 it can record the peer's address instead: set `NB_TRUSTED_PROXIES` in `relay.env` to your proxy's address, and make the proxy send both `X-Real-Ip` and `X-Real-Port` on the `/relay` route. This is optional and the proxy guides do not set it.
 
 ## 6. Create the Compose file
 
@@ -333,6 +342,8 @@ chmod 600 docker-compose.yml
 docker compose config --quiet
 ```
 
+`--disable-anonymous-metrics=false` leaves NetBird's anonymous usage metrics on. Set it to `true` to turn them off.
+
 If `172.30.0.0/24` overlaps another host or Docker network, select an unused private subnet and change the gateway and trusted proxy addresses consistently.
 
 ## 7. Start the NetBird backends
@@ -369,33 +380,40 @@ For Docker-based Traefik or Nginx Proxy Manager, confirm that the proxy joins `n
 
 ## 9. Verify the complete deployment
 
+<Warning>
+Until the first owner exists, anyone who can reach `/setup` can create that account and control the deployment. Run these checks and create the owner without a break, or stop the stack with `docker compose down` until you are ready.
+</Warning>
+
 Run these tests from a machine outside the server's network:
 
 ```bash
 NETBIRD_DOMAIN="netbird.example.com"
 
 curl -fsSI "http://${NETBIRD_DOMAIN}/"
-curl -fsSI "https://${NETBIRD_DOMAIN}/setup"
 curl -fsS "https://${NETBIRD_DOMAIN}/oauth2/.well-known/openid-configuration"
+curl -fsS "https://${NETBIRD_DOMAIN}/api/instance"
 ```
 
 Expected results:
 
 - HTTP redirects to HTTPS.
 - HTTPS uses a certificate trusted for the exact hostname.
-- `/setup` returns `200` before the first owner exists.
 - OIDC discovery returns an issuer of `https://netbird.example.com/oauth2` with your real hostname.
+- `/api/instance` returns `{"setup_required":true}` before the first owner exists. Don't use `/setup` for this: it is a Dashboard page that returns `200` either way.
 
-Verify gRPC reaches Management rather than the Dashboard:
+Verify gRPC reaches Management rather than the Dashboard. The probe sends an empty gRPC message, which has to come from a file because a shell argument can't carry its NUL bytes:
 
 ```bash
+printf '\000\000\000\000\000' > grpc-frame.bin
+
 curl -sS --http2 -D - -o /dev/null \
   -X POST "https://${NETBIRD_DOMAIN}/management.ManagementService/GetServerKey" \
   -H 'Content-Type: application/grpc' \
-  --data-binary $'\x00\x00\x00\x00\x00'
+  -H 'TE: trailers' \
+  --data-binary @grpc-frame.bin
 ```
 
-The response must use `content-type: application/grpc`. An application-level gRPC error is acceptable for this deliberately incomplete request; HTML is not.
+The response must use `content-type: application/grpc` and end with `grpc-status: 0`. HTML means the request reached the Dashboard.
 
 Verify the Relay WebSocket upgrade:
 

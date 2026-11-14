@@ -632,13 +632,9 @@ export const docsNavigation = [
             { title: 'Quickstart Guide', href: '/selfhosted/selfhosted-quickstart' },
             {
                 title: 'Manual Setup',
-                href: '/selfhosted/manual-setup',
+                href: '/selfhosted/manual-setup/planning',
                 isOpen: false,
                 links: [
-                    {
-                        title: 'Plan Your Deployment',
-                        href: '/selfhosted/manual-setup/planning',
-                    },
                     { title: 'Combined Container', href: '/selfhosted/manual-setup' },
                     {
                         title: 'Multi-Container',

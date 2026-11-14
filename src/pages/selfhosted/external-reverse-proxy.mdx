@@ -1,59 +1,115 @@
-import {Note} from "@/components/mdx"
+import {Note, Warning} from "@/components/mdx"
 
 export const description =
   "Choose and configure Traefik, Nginx, Caddy, or Nginx Proxy Manager for combined-container or multi-container self-hosted NetBird."
 
 # Reverse proxies for self-hosted NetBird
 
-NetBird supports Traefik, Nginx, Caddy, and Nginx Proxy Manager in front of a manual self-hosted deployment. Each proxy must route Dashboard HTTP, REST/OIDC, WebSockets, and native gRPC on one public TLS hostname while leaving STUN on UDP 3478 directly reachable.
+NetBird supports Traefik, Nginx, Caddy, and Nginx Proxy Manager in front of a self-hosted deployment. Each proxy must route Dashboard HTTP, REST/OIDC, WebSockets, and native gRPC on one public TLS hostname while leaving STUN on UDP 3478 directly reachable.
 
-For most installations, the recommended manual path is the [combined server with its embedded identity provider and Traefik](/selfhosted/manual-setup). Traefik handles automatic certificate issuance and renewal, so you do not need to choose another proxy before NetBird can run.
+For most installations, the recommended path is the combined server with its embedded identity provider and the bundled Traefik, either from the [quickstart](/selfhosted/selfhosted-quickstart) or the [manual combined-container setup](/selfhosted/manual-setup). Traefik handles certificate issuance and renewal, so you do not need to choose another proxy before NetBird can run.
 
-Use this page when a reverse proxy is an integration choice: you already operate another proxy, need a specific certificate workflow, or use the multi-container layout. For the broader architecture decision, start with [Plan a manual NetBird deployment](/selfhosted/manual-setup/planning).
+Use this page when a reverse proxy is an integration choice: you already operate another proxy, need a specific certificate workflow, or maintain a multi-container deployment. For the broader architecture decision, start with [Plan a manual NetBird deployment](/selfhosted/manual-setup/planning).
+
+<Note>
+This page is about the proxy in front of NetBird. It is not the [NetBird Proxy](/manage/reverse-proxy) feature, which publishes resources through NetBird. That feature needs TLS passthrough and works only with Traefik; see [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy).
+</Note>
+
+## Quick Setup
+
+### New Deployments
+
+The `getting-started.sh` script supports multiple reverse proxy configurations. During initial deployment, you'll be prompted to select your reverse proxy:
+
+```
+Which reverse proxy will you use?
+  [0] Traefik (recommended - automatic TLS, included in Docker Compose)
+  [1] Existing Traefik (labels for external Traefik instance)
+  [2] Nginx (generates config template)
+  [3] Nginx Proxy Manager (generates config + instructions)
+  [4] External Caddy (generates Caddyfile snippet)
+  [5] Other/Manual (displays setup documentation)
+```
+
+The script generates the configuration files for the proxy you choose and prints setup instructions. For Nginx, it also points you to [TLS Certificate Setup for Nginx](#tls-certificate-setup-for-nginx).
+
+<Note>
+This option is only available during initial setup with `getting-started.sh`. For existing deployments, or to build the configuration yourself, use the proxy guides below.
+</Note>
+
+### Using the script with an existing Traefik (Option 1)
+
+If you select option `[1]` (Existing Traefik), the script generates a Docker Compose file with Traefik labels for the dashboard and netbird-server containers. It does not run Traefik for you. Your existing Traefik instance handles TLS termination, certificate issuance, and routing.
+
+#### Before you run the script
+
+Make sure these are in place first:
+
+- Traefik v3.7.13 or newer is already running on the same host. The script refuses older versions.
+- Traefik joins a Docker network you can attach the NetBird containers to.
+- Traefik has an HTTPS entrypoint configured (default: `websecure`).
+- Traefik has a working certificate resolver (Let's Encrypt or otherwise).
+- Your domain (e.g. `netbird.example.com`) resolves to the host's public IP.
+- Ports 80 and 443 on the host are reachable from the internet.
+
+If your certificate resolver isn't working before you start, NetBird won't fix it. Test that Traefik can issue certificates for another service first.
+
+#### What the script will ask you
+
+When you choose option 1, the script prompts for three things:
+
+| Prompt | What to enter |
+|--------|---------------|
+| External network | The Docker network name your Traefik is on (e.g. `proxy`) |
+| HTTPS entrypoint name | Your Traefik HTTPS entrypoint (default: `websecure`) |
+| Certificate resolver name | Your cert resolver name (e.g. `letsencrypt`). Leave empty if you handle TLS some other way |
+
+#### What the script does
+
+After you answer the prompts, the script writes a `docker-compose.yml` with the right Traefik labels, brings up the dashboard and netbird-server containers, and waits for the server to become reachable through your Traefik instance.
+
+The readiness check probes `https://your-domain/oauth2/.well-known/openid-configuration` through the proxy. The script auto-detects your Traefik container (any container running a Traefik image with ports 80 and 443 published) so it can pull diagnostic logs if something goes wrong.
+
+If the wait check hangs, see [Installation script issues](/selfhosted/troubleshooting/installation) for the common causes.
+
+### Existing Deployments
+
+For existing NetBird installations, or when you want to write every file yourself, use the layout and proxy guides below.
 
 ## Choose the NetBird layout
 
 | Layout | Services | Use it when |
 |---|---|---|
-| **Combined container** | `dashboard` and `netbird-server` | Recommended for most setups because it keeps the core services together. |
-| **Multi-container** | `dashboard`, `management`, `signal`, and `relay` | Separate service lifecycles, per-service resource controls, or infrastructure that benefits from distinct backends. |
+| **Combined container** | `dashboard` and `netbird-server` | The default since v0.65.0 and the layout `getting-started.sh` installs. Use it for new deployments. |
+| **Multi-container** | `dashboard`, `management`, `signal`, and `relay` | You run an installation from before v0.65.0, or need Management, Signal, and Relay as separate services. The current images still support it, but the installer no longer generates it. |
 
 - [Manual combined-container setup](/selfhosted/manual-setup)
 - [Manual multi-container setup](/selfhosted/manual-setup/multi-container)
 - [Migrate a multi-container deployment to the combined container](/selfhosted/migration/combined-container)
 
-The combined layout is recommended for most setups because it has fewer moving parts. The multi-container layout remains a valid option when separating Management, Signal, and Relay better fits your operational requirements.
-
 ## Choose the reverse proxy
 
 | Proxy | TLS | Best fit | Guide |
 |---|---|---|---|
-| **Traefik** | Automatic ACME | Docker-native routing and the standard NetBird quickstart model. | [Traefik](/selfhosted/manual-setup/reverse-proxies/traefik) |
+| **Traefik** | Automatic ACME | Docker-native routing, the quickstart model, and the only proxy that supports the NetBird Proxy feature. | [Traefik](/selfhosted/manual-setup/reverse-proxies/traefik) |
 | **Nginx** | Certbot or an existing certificate | Host-based deployments and administrators who want explicit location routing. | [Nginx](/selfhosted/manual-setup/reverse-proxies/nginx) |
 | **Caddy** | Automatic HTTPS | Small, readable configurations with automatic certificate lifecycle. | [Caddy](/selfhosted/manual-setup/reverse-proxies/caddy) |
 | **Nginx Proxy Manager** | Managed in its UI | Administrators who already operate NPM and prefer a web interface. | [Nginx Proxy Manager](/selfhosted/manual-setup/reverse-proxies/nginx-proxy-manager) |
 
-Every guide includes:
-
-- Combined-container and multi-container routing.
-- Host or Docker placement where the proxy supports it.
-- Trusted proxy configuration.
-- TLS and long-lived connection settings.
-- Public verification commands.
-- Proxy-specific troubleshooting.
+Every guide covers combined-container and multi-container routing, trusted proxy configuration, TLS and long-lived connection settings, verification, and proxy-specific troubleshooting.
 
 ## Public port requirements
 
 | Port | Protocol | Destination | Purpose |
 |---|---|---|---|
-| `80` | TCP | Reverse proxy | HTTP-to-HTTPS redirect and ACME HTTP validation, when used. |
+| `80` | TCP | Reverse proxy | HTTP-to-HTTPS redirect and ACME HTTP-01 validation. Optional with Traefik's TLS-ALPN challenge; required for Certbot's and NPM's HTTP challenge. |
 | `443` | TCP | Reverse proxy | Dashboard, API, embedded IdP, Management, Signal, and secure Relay. |
 | `3478` | UDP | `netbird-server` or multi-container `relay` | STUN for NAT discovery. It bypasses the HTTP reverse proxy. |
 
 Do not publish Dashboard, Management, Signal HTTP/gRPC, or Relay HTTP backend ports on all interfaces. A host-installed proxy should reach them through `127.0.0.1` bindings; a Docker proxy should reach container names on a private network.
 
 <Note>
-A CDN or ordinary HTTP proxy in front of the NetBird hostname can break gRPC, WebSockets, source-address handling, or long-lived streams. Configure the NetBird hostname as DNS-only unless the upstream product is explicitly configured and tested for all of those protocols.
+A CDN or other HTTP proxy in front of the NetBird hostname can break gRPC, WebSockets, client addresses, and long-lived streams. Cloudflare's proxy works with the settings in [Behind Cloudflare's proxy](#behind-cloudflares-proxy). For any other CDN, keep the hostname DNS-only unless you have configured and tested all of those protocols.
 </Note>
 
 ## Combined-container route map
@@ -72,7 +128,17 @@ All backend routes go to `netbird-server:80`; only the Dashboard catch-all uses 
 | `/oauth2/*` | HTTP | `netbird-server:80` |
 | All remaining paths | HTTP | `dashboard:80` |
 
-`/management.ProxyService/*` is used by the optional [NetBird Reverse Proxy feature](/manage/reverse-proxy). Routing it now avoids another proxy change if that feature is enabled later.
+`/management.ProxyService/*` is used by the [NetBird Proxy](/manage/reverse-proxy) feature. Routing it is only one part of that feature: it also needs Traefik with a TCP router for TLS passthrough, so it does not work behind Nginx, Caddy, or Nginx Proxy Manager. See [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy).
+
+<Note>
+On a commercial-license install with traffic events enabled, also route `/flow.FlowService/` (gRPC, h2c) to `netbird-receiver:80`. See [Traffic events route (commercial license)](#traffic-events-route-commercial-license).
+</Note>
+
+<Note>
+The `/api/*` route also serves the [MCP server](/selfhosted/maintenance/mcp-server) and its OAuth sign-in. If your proxy answers unknown paths with `200` and an HTML page instead of `404`, also route `/.well-known/oauth-protected-resource/api/mcp`, `/.well-known/oauth-authorization-server/api/mcp/auth` and `/.well-known/openid-configuration/api/mcp/auth` to management. Do not route all of `/.well-known/`. See [Reverse Proxy](/selfhosted/maintenance/mcp-server#reverse-proxy) on the MCP page.
+</Note>
+
+To keep the dashboard and the API off the internet while clients keep working, see [Keep the Self-Hosted Dashboard and API Private](/selfhosted/maintenance/private-management-plane).
 
 ## Multi-container route map
 
@@ -88,14 +154,18 @@ All backend routes go to `netbird-server:80`; only the Dashboard catch-all uses 
 | `/management.ProxyService/*` | Native gRPC over h2c | `management:80` |
 | All remaining paths | HTTP | `dashboard:80` |
 
+<Note>
+The `/api/*` route also serves the [MCP server](/selfhosted/maintenance/mcp-server) and its OAuth sign-in. If your proxy answers unknown paths with `200` and an HTML page instead of `404`, also route `/.well-known/oauth-protected-resource/api/mcp`, `/.well-known/oauth-authorization-server/api/mcp/auth` and `/.well-known/openid-configuration/api/mcp/auth` to management. Do not route all of `/.well-known/`. See [Reverse Proxy](/selfhosted/maintenance/mcp-server#reverse-proxy) on the MCP page.
+</Note>
+
 ## Trust only the real proxy
 
 NetBird uses two trust settings:
 
-- `trustedHTTPProxies` controls which sources may supply forwarded HTTP client information.
-- `trustedPeers` controls trusted peer/proxy sources used by proxied protocol handling.
+- `trustedPeers` lists the direct connection sources whose `X-Forwarded-For` and `X-Real-IP` headers NetBird honors. **If it is empty, every source is trusted**, and NetBird logs a warning about address spoofing.
+- `trustedHTTPProxies` lists the proxy addresses NetBird skips when it walks the `X-Forwarded-For` chain to find the client.
 
-For the combined YAML configuration:
+Set both to your proxy's address. For the combined YAML configuration:
 
 ```yaml
 server:
@@ -122,10 +192,10 @@ The address depends on placement:
 
 | Placement in these manual guides | Address to trust |
 |---|---|
-| Proxy container with fixed address | `172.30.0.10/32` |
-| Proxy installed on the Docker host and using published backend ports | `172.30.0.1/32` |
+| Proxy container with a fixed address on the NetBird network | `172.30.0.10/32` |
+| Proxy installed on the Docker host and using loopback-published backend ports | `172.30.0.1/32` (the network's gateway) |
 
-If you use a different network, inspect the real source address instead of copying these values. Never use `0.0.0.0/0` merely to make forwarding work.
+If you use a different network, inspect the real source address instead of copying these values. Never use `0.0.0.0/0` to make forwarding work.
 
 ## Required proxy behavior
 
@@ -136,11 +206,15 @@ A valid configuration must preserve all of these properties:
 3. **h2c to native gRPC backends:** TLS ends at the proxy; the internal gRPC hop is cleartext HTTP/2.
 4. **WebSocket upgrade:** Relay and fallback Signal/Management paths require HTTP/1.1 upgrade semantics.
 5. **Long timeouts:** Signal and Relay connections are intentionally long-lived.
-6. **Forwarding headers:** send the original host, scheme, and client chain only to a NetBird service configured to trust that proxy.
+6. **Forwarding headers:** set or overwrite the client address headers rather than passing a client's own values through, and send them only to a NetBird service configured to trust that proxy.
 7. **Dashboard last:** the catch-all route must have the lowest priority.
 8. **Direct UDP 3478:** do not attempt to send STUN through the HTTP reverse proxy.
 
 ## Verify before creating the first owner
+
+<Warning>
+Until the first owner exists, anyone who can reach `https://netbird.example.com/setup` can create it and take over the deployment. Run these checks and create the owner right away, or stop the stack with `docker compose down` until you are ready.
+</Warning>
 
 Run tests from a system outside the server network:
 
@@ -148,9 +222,11 @@ Run tests from a system outside the server network:
 NETBIRD_DOMAIN="netbird.example.com"
 
 curl -fsSI "http://${NETBIRD_DOMAIN}/"
-curl -fsSI "https://${NETBIRD_DOMAIN}/setup"
 curl -fsS "https://${NETBIRD_DOMAIN}/oauth2/.well-known/openid-configuration"
+curl -fsS "https://${NETBIRD_DOMAIN}/api/instance"
 ```
+
+HTTP should redirect to HTTPS, the OIDC document should show your issuer, and `/api/instance` should return `{"setup_required":true}` until the owner exists. Don't use `/setup` for this check: it is a Dashboard page that returns `200` whether or not an owner exists.
 
 Check the certificate chain and hostname:
 
@@ -161,16 +237,19 @@ openssl s_client \
   -verify_return_error </dev/null
 ```
 
-Probe native Management gRPC:
+Probe native Management gRPC with an empty gRPC message. A shell argument can't carry the NUL bytes of the frame, so write it to a file first:
 
 ```bash
+printf '\000\000\000\000\000' > grpc-frame.bin
+
 curl -sS --http2 -D - -o /dev/null \
   -X POST "https://${NETBIRD_DOMAIN}/management.ManagementService/GetServerKey" \
   -H 'Content-Type: application/grpc' \
-  --data-binary $'\x00\x00\x00\x00\x00'
+  -H 'TE: trailers' \
+  --data-binary @grpc-frame.bin
 ```
 
-The response must have `content-type: application/grpc`. The request body is deliberately incomplete, so an application-level gRPC error is acceptable; an HTML response is not.
+The response must have `content-type: application/grpc` and `grpc-status: 0`. An HTML response means the request reached the Dashboard instead of Management.
 
 Probe Relay's WebSocket upgrade:
 
@@ -185,7 +264,7 @@ curl -sS --http1.1 --max-time 3 -D - -o /dev/null \
 
 A correct route returns `101 Switching Protocols`; `curl` then times out because the upgraded connection stays open.
 
-After creating the first owner, enroll two clients from outside the server. Confirm:
+After creating the first owner, enroll two clients from outside the server and run:
 
 ```bash
 netbird status --detail
@@ -195,6 +274,104 @@ netbird status --detail
 - Signal is connected.
 - STUN and secure Relay are available.
 - The two peers can exchange traffic.
+
+## TLS Certificate Setup for Nginx
+
+Unlike Traefik and Caddy, Nginx does not obtain certificates itself. Get a certificate for your NetBird hostname, then point the `ssl_certificate` and `ssl_certificate_key` lines in your Nginx configuration at it. The [Nginx guide](/selfhosted/manual-setup/reverse-proxies/nginx#3-bootstrap-the-certificate) walks through a full Certbot setup.
+
+**Let's Encrypt with Certbot.** Your domain must point to the server, and TCP 80 must be reachable from the internet for validation.
+
+```bash
+# Debian/Ubuntu
+sudo apt install certbot python3-certbot-nginx
+
+# RHEL and compatible distributions
+sudo dnf install certbot python3-certbot-nginx
+```
+
+```bash
+# If Nginx is already running and serves port 80
+sudo certbot certonly --nginx -d netbird.example.com \
+  --deploy-hook "systemctl reload nginx"
+
+# If nothing listens on port 80 yet
+sudo certbot certonly --standalone -d netbird.example.com \
+  --deploy-hook "systemctl reload nginx"
+```
+
+```nginx
+ssl_certificate /etc/letsencrypt/live/netbird.example.com/fullchain.pem;
+ssl_certificate_key /etc/letsencrypt/live/netbird.example.com/privkey.pem;
+```
+
+Certbot installs a renewal timer, and the deploy hook reloads Nginx after each renewal so it serves the new certificate. Test renewal with `sudo certbot renew --dry-run`.
+
+**acme.sh.** [acme.sh](https://github.com/acmesh-official/acme.sh) is a lighter alternative. After issuing with `~/.acme.sh/acme.sh --issue -d netbird.example.com --nginx`, use `/root/.acme.sh/netbird.example.com/fullchain.cer` and `/root/.acme.sh/netbird.example.com/netbird.example.com.key` as the certificate and key paths.
+
+**Certificates from another provider.** Copy the full chain and key to the server, restrict the key with `chmod 600`, and point the two directives at them.
+
+Whichever source you use, keep TLS 1.2 and 1.3 only:
+
+```nginx
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers off;
+ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+```
+
+## Traffic events route (commercial license)
+
+With traffic events enabled (the installer's `Enable traffic flow` prompt, or `getting-started-enterprise.sh --enable-traffic-events`), clients send them to `/flow.FlowService/`. If you replace the installer's Traefik with Nginx, route that path to the receiver container. Without that route, the requests reach the dashboard, clients log `failed to send flow event to server: stream not initialized`, and no traffic events appear. With Nginx in Docker on the installer's `netbird` network, add this to the `server` block that listens on 443:
+
+```nginx
+# Traffic events
+location /flow.FlowService/ {
+    grpc_pass grpc://netbird-receiver:80;
+    grpc_read_timeout 1d;
+    grpc_send_timeout 1d;
+    grpc_socket_keepalive on;
+}
+```
+
+On a deployment migrated with `migrate-to-enterprise.sh`, use `grpc_pass grpc://netbird-flow-receiver:80;` instead. With Nginx on the host, publish the receiver service (`receiver`, or `flow-receiver` on a migrated deployment) on localhost in a Compose override, for example `'127.0.0.1:8082:80'`, and set `grpc_pass grpc://127.0.0.1:8082;`.
+
+## Behind Cloudflare's proxy
+
+To put the NetBird server behind Cloudflare's proxy (the orange cloud), make the changes below, then close the direct path. Cloudflare decrypts the HTTPS it proxies, so it can read dashboard and REST API traffic. Management, Signal and peer traffic stay encrypted with the peers' WireGuard keys.
+
+### Cloudflare settings
+
+- **gRPC on**, under the zone's **Network** settings. While it is off, the dashboard loads but clients fail with `403 (Forbidden)` and `received unexpected content-type "text/html; charset=UTF-8"`.
+- **SSL/TLS encryption mode: Full (strict).** With **Flexible**, the sign-in loops and clients fail with `308 (Permanent Redirect)`.
+
+### Server changes
+
+Edit the server's configuration file (`config.yaml` in your install directory, or `config.yaml.enterprise` if it exists), then run `docker compose restart netbird-server`.
+
+**STUN.** Cloudflare does not proxy UDP 3478, so point clients at a STUN server they reach directly: preferably an [external relay](/selfhosted/maintenance/scaling/set-up-external-relays) with STUN on a DNS-only name, or a public STUN server of your choice, such as Cloudflare's (`stun:stun.cloudflare.com:3478`).
+
+```yaml
+server:
+  stuns:
+    - uri: "stun:stun-us.example.com:3478"   # your external relay's DNS-only name
+```
+
+**Client IPs.** Until the server trusts Cloudflare's [IP ranges](https://www.cloudflare.com/ips/), every peer's connection IP is a Cloudflare address. Add them to `trustedHTTPProxies`:
+
+```yaml
+server:
+  reverseProxy:
+    trustedHTTPProxies:
+      - "172.30.0.10/32"    # your reverse proxy: the installer's Traefik
+      - "173.245.48.0/20"   # one line per Cloudflare range, IPv4 and IPv6
+```
+
+With the installer's Traefik, also add `--entrypoints.websecure.forwardedHeaders.trustedIPs=<ranges>` to the `traefik` service's `command:` and run `docker compose up -d traefik`. With Nginx, replace `172.30.0.10` in both `trustedPeers` and `trustedHTTPProxies` with the address `netbird-server` sees Nginx connect from.
+
+**Certificates.** Let's Encrypt's TLS-ALPN-01 challenge cannot pass Cloudflare's proxy. Use the DNS-01 challenge instead ([commercial-license stack](/selfhosted/enterprise/getting-started#traefik-cannot-issue-a-tls-certificate-behind-cloudflares-proxy)).
+
+### Close the direct path
+
+Proxying hides the server's address in DNS but does not block it. In the firewall in front of the server, such as a cloud security group (host rules miss Docker's published ports), allow TCP 80 and 443 only from Cloudflare's IP ranges. Every Cloudflare customer shares those ranges; zone-level [Authenticated Origin Pulls](https://developers.cloudflare.com/ssl/origin-configuration/authenticated-origin-pull/) with your own certificate closes that gap.
 
 ## Common failure patterns
 
@@ -218,4 +395,4 @@ Inspect the source address seen by the container and configure that exact `/32` 
 
 The HTTP proxy configuration does not control STUN. Confirm UDP 3478 is published by the correct NetBird service and allowed by every provider, network, and host firewall.
 
-For additional diagnostics, see [Self-hosted troubleshooting](/selfhosted/troubleshooting).
+For more help, see the [Troubleshooting guide](/selfhosted/troubleshooting) or reach out on [Slack](/slack-url) or [Discord](/discord-url).

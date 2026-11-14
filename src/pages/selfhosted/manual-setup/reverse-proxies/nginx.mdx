@@ -7,13 +7,20 @@ export const description =
 
 This guide installs Nginx on the NetBird host, obtains a Let's Encrypt certificate with Certbot, and routes either NetBird layout. It also lists the upstream changes for Nginx running in Docker.
 
-Start with [Manual setup](/selfhosted/manual-setup) for the combined layout or [Manual multi-container setup](/selfhosted/manual-setup/multi-container) for the multi-container layout.
+Prepare NetBird first:
+
+- **Combined container:** follow steps 1 to 4 of [Manual setup](/selfhosted/manual-setup) and create the Compose file from [Use another reverse proxy](/selfhosted/manual-setup#use-another-reverse-proxy).
+- **Multi-container:** follow [Manual multi-container setup](/selfhosted/manual-setup/multi-container) through step 7.
+
+Both Compose files publish the NetBird backends on `127.0.0.1` for an Nginx installed on the host.
 
 ## How Nginx routes NetBird
 
 Nginx terminates TLS and accepts HTTP/2 from NetBird clients. It sends native gRPC to an h2c backend with `grpc_pass`, sends Relay and fallback paths with WebSocket upgrade headers, and sends the Dashboard to a catch-all HTTP upstream.
 
 UDP 3478 bypasses Nginx and must remain published directly from `netbird-server` or `relay`.
+
+The configurations route `/management.ProxyService/` for completeness, but the [NetBird Proxy](/manage/reverse-proxy) feature does not work behind Nginx. It needs TLS passthrough, which only Traefik provides; see [Enable Reverse Proxy](/selfhosted/migration/enable-reverse-proxy).
 
 <Warning>
 Do not replace `grpc_pass` with `proxy_pass` for native gRPC paths. Do not send gRPC paths through the Dashboard catch-all. Either mistake can leave the Dashboard working while every client fails to connect.
@@ -93,34 +100,23 @@ sudo systemctl reload nginx
 Request the certificate:
 
 ```bash
-sudo certbot certonly --nginx -d "$NETBIRD_DOMAIN"
+sudo certbot certonly --nginx -d "$NETBIRD_DOMAIN" \
+  --deploy-hook "systemctl reload nginx"
 ```
 
-Certbot installs a renewal timer. Test the complete renewal path after the final Nginx configuration is active:
+Certbot installs a renewal timer. The deploy hook reloads Nginx after each renewal, so it serves the new certificate instead of the one it loaded at startup. Test the complete renewal path after the final Nginx configuration is active:
 
 ```bash
 sudo certbot renew --dry-run
 ```
 
 <Note>
-The examples below use Nginx's current `http2 on;` syntax. On Nginx older than 1.25.1, put `http2` on each `listen 443 ssl http2;` directive and omit `http2 on;`.
+The examples use `listen 443 ssl http2;`, which works on old and current Nginx releases alike, including the packaged versions in Ubuntu 22.04 and 24.04, Debian 12, and Rocky Linux 9. On Nginx 1.25.1 and newer, `nginx -t` prints a deprecation warning for it; see [Troubleshooting Nginx](#troubleshooting-nginx) if you want to switch to `http2 on;`.
 </Note>
 
 ## Combined container layout
 
-The combined layout expects these loopback mappings in the NetBird Compose file:
-
-```yaml
-services:
-  dashboard:
-    ports:
-      - "127.0.0.1:8080:80"
-
-  netbird-server:
-    ports:
-      - "127.0.0.1:8081:80"
-      - "3478:3478/udp"
-```
+The Compose file from [Use another reverse proxy](/selfhosted/manual-setup#use-another-reverse-proxy) publishes the Dashboard on `127.0.0.1:8080` and `netbird-server` on `127.0.0.1:8081`, and `config.yaml` must trust `172.30.0.1/32`.
 
 Replace `/etc/nginx/sites-available/netbird` with:
 
@@ -142,9 +138,8 @@ server {
 }
 
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     server_name netbird.example.com;
 
     ssl_certificate /etc/letsencrypt/live/netbird.example.com/fullchain.pem;
@@ -154,10 +149,7 @@ server {
     client_header_timeout 1d;
     client_body_timeout 1d;
 
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_set_header X-Forwarded-Host $host;
+    # Overwrite the client's own X-Forwarded-For on gRPC requests.
     grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
     # Relay and gRPC-over-WebSocket fallback paths.
@@ -197,9 +189,16 @@ server {
         proxy_pass http://netbird_dashboard;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
     }
 }
 ```
+
+A `location` that sets any `proxy_set_header` does not inherit the ones in `server`, so each HTTP location sets the forwarding headers itself. The gRPC locations set no `grpc_set_header` of their own and inherit the server-level one.
 
 Replace every `netbird.example.com` occurrence, then validate and reload:
 
@@ -211,7 +210,7 @@ sudo certbot renew --dry-run
 
 ## Multi-container layout
 
-The Compose file from [Manual multi-container setup](/selfhosted/manual-setup/multi-container) publishes all private backends on loopback. Use this Nginx configuration:
+The Compose file from [Manual multi-container setup](/selfhosted/manual-setup/multi-container) publishes all private backends on loopback. Set `NETBIRD_TRUSTED_PROXY=172.30.0.1/32` in its step 3. Use this Nginx configuration:
 
 ```nginx
 upstream netbird_dashboard {
@@ -243,9 +242,8 @@ server {
 }
 
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     server_name netbird.example.com;
 
     ssl_certificate /etc/letsencrypt/live/netbird.example.com/fullchain.pem;
@@ -255,10 +253,7 @@ server {
     client_header_timeout 1d;
     client_body_timeout 1d;
 
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto https;
-    proxy_set_header X-Forwarded-Host $host;
+    # Overwrite the client's own X-Forwarded-For on gRPC requests.
     grpc_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
     location /relay {
@@ -327,6 +322,11 @@ server {
         proxy_pass http://netbird_dashboard;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host $host;
     }
 }
 ```
@@ -343,7 +343,13 @@ The `relay` service must still publish UDP 3478 directly.
 
 ## Nginx running in Docker
 
-When Nginx is a container, join it and all NetBird services to `netbird-proxy`, assign Nginx `172.30.0.10`, and use these upstreams instead of loopback:
+When Nginx runs as a container, it joins `netbird-proxy` at `172.30.0.10` and reaches NetBird by container name. Use the same configurations as above with three changes:
+
+1. Replace each loopback upstream with the container address from the table below.
+2. Set both trusted proxy lists in NetBird to `172.30.0.10/32` instead of `172.30.0.1/32`.
+3. Mount the configuration and certificates into the container.
+
+
 
 | Layout | Logical upstream | Docker upstream |
 |---|---|---|
@@ -355,7 +361,30 @@ When Nginx is a container, join it and all NetBird services to `netbird-proxy`, 
 | Multi-container | Management | `netbird-management:80` |
 | Multi-container | Relay | `netbird-relay:80` |
 
-Mount the certificate and configuration paths into Nginx, or run ACME from a companion container. Change NetBird's trusted proxy address to `172.30.0.10/32`. Do not publish the NetBird HTTP backend ports when Nginx can reach them by container name.
+A Compose file for the Nginx container, kept in its own directory beside `netbird.conf`, can look like this. It reuses the certificates Certbot keeps on the host; start NetBird first so `netbird-proxy` exists:
+
+```yaml
+services:
+  nginx:
+    image: nginx:1.28
+    container_name: netbird-nginx
+    restart: unless-stopped
+    networks:
+      netbird-proxy:
+        ipv4_address: 172.30.0.10
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./netbird.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+
+networks:
+  netbird-proxy:
+    external: true
+```
+
+Certbot's `--nginx` plugin can't reach Nginx in a container. Use `certbot certonly --webroot` with a directory both share, or `--standalone` while Nginx is stopped, and reload with `docker exec netbird-nginx nginx -s reload` from the deploy hook. You can remove the NetBird `127.0.0.1` port mappings once Nginx reaches the containers by name.
 
 ## Verify Nginx and NetBird
 
@@ -372,27 +401,24 @@ From another network, verify HTTPS and OIDC:
 NETBIRD_DOMAIN="netbird.example.com"
 
 curl -fsSI "http://${NETBIRD_DOMAIN}/"
-curl -fsSI "https://${NETBIRD_DOMAIN}/setup"
 curl -fsS "https://${NETBIRD_DOMAIN}/oauth2/.well-known/openid-configuration"
 ```
 
-Then run the gRPC and WebSocket probes from [Manual multi-container setup](/selfhosted/manual-setup/multi-container#9-verify-the-complete-deployment). Create the first owner and enroll two clients to prove Management, Signal, and Relay—not only the Dashboard.
+Then run the setup-state, gRPC, and WebSocket probes from [Verify before creating the first owner](/selfhosted/external-reverse-proxy#verify-before-creating-the-first-owner). Create the first owner and enroll two clients to prove Management, Signal, and Relay work, not only the Dashboard.
 
 ## Troubleshooting Nginx
 
-### `nginx -t` reports that `http2` is invalid
+### `nginx -t` warns that the `listen ... http2` directive is deprecated
 
-Your Nginx is older than 1.25.1. Change:
+Nginx 1.25.1 and newer print `the "listen ... http2" directive is deprecated, use the "http2" directive instead`. It's a warning, and the configuration still works. To silence it, change each `listen 443 ssl http2;` line to `listen 443 ssl;` and add `http2 on;` to the server block.
 
-```nginx
-listen 443 ssl;
-http2 on;
-```
+### `nginx -t` fails with `unknown directive "http2"`
 
-to:
+Your configuration uses `http2 on;`, but your Nginx is older than 1.25.1. Remove `http2 on;` and add `http2` to each 443 listener instead:
 
 ```nginx
 listen 443 ssl http2;
+listen [::]:443 ssl http2;
 ```
 
 ### The gRPC probe returns HTML
