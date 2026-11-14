@@ -36,6 +36,28 @@ Creating, updating, and deleting a stream destination are recorded in the audit 
 
 Changes to a stream destination take up to five minutes to apply, because NetBird caches the destination's settings. After you disable or delete a destination, audit and traffic events can keep arriving there for up to five minutes, including the event that records the change. After you enable it again, events can take the same time to resume. In self-hosted Enterprise deployments, this interval is set by `NB_EVENT_STREAMING_CACHE_TTL` on the management server and the enricher service.
 
-NetBird removes any `name` or `email` key from `meta` before streaming an event. For many audit events, such as group, policy, and peer changes, `name` is where the object's name is, so look it up in the audit events log using `target_id`.
+NetBird removes any `name` or `email` key from `meta` before streaming an event, unless you [include user emails](#user-emails). For many audit events, such as group, policy, and peer changes, `name` is where the object's name is, so look it up in the audit events log using `target_id`.
+
+## User Emails
+
+By default, streamed events identify users only by ID. To have NetBird add user emails to streamed events, open **Integrations → Event Streaming** and turn on **Include user emails**. The setting applies to every stream destination of the account and is off by default.
+
+When it is on, NetBird resolves user IDs to emails and adds them to `meta`:
+
+| Key               | Event type     | Email of                                                       |
+|-------------------|----------------|----------------------------------------------------------------|
+| `initiator_email` | Audit          | The user who performed the action, from `initiator_id`.        |
+| `user_email`      | Audit, traffic | The user the peer belongs to, from `meta.user_id`.             |
+| `email`           | Audit          | The user the event targets, from `target_id`, such as a user that was invited or deleted. |
+
+A key is omitted when the ID does not belong to a user of the account, for example when the initiator is the system or the peer was registered with a [setup key](/manage/peers/register-machines-using-setup-keys). The `name` key is still removed.
+
+<Warning>
+    Emails are personal data. Before turning the setting on, make sure your stream destination is allowed to store them.
+</Warning>
+
+Turning the setting on or off is recorded in the audit events log as `Account user email mapping enabled` or `Account user email mapping disabled`. The change can take up to a minute to reach every streamed event, and an email changed in NetBird can take up to five minutes to appear in streamed events.
+
+The setting can also be changed through the API with the `settings.extra.user_email_mapping_enabled` field of the [accounts endpoint](/api/resources/accounts#update-an-account).
 
 For the fields carried by streamed traffic events, see [Streamed event fields](/manage/activity/traffic-events-logging#streamed-event-fields).
