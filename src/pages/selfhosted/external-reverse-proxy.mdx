@@ -294,9 +294,10 @@ sudo dnf install certbot python3-certbot-nginx
 sudo certbot certonly --nginx -d netbird.example.com \
   --deploy-hook "systemctl reload nginx"
 
-# If nothing listens on port 80 yet
+# If Nginx isn't serving port 80 yet
 sudo certbot certonly --standalone -d netbird.example.com \
-  --deploy-hook "systemctl reload nginx"
+  --pre-hook "systemctl stop nginx" \
+  --post-hook "systemctl start nginx"
 ```
 
 ```nginx
@@ -304,9 +305,20 @@ ssl_certificate /etc/letsencrypt/live/netbird.example.com/fullchain.pem;
 ssl_certificate_key /etc/letsencrypt/live/netbird.example.com/privkey.pem;
 ```
 
-Certbot installs a renewal timer, and the deploy hook reloads Nginx after each renewal so it serves the new certificate. Test renewal with `sudo certbot renew --dry-run`.
+Certbot installs a renewal timer and saves the hooks for each renewal. With `--nginx`, the deploy hook reloads Nginx so it serves the new certificate. With `--standalone`, Certbot has to bind port 80 itself, so the hooks stop Nginx before each renewal and start it again afterward. Test renewal with `sudo certbot renew --dry-run`.
 
-**acme.sh.** [acme.sh](https://github.com/acmesh-official/acme.sh) is a lighter alternative. After issuing with `~/.acme.sh/acme.sh --issue -d netbird.example.com --nginx`, use `/root/.acme.sh/netbird.example.com/fullchain.cer` and `/root/.acme.sh/netbird.example.com/netbird.example.com.key` as the certificate and key paths.
+**acme.sh.** [acme.sh](https://github.com/acmesh-official/acme.sh) is a lighter alternative. Issue the certificate, then install it to fixed paths with a reload command. acme.sh reruns that command after each renewal. Don't point Nginx at the files in acme.sh's own directory: their location depends on the key type, and acme.sh doesn't support using them directly.
+
+```bash
+sudo install -d -m 700 /etc/nginx/ssl
+~/.acme.sh/acme.sh --issue -d netbird.example.com --nginx
+~/.acme.sh/acme.sh --install-cert -d netbird.example.com \
+  --key-file /etc/nginx/ssl/netbird.example.com.key \
+  --fullchain-file /etc/nginx/ssl/netbird.example.com.fullchain.pem \
+  --reloadcmd "systemctl reload nginx"
+```
+
+Run these as root, then use `/etc/nginx/ssl/netbird.example.com.fullchain.pem` and `/etc/nginx/ssl/netbird.example.com.key` in the two directives.
 
 **Certificates from another provider.** Copy the full chain and key to the server, restrict the key with `chmod 600`, and point the two directives at them.
 

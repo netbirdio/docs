@@ -134,7 +134,10 @@ server {
     listen 80;
     listen [::]:80;
     server_name netbird.example.com;
-    return 301 https://$host$request_uri;
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -198,6 +201,8 @@ server {
 }
 ```
 
+The port 80 redirect sits inside `location /` rather than at server level, so an ACME client such as acme.sh can add a more specific `/.well-known/acme-challenge/` location that still answers over HTTP.
+
 A `location` that sets any `proxy_set_header` does not inherit the ones in `server`, so each HTTP location sets the forwarding headers itself. The gRPC locations set no `grpc_set_header` of their own and inherit the server-level one.
 
 Replace every `netbird.example.com` occurrence, then validate and reload:
@@ -238,7 +243,10 @@ server {
     listen 80;
     listen [::]:80;
     server_name netbird.example.com;
-    return 301 https://$host$request_uri;
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -361,7 +369,13 @@ When Nginx runs as a container, it joins `netbird-proxy` at `172.30.0.10` and re
 | Multi-container | Management | `netbird-management:80` |
 | Multi-container | Relay | `netbird-relay:80` |
 
-A Compose file for the Nginx container, kept in its own directory beside `netbird.conf`, can look like this. It reuses the certificates Certbot keeps on the host; start NetBird first so `netbird-proxy` exists:
+If you installed Nginx on the host in step 2, stop and disable it first, because the container publishes the same ports. The certificates in `/etc/letsencrypt` stay where they are:
+
+```bash
+sudo systemctl disable --now nginx
+```
+
+A Compose file for the Nginx container, kept in its own directory beside `netbird.conf`, can look like this. It reuses the certificates Certbot keeps on the host. Start NetBird first so `netbird-proxy` exists:
 
 ```yaml
 services:
@@ -384,7 +398,17 @@ networks:
     external: true
 ```
 
-Certbot's `--nginx` plugin can't reach Nginx in a container. Use `certbot certonly --webroot` with a directory both share, or `--standalone` while Nginx is stopped, and reload with `docker exec netbird-nginx nginx -s reload` from the deploy hook. You can remove the NetBird `127.0.0.1` port mappings once Nginx reaches the containers by name.
+Certbot's `--nginx` plugin can't reach Nginx in a container. Use the standalone authenticator instead, and let Certbot stop the container while it binds port 80. It saves the hooks and runs them again on every renewal:
+
+```bash
+sudo certbot certonly --standalone -d netbird.example.com \
+  --pre-hook "docker stop netbird-nginx" \
+  --post-hook "docker start netbird-nginx"
+```
+
+If you already issued the certificate with `--nginx` in step 3, add `--force-renewal`. Otherwise Certbot reports that the certificate isn't due yet and keeps the old settings, and later renewals still try to use the host Nginx.
+
+You can remove the NetBird `127.0.0.1` port mappings once Nginx reaches the containers by name.
 
 ## Verify Nginx and NetBird
 
