@@ -4,20 +4,17 @@ export const description = 'See when each NetBird peer connected to and disconne
 
 # Peer Connection History
 
-A peer's status in the dashboard tells you whether it is online right now. It does not tell you that a laptop dropped off the network at 3 AM, that it has reconnected forty times today, or that it was in Berlin this morning and is connecting from Amsterdam tonight. Questions like these come up when you troubleshoot a flaky device or investigate access you did not expect.
+A peer's status in the dashboard tells you whether it's online right now. It won't tell you that a laptop dropped off the network at 3 AM, or that it was in Berlin this morning and is connecting from Amsterdam tonight. You need that when you're troubleshooting a flaky device or looking into access you didn't expect.
 
-Peer connection history answers them. Think of it as the sign-in sheet at a front desk: each time a peer arrives, Management writes down the time and the address it came from, and each time it leaves, Management writes down the time.
+Peer connection history fills that gap. Think of it as the sign-in sheet at a front desk: each time a peer arrives, Management writes down the time and the address it came from, and each time it leaves, Management writes down the time.
 
-This page uses one example throughout: a laptop named `alice-laptop` that connects from the Berlin office in the morning and from a hotel in Amsterdam in the evening.
+The examples on this page follow a laptop named `alice-laptop` that connects from the Berlin office in the morning and from a hotel in Amsterdam in the evening.
 
 ## What "connected" means here
 
-A NetBird peer holds two kinds of connections, and this page is about only one of them.
+A NetBird peer holds two kinds of connections. It keeps a control connection open to the Management service, which is how it gets its configuration and the list of peers it may reach. It also builds tunnels to other peers, directly or through a relay, and those carry your traffic.
 
-- **The connection to Management.** Every peer keeps a control connection open to the Management service, which it uses to receive its configuration and the list of peers it may reach.
-- **Tunnels to other peers.** These carry your actual traffic, directly or through a relay.
-
-Connection history records the first kind only. A peer can be connected to Management while a tunnel to another peer is down, so a "Peer connected" entry does not mean the peer could reach anything. To check tunnels, run `netbird status` on the peer. To see traffic, use [Traffic Events Logging](/manage/activity/traffic-events-logging).
+Connection history only records the connection to Management. A peer can be connected to Management while its tunnel to another peer is down, so a "Peer connected" entry doesn't mean the peer could reach anything. To check tunnels, run `netbird status` on the peer. To see traffic, use [Traffic Events Logging](/manage/activity/traffic-events-logging).
 
 ## What is recorded
 
@@ -25,10 +22,10 @@ Management records two [audit events](/manage/activity), each with the time it s
 
 | Event | Recorded when | Includes |
 | --- | --- | --- |
-| **Peer connected** (`peer.connect`) | Management accepts a new connection from the peer, for example when the NetBird client starts or reconnects after losing its connection. | Peer name, the peer's NetBird IP, the public source IP Management saw, and the location of that IP when available. |
-| **Peer disconnected** (`peer.disconnect`) | Management sees that connection end. | Peer name and the peer's NetBird IP. No source IP. |
+| Peer connected (`peer.connect`) | Management accepts a new connection from the peer, for example when the NetBird client starts or reconnects after losing its connection. | Peer name, the peer's NetBird IP, the public source IP Management saw, and the location of that IP when available. |
+| Peer disconnected (`peer.disconnect`) | Management sees that connection end. | Peer name and the peer's NetBird IP. No source IP. |
 
-For `alice-laptop`, a day might produce:
+For `alice-laptop`, a day might look like this:
 
 | Time (UTC) | Event | Source IP | Location |
 | --- | --- | --- | --- |
@@ -36,22 +33,21 @@ For `alice-laptop`, a day might produce:
 | 2026-11-13 16:40:03 | Disconnected | | |
 | 2026-11-13 07:15:30 | Connected | `203.0.113.24` | Germany, Berlin |
 
-Both events are recorded by Management itself, so they appear as system events rather than as actions of a user. A duplicate connect, or the end of a connection that a newer one already replaced, adds no entry.
+Management records both events itself, so they show up as system events with no user attached. A duplicate connect, or the end of a connection that a newer one already replaced, adds no entry.
 
 ### Source IP
 
-The source IP is the public address Management saw the connection come from. Keep in mind what that address is:
+The source IP is the public address Management saw the connection come from. Behind NAT, that's the router's address. Every device in the Berlin office may share `203.0.113.24`, so the IP points to the office network and you can't tell devices apart by it.
 
-- **Behind NAT, it is the router's address.** Every device in the Berlin office may share `203.0.113.24`, so the IP identifies a network, not a device.
-- **Behind a reverse proxy or load balancer (self-hosted),** it is the client's address only when the proxy forwards it and Management trusts that proxy. Otherwise every entry shows the proxy's own address.
+If you self-host Management behind a reverse proxy or load balancer, the source IP is the client's address only when the proxy forwards it and Management trusts that proxy. Otherwise every entry shows the proxy's own address.
 
-The source IP is recorded for each connection, so later connections from another network do not change earlier entries.
+Each connection keeps the source IP it was recorded with, so a later connection from another network doesn't change earlier entries.
 
 ### Location
 
 Management looks up the country and city of the source IP in the GeoLite2 City database from MaxMind. NetBird Cloud includes it. Self-hosted Management downloads it automatically on startup unless you turned that off; see [Management Geolocation](/selfhosted/maintenance/geo-support).
 
-A location is recorded only when it was looked up for that same connection's IP. If the lookup is unavailable or fails, the entry keeps the source IP and shows the location as unknown, rather than borrowing the location of an earlier connection. IP geolocation is approximate: a mobile carrier or a VPN can place a device in the wrong city or country.
+A location is only recorded when it was looked up for that same connection's IP. If the lookup is unavailable or fails, the entry keeps the source IP and shows the location as unknown. It never reuses the location from an earlier connection. IP geolocation is approximate, and a mobile carrier or a VPN can place a device in the wrong city or country.
 
 ## View connection history
 
@@ -59,19 +55,19 @@ A location is recorded only when it was looked up for that same connection's IP.
 
 In the dashboard, go to **Peers**, select the peer, and open the **Connection History** tab. The table lists the peer's connection events with the time in UTC, the event, the source IP, and the location. Use the search box to find an IP address, a country, or a city. Disconnect entries show `—` for source IP and location.
 
-The tab appears for users whose role can read audit events, the same permission the [Audit Events](/manage/activity) view requires. See [User Roles](/manage/team/user-roles).
+You'll see the tab if your role can read audit events, which is the same permission the [Audit Events](/manage/activity) view needs. See [User Roles](/manage/team/user-roles).
 
 ### In the audit log
 
-Connection events also appear in **[Audit Events](/manage/activity)** alongside every other event, with a link to the peer:
+Connection events also appear in **[Audit Events](/manage/activity)** next to every other event, with a link to the peer:
 
 > Peer `alice-laptop` connected to Management from `203.0.113.24` Germany, Berlin
 
-Use this view to see connections across all peers.
+Use this view to see connections across all your peers.
 
 ### Through the API
 
-`GET /api/events/audit` returns connection events with `activity_code` set to `peer.connect` or `peer.disconnect`. The `meta` object carries:
+`GET /api/events/audit` returns connection events with `activity_code` set to `peer.connect` or `peer.disconnect`. The `meta` object has these keys:
 
 | Key | Value |
 | --- | --- |
@@ -81,26 +77,24 @@ Use this view to see connections across all peers.
 | `location_country_code` | ISO country code of the source IP. Connect events only, when the location is known. |
 | `location_city_name` | City of the source IP. Connect events only, when the location is known. |
 
-These are the same keys that the peer-added events use. See the [Events API reference](/api/resources/events). AI agents connected through the [NetBird MCP server](/manage/mcp-server) read the same events with the `list_audit_events` tool.
+The peer-added events use the same keys. See the [Events API reference](/api/resources/events). AI agents connected through the [NetBird MCP server](/manage/mcp-server) read the same events with the `list_audit_events` tool.
 
 ## Limits
 
-- **History starts when your Management records it.** There is no record of connections from before your Management version supported these events.
-- **History can have gaps.** No events are recorded while Management is down. If a Management server stops unexpectedly, its peers are marked offline without a disconnect event.
-- **Entries can appear out of order.** When a peer reconnects quickly, the disconnect of its old connection can be recorded after the connect of its new one. The peer's current status in the dashboard is unaffected.
-- **Every reconnect is an entry.** A peer on an unstable network can add many events to your audit log.
-- **Only recent history is shown.** The Connection History tab and `GET /api/events/audit` return the most recent 10,000 audit events of the account, so on busy accounts older connections drop out of view.
-- **Self-hosted Management can turn the audit log off.** With `NB_EVENT_ACTIVITY_LOG_ENABLED=false`, no connection events are recorded. See [Environment Variables](/selfhosted/environment-variables).
+- History starts when your Management starts recording it, so there's no record of connections from before your Management version supported these events.
+- History can have gaps. Nothing is recorded while Management is down, and if a Management server stops unexpectedly, its peers are marked offline without a disconnect event.
+- Entries can show up out of order. When a peer reconnects quickly, the disconnect of its old connection can be recorded after the connect of its new one. The peer's current status in the dashboard is still correct.
+- Every reconnect is an entry, so a peer on an unstable network can add a lot of events to your audit log.
+- Only recent history is available. The Connection History tab and `GET /api/events/audit` return the most recent 10,000 audit events of the account, so on busy accounts older connections drop out of view.
+- Self-hosted Management can turn the audit log off. With `NB_EVENT_ACTIVITY_LOG_ENABLED=false`, no connection events are recorded. See [Environment Variables](/selfhosted/environment-variables).
 
 ## When to use something else
 
-- **Is a tunnel between two peers working?** Run `netbird status` on the peer. Connection history only covers the connection to Management.
-- **What traffic did a peer send?** Use [Traffic Events Logging](/manage/activity/traffic-events-logging).
-- **Who signed in?** User sign-ins are separate audit events and are not part of connection history.
+If you want to know whether a tunnel between two peers is working, run `netbird status` on the peer, since connection history only covers the connection to Management. For the traffic a peer sent, use [Traffic Events Logging](/manage/activity/traffic-events-logging). User sign-ins are separate audit events and aren't part of connection history.
 
 ## In short
 
-- Connection history is a sign-in sheet for the connection between each peer and Management, not for tunnels between peers.
-- `alice-laptop` connected from `203.0.113.24` in Berlin in the morning, disconnected in the afternoon, and connected from `198.51.100.12` in Amsterdam in the evening. Each connect kept its own IP and location.
-- Find it in the peer's **Connection History** tab, in **Audit Events**, or through `GET /api/events/audit`.
-- Treat it as troubleshooting history: it can have gaps and out-of-order entries, and the tab covers the latest 10,000 audit events.
+- Connection history is a sign-in sheet for each peer's connection to Management. Tunnels between peers aren't in it.
+- `alice-laptop` connected from `203.0.113.24` in Berlin in the morning, disconnected in the afternoon, and connected from `198.51.100.12` in Amsterdam in the evening, and each connect kept its own IP and location.
+- You'll find it in the peer's **Connection History** tab, in **Audit Events**, and through `GET /api/events/audit`.
+- Treat it as troubleshooting history. It can have gaps and out-of-order entries, and the tab covers the latest 10,000 audit events.
