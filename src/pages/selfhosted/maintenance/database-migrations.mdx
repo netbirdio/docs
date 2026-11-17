@@ -1,0 +1,298 @@
+import {Note, Warning} from "@/components/mdx";
+
+export const description =
+  "Understand how NetBird versions its database schema, choose a startup migration mode, and use the migrate status, plan, and up commands to inspect and apply schema changes.";
+
+# Database schema migrations
+
+Most NetBird upgrades change the database a little: a new table for a feature, a new column on an existing one. The Management server has to bring your database to the shape the new binary expects before it can serve. Older releases did that silently on every start, which left you with three blind spots: you could not see what an upgrade would change before it ran, you could not tell which changes a database already had, and two Management replicas starting at once on a shared PostgreSQL database raced each other.
+
+NetBird now applies schema changes as **versioned migrations**. This page explains the model, then shows how to inspect and apply migrations with the `migrate` command and how to choose what the server does on startup.
+
+There are four things to learn, in this order:
+
+1. **Migrations and the version table**: how a database records what it has.
+2. **The databases the server manages**: which files and tables are versioned.
+3. **The startup modes**: `auto`, `check`, and `skip`.
+4. **The `migrate` command**: `status`, `plan`, and `up`.
+
+At the end, the [upgrade walkthrough](#walkthrough-upgrade-a-sqlite-deployment) puts them together on one deployment.
+
+## The mental model: a ledger per database
+
+Think of each database as keeping a ledger. Every schema change NetBird ships is one numbered **migration**, a small SQL script such as "add column `cert_serial` to `peers`". The **version** of a migration is the UTC timestamp it was written at, for example `20260930120000`. When a migration runs, the server writes its version into a ledger table inside the same database, the **version table**.
+
+The binary carries the full list of migrations it knows. Anything in that list but missing from the ledger is **pending**. Upgrading NetBird means applying the pending migrations, nothing more.
+
+Two consequences follow from this model:
+
+- **A migration runs exactly once per database.** Restarting the server, or running `migrate up` twice, applies nothing the second time.
+- **Order follows the version, not the release.** A migration that reaches a release after a newer one is still applied when the ledger lacks it.
+
+The first migration of every database is its **baseline**: the complete schema of the release that introduced versioned migrations.
+
+## The databases the server manages
+
+The Management server, and the combined `netbird-server` that contains it, manage up to three databases. Each has its own ledger and its own name, the **target** name you pass to the `migrate` command.
+
+| Target | What it stores | SQLite file (in the data directory) | Version table |
+|---|---|---|---|
+| `store` | Accounts, peers, groups, policies, and every other Management object | `store.db` | `schema_migrations` |
+| `accesslogs` | Reverse proxy access logs | `access_logs.db` | `access_log_schema_migrations` |
+| `activity` | Activity events | `events.db` | `activity_schema_migrations` |
+
+Versioning works the same on SQLite and PostgreSQL: the version table always lives inside the database it tracks. On SQLite that is the file in the table above; on PostgreSQL it is the database you configured for that store.
+
+<Note>
+"Migration" also appears in other NetBird docs with a different meaning: moving data between engines, such as [SQLite to PostgreSQL](/selfhosted/maintenance/scaling/migrate-sqlite-to-postgresql). This page is only about schema changes within one database.
+</Note>
+
+## Startup modes
+
+Every time the server starts, it opens each database and acts on its ledger according to the **migration mode**. One mode applies to all databases of the server.
+
+| Mode | What the server does at startup | Use it when |
+|---|---|---|
+| `auto` (default) | Takes the migration lock, applies every pending migration, then starts serving. | A single server, or any deployment where the server may change its own schema. |
+| `check` | Refuses to start while any migration is pending, and never changes the schema. | You apply migrations as a separate step, typically with several Management replicas on one PostgreSQL database. |
+| `skip` | Does not read the version table at all. | Rarely. Only when something else guarantees the schema, for example a tool that only reads. |
+
+Set the mode in the server configuration:
+
+- Combined server, `config.yaml`:
+
+  ```yaml
+  server:
+    store:
+      engine: "sqlite"
+      migrationMode: "check"
+  ```
+
+- Older multi-container setup, `management.json`:
+
+  ```json
+  "StoreConfig": {
+    "Engine": "sqlite",
+    "MigrationMode": "check"
+  }
+  ```
+
+The environment variable `NB_STORE_MIGRATION_MODE` overrides both files, which is convenient in a compose file or a deployment manifest.
+
+A server in `check` mode fails at startup with an error such as:
+
+```text
+store migrations: 1 pending, first is 20261201093000, run `migrate up` first
+```
+
+That is the intended behaviour: the server tells you the schema needs a step you have not taken yet, instead of starting against a schema it does not understand.
+
+## The migrate command
+
+The `migrate` command ships inside the server binary, so the binary you run it from decides which migrations exist. **Always run it from the version you are upgrading to.** A `migrate up` from the old image has nothing new to apply.
+
+### Choose the command prefix
+
+**Combined container** (installations created with `getting-started.sh`). Pull the new image first, then run the command in a one-off container from it. The `--config` flag is required, because `docker compose run` replaces the service's command:
+
+```bash
+docker compose pull netbird-server
+docker compose run --rm netbird-server --config /etc/netbird/config.yaml migrate <command>
+```
+
+**Binary on the host:**
+
+```bash
+netbird-server --config ./config.yaml migrate <command>
+```
+
+**Older multi-container setup** with `netbird-mgmt` and `management.json`. The image's entrypoint starts the server, so override it:
+
+```bash
+docker compose pull management
+docker compose run --rm --entrypoint /go/bin/netbird-mgmt management \
+  migrate <command> --config /etc/netbird/management.json
+```
+
+Add `--datadir /var/lib/netbird` if your data directory differs from the one in `management.json`.
+
+The examples below use the combined container. Swap in your prefix as needed.
+
+### migrate status: what does each database have?
+
+`status` lists every migration the binary knows, per database, with its state. The output below is an example; your versions and file names differ.
+
+```bash
+docker compose run --rm netbird-server --config /etc/netbird/config.yaml migrate status
+```
+
+```text
+DATABASE    VERSION         STATE    APPLIED AT           SOURCE
+store       20260930120000  applied  2026-11-02 08:14:51  20260930120000_baseline.sql
+store       20261201093000  pending                       20261201093000_peers_cert_serial.sql
+accesslogs  20260930120000  applied  2026-11-02 08:14:51  20260930120000_baseline.sql
+activity    20260930120000  applied  2026-11-02 08:14:51  20260930120000_baseline.sql
+```
+
+`status` never applies a migration. On a database from a release before versioned migrations it reports everything as pending and leaves the database untouched.
+
+### migrate plan: what would an upgrade change?
+
+`plan` prints every pending migration with its SQL, and applies nothing. Read it before you upgrade, and keep the output with your change record.
+
+```bash
+docker compose run --rm netbird-server --config /etc/netbird/config.yaml migrate plan
+```
+
+```text
+-- store: 20261201093000 20261201093000_peers_cert_serial.sql
+-- +goose Up
+ALTER TABLE `peers` ADD COLUMN `cert_serial` text;
+-- accesslogs: nothing pending
+-- activity: nothing pending
+```
+
+A few migrations are written in Go instead of SQL, because they transform data. `plan` lists them with the note `Go migration, no SQL to show`.
+
+### migrate up: apply pending migrations
+
+`up` applies every pending migration and exits. It does the same thing the server does at startup in `auto` mode: it takes the lock, writes the SQLite backup, and applies the migrations in version order.
+
+```bash
+docker compose run --rm netbird-server --config /etc/netbird/config.yaml migrate up
+```
+
+```text
+store: schema is current
+accesslogs: schema is current
+activity: schema is current
+```
+
+Running `up` again is safe; it finds nothing pending.
+
+### Stop at a version with --to
+
+`up --to <version>` applies the pending migrations up to and including that version, and leaves later ones pending. `plan --to <version>` shows exactly that set first.
+
+```bash
+docker compose run --rm netbird-server --config /etc/netbird/config.yaml migrate plan --to 20261201093000
+docker compose run --rm netbird-server --config /etc/netbird/config.yaml migrate up --to 20261201093000
+```
+
+`--to` is a cut-off, not a pick: every pending migration with a version at or below it is applied, including older ones that arrived late. Versions are timestamps shared by all databases, so one cut-off works across `store`, `accesslogs`, and `activity`. The version must be a migration of at least one selected database, so a mistyped number is rejected instead of silently acting as a different cut-off. Take the value from `migrate status`.
+
+There is no command that applies a single migration on its own or rolls one back. Later migrations may depend on earlier ones, so the ledger only ever moves forward in order.
+
+### Limit a command to one database with --target
+
+`--target` restricts `status`, `plan`, and `up` to the named databases. Repeat it, or separate names with commas.
+
+```bash
+docker compose run --rm netbird-server --config /etc/netbird/config.yaml migrate status --target store
+docker compose run --rm netbird-server --config /etc/netbird/config.yaml migrate up --target store,accesslogs
+```
+
+The command still opens every configured database before it filters, so each one must be reachable, and the activity store's encryption key must be set, even when you target only `store`.
+
+## Walkthrough: upgrade a SQLite deployment
+
+You run the combined `netbird-server` container on one host with SQLite, the default from `getting-started.sh`, and want to upgrade to a new release. The server would apply the migrations on its own at startup, but you want to see them first.
+
+1. **Pull the new image** so the `migrate` command knows the new migrations:
+
+   ```bash
+   docker compose pull netbird-server dashboard
+   ```
+
+2. **Preview the changes.** The running server keeps serving while you read:
+
+   ```bash
+   docker compose run --rm netbird-server --config /etc/netbird/config.yaml migrate plan
+   ```
+
+3. **Restart on the new image.** In the default `auto` mode, the server backs up each SQLite database that has pending migrations, applies them, and starts:
+
+   ```bash
+   docker compose up -d --force-recreate netbird-server dashboard
+   ```
+
+   The server log shows the steps:
+
+   ```text
+   store migrations: wrote backup /var/lib/netbird/store.db.bak.20260930120000
+   store migrations: applying 1 pending
+   store migrations: applied 20261201093000_peers_cert_serial.sql in 4ms
+   ```
+
+4. **Confirm** every migration is applied:
+
+   ```bash
+   docker compose exec netbird-server /go/bin/netbird-server --config /etc/netbird/config.yaml migrate status
+   ```
+
+## Upgrading several replicas on PostgreSQL
+
+With [high availability](/selfhosted/maintenance/scaling/high-availability), several Management replicas share one PostgreSQL database. `auto` mode is safe there: the first replica takes a PostgreSQL advisory lock and applies the migrations, and the others wait, logging `still waiting for another instance to finish migrating`, and then find nothing left to apply.
+
+For a controlled roll, separate the schema step from the restarts:
+
+1. Set `migrationMode: check` (or `NB_STORE_MIGRATION_MODE=check`) on every replica.
+2. Run `migrate plan`, then `migrate up` once, from the new image, against the shared database.
+3. Roll the replicas one at a time.
+
+A replica that starts with the new image before step 2 refuses to start instead of migrating on its own.
+
+On PostgreSQL every schema migration waits at most five seconds for the table locks it needs. If a long-running transaction holds them, the migration fails and is retried a few times (`lock timeout, retry 1 of 5 in 2s`), instead of making every other query of your replicas queue behind it.
+
+## Backups and going back
+
+**SQLite:** before the first change of a run, the server writes a copy of each database file next to it, named `<file>.bak.<version>`, where the version is the last one applied before the run, for example `store.db.bak.20260930120000`. Only the newest backup per file is kept. A database with nothing pending is not copied.
+
+**PostgreSQL:** NetBird takes no automatic backup. Take your own snapshot or `pg_dump` before `migrate up`, as described in [Backup](/selfhosted/maintenance/backup).
+
+**Going back one release:** every release keeps its schema usable by the previous release. New migrations only add things (tables, nullable columns, indexes); removing or tightening anything waits at least one more release. So if a release misbehaves, redeploy the previous image without touching the database.
+
+**Going back further,** or recovering from a failed migration: stop the server, restore the backup (move `store.db.bak.<version>` back to `store.db`, or restore your PostgreSQL dump), and start the release that matches that backup.
+
+<Warning>
+Never edit or delete rows in a version table by hand. The ledger is how the server decides what to run; a wrong entry makes it either skip a schema change or re-apply one that already exists.
+</Warning>
+
+## Upgrading from a release before versioned migrations
+
+A database created by an older release has tables but no version table. The first time a release with versioned migrations starts on it (or runs `migrate up`), it recognises this, backs up SQLite databases, brings the schema up to date the way older releases did, and then records the baseline in the new version table. The log shows:
+
+```text
+store migrations: database predates versioned migrations, running the legacy bootstrap
+store migrations: stamped baseline 20260930120000
+```
+
+This happens once. From then on the database is versioned like any other.
+
+`check` mode cannot do this step, because it never changes the schema. It fails with `database has no version table, run migrate up first`. Run `migrate up` once, or start the first upgraded server in `auto` mode.
+
+## When not to reach for these tools
+
+- **A single server with a recent backup:** the default `auto` mode already does the right thing. `plan` is still worth a look, but a separate `up` step adds nothing.
+- **`--to` as a routine:** releases are tested with all their migrations applied. Use `--to` to stage a large upgrade or to investigate a failure, then finish with a plain `up`.
+- **`skip` mode:** a server in `skip` starts on whatever schema it finds. If a migration is missing, it fails later, at the first query that needs it. Prefer `check`.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Server exits with `N pending, first is <version>, run migrate up first` | `check` mode and the new release brought migrations | Run `migrate up` from the new image, then start the server. |
+| Server exits with `database has no version table, run migrate up first` | `check` mode on a database from a release before versioned migrations | Run `migrate up` once, or start once in `auto` mode. |
+| `migrate up` reports `schema is current` but the server still says pending | The command ran from the old image | Pull the new image and run the command from it. |
+| `unknown target "events", available: store, accesslogs, activity` | Target name typo | Use the names from the table above or from `migrate status`. |
+| `version <n> is not a migration of the selected databases` | `--to` does not match any migration of the targeted databases | Copy the version from `migrate status`. |
+| Replicas log `still waiting for another instance to finish migrating` | Another replica holds the migration lock and is applying migrations | Wait. If no replica is migrating, look for a stuck process holding a PostgreSQL session. |
+
+## In one breath
+
+On the SQLite deployment from the walkthrough:
+
+- Each of `store.db`, `access_logs.db`, and `events.db` keeps a ledger of the migrations it has, and the new image carries the list it needs.
+- `migrate plan` from the new image shows what is missing; `migrate status` shows what is there.
+- `auto` mode, the default, applies the missing migrations on restart after writing `store.db.bak.<version>`; `check` mode makes `migrate up` an explicit step.
+- If the new release misbehaves, the previous image runs on the migrated schema; for anything older, restore the backup.
