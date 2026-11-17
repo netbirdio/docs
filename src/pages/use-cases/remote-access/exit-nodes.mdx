@@ -50,6 +50,8 @@ Peers in the distribution groups send their internet traffic through the routing
 
 In both cases the user's own choice wins. A user who deselects the exit node on their device stays off it even with Auto Apply enabled, and a user who selects it manually stays on it. Auto Apply sets the starting position of the switch on each device; it is not a lock. It cannot enforce the exit node against a user's explicit choice. If your setup requires enforcement, see [Enforcing the Exit Node on Managed Devices](#enforcing-the-exit-node-on-managed-devices) below.
 
+On an exit node with several routing peers, Auto Apply is set per routing peer, but turning it on for any one of them applies the whole exit node: devices use and fail over to all of its routing peers, even when the routing peer that has Auto Apply enabled is offline as they connect. Which routing peer carries the traffic is decided by the metric, not by which one has Auto Apply enabled. This needs NetBird client v0.74.2 or later; for older clients, turn Auto Apply on for every routing peer.
+
 <Note>
     Auto Apply requires NetBird client version 0.55.0 or later.
 </Note>
@@ -118,11 +120,11 @@ The running example: an exit node in `us-east` and one in `us-west`, users on bo
 
 ### 1. Deploy a routing peer per region
 
-Set up one routing peer in each region as described in the [configuration steps](#configuration-steps) above. Both need masquerading and a stable internet path.
+Set up one routing peer in each region. Both need masquerading and a stable internet path. Create the exit node on the `us-east` peer only, as described in the [configuration steps](#configuration-steps) above.
 
 ### 2. Add both peers to the same exit node
 
-In the exit node's configuration, add both routing peers and leave the metric identical on both.
+In **Network Routing** → **Routes**, click **Add Peer** in the exit node's **High Availability** column and select the `us-west` peer. Leave the metric identical on both. Do not use **Add Exit Node** on the `us-west` peer: that creates a second, separate exit node.
 
 Adding the regions as two separate exit nodes does not work, and fails in a way that is easy to miss. Metrics and nearest-peer selection only apply between routing peers of the same exit node. Separate exit nodes instead appear on each device as independent choices in its exit node selector, and with [Auto Apply](#exit-node-selection-and-auto-apply) enabled (the default) the client activates exactly one: whichever exit node's name sorts first alphabetically. Metrics and latency play no part in that choice. If the activated exit node's routing peer goes offline, the device keeps it selected and loses internet access entirely, even while another exit node's routing peer is online and connected. One exit node with multiple routing peers gives you selection and failover; separate exit nodes give you neither.
 
@@ -148,7 +150,7 @@ On an east-coast device, run `netbird status -d`: the peer carrying the `0.0.0.0
 
 ### What this does and does not do
 
-This is nearest-exit selection plus automatic failover, not load balancing: each device follows its own lowest-latency exit node, and traffic is not spread evenly across the exit nodes. See [Nearest routing peer](/manage/networks/how-routing-peers-work#nearest-routing-peer-equal-metrics) for the selection mechanism.
+This is nearest-exit selection plus automatic failover, not load balancing: each device follows its own lowest-latency exit node, and traffic is not spread evenly across the exit nodes. See [Nearest routing peer](/manage/networks/how-routing-peers-work#nearest-routing-peer-equal-metrics) for the selection mechanism. Each routing peer egresses from its own public IP, so add every routing peer's IP to any source-IP allowlist.
 
 Latency-based selection is also not a guarantee of *which* exit node a given user lands on. If a rule must always hold, such as certain users always exiting in a specific country, use separate exit nodes with per-group distribution, or posture checks as in [Geo-Based Exit Node Routing](#geo-based-exit-node-routing) below. Make sure each device receives at most one exit node with [Auto Apply](#exit-node-selection-and-auto-apply) enabled: enable it on one exit node per distribution group, and keep those groups from overlapping — more than one auto-applied exit node on a device is the failure mode described in step 2 above. Offer any additional exit nodes with Auto Apply disabled; users can switch between exit nodes manually in the client either way.
 
