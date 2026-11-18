@@ -70,6 +70,26 @@ env_file:
     Switching between storage options requires migration steps to prevent data loss.
 </Note>
 
+### Timeouts
+
+These environment variables limit how long store queries and transactions can run. Set them on the `netbird-server` container, or on the `management` container in the older multi-container setup. Values use Go duration syntax, such as `30s` or `5m`. Invalid or negative values are ignored with a warning in the logs, and the default applies.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NB_STORE_STATEMENT_TIMEOUT` | Not set | Maximum time a single query can run before PostgreSQL cancels it, applied as `statement_timeout`. When not set or `0`, the PostgreSQL server's `statement_timeout` applies. Available starting with v0.83.0. |
+| `NB_STORE_TRANSACTION_TIMEOUT` | `5m` | Maximum time a store transaction can run. Starting with v0.83.0, it's also applied as `idle_in_transaction_session_timeout`, so PostgreSQL closes sessions that stay idle inside an open transaction for longer than this. Must be greater than `0`. |
+
+Both PostgreSQL settings apply to every connection of the Management store and the [access log store](/manage/reverse-proxy/access-logs#storage), but not the activity events store. For example:
+
+```yaml
+environment:
+  - NB_STORE_STATEMENT_TIMEOUT=30s
+```
+
+On startup, the logs show `Setting statement timeout to 30s`.
+
+If the Management logs show `canceling statement due to statement timeout`, a query ran longer than `NB_STORE_STATEMENT_TIMEOUT`. Raise the value, or check the PostgreSQL server for slow queries and load.
+
 ## Migrating from SQLite store to Postgres store
 This migration process allows users to seamlessly transition between storage options while maintaining data integrity.
 
