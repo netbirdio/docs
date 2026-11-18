@@ -56,10 +56,44 @@ can apply tag budgets and per-user attribution. With agentgateway, NetBird uses 
   supplies the identities and group memberships that policies are written against.
 - **Upstreams**: for LLM traffic, the proxy forwards to LLM APIs and AI gateways.
 
-The endpoint hostname itself (for example `https://sailcloth.netbird.ai`) is generated
-when you connect your first provider and is only reachable from inside your overlay.
-It applies to LLM traffic only; internal resources keep their normal peer addresses on the
-overlay.
+The endpoint hostname itself (for example `https://sailcloth.netbird.ai`) is only reachable
+from inside your overlay, and it serves LLM traffic only; internal resources keep their
+normal peer addresses on the overlay.
+
+### Where the Proxy Runs
+
+Every LLM request passes through the proxy, so where the proxy runs decides where your
+prompts and completions travel and which upstreams it can reach.
+
+**A managed proxy** is available on NetBird Cloud accounts. NetBird runs a dedicated proxy
+for your account, so there is nothing to deploy. Requests travel from your agent to that
+proxy and from there to the provider. Your endpoint hostname exists as soon as NetBird has
+provisioned the proxy, before you connect a provider. A managed proxy connects only to
+public addresses: requests to an upstream on a non-public address, for example `10.0.5.20`,
+fail.
+
+**A proxy you run yourself** is available on NetBird Cloud accounts and on self-hosted
+deployments. The proxy runs on your server, so requests travel from your agent to your
+proxy and from there to the provider. Your endpoint hostname exists once you have connected
+your first provider. The proxy connects to the upstream from its own network, so it can
+also serve a gateway or model on a non-public address in that network. On a NetBird Cloud
+account, you connect the proxy as described in [Clusters](/agent-network/clusters).
+
+Neither kind of proxy reaches the upstream through the NetBird tunnel, so the NetBird IP
+address of a peer does not work as an upstream URL. A model that is itself a NetBird peer is
+reached directly by the agent instead; see [Internal Resources](#internal-resources).
+
+Both kinds of proxy are **private**: they serve the endpoint only to peers that one of your
+[policies](/agent-network/policies) allows. Any other peer is not served. With a managed
+proxy, the endpoint's name does not resolve on that peer, so a tool there reports an unknown
+host. Where the name is in public DNS, as on a self-hosted deployment, the request reaches
+the proxy and gets `403`.
+
+On a NetBird Cloud account, running the proxy yourself changes the path your requests take,
+not where your Agent Network records are kept. The management service is still the one
+NetBird Cloud runs, and it keeps your providers, policies, usage, and access logs. Access
+logs can include prompts and completions. Whether they do, and how long logs are kept, is
+controlled in [Log Collection & Retention](/agent-network/usage-and-logs/log-collection).
 
 ### Internal Resources
 
@@ -236,7 +270,7 @@ This is also where the two paths differ:
 
 ## Next steps
 
-- [Quickstart](/agent-network/quickstart). Deploy Agent Network and make your first keyless call.
+- [Quickstart](/agent-network/quickstart). Set up Agent Network on NetBird Cloud or self-hosted and make your first keyless call.
 - [Providers](/agent-network/providers). Connect LLM APIs, gateways, and local models.
 - [Policies](/agent-network/policies). Authorize identities and attach limits and guardrails.
 - [Usage & Logs](/agent-network/usage-and-logs). Track cost, usage, and per-request audit.
