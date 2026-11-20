@@ -32,7 +32,7 @@ To plan a whole rollout, from installing the client to users signing in and a po
 
 Find what you want to do, set the key, and deliver it with your MDM (see the platform pages above). Each key links to its full entry in the [Policy keys reference](#policy-keys-reference).
 
-Include only the keys you mean to pin. A key you set is locked, even when you set it to `false`; a key you leave out stays the user's to change.
+Include only the keys you mean to pin. A key you set is locked, even when you set it to `false`; a key you leave out stays the user's to change. A few keys set things up instead of locking them: the desktop app [defaults](#default-keys) (`defaultLanguage`, `defaultViewMode`, `defaultTheme`) set a starting value the user can change, [`lazyConnection`](#lazyConnection) gives way to `NB_LAZY_CONN` on the device, and [`extraIFaceBlackList`](#extraIFaceBlackList) adds to the device's own list. See [How the client applies a policy](#how-the-client-applies-a-policy).
 
 ### Set the server and startup
 
@@ -45,13 +45,13 @@ Include only the keys you mean to pin. A key you set is locked, even when you se
 
 ### Lock the client app
 
-| You want to | Set | What users can still do |
+| You want to | Set | What to know |
 | --- | --- | --- |
-| Stop users changing NetBird's settings | [`disableUpdateSettings`](#disableUpdateSettings) to `true` | Connect, disconnect, and sign in. Every settings change, in the app or on the command line, is refused. |
-| Stop users adding a second profile, for example to reach a personal NetBird account | [`disableProfiles`](#disableProfiles) to `true` | Use their current profile as normal. They can still sign out and sign in to a different account; see the [`managementURL`](#managementURL) note. |
-| Make sure users keep the networks and exit node you assign | [`disableNetworks`](#disableNetworks) to `true` | Use the assigned networks and exit node. They cannot turn them off. To send all internet traffic through an exit node, also enable **Auto Apply** on it in the dashboard. |
-| Give non-technical users a simpler app | [`disableAdvancedView`](#disableAdvancedView) to `true` | Everything except the **Peers** and **Resources** lists. |
-| Lock the app down completely, for example on shared or kiosk devices | all four to `true` | Connect and disconnect. |
+| Stop users changing NetBird's settings | [`disableUpdateSettings`](#disableUpdateSettings) to `true` | Users can still connect, disconnect, and sign in. Every settings change, in the app or on the command line, is refused. |
+| Stop users adding a second profile, for example to reach a personal NetBird account | [`disableProfiles`](#disableProfiles) to `true` | Users can still use their current profile as normal, and sign out and in to a different account; see the [`managementURL`](#managementURL) note. |
+| Make sure users keep the networks and exit node you assign | [`disableNetworks`](#disableNetworks) to `true` | Users can still use the assigned networks and exit node, but cannot turn them off. To send all internet traffic through an exit node, keep **Auto Apply** enabled on it in the dashboard (the default). |
+| Give non-technical users a simpler app | [`disableAdvancedView`](#disableAdvancedView) to `true` | Users can still do everything except open the **Peers** and **Resources** lists. |
+| Lock the app down completely, for example on shared or kiosk devices | all four to `true` | Users can still connect and disconnect, and nothing else. |
 
 None of these settings stops a user from disconnecting NetBird. See [What a policy does not do](#what-a-policy-does-not-do).
 
@@ -64,6 +64,37 @@ None of these settings stops a user from disconnecting NetBird. See [What a poli
 | Allow the NetBird SSH server on a device | [`allowServerSSH`](#allowServerSSH) to `true` | SSH must also be enabled for the peer in the dashboard, and `blockInbound` must be off. |
 | Stop a laptop from carrying other peers' traffic | [`disableServerRoutes`](#disableServerRoutes) to `true` | Protects against a laptop wrongly assigned as a routing peer. Never use it on a real routing peer. |
 | Stop a device using routed networks and exit nodes | [`disableClientRoutes`](#disableClientRoutes) to `true` | Cuts the device off from every network resource and exit node, so it is rarely what you want on a laptop. |
+
+### Control the device's network setup
+
+| You want to | Set | What to know |
+| --- | --- | --- |
+| Stop NetBird changing the device's DNS configuration | [`disableDNS`](#disableDNS) to `true` | NetBird peer names and the nameservers you assign in the dashboard stop resolving on the device. |
+| Stop NetBird managing the device's firewall | [`disableFirewall`](#disableFirewall) to `true` | Turns off access control on the device, not only firewall rules. Never use it on a routing peer. |
+| Keep peers that use a device as a routing peer or exit node out of its local network | [`blockLANAccess`](#blockLANAccess) to `true` | Has no effect on a device that routes for nobody. |
+| Keep a device on IPv4 inside NetBird | [`disableIPv6`](#disableIPv6) to `true` | The device does not request or use an IPv6 NetBird address. |
+| Give the NetBird interface a fixed name or MTU | [`interfaceName`](#interfaceName), [`mtu`](#mtu) | Only when firewall rules or monitoring expect a name, or a path needs a smaller packet size. |
+| Reconnect when the device changes network | [`networkMonitor`](#networkMonitor) to `true` | Already on by default on Windows and macOS; pin it to stop users turning it off. |
+
+### Configure the NetBird SSH server
+
+These keys shape the server that [`allowServerSSH`](#allowServerSSH) lets run. They have no effect on a device where the SSH server does not run.
+
+| You want to | Set | What to know |
+| --- | --- | --- |
+| Allow or forbid logging in as root | [`enableSSHRoot`](#enableSSHRoot) | Off by default. |
+| Allow or forbid file transfer | [`enableSSHSFTP`](#enableSSHSFTP) | Off by default. |
+| Allow or forbid port forwarding | [`enableSSHLocalPortForwarding`](#enableSSHLocalPortForwarding), [`enableSSHRemotePortForwarding`](#enableSSHRemotePortForwarding) | Off by default. |
+| Make sure every SSH session needs a user sign-in | [`disableSSHAuth`](#disableSSHAuth) to `false` | Sign-in is on by default; pinning `false` stops anyone switching it off. |
+
+### Set up the desktop app
+
+| You want to | Set | What to know |
+| --- | --- | --- |
+| Open the app in your users' language | [`defaultLanguage`](#defaultLanguage) | A default: users can switch language afterwards. |
+| Open the app in the advanced view, or with a light or dark theme | [`defaultViewMode`](#defaultViewMode), [`defaultTheme`](#defaultTheme) | Defaults, like `defaultLanguage`. |
+| Keep NetBird connected when a user quits the app | [`keepConnectedOnQuit`](#keepConnectedOnQuit) to `true` | `false` disconnects NetBird whenever the app quits. |
+| Stop the app showing notifications, including the one about a new version | [`disableNotifications`](#disableNotifications) to `true` | Alerts the client marks as critical still appear. |
 
 ### Encrypt the tunnel
 
@@ -88,10 +119,15 @@ None of these settings stops a user from disconnecting NetBird. See [What a poli
 | Force lazy connections on a device | [`lazyConnection`](#lazyConnection) to `true` | Same precedence as above. |
 | Use a fixed WireGuard port | [`wireguardPort`](#wireguardPort) | Only when another program needs the default port or your firewall rules expect a specific one. |
 | Stop offering some interfaces' addresses as connection candidates | [`extraIFaceBlackList`](#extraIFaceBlackList) | Adds to the device's own list instead of replacing it. Does not change which network the device routes through. |
+| Send every connection through a relay | [`forceRelay`](#forceRelay) to `true` | The device never connects to a peer directly. Adds latency, and every byte goes through your relays. |
+| Let peers connect directly again on a device that forces relays | [`forceRelay`](#forceRelay) to `false` | Wins over the device's own setting, including `NB_FORCE_RELAY` and the mobile app's switch. |
+| Make a device behind a one-to-one NAT reachable directly | [`natExternalIPs`](#natExternalIPs) | For a Windows or macOS machine with a fixed public address forwarded one-to-one, for example. |
+| Offer only IPv4 addresses as connection candidates | [`disableIPv6Discovery`](#disableIPv6Discovery) to `true` | For networks where IPv6 is present but does not carry traffic between peers. |
+| Change how often domain-based routes are resolved again | [`dnsRouteInterval`](#dnsRouteInterval) | Every minute by default. |
 
 ## Recommended policies
 
-Start from the column that matches the device group, then add or remove keys for your own posture. Send each policy to one device group, and keep routing peers out of every group that gets `blockInbound` or `disableServerRoutes`.
+Start from the column that matches the device group, then add or remove keys for your own posture. **never** means the key breaks that kind of device; **not needed** means that group has no reason to set it. Send each policy to one device group, and keep routing peers out of every group that gets `blockInbound` or `disableServerRoutes`.
 
 | Key | User devices | Shared or kiosk devices | Routing peers and servers |
 | --- | --- | --- | --- |
@@ -101,9 +137,10 @@ Start from the column that matches the device group, then add or remove keys for
 | `disableServerRoutes` | ✓ | ✓ | never |
 | `blockInbound` | optional | ✓ | never |
 | `allowRemoteJobs` and `debugBundleUploadURL` | optional | optional | optional |
-| `disableNetworks` | optional | ✓ | |
-| `disableAdvancedView` | optional | ✓ | |
-| `disableAutoConnect: false` (always connect at boot) | | ✓ | ✓ |
+| `disableNetworks` | optional | ✓ | not needed |
+| `disableAdvancedView` | optional | ✓ | not needed |
+| `disableAutoConnect: false` (always connect at boot) | not needed | ✓ | ✓ |
+| `disableFirewall` | not needed | not needed | never |
 
 Why each column looks the way it does:
 
@@ -120,6 +157,10 @@ Leave these keys out unless you have a specific reason:
 - `extraIFaceBlackList`: the built-in list already covers Docker, other VPNs, and loopback.
 - `lazyConnection`: leave lazy connections to the account setting, so one dashboard switch controls the whole fleet. Push `false` only for devices that must hold every connection open.
 - `enableLocalMetrics`, `localMetricsAddress`: only for devices you scrape with Prometheus.
+- `disableDNS`, `disableFirewall`: each turns off part of what NetBird does on the device, and `disableFirewall` breaks a routing peer.
+- `forceRelay: true`: every connection goes through a relay, so it costs latency and relay capacity. Use it for devices on networks that block direct connections.
+- `interfaceName`, `mtu`, `natExternalIPs`, `dnsRouteInterval`, `disableIPv6Discovery`: the defaults suit almost every fleet.
+- The SSH server keys: only for devices that run the NetBird SSH server.
 - `splitTunnelMode`, `splitTunnelApps`, `disableMetricsCollection`: no effect yet.
 
 ### The user device baseline
@@ -136,7 +177,15 @@ On NetBird Cloud, use `https://api.netbird.io:443`. Send the policy only to the 
 
 ## How the client applies a policy
 
-Think of a policy as **a set of pinned switches**. Every key in the payload pins one setting to the value you chose and takes it out of the user's reach. Every key you leave out stays an ordinary setting that the user, the CLI, or the dashboard controls as usual. **A key that is absent is not pinned, and a key that is present is pinned, whatever its value.**
+A policy does two jobs. Most keys **enforce**: they pin a setting your security posture depends on, and the policy has the last word. A few keys **set things up**: they save every device from being configured by hand, so a non-technical user gets a working client, but a person on the device can still change them when they have a reason to:
+
+| Key | How the device can change it |
+| --- | --- |
+| [`defaultLanguage`](#defaultLanguage), [`defaultViewMode`](#defaultViewMode), [`defaultTheme`](#defaultTheme) | The user changes them in the app. See [Default keys](#default-keys). |
+| [`lazyConnection`](#lazyConnection) | `NB_LAZY_CONN` on the device wins over the key. Set lazy connections for the whole fleet with the key, and keep them off on a server that must always answer quickly with `NB_LAZY_CONN=off`. A separate policy for such devices does the same without a local override. |
+| [`extraIFaceBlackList`](#extraIFaceBlackList) | It adds to the device's own list and pins nothing. |
+
+Every other key enforces. Think of those keys as **a set of pinned switches**. Every key in the payload pins one setting to the value you chose and takes it out of the user's reach. Every key you leave out stays an ordinary setting that the user, the CLI, or the dashboard controls as usual. **A key that is absent is not pinned, and a key that is present is pinned, whatever its value.**
 
 <Note>
 **Pushing `false` is not the same as leaving a key out.** `allowServerSSH: false` pins the SSH server off: no user, CLI flag, or dashboard setting can turn it on while the policy stands. Leaving `allowServerSSH` out of the payload leaves the SSH server to whoever controls the device. Only include the keys you mean to pin.
@@ -144,13 +193,38 @@ Think of a policy as **a set of pinned switches**. Every key in the payload pins
 
 On Windows and macOS, the client daemon reads the policy at startup and again every minute. Each time:
 
-1. **It applies the policy on top of every other configuration layer.** Defaults, the on-disk profile, environment variables, and CLI or app input all apply first; the policy is applied last and wins. A policy also overrides the service-install flags `--disable-update-settings`, `--disable-profiles`, and `--disable-networks`: pushing `disableNetworks: false` re-enables network selection even on a device installed with `--disable-networks`. One exception: the `NB_LAZY_CONN` environment variable takes precedence over the `lazyConnection` key.
-2. **It locks the pinned settings.** A request that tries to change a pinned setting to a different value, from the desktop app, the CLI (`netbird login --flag`, or `netbird up --flag` on a disconnected client) or the daemon API, is rejected as a whole with `fields managed by MDM cannot be modified: [<keys>]`. None of its other fields are applied either. A request that repeats the pinned value is accepted, because it changes nothing. These locks read the policy file on every request, so they apply as soon as the file changes; the `disableUpdateSettings`, `disableProfiles`, and `disableNetworks` gates apply at the next reload. Two keys only change what the app shows or does, and lock nothing: [`disableAutostart`](#disableAutostart) and [`disableAdvancedView`](#disableAdvancedView).
-3. **It never writes policy values to disk.** The on-disk profile keeps the device's own settings. When you remove a key from the policy, the setting falls back to that on-disk value on the next reload and becomes editable again, with nothing left behind.
+1. **It applies the policy on top of every other configuration layer.** Defaults, the on-disk profile, environment variables, and CLI or app input all apply first; the policy is applied last and wins. A policy also overrides the service-install flags `--disable-update-settings`, `--disable-profiles`, and `--disable-networks`: pushing `disableNetworks: false` re-enables network selection even on a device installed with `--disable-networks`. The one exception is `lazyConnection`, which sets things up rather than enforces: the `NB_LAZY_CONN` environment variable takes precedence over it. The `forceRelay` key enforces, so it wins over `NB_FORCE_RELAY`.
+2. **It locks the pinned settings.** A request that tries to change a pinned setting to a different value, from the desktop app, the CLI (`netbird login --flag`, or `netbird up --flag` on a disconnected client) or the daemon API, is rejected as a whole with `fields managed by MDM cannot be modified: [<keys>]`. None of its other fields are applied either. A request that repeats the pinned value is accepted, because it changes nothing. These locks read the policy file on every request, so they apply as soon as the file changes; the `disableUpdateSettings`, `disableProfiles`, and `disableNetworks` gates apply at the next reload. Some keys only change what the desktop app shows or does, and are never a reason to reject a request: [`disableAutostart`](#disableAutostart), [`disableAdvancedView`](#disableAdvancedView), [`keepConnectedOnQuit`](#keepConnectedOnQuit), and the [default keys](#default-keys).
+3. **It never writes policy values into the profile.** The on-disk profile keeps the device's own settings. When you remove a key from the policy, the setting falls back to that on-disk value on the next reload and becomes editable again, with nothing left behind. The [default keys](#default-keys) are the exception by design: the desktop app saves the value it applied as the user's own preference, which the user can then change.
 
-When a reload finds that the policy has changed, the client restarts its connection to apply it. Expect a brief interruption on every policy change (typically a second or two), and plan larger changes outside working hours. The desktop app then shows a notification: **NetBird settings updated**, "Your NetBird configuration was updated by your IT policy."
+When a reload finds that the policy has changed, the client restarts its connection to apply it. Expect a brief interruption on every policy change (typically a second or two), and plan larger changes outside working hours. This includes a change to a key only the desktop app uses, such as `defaultLanguage`: the connection restarts even though nothing about it changed. The desktop app then shows a notification: **NetBird settings updated**, "Your NetBird configuration was updated by your IT policy."
+
+The desktop app reads [`keepConnectedOnQuit`](#keepConnectedOnQuit) and the [default keys](#default-keys) itself, when it starts and then every minute, whether NetBird is connected or not.
 
 On iOS the timing is different: the app passes the policy to the tunnel only while the app is running. See [Enforce settings on iOS](/manage/peers/mdm-deployment/ios-mdm-policy#when-a-policy-takes-effect).
+
+### Default keys
+
+Three keys are defaults rather than pins: [`defaultLanguage`](#defaultLanguage), [`defaultViewMode`](#defaultViewMode), and [`defaultTheme`](#defaultTheme). They only change how the desktop app looks, so the user keeps the last word:
+
+1. When a default key first appears in the policy, the app switches to its value.
+2. The user can change the setting afterwards, and the app keeps their choice.
+3. The app applies the key again only when you change its value. Pushing the same value again does nothing.
+4. Removing the key changes nothing on screen: the setting stays where it is. Adding the key back later applies it again, as in step 1.
+
+To bring every device back to a value, change it in the policy. For example, to have users in Italy start in Italian, push `defaultLanguage: it` to their device group. A user who then switches to English keeps English until you push a different language.
+
+### A value the client cannot use
+
+A value can be unusable: a boolean such as the string `maybe`, a number out of range, or a malformed duration, interface name, or address mapping. The client never guesses what you meant. What it does instead depends on what the key protects:
+
+| Key | What happens to an unusable value |
+| --- | --- |
+| Booleans that close a door: [`blockInbound`](#blockInbound) and [`blockLANAccess`](#blockLANAccess), plus [`disableFirewall`](#disableFirewall), [`disableSSHAuth`](#disableSSHAuth), [`allowServerSSH`](#allowServerSSH), [`allowRemoteJobs`](#allowRemoteJobs), [`enableSSHRoot`](#enableSSHRoot), [`enableSSHSFTP`](#enableSSHSFTP), [`enableSSHLocalPortForwarding`](#enableSSHLocalPortForwarding), [`enableSSHRemotePortForwarding`](#enableSSHRemotePortForwarding), and [`enableLocalMetrics`](#enableLocalMetrics) | **Pinned to the restrictive value.** `blockInbound` and `blockLANAccess` are pinned to `true`, the others to `false`. Leaving the setting to the user could open exactly what the key was there to close. |
+| Every other boolean, plus [`wireguardPort`](#wireguardPort), [`mtu`](#mtu), [`interfaceName`](#interfaceName), [`dnsRouteInterval`](#dnsRouteInterval), [`sshJWTCacheTTL`](#sshJWTCacheTTL), [`natExternalIPs`](#natExternalIPs), and [`extraIFaceBlackList`](#extraIFaceBlackList) | **Treated as not set.** None of these has a safe side to fall back to, so the user keeps control of the setting rather than having it locked to a value nothing applies. |
+| Keys that pin a server or a secret, such as [`managementURL`](#managementURL) | **Still pinned.** Users cannot change the setting, and the client keeps its previous value. |
+
+In every case the client log has a warning naming the key, such as `MDM mtu has an unusable value; ignoring the key` or `MDM blockInbound has an unreadable value; enforcing the restrictive value true`. The value itself is logged only at debug level, since some values, such as `natExternalIPs`, carry public addresses.
 
 ### What a user sees
 
@@ -164,15 +238,17 @@ A policy pins the client's configuration. It does not make the tunnel mandatory:
 
 ## Policy keys reference
 
-The client recognizes 25 keys. They are grouped below by the job they do, starting with the ones nearly every rollout needs. A key that has no meaning on a platform (for example `allowServerSSH` on iOS) is ignored there, so one payload is safe to send to every platform.
+The client recognizes 47 keys. They are grouped below by the job they do, starting with the ones nearly every rollout needs. A key that has no meaning on a platform (for example `allowServerSSH` on iOS) is ignored there, so one payload is safe to send to every platform.
 
 Key names are camelCase in plist and app-configuration payloads. On Windows, the registry value names and the Group Policy templates use PascalCase (`ManagementURL`, `BlockInbound`); both forms are recognized, and names are matched without regard to case. In the Group Policy editor, each policy is named after its key in plain words, such as **Block inbound** for `blockInbound`.
 
 Value types:
 
-- **boolean**: a native boolean (`<true/>` or `<false/>` in a plist), or one of the strings `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`. An integer (`0` is false, anything else is true) also works on Windows (`REG_DWORD`) and iOS, but **not on macOS**: there, a boolean written as `<integer>` is listed as managed and locked, but never applied, so the setting is frozen at whatever the device had.
+- **boolean**: a native boolean (`<true/>` or `<false/>` in a plist), or one of the strings `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`. An integer (`0` is false, anything else is true) also works, such as a Windows `REG_DWORD` or a plist `<integer>`. Older macOS clients lock an `<integer>` boolean without applying it, so prefer `<true/>` and `<false/>` in a plist.
 - **string**: a string. An empty string counts as not set.
 - **integer**: an integer, or a string of decimal digits.
+- **duration**: a string such as `30s`, `1m`, or `1m30s`.
+- **list of strings**: a list in a plist or app-configuration payload, or one string with comma-separated entries.
 
 The registry type for each key on Windows is on [Enforce settings on Windows](/manage/peers/mdm-deployment/windows-mdm-policy#value-types).
 
@@ -219,6 +295,51 @@ These keys decide what reaches the device, and what the device passes on. Each p
 - **Do not send `blockInbound` or `disableServerRoutes` to routing peers.** A routing peer with either key set stops forwarding. If it is the only routing peer for a network, that network becomes unreachable for everyone. Scope these keys to a device group that excludes routing peers and servers.
 - **`blockInbound` is not a kill switch.** It blocks connections *to* the device, not traffic *from* it, and it does not keep the tunnel up. Use it for devices that only ever consume resources, such as most end-user laptops, and never for a device other peers need to reach.
 
+### Network keys
+
+These keys pin how NetBird sets up the device's own networking. Each one matches a setting in the desktop app and a flag of `netbird up`.
+
+| Key | Type | What it does |
+| --- | --- | --- |
+| <span id="disableDNS"></span>`disableDNS` | boolean | `true`: NetBird does not touch the device's DNS configuration. NetBird peer names and the nameservers you assign in the dashboard stop resolving on the device. Same as `netbird up --disable-dns`. |
+| <span id="disableFirewall"></span>`disableFirewall` | boolean | `true`: NetBird does not manage the device's firewall. Access control, routing peer NAT, and the DNS redirect all go with it. See [Disable Firewall Configuration](/client/disable-firewall). |
+| <span id="blockLANAccess"></span>`blockLANAccess` | boolean | `true`: peers that use this device as a routing peer or exit node cannot reach its local network. No effect on a device that routes for nobody. |
+| <span id="disableIPv6"></span>`disableIPv6` | boolean | `true`: the device does not request or use an IPv6 NetBird address, and stays on IPv4 inside NetBird. See [IPv6](/manage/settings/ipv6). |
+| <span id="networkMonitor"></span>`networkMonitor` | boolean | `true`: the client restarts its connection when the device's network changes, such as moving from Wi-Fi to a cable. On by default on Windows and macOS. |
+| <span id="interfaceName"></span>`interfaceName` | string | The name of the NetBird interface. On macOS it must be `utun` followed by a number, such as `utun100`; any other value is ignored as if the key were not set, so the interface keeps its previous name and users can still change it. |
+| <span id="mtu"></span>`mtu` | integer | The MTU of the NetBird interface, from `576` to `8192`. Default `1280`. A value out of range is ignored as if the key were not set. |
+
+- **Never send `disableFirewall` to a routing peer.** A routing peer needs the firewall for NAT and for the access control on the traffic it forwards. See [Disable Firewall Configuration](/client/disable-firewall) for everything it turns off.
+- **`disableDNS` takes NetBird names away.** Peers are still reachable by IP address, but nothing resolves their names on the device, and the nameservers from the dashboard stop applying.
+
+### SSH server keys
+
+These keys shape the [NetBird SSH server](/manage/peers/ssh). They only matter where the server runs, which [`allowServerSSH`](#allowServerSSH) and the dashboard decide.
+
+| Key | Type | What it does |
+| --- | --- | --- |
+| <span id="enableSSHRoot"></span>`enableSSHRoot` | boolean | `true`: users may log in as root. Off by default. |
+| <span id="enableSSHSFTP"></span>`enableSSHSFTP` | boolean | `true`: the server accepts SFTP, so users can copy files to and from the device. Off by default. |
+| <span id="enableSSHLocalPortForwarding"></span>`enableSSHLocalPortForwarding` | boolean | `true`: users can forward a local port through the device (`ssh -L`). Off by default. |
+| <span id="enableSSHRemotePortForwarding"></span>`enableSSHRemotePortForwarding` | boolean | `true`: users can open a port on the device that leads back to them (`ssh -R`). Off by default. |
+| <span id="disableSSHAuth"></span>`disableSSHAuth` | boolean | `true`: the server lets in any peer your access policies allow, with no user sign-in. The client logs a warning whenever the policy applies it. `false` pins sign-in on. |
+| <span id="sshJWTCacheTTL"></span>`sshJWTCacheTTL` | integer | How long, in seconds, the client remembers a user's sign-in for `netbird ssh`, so they are not asked again for each session. `0` (the default) turns the cache off. |
+
+- **Pin `disableSSHAuth: false` rather than leaving it out** wherever the SSH server runs. Without sign-in, anyone on a peer that your access policies let through gets a shell.
+- **Root login and turning sign-in off stay privileged.** A user without administrator rights cannot turn on `enableSSHRoot` or `disableSSHAuth` from the app or the CLI, even when the policy pins the same value.
+
+### Desktop app keys
+
+These keys shape the desktop app on Windows and macOS. The app reads them itself, when it starts and every minute after.
+
+| Key | Type | What it does |
+| --- | --- | --- |
+| <span id="keepConnectedOnQuit"></span>`keepConnectedOnQuit` | boolean | `true`: quitting the app leaves NetBird connected. `false`: quitting the app disconnects NetBird. Hides the matching switch in the app's settings. |
+| <span id="disableNotifications"></span>`disableNotifications` | boolean | `true`: the app shows no notifications, including the one that a new version is available. Alerts the client marks as critical still appear. |
+| <span id="defaultLanguage"></span>`defaultLanguage` | string | The language the app starts in, as a language code such as `en`, `de`, `it`, or `zh-CN`. A default: see [Default keys](#default-keys). A language the app does not ship is logged and ignored. |
+| <span id="defaultViewMode"></span>`defaultViewMode` | string | `default` or `advanced`: the view the app starts in. A default. [`disableAdvancedView`](#disableAdvancedView) wins over it. |
+| <span id="defaultTheme"></span>`defaultTheme` | string | `system`, `light`, or `dark`. A default. |
+
 ### Encryption keys
 
 These keys change how connections are encrypted. A pre-shared key, and Rosenpass outside permissive mode, have to match on both ends of a connection, so a key sent to only part of a fleet can cut that part off from the rest.
@@ -254,10 +375,16 @@ Most fleets never need these keys.
 | Key | Type | What it does |
 | --- | --- | --- |
 | <span id="lazyConnection"></span>`lazyConnection` | boolean | Overrides what the management server decides about [lazy connections](/manage/peers/lazy-connection) for this device. `true` forces them on and `false` forces them off, for every peer the device connects to. Leaving the key out follows the account's **Lazy connections** setting, which is on by default for accounts created by management v0.74.0 or later; older accounts keep the setting they had. The `NB_LAZY_CONN` environment variable, if set on the device, takes precedence over this key. |
-| <span id="wireguardPort"></span>`wireguardPort` | integer | The local UDP port the WireGuard interface listens on. Default `51820`. Values outside `1` to `65535` are ignored, and the client keeps its previous port. |
+| <span id="wireguardPort"></span>`wireguardPort` | integer | The local UDP port the WireGuard interface listens on. Default `51820`. Values outside `1` to `65535` are ignored as if the key were not set, and the client keeps its previous port. |
 | <span id="extraIFaceBlackList"></span>`extraIFaceBlackList` | list of strings | Interface name prefixes whose local addresses the client never offers to peers as a way to connect. A list in a plist or app-configuration payload, or one string with comma-separated entries (a `REG_SZ` or a `REG_MULTI_SZ` on Windows). Added to the built-in list and to the device's own [`--extra-iface-blacklist`](/get-started/cli) entries. Ignored on iOS. |
+| <span id="forceRelay"></span>`forceRelay` | boolean | `true`: the device never tries a direct connection and reaches every peer through a relay. `false`: direct connections are allowed. Wins over `NB_FORCE_RELAY`, `netbird up --force-relay`, and the **Force relay connection** switch in the iOS and Android apps, which it locks. |
+| <span id="natExternalIPs"></span>`natExternalIPs` | list of strings | Public addresses the client offers to peers when the device sits behind a one-to-one NAT. Each entry is a public IP, optionally followed by `/` and the local IP or interface it maps to, as in `203.0.113.10/10.0.0.1` or `203.0.113.11/eth1`. Same format as `netbird up --external-ip-map`. A list with a malformed entry is ignored as if the key were not set. An empty list enforces no mappings. |
+| <span id="dnsRouteInterval"></span>`dnsRouteInterval` | duration | How often the client resolves the domains of [domain-based routes](/manage/network-routes) again, to follow their addresses. Default `1m`. A value that is not a positive duration is ignored as if the key were not set. |
+| <span id="disableIPv6Discovery"></span>`disableIPv6Discovery` | boolean | `true`: the client offers peers only IPv4 addresses as ways to connect. It has no flag or app setting. |
 
 Set `wireguardPort` only when another program on the device needs the default port, or your firewall rules expect a specific one.
+
+- **`forceRelay: true` moves every byte through your relays.** Connections get slower, and on a self-hosted deployment the relays carry the whole load. Send it to the devices that need it, such as those on networks that block direct connections, not to the whole fleet.
 
 - **`extraIFaceBlackList` adds, it does not pin.** Unlike every other key, it does not replace the device's own setting and locks nothing: the built-in list and any entries a user or script added with `--extra-iface-blacklist` stay in effect, and this key never rejects a request to add more. Removing the key from the policy removes only its own entries. They are never written to the on-disk profile, which is why the `IFaceBlackList` setting in the profile file does not show them.
 - **Each entry is a case-sensitive name prefix, with no wildcards.** `vEthernet` excludes every Hyper-V and WSL adapter on Windows, and `bridge` excludes `bridge100` on macOS. Keep entries specific: a short entry such as `en` on macOS takes the device's LAN and Wi-Fi addresses out, and peers that could have connected directly over the LAN fall back to a public address or a relay. An entry that matches no interface, such as `VXLAN` or `vmnet*`, is applied without a warning.
@@ -305,8 +432,11 @@ Problems specific to one delivery channel, such as a Group Policy that never rea
 **`mDMManagedFields` is empty or missing keys.**
 Start at the source. Confirm the values are in the registry or the managed-preferences file, using the commands on the platform page. If they are, look for `MDM ignoring unknown` in the client log: the value name does not match any key in the [reference](#policy-keys-reference). Names are matched without regard to case, but must otherwise be exact. `WireGuardPort`, for example, matches; `WgPort` does not.
 
+**A key is set in the policy, but users can still change the setting.**
+The value cannot be used: out of range, the wrong type, or not a valid boolean, duration, interface name, or address mapping. For the keys that have no safe side to fall back to, the client then treats the key as not set, so a typo never locks a setting to a value nothing applies. The client log has a warning such as `MDM mtu has an unusable value; ignoring the key`. See [A value the client cannot use](#a-value-the-client-cannot-use).
+
 **A key is listed in `mDMManagedFields` but the setting did not change.**
-The value is the wrong type or out of range. The key still counts as managed, so users cannot change the setting, but the client keeps its previous value. The client log has a warning such as `MDM management URL "..." invalid` or `MDM wireguard port ... out of range`. On Windows, check that the value has the [registry type](/manage/peers/mdm-deployment/windows-mdm-policy#value-types) the key expects: a `managementURL` stored as a `REG_DWORD`, for example, is ignored. On macOS, check that booleans are `<true/>` or `<false/>`, not `<integer>`; the client logs no warning for those.
+The value is unusable and the key is one that stays pinned. A boolean that closes a door, such as `blockInbound`, is pinned to its restrictive value, and the client log has a warning such as `MDM blockInbound has an unreadable value; enforcing the restrictive value true`. A key that pins a server or a secret keeps the client's previous value, and the client log has a warning such as `MDM management URL "..." invalid`. On Windows, check that the value has the [registry type](/manage/peers/mdm-deployment/windows-mdm-policy#value-types) the key expects: a `managementURL` stored as a `REG_DWORD`, for example, is ignored.
 
 **A user gets `fields managed by MDM cannot be modified: [...]`.**
 The policy is working: the user, or a script, tried to change a pinned setting. The keys in the brackets are the pinned settings involved. Change those settings through your MDM instead.
@@ -326,6 +456,12 @@ On a connected client, `netbird up` ignores its flags, whether or not a policy i
 **Lazy connections do not follow the policy.**
 The `NB_LAZY_CONN` environment variable is set on the device, and it takes precedence over `lazyConnection`. Remove it from the service environment.
 
+**Every connection on a device is relayed.**
+Check for `forceRelay: true` in the policy, then for `NB_FORCE_RELAY` in the service environment and the device's own **Force relay** setting. The policy key wins over both, so pushing `forceRelay: false` lets the device connect directly again.
+
+**A user's language, view, or theme changed back.**
+The value of `defaultLanguage`, `defaultViewMode`, or `defaultTheme` changed in the policy, or the key was removed and added again. The app applies a default whenever its value changes, and the user's own choice holds in between. See [Default keys](#default-keys).
+
 **Devices lost access to network resources after a policy change.**
 Check for `disableClientRoutes: true` or a `preSharedKey` in the policy. The first stops the device using routes; the second stops it connecting to any peer that does not have the same key. See [Device exposure keys](#device-exposure-keys) and [Encryption keys](#encryption-keys).
 
@@ -344,6 +480,6 @@ Any MDM that can write a registry value on Windows, push a configuration profile
 ## TL;DR
 
 - **Find the goal, set the key.** [What you can achieve](#what-you-can-achieve) maps each goal to a setting, and [the user device baseline](#the-user-device-baseline) (`managementURL`, `disableUpdateSettings`, `disableProfiles`) is the usual start.
-- **Present means pinned, even as `false`.** Every key you leave out stays the user's. The client applies the policy last, locks what it pins, re-reads it every minute, and restarts the connection briefly when it changes.
-- **Keep routing peers out of the wrong policy.** Never send them `blockInbound` or `disableServerRoutes`, and send a `preSharedKey` to every peer or none.
+- **Present means pinned, even as `false`.** Every key you leave out stays the user's. The three desktop app defaults are the exception: the user can change them until you push a new value. The client applies the policy last, locks what it pins, re-reads it every minute, and restarts the connection briefly when it changes.
+- **Keep routing peers out of the wrong policy.** Never send them `blockInbound`, `disableServerRoutes`, or `disableFirewall`, and send a `preSharedKey` to every peer or none.
 - **Verify with `netbird debug config`, then the log.** `mDMManagedFields` shows the policy the client reads; the `MDM policy changed` log line confirms it is enforced.

@@ -34,7 +34,7 @@ Download the template that matches your MDM:
 
 Each template lists every key. Delete the keys you do not want to pin: a key that is present is pinned, even when its value is `false`.
 
-Write booleans as `<true/>` or `<false/>`. On macOS, a boolean written as `<integer>1</integer>` is listed as managed and locked, but never applied, so the setting is frozen at whatever the Mac had.
+Write booleans as `<true/>` or `<false/>`. `<integer>1</integer>` and `<integer>0</integer>` also work, but older clients lock an integer boolean without applying it.
 
 ## Build the configuration profile
 
@@ -81,10 +81,10 @@ For JumpCloud-managed Macs that are not MDM-enrolled, use <a href="/docs-static/
 3. Paste the edited script into the command body.
 4. Bind the command to the target device group and run it.
 
-The script writes `/Library/Managed Preferences/io.netbird.client.plist`, owned by `root:wheel` with mode `644`, and restarts the NetBird daemon so the policy applies at once. On a Mac that is not MDM-enrolled, macOS deletes the file at the next reboot, so run the command again after each reboot, or enroll the Macs and use the configuration profile.
+The script writes `/Library/Managed Preferences/io.netbird.client.plist`, owned by `root:wheel` with mode `600`, and restarts the NetBird daemon so the policy applies at once. On a Mac that is not MDM-enrolled, macOS deletes the file at the next reboot, so run the command again after each reboot, or enroll the Macs and use the configuration profile.
 
 <Note>
-**Every user on the Mac can read the policy file.** From a configuration profile, macOS writes it as a binary plist owned by `root:wheel` with mode `644`, and the shell script above uses the same owner and mode. It is readable by all users, so a `preSharedKey` or `debugBundleUploadURL` in it is visible to anyone who can sign in. Only root can change it. The client refuses to read a policy file that any user can write to, and then enforces no policy at all, so never loosen the file's permissions.
+**From a configuration profile, every user on the Mac can read the policy file.** macOS writes it as a binary plist owned by `root:wheel` with mode `644`, so a `preSharedKey` or `debugBundleUploadURL` in it is visible to anyone who can sign in. The shell script above writes it with mode `600`, readable by root only. Only root can change it either way. The client refuses to read a policy file that any user can write to, and then enforces no policy at all, so never loosen the file's permissions.
 </Note>
 
 ## Verify
@@ -106,16 +106,16 @@ The `mDMManagedFields` array in the output lists every key in the policy the cli
 ## Troubleshooting
 
 **The policy file does not exist.**
-The profile was not installed, or it targets the wrong preference domain. On the Mac, open **System Settings → General → Device Management** and confirm the profile is listed, then confirm the domain in the profile is exactly `io.netbird.client`.
+The profile was not installed, or it targets the wrong preference domain. On the Mac, open **System Settings → General → Device Management** (**System Preferences → Profiles** on macOS 11 and 12) and confirm the profile is listed, then confirm the domain in the profile is exactly `io.netbird.client`.
 
 **The policy file disappears after a reboot.**
 The Mac is not MDM-enrolled, so macOS clears `/Library/Managed Preferences/` at boot. Enroll it and deliver the policy as a configuration profile.
 
 **The file exists, but `mDMManagedFields` is empty.**
-Check the file's permissions with `ls -l "/Library/Managed Preferences/io.netbird.client.plist"`. If any user can write to it (a `w` in the last three permission characters), the client ignores the whole policy, and with default logging it says nothing about it. Reset the permissions with `sudo chown root:wheel` and `sudo chmod 644` on the file. If the permissions are fine, look in the client log for `MDM ignoring unknown plist key`: a key name does not match any key in the [reference](/client/mdm-integration#policy-keys-reference).
+Check the file's permissions with `ls -l "/Library/Managed Preferences/io.netbird.client.plist"`. If any user can write to it (a `w` in the last three permission characters), the client ignores the whole policy, and with default logging it says nothing about it. Reset the permissions with `sudo chown root:wheel` and `sudo chmod 600` on the file; the client reads it as root, and `600` keeps secrets in it private. If the permissions are fine, look in the client log for `MDM ignoring unknown plist key`: a key name does not match any key in the [reference](/client/mdm-integration#policy-keys-reference).
 
-**A key is listed in `mDMManagedFields`, but the setting did not change.**
-Check the value's type. A boolean must be `<true/>` or `<false/>`; written as an `<integer>`, it is listed as managed and locked, but never applied. The client logs no warning for it.
+**A boolean key does not do what you set.**
+Check the value. A boolean the client cannot read, such as the string `maybe`, never applies as you meant it. A key that closes a door, such as `blockInbound`, is pinned to its restrictive value, with a warning such as `MDM blockInbound has an unreadable value; enforcing the restrictive value true` in the client log. Any other boolean is ignored as if the key were not set, and users can still change the setting. See [A value the client cannot use](/client/mdm-integration#a-value-the-client-cannot-use). On an older client, also check that the boolean is `<true/>` or `<false/>`: those clients lock an `<integer>` boolean without applying it.
 
 For problems that look the same on every platform, see [Troubleshooting](/client/mdm-integration#troubleshooting) on the MDM Integration page.
 
