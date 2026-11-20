@@ -68,6 +68,22 @@ cp ../*.env . 2>/dev/null || echo "No .env files found"
 
 The proxy authenticates with the management server using an access token. Generate one using the server CLI.
 
+<Warning>
+This applies only if you upgraded the combined container (`netbirdio/netbird-server`) with `migrate-to-enterprise.sh`, which migrates only combined deployments; otherwise, use the commands below as shown. If the script moved your store from SQLite to PostgreSQL, `config.yaml` still points at the old SQLite store, and a token created with `--config /etc/netbird/config.yaml` goes into that store: the proxy is refused with `invalid token`. Before creating the token, check which config file the server runs with:
+
+```bash
+docker top netbird-server -efww
+```
+
+The `netbird-server` line shows the command the server is running, with every path already filled in, also when a script starts it. The token must go into the store the running server uses, which is set in the config file whose path follows the last `--config` on that line (a later `--config` overrides an earlier one). If that file is `/etc/netbird/config.yaml`, use the commands below unchanged. If it is another file, such as `/etc/netbird/config.yaml.enterprise`, use that path in the `create`, `list` and `revoke` commands below. For `create`:
+
+```bash
+docker exec -it netbird-server \
+  /go/bin/netbird-server --config /etc/netbird/config.yaml.enterprise admin token create \
+  --name "my-proxy"
+```
+</Warning>
+
 **Combined container** (`netbirdio/netbird-server`):
 
 ```bash
@@ -368,11 +384,15 @@ You should see log messages indicating the proxy has connected to the management
 Once the proxy connects to the management server:
 
 1. Open your NetBird dashboard
-2. Navigate to **Reverse Proxy** > **Services**
+2. Navigate to **Networking** > **Reverse Proxy** > **Services**
 3. Click **Add Service**
 4. In the domain selector, you should see your proxy domain (e.g., `proxy.example.com`) with a **Cluster** badge
 
 If the domain appears, the proxy is connected and ready. You can now [create your first service](/manage/reverse-proxy#quick-start).
+
+<Note>
+To serve [Agent Network](/agent-network) from this proxy, add `NB_PROXY_PRIVATE=true` to `proxy.env` and recreate the proxy (`docker compose up -d proxy`). Your existing services keep working, apart from a short outage while the proxy restarts. To show the **Agent Network** menu (dashboard v2.90.0 or later), also add `NETBIRD_AGENT_NETWORK_ENABLED=true` to `dashboard.env` and run `docker compose up -d dashboard`. For the full setup, including a provider and a policy, see [Enable Agent Network for an Existing Self-Hosted Deployment](/agent-network/existing-self-hosted).
+</Note>
 
 ### Step 7 (optional): Enable CrowdSec IP reputation
 
