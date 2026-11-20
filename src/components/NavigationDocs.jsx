@@ -164,6 +164,7 @@ export const docsNavigation = [
                     { title: 'SSH', href: '/manage/peers/ssh' },
                     { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                     { title: 'Remote Jobs', href: '/manage/peers/remote-jobs' },
+                    { title: 'Connection History', href: '/manage/peers/connection-history' },
                     { title: 'Auto Update', href: '/manage/peers/auto-update' },
                 ],
             },
