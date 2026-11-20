@@ -221,6 +221,10 @@ export const docsNavigation = [
                                 href: '/manage/access-control/endpoint-detection-and-response/sentinelone-edr',
                             },
                             {
+                                title: 'Grace Period',
+                                href: '/manage/access-control/endpoint-detection-and-response/grace-period',
+                            },
+                            {
                                 title: 'Bypass Compliance',
                                 href: '/manage/access-control/endpoint-detection-and-response/bypass-compliance',
                             },
