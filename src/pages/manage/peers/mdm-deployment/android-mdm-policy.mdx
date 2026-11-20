@@ -1,0 +1,92 @@
+import { Note } from "@/components/mdx";
+
+export const description =
+  "Deliver NetBird MDM policy to Android devices with Android Enterprise managed configurations: where to set it in Intune and other MDMs, when a change reaches the tunnel, and what each key does in the app.";
+
+# Enforce NetBird Settings on Android
+
+On Android, policy reaches an app through **managed configurations**, the Android Enterprise channel for configuring a managed app. The NetBird app publishes the keys it accepts, so your MDM console lists them as a form: pick a key, set its value, and the console sends the result to the app with package name `io.netbird.client`.
+
+What each key does, and how the client applies and locks a policy, is on the [MDM Integration](/client/mdm-integration) page. Read its [How the client applies a policy](/client/mdm-integration#how-the-client-applies-a-policy) section first if you have not.
+
+<Note>
+**The device must be enrolled in Android Enterprise, and NetBird must be a managed app.** That means a fully managed device, or a work profile on a personal device, with NetBird installed from managed Google Play. A copy installed from the personal Play Store receives no managed configuration, and NetBird runs with no policy there.
+</Note>
+
+## Push the configuration
+
+Set the [user device baseline](/client/mdm-integration#the-user-device-baseline) in your MDM's managed-configuration form for NetBird:
+
+| Key | Value |
+| --- | --- |
+| `managementURL` | `https://netbird.example.com:443` |
+| `disableUpdateSettings` | `true` |
+| `disableProfiles` | `true` |
+
+- **Microsoft Intune**: **Apps → App configuration policies → Add → Managed devices**, platform **Android Enterprise**, pick the NetBird app, then use **Configuration settings format → Use configuration designer** and add the keys.
+- **Workspace ONE**, **Jamf**, **Kandji**, **JumpCloud**, and other Android Enterprise MDMs: the same form appears on the app's assignment, usually as *Managed configuration* or *App configuration*.
+
+As on every platform, a key you set is pinned, even when its value is `false`, so add only the keys you mean to pin.
+
+## Keys the app accepts
+
+The Android app accepts these keys, and the MDM console offers only these:
+
+- **Server and app:** `managementURL`, `disableUpdateSettings`, `disableProfiles`, `disableNetworks`, `disableAdvancedView`.
+- **Device exposure:** `blockInbound`, `allowServerSSH`, `disableServerRoutes`, `disableClientRoutes`.
+- **Encryption:** `preSharedKey`, `rosenpassEnabled`, `rosenpassPermissive`.
+- **Network:** `disableDNS`, `disableFirewall`, `disableIPv6`, `blockLANAccess`, `mtu`.
+- **Connection tuning:** `wireguardPort`, `lazyConnection`, `extraIFaceBlackList`, `forceRelay`, `disableIPv6Discovery`, `dnsRouteInterval`.
+- **Support:** `allowRemoteJobs`, `debugBundleUploadURL`.
+- **Split tunneling:** `splitTunnelMode` and `splitTunnelApps`, which only Android applies. See below.
+
+The desktop-only keys, such as `disableAutostart`, the desktop app keys, the SSH server options, and `interfaceName`, are not offered.
+
+### Split tunneling
+
+`splitTunnelMode` and `splitTunnelApps` decide which apps use NetBird:
+
+| `splitTunnelMode` | Effect |
+| --- | --- |
+| `allow` | Only the apps in `splitTunnelApps` go through NetBird. |
+| `disallow` | The apps in `splitTunnelApps` stay out of NetBird; every other app goes through it. |
+
+`splitTunnelApps` is a comma-separated list of package names, such as `com.example.crm,com.example.mail`. While the policy sets them, the **Split tunneling** screen shows the pinned selection and cannot be changed. A mode the app does not recognize leaves the user's own selection in place.
+
+## When a policy takes effect
+
+Android tells the NetBird app as soon as the managed configuration changes. While NetBird is connected, the app compares the new policy with the one it applied. If it changed, the connection restarts with the new policy, and an open app shows "NetBird configuration was updated by your IT policy." A push that changes nothing is ignored, with no restart.
+
+While NetBird is disconnected, the policy applies the next time it connects, and the screens pick it up the next time the user opens the app.
+
+## What a user sees
+
+A pinned setting is dimmed and cannot be changed, with the note **This setting is managed by your organization and cannot be changed.** A gated section disappears:
+
+| Key | Effect in the Android app |
+| --- | --- |
+| `managementURL` | The server row in settings is locked, and onboarding and the profile editor use the pinned URL. |
+| `disableProfiles` | Hides profile management. |
+| `disableNetworks` | Removes the **Networks** tab. |
+| `disableAdvancedView` | Hides **Advanced** in settings. |
+| `disableUpdateSettings` | Read-only mode: every configuration control is locked. |
+| `rosenpassEnabled`, `rosenpassPermissive`, `allowServerSSH`, `disableClientRoutes`, `disableServerRoutes`, `blockInbound`, `disableDNS`, `disableFirewall`, `disableIPv6`, `forceRelay` | Locks its own switch in **Advanced** and shows the pinned value. |
+
+The other keys have no control to lock, because the client applies them straight to the connection.
+
+## Troubleshooting
+
+**Nothing is locked in the app.**
+The app did not receive the configuration. Check that the device is enrolled in Android Enterprise, that NetBird was installed from managed Google Play, and that the managed configuration is assigned to the same device group as the app.
+
+**The app shows the policy, but the connection still behaves as before.**
+NetBird was disconnected when the policy arrived. Connect, and the new policy applies.
+
+For problems that look the same on every platform, see [Troubleshooting](/client/mdm-integration#troubleshooting) on the MDM Integration page.
+
+## Recap
+
+- Android delivers the policy as an Android Enterprise managed configuration to the NetBird app, package `io.netbird.client`.
+- The MDM console lists the keys the app accepts; the user device baseline is `managementURL`, `disableUpdateSettings`, and `disableProfiles`.
+- A change restarts the connection when NetBird is connected, and applies at the next connection otherwise.
+- Android is the only platform that applies `splitTunnelMode` and `splitTunnelApps`.

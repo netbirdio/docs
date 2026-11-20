@@ -1,7 +1,7 @@
 import { Note, Warning } from "@/components/mdx";
 
 export const description =
-  "Enforce NetBird client settings on a fleet of Windows, macOS, and iOS devices through your MDM (Intune, Jamf, Kandji, Mosyle, Workspace ONE, JumpCloud, Group Policy): how a policy is applied and locked, and what every policy key does, grouped by the job it solves.";
+  "Enforce NetBird client settings on a fleet of Windows, macOS, iOS, and Android devices through your MDM (Intune, Jamf, Kandji, Mosyle, Workspace ONE, JumpCloud, Group Policy): how a policy is applied and locked, and what every policy key does, grouped by the job it solves.";
 
 # MDM Integration
 
@@ -23,8 +23,9 @@ How to deliver a policy is specific to each operating system, so it has its own 
 | Windows | Registry, `HKLM\Software\Policies\NetBird` | [Enforce settings on Windows](/manage/peers/mdm-deployment/windows-mdm-policy): Intune, Group Policy, `.reg` import, JumpCloud |
 | macOS | `/Library/Managed Preferences/io.netbird.client.plist` | [Enforce settings on macOS](/manage/peers/mdm-deployment/macos-mdm-policy): a configuration profile for bundle id `io.netbird.client` |
 | iOS and tvOS | Managed App Configuration for bundle id `io.netbird.app` (tvOS: `io.netbird.app.tv`) | [Enforce settings on iOS](/manage/peers/mdm-deployment/ios-mdm-policy): an app configuration sent with the managed app |
+| Android | Android Enterprise managed configuration for package `io.netbird.client` | [Enforce settings on Android](/manage/peers/mdm-deployment/android-mdm-policy): a managed configuration sent with the managed app |
 
-Linux and Android have no MDM channel today. See [When not to use MDM policy](#when-not-to-use-mdm-policy).
+Linux has no MDM channel today. See [When not to use MDM policy](#when-not-to-use-mdm-policy).
 
 To plan a whole rollout, from installing the client to users signing in and a policy in place, follow [Roll Out NetBird Across Your Organization with MDM](/use-cases/deployment/mdm-rollout), which walks through it with Intune.
 
@@ -161,7 +162,8 @@ Leave these keys out unless you have a specific reason:
 - `forceRelay: true`: every connection goes through a relay, so it costs latency and relay capacity. Use it for devices on networks that block direct connections.
 - `interfaceName`, `mtu`, `natExternalIPs`, `dnsRouteInterval`, `disableIPv6Discovery`: the defaults suit almost every fleet.
 - The SSH server keys: only for devices that run the NetBird SSH server.
-- `splitTunnelMode`, `splitTunnelApps`, `disableMetricsCollection`: no effect yet.
+- `splitTunnelMode`, `splitTunnelApps`: Android only, for devices whose apps must stay in or out of NetBird.
+- `disableMetricsCollection`: no effect yet.
 
 ### The user device baseline
 
@@ -391,14 +393,21 @@ Set `wireguardPort` only when another program on the device needs the default po
 - **It narrows the candidates, not the routing.** The client still reaches the Relay, Signal, and Management services, and peers through a public address, over whatever interface the operating system routes through. To keep NetBird off a network entirely, change the device's routing, not this key.
 - **On Linux, there is no policy channel.** Set the same entries with `netbird up --extra-iface-blacklist vxlan,gre`, or ship them in the `IFaceBlackList` setting of a [configuration file](/manage/peers/bootstrap-via-config-file). That setting replaces the built-in list, so include the defaults you want to keep.
 
+### Android split tunneling keys
+
+Only the Android app applies these keys; every other platform ignores them. See [Split tunneling](/manage/peers/mdm-deployment/android-mdm-policy#split-tunneling) on the Android page.
+
+| Key | Type | What it does |
+| --- | --- | --- |
+| <span id="splitTunnelMode"></span>`splitTunnelMode` | string | `allow`: only the apps in `splitTunnelApps` go through NetBird. `disallow`: those apps stay out of it. |
+| <span id="splitTunnelApps"></span>`splitTunnelApps` | string | A comma-separated list of Android package names for `splitTunnelMode`. |
+
 ### Keys with no effect yet
 
-The client recognizes these keys, so they do no harm in a payload, but none of them changes anything today.
+The client recognizes this key, so it does no harm in a payload, but it changes nothing today.
 
 | Key | Type | Status |
 | --- | --- | --- |
-| <span id="splitTunnelMode"></span>`splitTunnelMode` | string | `allow` or `disallow`. Intended for per-app split tunneling on Android, which has no MDM channel yet. Ignored on every other platform. |
-| <span id="splitTunnelApps"></span>`splitTunnelApps` | string | A comma-separated list of Android package names for `splitTunnelMode`. Same status. |
 | <span id="disableMetricsCollection"></span>`disableMetricsCollection` | boolean | Reserved for a future client telemetry feature. Unrelated to `enableLocalMetrics`. |
 
 ## Verifying enforcement
@@ -423,11 +432,11 @@ If a key you sent is missing from the array, the policy did not reach the device
 
 `netbird debug config` reads the policy file at the moment you run it, so it shows a change straight away. The daemon applies the change at its next reload, within a minute, and logs it: `MDM policy changed: added=[...] removed=[...] changed=[...]`, followed, while the client is connected, by `MDM policy changed; restarting engine to apply new configuration`. Those lines are the confirmation that the policy is enforced, not just delivered. The client log records the same information on every reload: one `MDM enrolled with N managed key(s): [...]` line, and one `MDM override <key> = <value>` line for each setting it overrode, with secrets redacted. The log is `/var/log/netbird/client.log` on macOS and `C:\ProgramData\Netbird\client.log` on Windows.
 
-On iOS there is no CLI. See [Verifying on a device](/manage/peers/mdm-deployment/ios-mdm-policy#verifying-on-a-device).
+On iOS and Android there is no CLI. See [Verifying on a device](/manage/peers/mdm-deployment/ios-mdm-policy#verifying-on-a-device) for iOS, and [What a user sees](/manage/peers/mdm-deployment/android-mdm-policy#what-a-user-sees) for Android.
 
 ## Troubleshooting
 
-Problems specific to one delivery channel, such as a Group Policy that never reaches the registry or a macOS profile that disappears after a reboot, are covered on the [Windows](/manage/peers/mdm-deployment/windows-mdm-policy#intune-troubleshooting), [macOS](/manage/peers/mdm-deployment/macos-mdm-policy#troubleshooting), and [iOS](/manage/peers/mdm-deployment/ios-mdm-policy#troubleshooting) pages. The problems below look the same on every platform.
+Problems specific to one delivery channel, such as a Group Policy that never reaches the registry or a macOS profile that disappears after a reboot, are covered on the [Windows](/manage/peers/mdm-deployment/windows-mdm-policy#intune-troubleshooting), [macOS](/manage/peers/mdm-deployment/macos-mdm-policy#troubleshooting), [iOS](/manage/peers/mdm-deployment/ios-mdm-policy#troubleshooting), and [Android](/manage/peers/mdm-deployment/android-mdm-policy#troubleshooting) pages. The problems below look the same on every platform.
 
 **`mDMManagedFields` is empty or missing keys.**
 Start at the source. Confirm the values are in the registry or the managed-preferences file, using the commands on the platform page. If they are, look for `MDM ignoring unknown` in the client log: the value name does not match any key in the [reference](#policy-keys-reference). Names are matched without regard to case, but must otherwise be exact. `WireGuardPort`, for example, matches; `WgPort` does not.
@@ -469,11 +478,11 @@ Check for `disableClientRoutes: true` or a `preSharedKey` in the policy. The fir
 A routing peer received `blockInbound: true` or `disableServerRoutes: true`, and stopped forwarding. Take routing peers out of the policy's scope.
 
 **My MDM is not mentioned on these pages.**
-Any MDM that can write a registry value on Windows, push a configuration profile on macOS, or send an app configuration on iOS works, because the mechanism belongs to the operating system, not to NetBird.
+Any MDM that can write a registry value on Windows, push a configuration profile on macOS, send an app configuration on iOS, or send a managed configuration on Android works, because the mechanism belongs to the operating system, not to NetBird.
 
 ## When not to use MDM policy
 
-- **Linux and Android devices.** Neither has an MDM channel in NetBird today. On Linux, set the same options with `netbird up` flags or the service-install flags (`netbird service install --disable-update-settings --disable-profiles --disable-networks`), or [bootstrap the client from a config file](/manage/peers/bootstrap-via-config-file).
+- **Linux devices.** Linux has no MDM channel in NetBird today. Set the same options with `netbird up` flags or the service-install flags (`netbird service install --disable-update-settings --disable-profiles --disable-networks`), or [bootstrap the client from a config file](/manage/peers/bootstrap-via-config-file).
 - **One device, one change.** To change a setting on a single machine you manage by hand, use the app or the CLI. A policy is for settings that must hold across a fleet and must not drift.
 - **Access control.** A policy configures the client on one device. Which peers can reach which resources belongs in [access policies](/manage/access-control), which apply to every device and do not depend on an MDM.
 
