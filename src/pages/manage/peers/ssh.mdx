@@ -7,8 +7,8 @@ NetBird provides SSH access to peers through its built-in SSH server. Unlike tra
 NetBird SSH supports fine-grained access control, allowing you to specify which NetBird users can access which local OS users on target machines.
 
 <Note>
-    SSH Access is disabled by default and must be enabled both on the target
-    peer and in the NetBird Dashboard.
+    SSH Access is disabled by default. Enable the SSH server on the target
+    peer and create a NetBird SSH access policy in the NetBird Dashboard.
 </Note>
 
 ## Concepts
@@ -17,7 +17,7 @@ NetBird SSH supports fine-grained access control, allowing you to specify which 
 
 Each NetBird peer can run an embedded SSH server by enabling `--allow-server-ssh`. From the peer's perspective the session arrives on its normal port (TCP 22); internally it's re-routed to the NetBird client on port 22022. 
 
-Management may automatically ensure the mesh access policy permits 22022 for a peer when the policy explicitly allows port 22 (or a range containing 22) and the peer advertises native SSH support (NetBird v0.60.0+). That access policy is distributed by the management plane; enforcement and forwarding are performed by the NetBird client on the peer.
+Management may automatically ensure the mesh access policy permits 22022 for a peer when a TCP policy explicitly allows port 22 (or a range containing 22) and the peer advertises native SSH support (NetBird v0.60.0+), allows server SSH, and has the legacy dashboard SSH setting enabled. That access policy is distributed by the management plane; enforcement and forwarding are performed by the NetBird client on the peer.
 
 ### Authentication Methods
 
@@ -26,7 +26,7 @@ Management may automatically ensure the mesh access policy permits 22022 for a p
 
 ### OpenSSH Integration
 
-NetBird can provide configuration so the remote peer's OpenSSH clients behave transparently. The remote peer's NetBird client performs interception and JWT handling; NetBird may install OpenSSH configuration snippets on the client to simplify usage. The interception and forwarding logic lives in the remote peer's NetBird client, not the management server.
+NetBird can provide configuration so the connecting machine's OpenSSH clients behave transparently. The connecting machine's NetBird client (`netbird ssh proxy`) performs JWT handling, and the target peer's NetBird client redirects incoming TCP port 22 traffic to its SSH server on port 22022. NetBird may install OpenSSH configuration snippets on the client to simplify usage. The interception and forwarding logic lives in the NetBird clients, not the management server.
 
 ### Port 22 Redirection
 
@@ -37,8 +37,8 @@ The management server does not edit your host OS firewall or perform OS-level po
 
 **Behavior:**
 
-- A modern NetBird client can intercept an `ssh user@remote` (which targets remote:22) and redirect the SSH stream to the NetBird client on port 22022. 
-- Management will auto-add a NetBird access-policy rule for 22022 when a policy allows 22 (or a range containing 22) and the peer supports native SSH (v0.60.0+) and SSH is enabled on the peer in the NetBird dashboard.
+- The target peer's NetBird client intercepts an `ssh user@remote` (which targets remote:22) arriving on the NetBird interface and redirects the SSH stream to its SSH server on port 22022.
+- Management will auto-add a NetBird access-policy rule for 22022 when a TCP policy allows 22 (or a range containing 22), the peer supports native SSH (v0.60.0+) and allows server SSH, and SSH is enabled on the peer in the NetBird dashboard. That dashboard setting is legacy. It only appears on peers where it is already on, and it can't be re-enabled from the dashboard once turned off. For new setups, create a **NetBird SSH** access policy instead.
 
 ## Requirements
 
@@ -108,6 +108,8 @@ sudo netbird up --allow-server-ssh \
   --enable-ssh-root
 ```
 
+Running `netbird up` while already connected prints `Already connected` and ignores new flags, so run `sudo netbird down` first. These flags are saved in the client profile. To turn a feature off later, pass it explicitly as false, for example `--enable-ssh-sftp=false`.
+
 <Note>
   Enabling the SSH server, enabling root login, and disabling SSH
   authentication require root on Linux and macOS, or an administrator on
@@ -136,7 +138,7 @@ Create an ACL policy to allow SSH access:
 3. Create a new policy:
 - **Source**: Select the peers or groups that will connect via SSH
 - **Destination**: Select the peers or groups running the SSH server
-- **Protocol**: Select `NetBird SSH` for SSH-specific policies with fine-grained access control, or use `TCP` with port 22 for basic network-level SSH access
+- **Protocol**: Select `NetBird SSH` for SSH-specific policies with fine-grained access control. A `TCP` port 22 policy only enables SSH on peers that still have the legacy dashboard SSH setting turned on, and then authorizes every user.
 - **Authorized Groups** (when using NetBird SSH protocol): Configure which user groups can access which local OS users on the destination machines
 4. Save the policy
 
@@ -187,6 +189,8 @@ NetBird creates `/etc/ssh/ssh_config.d/99-netbird.conf` (or equivalent on your O
 1. Detects if the target is a NetBird SSH server
 2. Handles JWT authentication transparently
 3. Handles server host key verification
+
+Automatic host key handling applies only to SSH servers that require JWT authentication. When the target runs with `--disable-ssh-auth`, OpenSSH connects directly and you must accept the host key yourself (for example, with `-o StrictHostKeyChecking=accept-new`).
 
 **Using OpenSSH:**
 
@@ -317,8 +321,8 @@ When creating or editing an SSH policy in the Dashboard:
 3. Configure the **Source** - select the user groups that will connect via SSH
 4. Configure the **Destination** - select the peers or groups running the SSH server
 5. Under **SSH Access**, choose the access level:
-   - **Full Access**: Allow SSH as any local user on the destination machines
-   - **Limited Access**: Specify which local users each source group can access
+   - **Full Access**: Allow any active, non-service user in your account to SSH as any local user on the destination machines when connecting from a source peer (not restricted to members of the source groups)
+   - **Limited Access**: Restrict access to members of the source groups and specify which local users each source group can access
 6. If you selected **Limited Access**, configure the user mappings:
    - For each source group, specify which local OS users they are allowed to SSH as
    - Add multiple local users per group as needed (e.g., `ashley`, `root`)
@@ -337,7 +341,7 @@ When creating or editing an SSH policy in the Dashboard:
 | SysAdmins    | root, admin         |
 
 <Note>
-    When **Full Access** is selected, users in the source groups can SSH as any local user on the destination machines. Use **Limited Access** to enforce the principle of least privilege.
+    When **Full Access** is selected, any active, non-service user in the account can SSH as any local user when connecting from a source peer, even if they are not in the source groups. Use **Limited Access** to restrict access to members of each source group and enforce the principle of least privilege.
 </Note>
 
 ### Authorization Flow
@@ -471,12 +475,7 @@ NetBird SSH is supported on the following platforms:
 
 Port forwarding has the following limitations:
 
-- **Not supported with native SSH clients**: Port forwarding (both local `-L` and remote `-R`) is **only available** when using the `netbird ssh` command directly
-- Native OpenSSH clients **cannot** use port forwarding
-- This is a current implementation limitation
-- Use `netbird ssh -L` or `netbird ssh -R` instead of `ssh -L` or `ssh -R`
 - **Not supported on Windows servers**: SSH servers running on Windows cannot accept port forwarding requests
-- **No user switching with port forwarding**: Port forwarding only works when connecting as the user running the NetBird process
 
 ### User Mapping
 
@@ -517,7 +516,7 @@ To disable the Netbird SSH server run `netbird down && netbird up --allow-server
 **"SSH server not detected"** or **"Permission denied (publickey)"** or **"No more authentication methods available"**
 
 - Ensure the target peer is running with `--allow-server-ssh`
-- Verify SSH is enabled in the dashboard for the target peer
+- Verify that a NetBird SSH policy targets the peer
 - Check that the target peer is online and connected
 
 **"Authentication failed"** (JWT authentication)
@@ -559,6 +558,8 @@ To disable the Netbird SSH server run `netbird down && netbird up --allow-server
 - Verify you're connecting with the correct user
 
 ### Fine-Grained Access Control Issues
+
+These error messages appear in the target peer's client log (`/var/log/netbird/client.log`). On the connecting machine, the SSH client only prints `ssh: unable to authenticate, attempted methods [none password], no supported methods remain`.
 
 **"User is not authorized to access this peer"**
 
@@ -635,7 +636,7 @@ Version 0.60.0 is a complete rewrite of NetBird SSH with breaking changes.
 - OpenSSH client support via automatic proxy configuration
 - Windows client and server support
 - SFTP subsystem for file transfers
-- Local and remote port forwarding (`netbird ssh` only)
+- Local and remote port forwarding
 - Non-interactive command execution
 - Configurable JWT token caching
 

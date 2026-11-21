@@ -16,7 +16,7 @@ Every edit in the NetBird dashboard applies the moment you save it. That is fine
     **Permissions:** Deploying a draft performs the same operations as making those changes on their regular dashboard pages, so it requires the same permissions. Learn more about [user roles](/manage/team/user-roles).
 </Note>
 
-A draft moves through three stages: **build** on the canvas, **review** the change list, and **deploy** as one batch. Nothing touches your account until you click **Approve & Deploy**.
+A draft moves through three stages: **build** on the canvas, **review** the change list, and **deploy** as one batch. Nothing touches your account until you click **Approve & Deploy**, except when you click **Generate Key** for a placeholder peer. That immediately creates a real one-off setup key and a `<placeholder> (Draft)` group, which are removed when the peer registers or the draft is discarded.
 
 One example carries through the whole page: giving `DevOps` HTTPS access to `staging-01`, a new staging server that is not even installed yet.
 
@@ -42,8 +42,8 @@ The toolbar at the bottom of the canvas holds the select and hand (pan) tools, z
 
 ### Select and Pan
 
-- **Select** (`V`) is the default tool: click a node to select it, drag it to move it, or drag across empty canvas to select several nodes at once.
-- **Hand** (`H`) pans the canvas as you drag, so you can move around a large draft without touching any nodes.
+- **Select** (`V`): click a node to select it, drag it to move it, or drag across empty canvas to select several nodes at once.
+- **Hand** (`H`) is the default tool. It pans the canvas as you drag empty space, and you can still drag a node to move it.
 
 ### Add Nodes
 
@@ -111,7 +111,7 @@ Drag the `staging-01` node onto the `Staging` group. The peer is absorbed into t
            label="Dragging the staging-01 peer onto the Staging group, which absorbs it and updates its member count"/>
 </p>
 
-To group several peers at once, drag a selection across them, then click **Create Group** in the selection menu (or press `G`) and name the group:
+To group several peers at once, switch to the **Select** tool (`V`), drag a selection across them, then click **Create Group** in the selection menu (or press `G`) and name the group:
 
 <p>
     <Video src="/docs-static/img/manage/control-center/control-center-draft-group-from-selection.mp4"
@@ -131,7 +131,7 @@ That is the whole change: a new server, its group, and one policy, and nothing h
 
 A few more ways to build policies:
 
-- **The side you drag from decides the direction.** Dragging a connection from a node's right handle makes that node the policy's **source**; dragging from the left handle makes it the **destination**.
+- **The node you drag from decides the direction.** When you connect two nodes directly, the node you drag from becomes the **source**, whichever handle you use. When you connect a node to a **Policy** node, dragging from the node's right handle makes it the policy's **source**; dragging from the left handle makes it the **destination**.
 - **Policies without the editor**: drop a blank **Policy** node and connect a source and a destination to it. The policy is tracked as soon as both sides are set, no dialog involved.
 - **Groups on the fly**: typing a new name into the policy editor's source or destination selector creates that group as part of the draft.
 
@@ -139,9 +139,9 @@ A few more ways to build policies:
 
 `staging-01` does not exist yet, and Draft Mode does not need it to. A placeholder peer holds the machine's place on the canvas: you can group it and write policies against it, and when the real machine registers, it inherits everything you prepared.
 
-To turn the placeholder into a real peer, hover it and click **Install**:
+To turn the placeholder into a real peer, click **Install** above it:
 
-1. The **Install NetBird** dialog opens with instructions per operating system. Click **Generate a setup key** and run the shown command on the machine.
+1. The **Install NetBird** dialog opens with instructions per operating system. Click **Generate Key** and run the shown command on the machine.
 
 <p>
     <img src="/docs-static/img/manage/control-center/control-center-draft-install-modal.png"
@@ -149,7 +149,7 @@ To turn the placeholder into a real peer, hover it and click **Install**:
 </p>
 
 2. The placeholder switches to **Waiting** while the machine registers.
-3. When it connects, the placeholder is replaced in place: the real `staging-01` takes over its name, its `Staging` membership, and the policy you drew. The temporary setup key is deleted automatically.
+3. When it connects, the placeholder is replaced in place: the real peer keeps its own name and takes over the placeholder's `Staging` membership and the policy you drew. The temporary setup key and the `(Draft)` group are deleted automatically.
 
 <Note>
     Installing a peer is a real-world step, not an API call: a draft cannot be deployed until every placeholder has registered or been removed.
@@ -161,7 +161,7 @@ To turn the placeholder into a real peer, hover it and click **Install**:
 **Remove** and **Delete** do different things:
 
 - **Remove** takes a component off the canvas and nothing more. It never asks for confirmation because it never touches your network; removing something also cancels any pending change it was part of. `Backspace` on a selected node does the same.
-- **Delete** is only offered for things that actually exist in your account. It always asks for confirmation, shows up as a red **Delete** entry in the review list, and the deletion happens at deploy.
+- **Delete** is only offered for things that actually exist in your account. It always asks for confirmation, shows up as a red **Delete** entry in the review list, and the deletion happens at deploy. A group can only be deleted when nothing uses it (peers, policies, resources, or setup keys). A group that is in use shows only **View Details**, **Rename**, and **Remove**.
 
 <Note>
     Removing an existing group from the canvas does **not** delete it; it only leaves your draft. If your intent is "this group should be gone from my network", you want **Delete**.
@@ -172,7 +172,7 @@ To turn the placeholder into a real peer, hover it and click **Install**:
 Click **Review & Deploy**. The review dialog lists every change in the exact order it will be applied, one row per operation:
 
 - Each row shows the affected component and the HTTP request that will be sent (like `POST /groups`). Clicking the request copies it as a `cURL` command; expanding the row shows the request body as a diff.
-- For our example you would see the `Staging` group creation, the `DevOps → Staging` policy creation, and the `staging-01` install step.
+- For our example you would see the `staging-01` install step, the `Staging` group creation, and the `DevOps → Staging` policy creation.
 
 If something is unfinished, the row carries an amber issue badge you can click to fix it in place: **Install** for a placeholder that has no machine yet, or **No Network** for a resource that is not assigned to any network. **Approve & Deploy** stays disabled until every blocking issue is resolved.
 
@@ -185,7 +185,7 @@ To drop a single change without discarding the whole draft, open the row's menu 
 
 When everything is green, click **Approve & Deploy**:
 
-- Changes apply in dependency order: groups first, then networks, resources, routing peers, and policies, with deletions last. References resolve as the batch runs, so the new policy points at the `Staging` group created moments earlier.
+- Changes apply in dependency order: groups first, then user group-membership updates, networks, resources, routing peers, and policies. Policy deletions run with the policies, and other deletions run last. References resolve as the batch runs, so the new policy points at the `Staging` group created moments earlier.
 - If a request fails, the deploy stops with the error. Changes that already applied stay applied and are marked with a check; fix the failing one and click **Approve & Deploy** again to resume from where it stopped.
 - On success you get a **Deploy complete** confirmation, the draft closes, and the live canvas rebuilds with your changes in place.
 
@@ -217,7 +217,7 @@ For a single, self-contained edit, like widening one policy's port range, Draft 
 
 ## Recap
 
-- A draft is a working copy of your network: build on the canvas, review the change list, deploy as one batch. Nothing is written until you click **Approve & Deploy**.
+- A draft is a working copy of your network: build on the canvas, review the change list, deploy as one batch. Nothing is written until you click **Approve & Deploy**, except for the temporary setup key and `<placeholder> (Draft)` group created if you click **Generate Key** for a placeholder peer.
 - Our example never left that path: we placed `staging-01`, grouped it into `Staging`, and drew a least-privilege HTTPS policy from `DevOps`, all before the server even existed.
 - Installing a placeholder slots the real machine into everything you prepared for it.
 - Remove edits the canvas; Delete edits your network.
