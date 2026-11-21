@@ -19,6 +19,10 @@ netbird [command] [subcommand] [flags]
 
 Run any command with `--help` to see its flags. A command rejects flags it does not accept. For example, `netbird up --setup-key <key>` works, but `netbird status --setup-key <key>` fails with `unknown flag: --setup-key`.
 
+<Note>
+    The per-command flags, flag dependencies, and removed flags on this page apply to client versions after v0.83.1. Up to v0.83.1, `--setup-key`, `--management-url`, `--hostname`, `--config`, and `--anonymize` are global flags, so every command accepts them and ignores the ones it doesn't use. For example, `netbird status --setup-key <key>` prints the status instead of failing. Run `netbird <command> --help` to see what your version accepts.
+</Note>
+
 ### Flag value syntax
 
 - **Boolean flags** that default to `false` can be enabled by passing the flag: `--block-inbound`.
@@ -287,230 +291,94 @@ The minimal form of running the command is:
 ```shell
 netbird status
 ```
-This will output:
+This will output something similar to:
 ```shell
 OS: linux/amd64
-Daemon version: 0.27.4
-CLI version: 0.27.4
+Daemon version: 0.83.1
+CLI version: 0.83.1
+Profile: default
 Management: Connected
 Signal: Connected
 Relays: 2/2 Available
-Nameservers: 1/1 Available
-NetBird IP: 100.119.62.6/16
+Nameservers: 0/0 Available
+FQDN: laptop-anna.netbird.selfhosted
+NetBird IP: 100.64.0.31/16
+NetBird IPv6: fd00:1234:5678:9abc::31/64
 Interface type: Kernel
+Wireguard port: 51820
 Quantum resistance: false
-Routes: -
+Lazy connection: false
+SSH Server: Disabled
+Networks: -
 Peers count: 2/3 Connected
 ```
-
 If you want to see more details about the peer connections, you can use the `--detail` or `-d` flag:
 ```shell
 netbird status -d
 ```
-This will output:
+This adds a block for each peer and a list of recent events, and the summary at the end shows the Management, Signal, and relay addresses. A shortened example with one direct and one relayed peer:
 ```shell
 Peers detail:
- Peer:
-  NetBird IP: 100.119.85.4
+ web-01.netbird.selfhosted:
+  NetBird IP: 100.64.0.12
+  NetBird IPv6: fd00:1234:5678:9abc::12
   Public key: 2lI3F+fDUWh58g5oRN+y7lPHpNcEVWhiDv/wr1/jiF8=
-  Status: Disconnected
+  Status: Connected
   -- detail --
-  Connection type: -
-  Direct: false
-  ICE candidate (Local/Remote): -/-
-  ICE candidate endpoints (Local/Remote): -/-
-  Last connection update: 26 seconds ago
-  Last Wireguard handshake: -
-  Transfer status (received/sent) 0 B/0 B
+  Connection type: P2P
+  ICE candidate (Local/Remote): host/host
+  ICE candidate endpoints (Local/Remote): [2001:db8::31]:51820/[2001:db8::12]:51820
+  Relay server address: rels://netbird.example.com:443
+  Last connection update: 9 seconds ago
+  Last WireGuard handshake: 9 seconds ago
+  Transfer status (received/sent) 380 B/404 B
   Quantum resistance: false
-  Routes: -
-  Latency: 10.74ms
+  Networks: -
+  Latency: 6.854362ms
 
- Peer:
-  NetBird IP: 100.119.201.225
+ db-01.netbird.selfhosted:
+  NetBird IP: 100.64.0.15
+  NetBird IPv6: fd00:1234:5678:9abc::15
   Public key: +jkH8cs/Fo83qdB6dWG16+kAQmGTKYoBYSAdLtSOV10=
   Status: Connected
   -- detail --
-  Connection type: P2P
-  Direct: true
-  ICE candidate (Local/Remote): host/host
+  Connection type: Relayed
+  ICE candidate (Local/Remote): -/-
   ICE candidate endpoints (Local/Remote): -/-
-  Last connection update: 26 seconds ago
-  Last Wireguard handshake: 25 seconds ago
-  Transfer status (received/sent) 2.0 KiB/355 B
+  Relay server address: rels://netbird.example.com:443
+  Last connection update: 9 seconds ago
+  Last WireGuard handshake: 8 seconds ago
+  Transfer status (received/sent) 380 B/404 B
   Quantum resistance: false
-  Routes: 10.0.0.0/24
-  Latency: 20.14ms
+  Networks: -
+  Latency: 0s
 
- Peer:
-  NetBird IP: 100.119.230.104
-  Public key: R7olj0S8jiYMLfOWK+wDto+j3pE4vR54tLGrEQKgBSw=
-  Status: Connected
-  -- detail --
-  Connection type: P2P
-  Direct: true
-  ICE candidate (Local/Remote): host/host
-  ICE candidate endpoints (Local/Remote): -/-
-  Last connection update: 26 seconds ago
-  Last Wireguard handshake: 24 seconds ago
-  Transfer status (received/sent) 2.4 MiB/532 KiB
-  Quantum resistance: false
-  Routes: -
-  Latency: 16.24ms
-
+Events:
+...
 OS: linux/amd64
-Daemon version: 0.27.4
-CLI version: 0.27.4
-Management: Connected to https://api.netbird.io:443
-Signal:  Connected to https://signal.netbird.io:443
+Daemon version: 0.83.1
+CLI version: 0.83.1
+Profile: default
+Management: Connected to https://netbird.example.com:443
+Signal: Connected to https://netbird.example.com:443
 Relays:
-  [stun:stun.netbird.io:5555] is Available
-  [turns:turn.netbird.io:443?transport=tcp] is Available
-Nameservers:
-  [8.8.8.8:53, 8.8.4.4:53] for [.] is Available
-NetBird IP: 100.119.62.6/16
-Interface type: Kernel
-Quantum resistance: false
-Routes: -
-Peers count: 2/3 Connected
+  [stun:netbird.example.com:3478] is Available
+  [rels://netbird.example.com:443] is Available via ws
+...
 ```
-To filter the peers' output by connection status, you can use the `--filter-by-status` flag with either "connected" or "disconnected" as value:
+To show only peers in a given state, use `--filter-by-status` with `idle`, `connecting`, or `connected`:
 ```shell
 netbird status -d --filter-by-status connected
 ```
-This will output:
+To show only specific peers, use `--filter-by-ips` with one or more NetBird IPs separated by commas:
 ```shell
-Peers detail:
- Peer:
-  NetBird IP: 100.119.201.225
-  Public key: +jkH8cs/Fo83qdB6dWG16+kAQmGTKYoBYSAdLtSOV10=
-  Status: Connected
-  -- detail --
-  Connection type: P2P
-  Direct: true
-  ICE candidate (Local/Remote): host/host
-  ICE candidate endpoints (Local/Remote): -/-
-  Last connection update: 28 seconds ago
-  Last Wireguard handshake: 27 seconds ago
-  Transfer status (received/sent) 2.0 KiB/355 B
-  Quantum resistance: false
-  Routes: 10.0.0.0/24
-  Latency: 20.14ms
-
- Peer:
-  NetBird IP: 100.119.230.104
-  Public key: R7olj0S8jiYMLfOWK+wDto+j3pE4vR54tLGrEQKgBSw=
-  Status: Connected
-  -- detail --
-  Connection type: P2P
-  Direct: true
-  ICE candidate (Local/Remote): host/host
-  ICE candidate endpoints (Local/Remote): -/-
-  Last connection update: 28 seconds ago
-  Last Wireguard handshake: 26 seconds ago
-  Transfer status (received/sent) 2.4 MiB/532 KiB
-  Quantum resistance: false
-  Routes: -
-  Latency: 16.24ms
-
-OS: linux/amd64
-Daemon version: 0.27.4
-CLI version: 0.27.4
-Management: Connected to https://api.netbird.io:443
-Signal:  Connected to https://signal.netbird.io:443
-Relays:
-  [stun:stun.netbird.io:5555] is Available
-  [turns:turn.netbird.io:443?transport=tcp] is Available
-Nameservers:
-  [8.8.8.8:53, 8.8.4.4:53] for [.] is Available
-NetBird IP: 100.119.62.6/16
-Interface type: Kernel
-Quantum resistance: false
-Routes: -
-Peers count: 2/3 Connected
+netbird status -d --filter-by-ips 100.64.0.12
 ```
-To filter the peers' output by peer IP addresses, you can use the `--filter-by-ips` flag with one or more IPs separated by a comma as a value:
+Filters can be combined. This shows only the listed peers that are connected:
 ```shell
-netbird status -d --filter-by-ips 100.119.201.225
+netbird status -d --filter-by-status connected --filter-by-ips 100.64.0.12,100.64.0.40
 ```
-This will output:
-```shell
-Peers detail:
- Peer:
-  NetBird IP: 100.119.201.225
-  Public key: +jkH8cs/Fo83qdB6dWG16+kAQmGTKYoBYSAdLtSOV10=
-  Status: Connected
-  -- detail --
-  Connection type: P2P
-  Direct: true
-  ICE candidate (Local/Remote): host/host
-  ICE candidate endpoints (Local/Remote): -/-
-  Last connection update: 32 seconds ago
-  Last Wireguard handshake: 30 seconds ago
-  Transfer status (received/sent) 2.0 KiB/355 B
-  Quantum resistance: false
-  Routes: 10.0.0.0/24
-  Latency: 20.14ms
-
-OS: linux/amd64
-Daemon version: 0.27.4
-CLI version: 0.27.4
-Management: Connected to https://api.netbird.io:443
-Signal:  Connected to https://signal.netbird.io:443
-Relays:
-  [stun:stun.netbird.io:5555] is Available
-  [turns:turn.netbird.io:443?transport=tcp] is Available
-Nameservers:
-  [8.8.8.8:53, 8.8.4.4:53] for [.] is Available
-NetBird IP: 100.119.62.6/16
-Interface type: Kernel
-Quantum resistance: false
-Routes: -
-Peers count: 2/3 Connected
-```
-You can combine both filters and get the peers that are both connected and with specific IPs:
-```shell
-netbird status -d --filter-by-status connected --filter-by-ips 100.119.85.4,100.119.230.104
-```
-This will output:
-```shell
-Peers detail:
-
- Peer:
-  NetBird IP: 100.119.230.104
-  Public key: R7olj0S8jiYMLfOWK+wDto+j3pE4vR54tLGrEQKgBSw=
-  Status: Connected
-  -- detail --
-  Connection type: P2P
-  Direct: true
-  ICE candidate (Local/Remote): host/host
-  ICE candidate endpoints (Local/Remote): -/-
-  Last connection update: 35 seconds ago
-  Last Wireguard handshake: 33 seconds ago
-  Transfer status (received/sent) 2.4 MiB/532 KiB
-  Quantum resistance: false
-  Routes: -
-  Latency: 16.24ms
-
-OS: linux/amd64
-Daemon version: 0.27.4
-CLI version: 0.27.4
-Management: Connected to https://api.netbird.io:443
-Signal:  Connected to https://signal.netbird.io:443
-Relays:
-  [stun:stun.netbird.io:5555] is Available
-  [turns:turn.netbird.io:443?transport=tcp] is Available
-Nameservers:
-  [8.8.8.8:53, 8.8.4.4:53] for [.] is Available
-NetBird IP: 100.119.62.6/16
-Interface type: Kernel
-Quantum resistance: false
-Routes: -
-Peers count: 2/3 Connected
-```
-<Note>
-    The peer with IP `100.119.85.4` wasn't returned because it was not connected
-</Note>
+The peer count in the summary reflects the filter, for example `Peers count: 1/1 Connected`.
 
 #### Table view
 
@@ -783,6 +651,7 @@ netbird profile [command]
 - `rename`: Rename a profile (by exact ID, unique name, or unique ID prefix) to a new free-form name. The default profile can be renamed.
 - `remove`: Remove a profile by exact ID, unique name, or unique ID prefix.
 - `select`: Select a profile to use by exact ID, unique name, or unique ID prefix.
+- `claim`: Record an owner on a profile. See [Set up a headless machine](/client/profile-ownership#set-up-a-headless-machine).
 
 ### version
 Outputs the `netbird` command version.
@@ -793,7 +662,7 @@ netbird version
 ```
 This will output:
 ```shell
-0.8.2
+0.83.1
 ```
 
 ### service
@@ -891,8 +760,12 @@ netbird debug [command]
 ```
 #### Subcommands
 - `bundle`: Create a debug bundle that includes logs and system information for troubleshooting.
+- `capture`: Capture packets on the NetBird interface. The service must be installed with `--enable-capture`.
+- `config`: Print the effective client configuration.
+- `cpu`: Profile the daemon's CPU usage.
 - `for`: Run the daemon with trace logging for a specified duration and create a debug bundle.
 - `log`: Manage logging levels for the NetBird daemon.
+- `persistence`: Keep the latest sync response from Management in memory (`on` or `off`).
 - `trace`: Trace a packet through the firewall.
 
 #### Flags
@@ -926,6 +799,7 @@ netbird debug bundle
 
 This will output:
 ```
+Local file:
 /tmp/netbird.debug.676945815.zip
 ```
 
@@ -951,24 +825,25 @@ netbird debug for <time> [-A] [-S] [-U] [-C <count>]
 ```
 
 #### Examples
-Run debugging for 5 minutes and generate an anonymized debug bundle:
+Run debugging for 5 minutes and generate a debug bundle. Add `-A` to anonymize it:
 ```shell
 netbird debug for 5m
 ```
 
 This will output something similar to:
 ```
-Netbird up
 Log level set to trace.
-Netbird down
-Netbird up
+netbird down
+netbird up
 Remaining time: 00:00:01
 Duration completed
 Creating debug bundle...
-Netbird down
 Log level restored to INFO
+Local file:
 /tmp/netbird.debug.3162242909.zip
 ```
+
+The command restarts the connection before it starts collecting, so this peer is briefly disconnected.
 
 #### Flags
 ```shell
@@ -1015,7 +890,7 @@ Log level set successfully to debug
 Traces a packet through the firewall rules to diagnose policy issues. You specify the direction, source IP, destination IP, protocol, and optional port/flag parameters. Use `self` as an alias for the local peer's IP.
 
 <Note>
-    On Linux, the userspace packet filter is only active when the kernel firewall backend is not available. By default, Linux uses the kernel-mode nftables/iptables backend, so `debug trace` is primarily useful on macOS and Windows where the userspace filter is always used.
+    `debug trace` works only with NetBird's userspace packet filter, which macOS and Windows always use. Linux uses the kernel nftables or iptables backend when it's available, and there `debug trace` fails with `firewall manager does not support packet tracing`. The rootless container image runs in netstack mode with the userspace filter, so `debug trace` works there.
 </Note>
 
 #### Usage

@@ -6,10 +6,10 @@ The NetBird client allows a peer to join a pre-existing NetBird deployment. If a
 
 ## Desktop App Dependencies
 
-The desktop app introduced in NetBird v0.75.0 renders its interface in a GTK 4 WebKit webview. The `netbird-ui` package does not declare these libraries as dependencies, so install them alongside it.
+The desktop app introduced in NetBird v0.75.0 renders its interface in a GTK 4 WebKit webview. From v0.76.2, the `netbird-ui` DEB and RPM packages declare GTK 4 (4.14+) and WebKitGTK 6.0 as dependencies (and `xdg-utils` from v0.77.0), so APT and DNF install them with the app. The commands below also name them explicitly, which covers older package versions.
 
 <Warning>
-The desktop app requires **GTK 4.10 or newer** and **WebKitGTK 6.0**. On older GTK 4 releases the app starts but crashes as soon as it opens a file dialog, so install the `netbird` CLI only on those systems.
+The desktop app requires **GTK 4.14 or newer** and **WebKitGTK 6.0** (the `netbird-ui` packages enforce GTK 4.14+ as a dependency, and older GTK 4 releases crash when opening a file dialog). Install the `netbird` CLI only on older systems.
 </Warning>
 
 Minimum releases that satisfy both requirements:
@@ -22,7 +22,7 @@ Minimum releases that satisfy both requirements:
 | RHEL / AlmaLinux / Rocky | 10 and newer, with [EPEL](https://docs.fedoraproject.org/en-US/epel/getting-started/) | any supported release |
 | Amazon Linux | not available | 2 and 2023 |
 
-Ubuntu 22.04 (GTK 4.6) and Debian 12 (GTK 4.8) ship WebKitGTK 6.0 but their GTK 4 is below 4.10, so the desktop app is not supported there. RHEL 9 provides neither GTK 4.10 nor WebKitGTK 6.0.
+Ubuntu 22.04 (GTK 4.6) and Debian 12 (GTK 4.8) ship WebKitGTK 6.0 but their GTK 4 is below 4.14, so the desktop app is not supported there. RHEL 9 provides neither GTK 4.14 nor WebKitGTK 6.0.
 
 **Debian 13+ / Ubuntu 24.04+**
 
@@ -36,7 +36,7 @@ sudo apt-get install libgtk-4-1 libwebkitgtk-6.0-4 xdg-utils
 sudo dnf install gtk4 webkitgtk6.0 xdg-utils
 ```
 
-On other distributions, install the equivalent **GTK 4** (4.10+), **WebKitGTK 6.0**, and **xdg-utils** packages from your package manager. Many desktop systems already include some or all of them.
+On other distributions, install the equivalent **GTK 4** (4.14+), **WebKitGTK 6.0**, and **xdg-utils** packages from your package manager. Many desktop systems already include some or all of them.
 
 <Note>
 Linux `netbird-ui` packages are built for **x86_64** only. On arm64 and other architectures, use the `netbird` CLI.
@@ -108,14 +108,8 @@ gpgkey=https://pkgs.netbird.io/yum/repodata/repomd.xml.key
 repo_gpgcheck=1
 EOF
 ```
-2. Import the file
-```bash
-#Fedora 40 or earlier/Amazon Linux 2023** (DNF 4)
- sudo dnf config-manager --add-repo /etc/yum.repos.d/netbird.repo
-#Fedora 41 or later (DNF 5)
- sudo dnf config-manager addrepo --from-repofile=/etc/yum.repos.d/netbird.repo
-```
-3. Install the package
+   DNF reads every `.repo` file in `/etc/yum.repos.d/`, so the repository is active as soon as the file exists. Don't run `dnf config-manager addrepo --from-repofile` on this file, because DNF 5 refuses when the file already exists.
+2. Install the package
 ```bash
  # for CLI only
  sudo dnf install netbird
@@ -254,7 +248,7 @@ sudo zypper addrepo https://pkgs.netbird.io/yum/ netbird
 
 * Key Fingerprint: `AA9C 09AA 9DEA 2F58 112B 40DF DFFE AB2F D267 A61F`
 * Key ID: `DFFEAB2FD267A61F`
-* Email: `dev@netbird.io`
+* User ID: `Wiretrustee <dev@wiretrustee.com>` (the key predates the NetBird name)
 ```
 # MicroOS (immutable OS with selinux)
 transactional-update pkg in netbird
@@ -443,16 +437,24 @@ Before you log in, the command should return daemon status rather than a socket 
 
 ## Updating
 
-If your NetBird client was installed through a package manager, use that to update.
-If you used the one-command script to install, you can follow this to update:
+If your NetBird client was installed through a package manager, use that to update. This includes installs done with the install script on systems with APT, DNF, or YUM. The script adds the NetBird repository and installs the package, so your normal system updates include NetBird. To update only NetBird:
 
 ```bash
-netbird down
+# APT
+sudo apt-get update && sudo apt-get install --only-upgrade netbird
+# DNF
+sudo dnf upgrade netbird
+```
+
+If the script installed the binary directly, for example on a distribution without APT, DNF, or YUM, or with `USE_BIN_INSTALL=true`, update with the script. It stops the service, replaces the binary, and starts the service again:
+
+```bash
 curl -fsSLO https://pkgs.netbird.io/install.sh
 chmod +x install.sh
 ./install.sh --update
-netbird up
 ```
+
+The script records which method it used in `/etc/netbird/install.conf`. On a package-manager install, `./install.sh --update` changes nothing and prints `NetBird installation was done using a package manager. Please use your system's package manager to update`.
 
 
 ## Running NetBird with SSO Login
@@ -491,9 +493,9 @@ For unattended deployments across many machines, pre-populate the client config 
   sudo netbird up --setup-key <SETUP KEY>
 ```
 
-Alternatively, if you are hosting your own Management Service provide `--management-url` property pointing to your Management Service:
+If you self-host NetBird, also pass `--management-url` with your NetBird domain:
 ```bash
-  sudo netbird up --setup-key <SETUP KEY> --management-url http://localhost:33073
+  sudo netbird up --setup-key <SETUP KEY> --management-url https://netbird.example.com
 ```
 
 
@@ -502,7 +504,7 @@ Alternatively, if you are hosting your own Management Service provide `--managem
 </Note>
 
 <Note>
-    You could also omit the `--setup-key` property. In this case, the tool will prompt for the key.
+    Without `--setup-key`, `netbird up` doesn't ask for a key. It starts the SSO login and prints a login URL instead.
 </Note>
 
 2. Check connection status:
