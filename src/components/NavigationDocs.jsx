@@ -83,6 +83,7 @@ export const docsNavigation = [
     {
         title: 'MANAGE NETBIRD',
         links: [
+            { title: 'Assistant', href: '/manage/assistant' },
             {
                 title: 'Control Center',
                 isOpen: false,
