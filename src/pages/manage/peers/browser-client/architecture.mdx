@@ -43,7 +43,7 @@ SSH connections are handled by the NetBird WASM client with a browser-based term
 
 - **SSH Client**: Implemented by the NetBird client
 - **Terminal UI**: [xterm.js](https://github.com/xtermjs/xterm.js) provides the terminal interface
-- **Connection**: The SSH client connects to NetBird's embedded SSH server (port 44338) on target peers
+- **Connection**: The SSH client connects to port `22` on the target peer, which redirects to NetBird's embedded SSH server on port `22022` (peers older than v0.60.0 use port `44338`)
 
 ##### RDP Bridge
 
@@ -60,15 +60,15 @@ To support the Browser Client functionality, the NetBird management server uses 
 #### Temporary Peer
 The WebAssembly NetBird Client will register as a temporary peer with the management server. The temporary peer will live as long as the connection is active.
 Once the connection is closed, the temporary peer will be automatically removed from the management server. This happens after 10 minutes of inactivity.
-For the WebAssembly NetBird Client all peers will be named as `{browser}-browser-client` (e.g. `safari-17-browser-client`).
+For the WebAssembly NetBird Client all peers will be named as `{browser}-{version}-browser-client` (e.g. `safari-17-browser-client`).
 
 <p>
     <img src="/docs-static/img/manage/peers/browser-client/temporary-peers-filter.png" alt="temporary-peers-filter" className="imagewrapper-big"/>
 </p>
 
 #### Temporary Policy
-To allow the registered WebAssembly NetBird Client to connect to the target peer, a temporary policy will be created. The temporary policy will allow access to the target peer on ports 22 (SSH), 3389 (RDP).
-The policy will be created P2P with no groups required. This way the client will only connect to one other peer. Once either of the peers (source or destination) is removed, the temporary policy will be automatically removed from the management server.
+To allow the registered WebAssembly NetBird Client to connect to the target peer, a temporary policy will be created. The temporary policy will allow one-way access to the target peer for the requested service only. For SSH to a v0.61+ peer, it is a `NetBird SSH` rule on port `22022` that authorizes the dashboard user (older peers use TCP on port `22022` or the chosen port). For RDP, it is a TCP rule on the RDP port.
+The policy will be created P2P with no groups required, so it only targets the selected peer. The temporary peer still joins the **All** group, so policies that use **All** apply to it as well. Once either of the peers (source or destination) is removed, the temporary policy will be automatically removed from the management server.
 The policies for the WebAssembly NetBird Client will be named as `Temporary access policy for peer {browser-client-name}` (e.g. `Temporary access policy for peer safari-17-browser-client`).
 
 <p>
@@ -88,12 +88,12 @@ The Browser Client uses NetBird's temporary access mechanism:
 2. **Request temporary access** via the `/peers/{peerId}/temporary-access` endpoint:
 - **Requires admin privileges**: Uses the logged-in dashboard user's credentials to create resources
 - Creates a short-lived peer with auto-expiry
-- Establishes temporary ACL rules (`tcp/22`, `tcp/3389`, `tcp/44338`)
+- Establishes temporary ACL rules for the requested service (`NetBird SSH` on port `22022` authorizing the dashboard user for v0.61+ SSH peers, TCP on `22022` or the chosen port for older SSH peers, or TCP on the RDP port for RDP)
 - Associates the peer with the requesting user
 - Pre-registers the peer instead of letting the WASM client register (enables immediate ACL application and proper cleanup)
 3. **Authentication**:
 - The browser client uses the pre-generated WireGuard key pair for authentication with the management server
-- This bypasses the usual JWT/OIDC or setup key flow used during peer registration
+- This bypasses the usual JWT/OIDC or setup key flow used during peer registration only. The SSH session itself still authenticates with your dashboard login token (JWT)
 - Normal clients: JWT/OIDC or setup key for initial registration → then the WireGuard key for auth and encryption
 - Browser client: Pre-registered with a WireGuard key → the WireGuard key is used directly for auth and encryption
 
