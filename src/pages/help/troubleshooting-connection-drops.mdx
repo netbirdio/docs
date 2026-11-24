@@ -1,0 +1,92 @@
+import {Warning} from "@/components/mdx"
+
+export const description =
+  "Why the NetBird client drops for a few seconds every few minutes, how to find the network change behind it, and how to fix it on the network."
+
+# Connection drops every few minutes
+
+This page is for you if all of these match:
+
+- Peers and resources become unreachable for a few seconds, then work again, and it keeps happening.
+- During a drop, the desktop app briefly shows `Connecting`, and `netbird status` shows `Management` and `Signal` as `Disconnected`.
+- The device runs Windows or macOS, or Linux with network monitoring turned on.
+
+If not, see [Other symptoms](#other-symptoms).
+
+## Why it happens
+
+On Windows and macOS, the NetBird client watches the device's **default routes**: the routes to `0.0.0.0/0` (IPv4) and `::/0` (IPv6) that decide which gateway the device uses to reach the internet. When one of them changes, the client assumes the device moved to another network and reconnects, which takes a few seconds.
+
+That is what you want when you dock a laptop or switch Wi-Fi networks. When the default route keeps changing on its own, the reconnects repeat. The root cause is on the network; NetBird reacts to it more visibly than most applications.
+
+## Confirm it in the client log
+
+Search the [client log](/help/troubleshooting-client#getting-client-logs) for network monitor events:
+
+- Windows (PowerShell): `Select-String -Path "C:\ProgramData\netbird\client.log" -Pattern "Network monitor"`
+- macOS: `grep -E "Network monitor|wakeup detected" /var/log/netbird/client.log`
+
+If the drops come from route changes, each one starts with a `default route` line, like this:
+
+```text
+2026-11-20T09:14:03.112Z INFO client/internal/networkmonitor/check_change_windows.go:78: Network monitor: default route removed: via fe80::1 @ 12 (Wi-Fi)
+2026-11-20T09:14:05.114Z INFO client/internal/engine.go:2497: Network monitor: detected network change, triggering client restart
+2026-11-20T09:17:02.871Z INFO client/internal/networkmonitor/check_change_windows.go:69: Network monitor: default route added: via fe80::1 @ 12 (Wi-Fi)
+2026-11-20T09:17:04.873Z INFO client/internal/engine.go:2497: Network monitor: detected network change, triggering client restart
+```
+
+The address after `via` is the router behind the change (`fe80::` means an IPv6 router on the local network), followed by the network adapter. On macOS, the adapter appears as `interface en0`. A steady interval between drops points to something on the network that repeats on a timer. From NetBird 0.84.0, the client handles many route changes without a full restart, so the lines after `default route` differ.
+
+On macOS, `wakeup detected` means the device woke from sleep, which is expected. If no `default route` line comes before the drops, this page does not apply; see [Still stuck](#still-stuck).
+
+To see what the router announces, run this a few times and compare:
+
+- Windows (PowerShell): `Get-NetRoute -DestinationPrefix 0.0.0.0/0, ::/0 -ErrorAction SilentlyContinue | Format-Table DestinationPrefix, InterfaceAlias, NextHop, ValidLifetime`
+- macOS: `ndp -rn`
+
+An IPv6 router whose remaining lifetime (`ValidLifetime` on Windows, `expire` on macOS) runs down to zero, or that comes and goes between runs, is the one to look at.
+
+## Common causes and fixes
+
+### IPv6 Router Advertisements
+
+This is the cause support sees most often. On IPv6 networks, routers announce themselves with periodic **Router Advertisements** (RAs), and devices build their IPv6 default route from them. Each RA carries a **router lifetime**: how long the device should keep using that router. Devices accept RAs by default, so this also happens on networks thought of as IPv4 only, if any device on them sends RAs. The default route then flaps when:
+
+- the router lifetime is shorter than the time between RAs, so the route expires before the next RA renews it,
+- the router switches between a normal lifetime and a lifetime of zero, which removes it as a gateway, or
+- more than one device sends RAs, for example a second router, a mesh access point, or a hotspot, so the route switches between them.
+
+Fix it on the router or firewall: keep the router lifetime well above the interval between RAs ([RFC 4861](https://www.rfc-editor.org/rfc/rfc4861#section-6.2.1) defaults: an RA at least every 600 seconds, and a router lifetime of 1800 seconds), let only the real gateway send RAs, or turn RAs off if the network does not use IPv6. If you do not manage the router, send its administrator the log lines and the output of the commands above.
+
+### Switching networks
+
+Wi-Fi changes, docking, cables, and hotspots each cause one drop, which is expected. If a device keeps switching on its own, for example between two Wi-Fi networks, fix that on the device.
+
+### Other VPN or security software
+
+Another VPN client, a SASE agent, or some endpoint security products add or rewrite default routes. Check whether the product can leave the default route alone, or whether both need to run on the same device.
+
+## Turning off the network monitor
+
+<Warning>
+This hides the drops without fixing the network. Use it only for a short time while the cause is fixed, then turn it back on.
+</Warning>
+
+With the network monitor off, the client also ignores real network changes. After switching networks or waking a Mac from sleep, peers can stay unreachable for much longer than a few seconds.
+
+To turn it off on one device, run `netbird down`, then `netbird up --network-monitor=false` (`netbird up` ignores the flag while connected). In the desktop app, turn off **Settings > Network > Reconnect on Network Change**, then disconnect and connect again. The setting persists until you turn it back on the same way, with `--network-monitor=true` or the toggle.
+
+## Other symptoms
+
+If the drops do not match this page, one of these fits better:
+
+- The client disconnects and asks you to log in again: [Peer session expiration](/manage/settings/enforce-periodic-user-authentication).
+- A peer never connects, stays at `Connecting`, or shows `Relayed`: [Troubleshooting relayed connections](/help/troubleshooting-relayed-connections).
+- The connection stays up, but is slow or stalls: [Troubleshooting performance](/help/troubleshooting-performance).
+- One resource or network is unreachable while peers stay connected: [Troubleshooting resource connectivity](/help/troubleshooting-resource-connectivity).
+- Names stop resolving, but IP addresses work: [DNS troubleshooting](/manage/dns/troubleshooting).
+- Something else: the [troubleshooting overview](/help/troubleshooting).
+
+## Still stuck
+
+Create a [debug bundle](/help/troubleshooting-client#debug-bundle) with `netbird debug bundle --upload-bundle` and send it to [support](/help/netbird-support), with the times of a few drops and the output of the commands above.
