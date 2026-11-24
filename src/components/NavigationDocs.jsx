@@ -1219,6 +1219,10 @@ export const docsNavigation = [
                                 href: '/help/troubleshooting-performance',
                             },
                             {
+                                title: 'Connection Drops',
+                                href: '/help/troubleshooting-connection-drops',
+                            },
+                            {
                                 title: 'Reverse Proxy',
                                 href: '/manage/reverse-proxy/troubleshooting',
                             },
