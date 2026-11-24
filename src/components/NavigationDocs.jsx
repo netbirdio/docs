@@ -693,6 +693,10 @@ export const docsNavigation = [
                         href: '/selfhosted/maintenance/admin-cli',
                     },
                     {
+                        title: 'Peer Authentication',
+                        href: '/selfhosted/maintenance/peer-authentication',
+                    },
+                    {
                         title: 'MCP Server',
                         href: '/selfhosted/maintenance/mcp-server',
                     },
@@ -967,6 +971,10 @@ export const docsNavigation = [
                     {
                         title: 'Connect on Startup',
                         href: '/client/connect-on-startup',
+                    },
+                    {
+                        title: 'Disable Firewall Configuration',
+                        href: '/client/disable-firewall',
                     },
                     {
                         title: 'Enable Quantum-Resistance',

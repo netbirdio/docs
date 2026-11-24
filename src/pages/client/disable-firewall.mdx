@@ -1,0 +1,74 @@
+import {Note} from "@/components/mdx";
+
+# Disable Firewall Configuration
+
+`--disable-firewall` tells the NetBird client not to create a firewall manager at all. The client then adds no firewall rules of its own, and every feature that is built on firewall rules stops working with it.
+
+This is a bigger switch than the name suggests. The firewall manager is not only where access control policies land: NAT for routed traffic, the DNS port 53 redirect and the userspace packet filter all live there too. Use it on hosts whose firewall is managed entirely outside NetBird, and read the list below first.
+
+## Enabling and clearing it
+
+```bash
+netbird up --disable-firewall
+```
+
+The equivalent environment variable is `NB_DISABLE_FIREWALL=true`.
+
+The setting is stored in the profile configuration, so it survives reconnects and service restarts. Passing it to `netbird up` while the client is already connected has no effect: run `netbird down` first, or pass it together with the initial login.
+
+```bash
+netbird up --disable-firewall=false
+```
+
+A [debug bundle](/help/troubleshooting-client#debug-bundle) records the current value as `DisableFirewall` in the client configuration dump, which is the quickest way to tell whether a peer is running with the flag.
+
+## What stops working
+
+### Access control policies
+
+Without a firewall manager the client installs neither the default drop rule for its interface nor the accept rules derived from your [access control policies](/manage/access-control). Inbound peer traffic is not filtered at all: any peer that can reach this one over the overlay gets through, whatever your policies say.
+
+[`--block-inbound`](/client/block-inbound-connections) stops working for the same reason. It blocks by *withholding* the accept rules so that the default drop applies, and with the firewall disabled there is no default drop left to fall back on. `--block-lan-access` is a firewall rule too, and is likewise not installed.
+
+<Note>
+    Combining `--disable-firewall` with `--block-inbound` does not lock a peer down. It leaves it fully open.
+</Note>
+
+### Routing peers and exit nodes
+
+The peer cannot serve routes. NAT/masquerading, the forwarding rules and the route-level [access control](/manage/network-routes/access-control) for [network routes](/manage/network-routes) and [networks](/manage/networks) all come from the firewall manager, so a peer started with `--disable-firewall` will not work as a routing peer or as an exit node.
+
+Using *another* peer as a routing peer or exit node is unaffected: client routes are installed in the operating system's routing table, not in the firewall.
+
+### The DNS port 53 redirect
+
+In kernel mode the local resolver binds port 53 on the NetBird interface address, `127.0.0.1` or `127.0.0.153`. When port 53 is taken on all of them, which is the case on a host that runs its own DNS server such as `dnsmasq` or Pi-hole, the resolver falls back to another port and the client redirects port 53 to it with DNAT rules.
+
+Those rules need the firewall manager. Without it the resolver answers only on its fallback port while the system keeps sending queries to port 53, and resolution through NetBird stops until port 53 is free again. A peer whose port 53 is free is unaffected, which is the common case.
+
+On a routing peer, the DNS forwarder that resolves [domain-based network resources](/manage/networks) also depends on the firewall: its port is not opened, the redirect for the forwarder port is not installed, and the address sets behind domain resource access control are not updated. Domain resources served by that peer will not resolve.
+
+### Integration with the host firewall
+
+The client normally opens its interface in the host's own filter chains and marks it trusted in `firewalld`. That stops as well. On a host with a restrictive `INPUT` policy (`firewalld`, `ufw`, or a hand-written `nftables` ruleset), the host's own rules can now drop NetBird traffic, including queries to the local resolver. You have to allow the NetBird interface yourself.
+
+### Traffic events in userspace mode
+
+Flow tracking lives in the userspace packet filter, so [traffic events](/manage/activity/traffic-events-logging) stop being reported in userspace mode. In kernel mode the flow data comes from a separate conntrack reader and is unaffected.
+
+## What keeps working
+
+- Peer-to-peer and relayed connectivity, and the data path itself.
+- Client routes: using another peer as a routing peer or exit node.
+- The local DNS resolver, along with the nameserver and search domain configuration the client applies to the operating system, except for the port 53 redirect described above.
+
+## Narrower alternatives
+
+If the goal is to keep NetBird away from part of your firewall configuration rather than all of it:
+
+- `--disable-server-routes` stops the peer from acting as a routing peer, without giving up access control enforcement.
+- [`--block-inbound`](/client/block-inbound-connections) blocks all inbound traffic while keeping the firewall in place, which is what most "lock this peer down" cases actually want.
+- `NB_NFTABLES_TABLE` renames the `nftables` table the client creates, for hosts where the default name collides with existing configuration.
+- `NB_SKIP_NFTABLES_CHECK` sends the client straight to the iptables backend on hosts where `nftables` is present but not functional.
+
+See [Client Environment Variables](/client/environment-variables) for the full list.
