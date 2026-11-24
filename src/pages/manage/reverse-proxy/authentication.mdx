@@ -29,7 +29,7 @@ NetBird-Only Access is mutually exclusive with the operator auth methods on the 
 NetBird-Only Access restricts the service to peers running inside your own NetBird network. Unlike SSO or password, there is no login page — the proxy verifies the client through its WireGuard tunnel before serving any traffic. Clients that are not on a NetBird peer in your account cannot reach the service at all.
 
 <Note>
-    NetBird supplies authorized peers with private DNS records pointing service hostnames to the proxy's NetBird address. Browsers using a separate DNS-over-HTTPS resolver can receive the public address instead and display `403 Forbidden`, even while the device is connected. See [403 Forbidden with NetBird-Only Access](/manage/reverse-proxy/troubleshooting#issue-5-403-forbidden-with-net-bird-only-access) for DNS checks and browser settings.
+    NetBird supplies authorized peers with private DNS records pointing service hostnames to the proxy's NetBird address. Browsers using a separate DNS-over-HTTPS resolver can receive the public address instead and display **Service Not Found** (`404`), even while the device is connected. See [NetBird-Only service refuses requests](/manage/reverse-proxy/troubleshooting#issue-5-net-bird-only-service-refuses-requests) for DNS checks, browser settings, and what each refusal status means.
 </Note>
 
 <p>
@@ -39,7 +39,7 @@ NetBird-Only Access restricts the service to peers running inside your own NetBi
 **How it works:**
 
 1. The proxy receives an inbound HTTP request and resolves the source address back to a NetBird peer using its embedded `netbird proxy` client. Requests with no peer-of-origin are rejected.
-2. The calling peer's groups are checked against the service's **access groups**. If none match, the request is rejected with `403`. If the peer has a user owner, that user must also belong to the service's account and must not be blocked or pending approval.
+2. The calling peer's groups are checked against the service's **access groups**. If the peer has a user owner, that user must also belong to the service's account and must not be blocked or pending approval. A refused request gets `404`, `403`, or `401` depending on the caller; see [refusal status codes](/manage/reverse-proxy/troubleshooting#issue-5-net-bird-only-service-refuses-requests).
 3. The request is forwarded to the backend with the available identity headers — see [Identity headers stamped on upstream requests](#identity-headers-stamped-on-upstream-requests).
 
 By default the proxy reaches the backend over the encrypted WireGuard tunnel through a NetBird peer — the service is reachable only from inside your NetBird network, and access is gated by group membership:
@@ -48,7 +48,7 @@ By default the proxy reaches the backend over the encrypted WireGuard tunnel thr
 flowchart LR
     Client["Client peer"] -->|WireGuard| Proxy["Proxy cluster"]
     Proxy -.->|Validate peer and group membership| Management["Management service"]
-    Proxy -->|Denied| Denied["403"]
+    Proxy -->|Denied| Denied["404 / 403 / 401"]
     Proxy -->|Allowed over WireGuard| Peer["Backend NetBird peer"]
     Peer --> Backend["Backend service"]
 ```
@@ -194,7 +194,7 @@ HTTP targets can override the service authentication behavior for their matching
 |--------|----------|
 | **Use service authentication** | Apply the authentication configured on the service. This is the default. |
 | **Bypass authentication** | Skip SSO, password, PIN, and header authentication for requests routed to this target. Service-level access restrictions still apply. |
-| **Block access** | Return `403` for requests routed to this target without contacting its backend. |
+| **Block access** | Return `403` for requests routed to this target without contacting its backend. On a NetBird-Only service, callers that are not peers of the account get `404`. |
 
 <p>
     <img src="/docs-static/img/manage/reverse-proxy/authentication/target-access-setting.png" alt="Edit Target modal with Optional Settings expanded, showing the Access dropdown and its three options: Use service authentication, Bypass authentication, and Block access" className="imagewrapper"/>
