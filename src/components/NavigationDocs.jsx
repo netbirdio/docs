@@ -128,6 +128,10 @@ export const docsNavigation = [
                                 href: '/manage/peers/mdm-deployment/ios-mdm-policy',
                             },
                             {
+                                title: 'Enforce Settings on Android',
+                                href: '/manage/peers/mdm-deployment/android-mdm-policy',
+                            },
+                            {
                                 title: 'Deploy with Group Policy (GPO)',
                                 href: '/manage/peers/mdm-deployment/windows-gpo-deployment',
                             },
