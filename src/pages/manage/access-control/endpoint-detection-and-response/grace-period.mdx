@@ -1,0 +1,198 @@
+# Grace Period for Devices Without a Recent Check-In
+
+By default, NetBird approves a peer in an EDR or MDM integration only while the platform reports its device with a recent check-in.
+A device that was switched off for longer than the integration's sync window, such as a laptop left at home during a
+two-week vacation, comes back with a check-in that is too old. Its EDR agent checks in again soon after starting, but
+until it does, NetBird keeps the peer off the network.
+
+The grace period covers that gap. When a peer whose device has no recent check-in comes online, NetBird keeps it
+connected for a duration you choose, so the agent can check in while the user starts working. Each device gets one
+grace period per absence, and gets the next one only after the platform reports it compliant again.
+
+<Note>
+    The grace period is available for all EDR and MDM integrations: CrowdStrike Falcon, FleetDM, Huntress, Microsoft Intune, and SentinelOne Singularity. It is off by default.
+</Note>
+
+In this guide, a **peer** is the NetBird client on a machine, and a **device** is that machine as your EDR or MDM
+platform reports it. NetBird matches the two by the device's serial number, and for FleetDM by its hardware UUID first.
+
+## When a Device Has No Recent Check-In
+
+Every integration has a **sync window**: how recently a device must have checked in with the platform for NetBird to
+trust its compliance state. The default and minimum is 24 hours. You set it with the sync window setting of FleetDM,
+Huntress, Intune, and SentinelOne. CrowdStrike Falcon uses 24 hours, which you can change only through the
+[API](/api/resources/edr-falcon-integrations).
+
+NetBird reads the devices that checked in with the platform during the last 30 days and handles each peer in one of
+these ways:
+
+| What the platform reports for the device | Result for the peer | Reason shown | Grace period |
+|------------------------------------------|---------------------|--------------|--------------|
+| Checked in within the sync window and passes your compliance checks | Approved | None | Not needed |
+| Checked in within the sync window and fails a compliance check | Denied, and peers added with SSO login are logged out | The failed check | No |
+| Last check-in is older than the sync window | Denied | `STALE_CHECK_IN` | Yes |
+| No check-in during the last 30 days, never enrolled, or removed from the platform | Denied | `NOT_FOUND_IN_EDR` | Yes |
+| More than one device has the peer's serial number or hardware UUID | Denied | `DUPLICATE_MATCH` | Never |
+
+The grace period only covers a missing check-in. A device that keeps checking in and fails your compliance checks
+doesn't get one. If such a device stops checking in for longer than the sync window, NetBird can no longer tell its
+current state, so it gets a grace period like any other device without a recent check-in. If its next check-in still
+fails your compliance checks, NetBird denies the peer again and logs it out if it was added with SSO login.
+
+## What Happens Without a Grace Period
+
+When a device's check-in is too old, or the platform no longer reports the device:
+
+- The peer loses network access as soon as NetBird notices, at the next sync or when the peer connects. The peers list
+  marks it as `Approval required`, with the reason in the tooltip.
+- The peer stays logged in. A missing check-in is not a compliance failure, and logging in again cannot fix it, so
+  NetBird does not expire the peer's login the way it does for a non-compliant device.
+- Once the device checks in again and passes your compliance checks, NetBird approves the peer at the next sync. The
+  user doesn't need to reconnect or log in again.
+
+## How the Grace Period Works
+
+### When It Starts
+
+The grace period starts the first time NetBird sees the peer online while its device has no recent check-in:
+
+- when the peer connects, or
+- at a sync, when the peer is already connected and its device's last check-in has just become older than the sync
+  window.
+
+An offline peer does not use its grace period. While a laptop sits switched off, its peer is denied with
+`STALE_CHECK_IN`, and the grace period starts only when the laptop connects again.
+
+### How Long It Lasts
+
+The grace period lasts the configured duration, from 1 to 240 minutes, counted from the moment it starts.
+Disconnecting and reconnecting doesn't restart or extend it. If you change the duration, the change also applies to
+grace periods that are already running.
+
+### When It Ends
+
+- **The device checks in and passes your compliance checks.** NetBird approves the peer as usual at the next sync. The
+  grace period is over, and the device can get a new one on its next absence.
+- **The device checks in and fails a compliance check.** NetBird denies the peer at the next sync, as it does for any
+  non-compliant device.
+- **The duration runs out.** The peer loses network access at the next sync but stays logged in. It gets access back
+  once the device checks in and passes your compliance checks.
+- **You turn the grace period off.** Grace periods that are running end at the next sync.
+
+### When a Device Gets Another One
+
+A device gets one grace period per absence. After its grace period runs out, the peer stays denied until the device
+checks in and passes your compliance checks. Reconnecting, waiting, or adding another peer on the same device doesn't
+give it a second one. The next time the device stays away longer than the sync window, it gets a new grace period.
+
+## Example
+
+The sync window is 24 hours and the grace period is 30 minutes. Jane's laptop was switched off for a week.
+
+| Time | What happens | Jane's network access |
+|------|--------------|-----------------------|
+| During the week | The laptop's last check-in becomes older than 24 hours. Its peer is offline, so NetBird denies it with `STALE_CHECK_IN` and keeps the grace period for later. | None, the laptop is off |
+| Monday, 09:00 | Jane switches the laptop on and NetBird connects. The grace period starts and runs until 09:30. | Yes |
+| Monday, 09:04 | The EDR agent checks in and the laptop passes the compliance checks. At the next sync, NetBird approves the peer as usual. | Yes |
+
+If the agent had not checked in by 09:30, for example because it was uninstalled, the grace period would end at 09:30
+and Jane would lose network access at the next sync after that. She would get it back once the agent checks in and the
+laptop passes the compliance checks. Reconnecting would not give her more time.
+
+## Grace Period for New Peers
+
+A **new peer** is a peer that NetBird has never approved or denied through the integration, usually one that was just
+added. The **Include new peers** option decides whether new peers get a grace period:
+
+- **Off (default).** A new peer whose device is not in the platform yet, or hasn't checked in recently, is denied
+  without a grace period. It stays without one, even after NetBird has denied it, until the platform reports its device
+  compliant. From then on, the peer gets a grace period on later absences like any other peer.
+- **On.** A new peer gets one grace period too, under the same rules as any other peer.
+
+Turn the option on only if your devices routinely join NetBird before your EDR or MDM platform knows about them, for
+example when the EDR agent is installed after NetBird during onboarding. With the option on, a device that the platform
+has never reported can reach your network for the length of the grace period.
+
+<Note>
+    When you connect a new integration, every peer in its groups is new until NetBird checks it for the first time. With **Include new peers** off, peers whose devices are missing from the platform or haven't checked in recently stay denied until the platform reports them compliant.
+
+    If you turn on the grace period for an integration that is already connected, peers that NetBird already approved or denied are not new. A peer that is already denied, for example with `NOT_FOUND_IN_EDR`, gets a grace period like any other peer, even with **Include new peers** off.
+</Note>
+
+## One Grace Period per Device
+
+The grace period belongs to the device, not to the peer. Once a device has used its grace period, and until the
+platform reports it compliant again:
+
+- Deleting the peer and adding it again doesn't give the device a new grace period.
+- Another peer on the same device, for example a second NetBird profile, doesn't get a grace period of its own.
+- A new peer on the device doesn't get one either, even with **Include new peers** on.
+
+Peers that report neither a serial number nor a hardware UUID never get a grace period, because NetBird cannot tie
+them to a device. iOS peers are one example.
+
+## Configure the Grace Period
+
+When you connect a new integration, the grace period settings are on the last step of the setup wizard, below the sync
+settings.
+
+<p>
+    <img src="/docs-static/img/manage/access-control/endpoint-detection-and-response/grace-period/grace-period-setup.png" alt="Grace period settings on the last step of the FleetDM setup wizard" className="imagewrapper-big"/>
+</p>
+
+To change them for a connected integration:
+
+1. Go to the [Integrations &raquo; EDR](https://app.netbird.io/integrations?tab=edr) tab.
+2. Click **Settings** on the integration.
+3. Open the **Settings** tab.
+4. Turn on **Grace Period** and set the **Duration** in minutes, from 1 to 240. The default is 30 minutes.
+5. Optional. Turn on **Include new peers**. See [Grace Period for New Peers](#grace-period-for-new-peers) before you do.
+6. Click **Save Changes**.
+
+<p>
+    <img src="/docs-static/img/manage/access-control/endpoint-detection-and-response/grace-period/grace-period-settings.png" alt="Grace period with Include new peers turned on in the FleetDM integration settings" className="imagewrapper-big"/>
+</p>
+
+To turn the grace period off, turn off **Grace Period** and save.
+
+## Activity Events
+
+NetBird records these events under **[Audit Events](/manage/activity)**:
+
+| Event | When it is recorded |
+|-------|---------------------|
+| `Peer kept connected during the EDR grace period` | A grace period started. The event shows the peer and the duration. |
+| `Peer denied by integrated validator` | NetBird denied a peer. The event shows the reason, such as no recent EDR check-in, not found in EDR, or the failed compliance check. |
+| `Peer approved by integrated validator` | NetBird approved a peer, for example after its device checked in again. |
+
+<p>
+    <img src="/docs-static/img/manage/access-control/endpoint-detection-and-response/grace-period/grace-period-events.png" alt="EDR grace period, denial, and approval events in Audit Events" className="imagewrapper-big"/>
+</p>
+
+## Why a Peer Didn't Get a Grace Period
+
+| Cause | What to do |
+|-------|------------|
+| The grace period is off for the integration. | Turn on **Grace Period** in the integration settings. |
+| The peer is offline. | Nothing. The grace period starts when the peer connects. |
+| The device already used its grace period during this absence, through this peer or another peer on the same device. | Make sure the EDR agent runs and checks in. The peer gets access back once the device passes your compliance checks. |
+| The peer is new and **Include new peers** is off. | Make sure the device is enrolled in your platform, checks in, and passes your compliance checks. Or turn on **Include new peers**. |
+| The peer reports no serial number or hardware UUID. | None. Peers that cannot be tied to a device never get a grace period. |
+| The device checked in recently and fails a compliance check. | Fix the compliance issue. The grace period only covers a missing check-in. |
+| The peer matches more than one device in the platform. | Make sure each device has a unique serial number or hardware UUID. |
+
+To give a peer access right away regardless of its compliance state, [bypass compliance](/manage/access-control/endpoint-detection-and-response/bypass-compliance)
+for it.
+
+## Best Practices
+
+- **Keep the duration short.** Set it to about how long your platform's agent takes to check in after a device starts.
+  During the grace period, the device has network access without a current report from the platform.
+- **Keep Include new peers off** unless your onboarding needs it, so that a peer added for the first time cannot reach
+  your network before the platform reports its device. The option only covers new peers. A peer that NetBird denied
+  before you turned on the grace period gets a grace period like any other peer.
+- **Know that removed devices can get a grace period too.** If you remove a device from your platform while its peer
+  is online and the device hasn't used its grace period yet, the peer keeps access until its grace period ends. To cut a
+  device off right away, delete its peer in NetBird.
+- **Make sure devices report unique serial numbers**, so that each peer matches exactly one device in the platform.
+- **Review the activity log** for grace period events, to spot devices whose agent regularly fails to check in.
