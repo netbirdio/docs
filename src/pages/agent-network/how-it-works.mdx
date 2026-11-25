@@ -56,10 +56,54 @@ can apply tag budgets and per-user attribution. With agentgateway, NetBird uses 
   supplies the identities and group memberships that policies are written against.
 - **Upstreams**: for LLM traffic, the proxy forwards to LLM APIs and AI gateways.
 
-The endpoint hostname itself (for example `https://sailcloth.netbird.ai`) is generated
-when you connect your first provider and is only reachable from inside your overlay.
-It applies to LLM traffic only; internal resources keep their normal peer addresses on the
-overlay.
+The endpoint hostname itself (for example `https://sailcloth.netbird.ai`) serves requests
+only from inside your overlay, and LLM traffic only; internal resources keep their normal
+peer addresses on the overlay.
+
+### Where the Proxy Runs
+
+Every LLM request passes through the proxy, so it matters who runs the proxy and which
+upstreams it can reach.
+
+**A managed proxy** is available on NetBird Cloud. NetBird runs a dedicated proxy
+for your account, so there is nothing to deploy. Requests travel from your agent to that
+proxy and from there to the provider. Your endpoint hostname exists as soon as NetBird has
+provisioned the proxy, before you connect a provider. A managed proxy connects only to
+public addresses: requests to an upstream on a non-public address, for example `10.0.5.20`,
+fail.
+
+**A proxy you run yourself** is available on NetBird Cloud and on self-hosted deployments.
+The proxy runs on your server, so requests travel from your agent to your proxy and from
+there to the provider. On NetBird Cloud, your endpoint hostname exists once the guided setup
+(see the [Quickstart](/agent-network/quickstart#set-up-on-net-bird-cloud)) has connected your
+proxy. Without the guided setup, and on a self-hosted deployment, it exists once you have
+connected your first provider. The proxy connects to the upstream from its own network, so it
+can also serve a gateway or model on a non-public address in that network. On a NetBird Cloud
+account, you connect the proxy as described in [Clusters](/agent-network/clusters).
+
+Choose when you set up your proxy, not afterwards. Once a managed proxy serves your endpoint,
+a proxy you connect later does not take the endpoint over, and moving the endpoint yourself
+is not supported: it would take the
+[Delete Agent Network settings](/api/resources/agent-network#delete-agent-network-settings)
+API call, which NetBird refuses while the managed proxy serves the endpoint.
+
+Neither kind of proxy reaches the upstream through the NetBird tunnel. For a model on a
+NetBird peer, use an address that the proxy's own network can reach, not the peer's NetBird
+IP address, or let agents reach the model over the overlay as an internal resource, without
+the proxy; see [Internal Resources](#internal-resources).
+
+Both kinds of proxy serve the endpoint only to peers that one of your
+[policies](/agent-network/policies) allows. With a managed proxy, the endpoint hostname has
+no public DNS record and NetBird resolves it only on those peers, so a tool anywhere else
+reports an unknown host. On a self-hosted NetBird deployment the hostname is in public DNS,
+so a request from anywhere else reaches the proxy and gets `403`.
+
+On a NetBird Cloud account, running the proxy yourself changes the path your requests take,
+not where your Agent Network records are kept. The management service is still the one
+NetBird Cloud runs, and it keeps your providers, policies, usage, and access logs. Access
+logs can include prompts and completions. Whether they do, and how long access logs are
+kept, is controlled in
+[Log Collection & Retention](/agent-network/usage-and-logs/log-collection).
 
 ### Internal Resources
 
@@ -236,7 +280,7 @@ This is also where the two paths differ:
 
 ## Next steps
 
-- [Quickstart](/agent-network/quickstart). Deploy Agent Network and make your first keyless call.
+- [Quickstart](/agent-network/quickstart). Set up Agent Network on NetBird Cloud or self-hosted and make your first keyless call.
 - [Providers](/agent-network/providers). Connect LLM APIs, gateways, and local models.
 - [Policies](/agent-network/policies). Authorize identities and attach limits and guardrails.
 - [Usage & Logs](/agent-network/usage-and-logs). Track cost, usage, and per-request audit.
