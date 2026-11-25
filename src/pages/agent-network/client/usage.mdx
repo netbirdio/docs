@@ -1,0 +1,155 @@
+import { Note } from '@/components/mdx'
+
+export const description =
+  'See your Agent Network providers, limits, usage, and reset times from the NetBird client: the Agent Networks tab in the desktop app and the netbird agent-network usage command.'
+
+# Check Your Usage from the Client
+
+The NetBird client shows what Agent Network gives you on this computer: the providers you
+can use, the limits that apply to you, how much of each you used, and when each limit
+resets. Use the **Agent Networks** tab in the desktop app or the
+`netbird agent-network usage` command.
+
+<Note>
+    This needs Agent Network enabled on your account, NetBird client **vX.Y.Z** or later,
+    and a management server of the same version or later. On an older management server the
+    desktop app shows no **Agent Networks** tab and the command reports that the server is
+    too old.
+</Note>
+
+The answer is computed for this computer: from the groups of this peer and, if you logged
+in with your identity provider, from your user. Two of your computers can show different
+providers. A peer added with a [setup key](/manage/peers/register-machines-using-setup-keys)
+has no user, so its usage counts against the peer itself.
+
+The numbers are informational. The Agent Network proxy enforces the limits when a request
+arrives; the client only shows the state it last fetched. Admins configure the limits in
+[Token & Budget Limits](/agent-network/policies/limits) and see account-wide usage in
+[Usage & Logs](/agent-network/usage-and-logs).
+
+## Which Limits You See
+
+Several limits can apply to you at once. For each provider, the client lists:
+
+- **Every [global limit](/agent-network/global-limits) that applies to you.** Global limits
+  count across all providers, so the same rows appear under each one. All of them must
+  have room, or every provider is marked exhausted.
+- **The limits of one policy.** When several policies give you the same provider, each
+  request is counted against one of them. The client shows the limits of the policy your
+  next request would be counted against. When that policy's limits run out, the next
+  policy takes over, so a provider is marked exhausted only when every policy for it is
+  used up.
+
+A provider shows as unlimited when a policy without limits gives you access and no global
+limit applies. Group limits are shared with the other members of the group, so their
+usage can grow while you are not using the provider. Admins set these limits in
+[Token & Budget Limits](/agent-network/policies/limits) and
+[Global Limits](/agent-network/global-limits).
+
+## Desktop App
+
+Connect NetBird, then open the **Agent Networks** tab in the main window. The tab refreshes
+every minute while the window is open. Click the refresh icon next to **Usage** to fetch it
+now.
+
+<p>
+    <img src="/docs-static/img/agent-network/client/agent-network-client-usage.png" alt="Agent Networks tab of the NetBird desktop app showing token and spending limits per provider, with an exhausted provider" className="imagewrapper-big" />
+</p>
+
+Each provider lists its limits:
+
+- **Tokens** and **Spending limit** show how much you used of the cap, and when the limit
+  resets. **Unlimited** means that kind of usage has no cap for you.
+- **No limits apply.** means no limit binds you on that provider.
+- **Exhausted** means a limit is used up. Requests to that provider are refused until the
+  limit resets; the text under the provider name says when.
+
+What the other states mean:
+
+| You see | Meaning | What to do |
+| --- | --- | --- |
+| No **Agent Networks** tab | Agent Network is not enabled on your account, the management server is too old, or NetBird is disconnected. | Connect NetBird. If the tab still does not appear, ask your administrator. |
+| **No access yet** | No Agent Network policy gives this computer access to a provider. | Ask your administrator for a policy. |
+| **Not available for your user** | Your NetBird user is blocked or waiting for approval. | Ask your administrator. |
+| **Couldn't load Agent Networks usage** | The client could not fetch the usage. | Check your connection and click **Try again**. |
+| **Couldn't refresh. Showing the last known usage.** | A refresh failed; the numbers are from the last successful fetch. | Wait for the next refresh or click the refresh icon. |
+| **Can't show Agent Networks** | The server answered with something this client version does not understand. | Update NetBird. |
+
+## Command Line
+
+```shell
+netbird agent-network usage
+```
+
+```shell
+Agent Networks usage
+
+Anthropic (anthropic_api)
+  Unlimited
+
+OpenAI (openai_api)
+  USED / CAP                  REMAINING       RESETS
+  $12.35 / $50.00             $37.66          in 24d 9h (2026-12-01 00:00 UTC)
+  250,500 / 1,000,000 tokens  749,500 tokens  in 42m (2026-11-06 15:00 UTC)
+
+Bedrock prod (bedrock) - exhausted, requests are refused until a limit resets
+  USED / CAP            REMAINING  RESETS
+  1,200 / 1,000 tokens  0 tokens   in 42m (2026-11-06 15:00 UTC)
+```
+
+Each provider shows its name as your administrator labelled it, with its provider type in
+parentheses. Each limit is a separate row; tokens and money are never added together.
+`Unlimited` means no cap applies, and `No limits apply` means no limit binds you. Reset
+times are shown in your local time zone. A reset shown as `now` has passed by your
+computer's clock; the next refresh shows the new window.
+
+### Messages
+
+| Message | Meaning | Exit code |
+| --- | --- | --- |
+| `Agent Networks is not enabled for your NetBird account.` | Agent Network is off for the account. | 0 |
+| `No Agent Networks policy gives you access. Ask your administrator.` | No policy gives this peer access to a provider. | 0 |
+| `Your NetBird user is blocked or waiting for approval, so Agent Networks is not available. Ask your administrator.` | Your user is blocked or pending approval. | 0 |
+| ``Error: NetBird is not connected. Run `netbird up` first`` | The client is not running. | 1 |
+| `Error: the NetBird management server does not report Agent Networks usage; ask your administrator to upgrade it` | The management server is older than this feature. | 1 |
+| An error ending in `client is still connecting, try again shortly` | NetBird is starting or connecting. | 1 |
+
+### JSON Output
+
+Use `--json` for scripts:
+
+```shell
+netbird agent-network usage --json
+```
+
+```json
+{
+  "state": "OK",
+  "endpoint": "https://<your-endpoint>",
+  "providers": [
+    {
+      "id": "prov-openai",
+      "name": "OpenAI",
+      "catalog_id": "openai_api",
+      "api_flavor": "openai",
+      "models": [
+        "gpt-5.4"
+      ],
+      "limits": [
+        {
+          "unit": "USD",
+          "cap": 50,
+          "used": 12.345,
+          "resets_at": "2026-12-01T00:00:00Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+`state` is one of `OK`, `NOT_ENABLED`, `USER_BLOCKED`, or `MANAGEMENT_UNSUPPORTED`. With
+`--json`, every state exits with code 0, including `MANAGEMENT_UNSUPPORTED`, so check
+`state` rather than the exit code. Only a client that is not connected, or still connecting, exits with 1. Fields
+without a value are left out: `limits` for a provider without limits, and `unlimited`, `exhausted`, and `all_models_allowed` when
+they are false.
