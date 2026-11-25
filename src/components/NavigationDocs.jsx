@@ -623,6 +623,10 @@ export const docsNavigation = [
                         title: 'Kimi (Moonshot AI)',
                         href: '/agent-network/integrations/kimi',
                     },
+                    {
+                        title: 'Set Up with the Client',
+                        href: '/agent-network/client/setup-agents',
+                    },
                 ],
             },
         ],
