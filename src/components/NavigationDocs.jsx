@@ -597,6 +597,10 @@ export const docsNavigation = [
                         href: '/agent-network/usage-and-logs/log-collection',
                     },
                     { title: 'Global Limits', href: '/agent-network/global-limits' },
+                    {
+                        title: 'Usage in the Client',
+                        href: '/agent-network/client/usage',
+                    },
                 ],
             },
             {
