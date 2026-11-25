@@ -71,5 +71,46 @@ current window:
 So a cap is a floor for *when blocking starts*, not a hard ceiling on the exact total. Plan
 caps with a little headroom if you need a strict upper bound.
 
+## When Several Policies Apply
+
+A caller often matches more than one policy for the same provider, for example one through
+an `Engineering` group and one through an `All Users` group. NetBird then decides which
+policy pays for each request:
+
+1. **Applicable policies.** A policy applies when it is enabled, includes the requested
+   provider, and one of its source groups is a group of the calling **peer**. The peer's
+   groups count, not the user's own groups. If a guardrail with a model allowlist is
+   attached, only the policies that allow the requested model stay in the running.
+2. **Global limits first.** Every [global limit](/agent-network/global-limits) that binds
+   the caller must have room, whichever policy pays.
+3. **Exhausted policies drop out.** A policy is skipped when any of its enabled caps is
+   reached: user or group, tokens or USD. Within one policy, the tightest cap decides.
+4. **One policy pays.** Of the policies left, the first in this order pays, and the request
+   is counted against it only:
+    1. A policy with no caps.
+    2. The larger group token cap.
+    3. The larger group budget cap.
+    4. The larger user token cap.
+    5. The larger user budget cap.
+    6. The older policy.
+
+   The bigger pool is used first, and the next one takes over once it runs out. A request
+   is denied only when every applicable policy is exhausted.
+
+A few details follow from how usage is counted:
+
+- **Which group pays.** If the caller is in several source groups of the same policy, the
+  group cap counts against one of them: the group whose ID sorts first. When that group's
+  cap is reached, the policy is exhausted for the caller, even if another of its groups
+  has room. To let a second group take over, put it in a separate policy.
+- **Counters are shared between policies.** Usage is counted per user and per group for
+  each window length, not per policy. Two policies with the same window length see the
+  same usage, so the one with the smaller cap runs out first. Policies with different
+  window lengths count independently.
+- **Peers added with a setup key** have no user. Their user caps count per peer, while
+  group caps are shared as usual.
+- **A policy with no caps** wins over every capped policy, and its requests count only
+  toward global limits.
+
 For account-wide caps that apply across all policies. See
 [Global Limits](/agent-network/global-limits).
