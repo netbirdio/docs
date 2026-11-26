@@ -38,6 +38,7 @@ NetBird usually won't need open ports, but sometimes you or your IT team needs t
     * **Port**: TCP/443
     * **IPv4**: 35.186.199.111, 85.9.201.14, 85.9.206.109, 213.163.201.31, 213.163.206.27, 85.9.196.80, 209.151.150.249
     * **IPv6**: 2600:1901:0:adb3::, 2a04:3542:1000:910:2465:1fff:fe8a:5597, 2a04:3542:1000:910:2465:1fff:fe8a:2f9a, 2a04:3543:1000:2310:2465:1fff:fe8a:5f8d, 2a04:3543:1000:2310:2465:1fff:fe8a:1308, 2605:7380:8000:1000:2465:1fff:fe8a:3b62, 2605:7380:8000:1000:2465:1fff:fe8a:4dcd
+    * If TCP/443 to Management or Signal is blocked, `netbird status` shows `Management: Disconnected` or `Signal: Disconnected`, and the reason can include `keepalive ping failed to receive ACK within timeout`.
 
 
 * Signal service:
@@ -51,7 +52,7 @@ NetBird usually won't need open ports, but sometimes you or your IT team needs t
     * **Port range**: UDP/80,443,3478,5555
     * **IPv4**: The list is dynamic and geo-distributed; we advise you to check the nearest cluster with the following command:
         * `nslookup stun.netbird.io`
-    * In more restricted environments, `netbird status` will show `keepalive ping failed` errors without a firewall rule for STUN
+    * Without outbound access to STUN, a peer behind NAT can't learn its public address, so connections that depend on it fall back to the relay
         * Example `nftables` outbound firewall rule: `ip daddr stun.netbird.io udp dport { 80, 443, 3478, 5555 } accept`
         * Note that `nftables` resolves hostnames only when the ruleset is loaded, pinning the rule to the IPs resolved at that moment. Since the pool is dynamic and geo-distributed, reload the ruleset periodically or keep the allowlist updated by other means.
 * Relay service (TCP/QUIC):
@@ -62,15 +63,14 @@ NetBird usually won't need open ports, but sometimes you or your IT team needs t
   * It is advised to wildcard `*.relay.netbird.io` when possible, to avoid interrupts.
 * Relay service (legacy):
   * **Endpoint**: turn.netbird.io
-    * **Legacy fallback only**: needed for clients older than v0.29.0. Newer clients relay through the NetBird relay service above and fall back to this TURN relay only if that relay is unreachable.
+    * **Legacy fallback**: clients older than v0.29.0 relay through TURN. Newer clients relay through the NetBird relay service above, and fall back to TURN only when one side of a connection has no NetBird relay to offer, for example a peer running a client older than v0.29.0.
     * **Port range**: UDP/80,443 and TCP/443-65535
     * **IPv4**: The list is dynamic and geo-distributed; we advise you to check the nearest cluster with the following command:
         * `nslookup turn.netbird.io`
-    * In more restricted environments, `netbird status` will show `keepalive ping failed` errors without a firewall rule for the relay
         * Example `nftables` outbound firewall rule: `ip daddr turn.netbird.io tcp dport 443-65535 accept`
 
 <Note>
-    Download the full list of NetBird Cloud STUN and Relay endpoints and port requirements in <a href="/docs-static/files/netbird-cloud-endpoints.json" download>JSON format.</a>
+    Download the full list of NetBird Cloud STUN and Relay servers (names, hostnames, and IP addresses) in <a href="/docs-static/files/netbird-cloud-endpoints.json" download>JSON format.</a> The file doesn't include ports; use the ports listed above.
 </Note>
 
 ## Corporate firewalls
@@ -172,8 +172,8 @@ When another tool also manages firewall rules, conflicts can occur:
 
 | Tool | Conflict Type |
 |------|---------------|
-| UFW (Linux) | Chain ordering — UFW may evaluate its deny rules before NetBird's allow rules |
-| firewalld (Linux) | Zone conflicts — NetBird interface may be in wrong zone |
+| UFW (Linux) | Missing rules — another tool removed NetBird's rules or inserted rules above them |
+| firewalld (Linux) | Zone conflicts — NetBird interface moved out of the `trusted` zone |
 | Windows Group Policy | Policy may override or remove NetBird's firewall rule |
 | Third-party security software | May block traffic independently of OS firewall |
 
@@ -184,17 +184,34 @@ When another tool also manages firewall rules, conflicts can occur:
 - **Incoming**: Deny all
 - **Outgoing**: Allow all
 
-This can conflict with NetBird because both UFW and NetBird manage iptables rules. The conflict is about **chain evaluation order**, not about opening ports to the internet:
+UFW's default deny doesn't normally block NetBird traffic. With the kernel nftables or iptables backend, the NetBird client inserts its rules for the `wt0` interface at the top of the `INPUT` and `FORWARD` chains when it starts, ahead of UFW's chains. It does this for IPv4, and for IPv6 when the peer has a NetBird IPv6 address. UFW appends its own rules, so `ufw reload` or turning UFW off and on again doesn't change that order, as long as `/etc/default/ufw` has `MANAGE_BUILTINS=no` (the default). With `MANAGE_BUILTINS=yes`, `ufw reload` flushes the built-in chains and removes NetBird's rules, so check that setting first. NetBird still enforces your access control policies in its own chains, so these rules don't bypass your NetBird policies.
 
-1. WireGuard UDP packets arrive via hole punching (no inbound port needed on your router)
-2. NetBird decrypts them and presents traffic on the `wt0` interface
-3. UFW may evaluate its deny rules before NetBird's allow rules
-4. Result: Traffic blocked at the host level despite successful hole punching
+If traffic on `wt0` is blocked while UFW is active, check that NetBird's rule is still the first rule in the `INPUT` chain:
+
+```bash
+sudo iptables -S INPUT | head -3
+# On a peer with a NetBird IPv6 address, check IPv6 too
+sudo ip6tables -S INPUT | head -3
+```
+
+With the nftables firewall manager, which most current distributions use, the first rule after the policy line is:
+
+```text
+-A INPUT -i wt0 -j ACCEPT
+```
+
+With the iptables firewall manager, the first rules jump to NetBird's own chains instead (`-i wt0` with `NETBIRD-ACL-INPUT`). If no `-i wt0` rule comes first, another tool has removed NetBird's rules or inserted rules above them. NetBird doesn't restore a deleted rule on its own; restart the NetBird service to recreate it:
+
+```bash
+sudo systemctl restart netbird
+```
 
 **Check UFW status**:
 ```bash
 sudo ufw status verbose
 ```
+
+If another tool keeps removing NetBird's rule, add a UFW rule for the NetBird interface so UFW's default deny doesn't block `wt0` traffic. Only do this with the nftables firewall manager, which enforces your access control policies in its own nftables table. With the iptables firewall manager, the removed `INPUT` rules are what send `wt0` traffic through NetBird's policies, so a UFW allow rule would admit all `wt0` traffic. Restart NetBird to restore its rules and fix the tool that removes them instead. A UFW rule can't override a drop rule that another tool inserts above UFW's chains; fix that tool's rules instead.
 
 **Allow traffic on the NetBird interface**:
 ```bash
@@ -221,16 +238,18 @@ If you prefer a more restrictive rule:
 sudo ufw allow in on wt0 from 100.64.0.0/10
 ```
 
+This rule covers IPv4 only. If your peers also have NetBird IPv6 addresses, add a matching rule for your account's IPv6 overlay range.
+
 ### firewalld (Linux)
 
-On distributions using firewalld (RHEL, CentOS, Fedora), ensure the `wt0` interface is in a trusted zone:
+On distributions using firewalld (RHEL, CentOS, Fedora), the NetBird client adds the `wt0` interface to the `trusted` zone when firewalld is running. If traffic is blocked, check that the interface is still in that zone:
 
 **Check current zone for wt0**:
 ```bash
 sudo firewall-cmd --get-zone-of-interface=wt0
 ```
 
-**Add wt0 to trusted zone**:
+**Add wt0 to the trusted zone** if it shows a different zone:
 ```bash
 sudo firewall-cmd --permanent --zone=trusted --add-interface=wt0
 sudo firewall-cmd --reload
@@ -291,13 +310,13 @@ If the `Wireguard port` line in `netbird status` (available from v0.72.0) shows 
 
 To check the result, ping the peer's NetBird IP, then run `netbird status -d`. The peer should show `Connection type: P2P`. With lazy connections a peer stays `Idle` until traffic flows, which is why the ping comes first.
 
-**Linux**: The same principle applies. If UFW or firewalld is blocking inbound UDP on the physical interface, you may need to allow it. Linux cannot scope firewall rules to a specific process like Windows can, so allow only the port from the `Wireguard port` line in `netbird status`. Check it again if NetBird restarts, since it can move to another port when its port is taken.
+**Linux**: UFW and firewalld track UDP state, so the replies to a peer's own connectivity checks are let in and direct connections usually work without an inbound rule. For example, two Ubuntu 24.04 peers with public IPv6 addresses, no NAT between them, and UFW's default deny for incoming traffic connect P2P without an inbound rule. If a peer still shows `Relayed` and the host firewall is blocking inbound UDP on the physical interface, allow inbound UDP to the port from the `Wireguard port` line in `netbird status`. Linux can't scope the rule to a process the way Windows can, so keep it to that one port:
 ```bash
 # UFW, replace 51820 with the port from netbird status
 sudo ufw allow in proto udp to any port 51820
 ```
 
-Consider whether this is acceptable for your security posture, or use NetBird's relay fallback instead.
+If the configured port is taken when NetBird starts, the client picks a random free port, so check the port again after a restart. See [Static peer ports for site-to-site firewall rules](#static-peer-ports-for-site-to-site-firewall-rules).
 
 ### Third-party security software
 
@@ -322,12 +341,12 @@ The NetBird process locations:
 
 ### Collecting firewall diagnostics
 
-When reporting firewall-related issues, capture a debug bundle with system information:
+When reporting firewall-related issues, capture a debug bundle:
 ```bash
-netbird debug bundle --system-info
+netbird debug bundle
 ```
 
-The `--system-info` flag captures network routes, interface configuration, and firewall rules where accessible.
+The bundle includes system information by default (`--system-info`), covering network routes, interface configuration, and, on Linux, firewall rules where accessible.
 
 **Additional diagnostics for Linux**:
 ```bash

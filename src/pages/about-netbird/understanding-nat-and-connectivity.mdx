@@ -125,9 +125,9 @@ When a client connects to a relay server, it races both protocols simultaneously
 
 When two peers need to communicate through a relay:
 
-1. Both peers receive relay server information from the NetBird Management service
-2. The Signal service helps peers negotiate which relay server to use
-3. Both peers connect to the agreed-upon relay server
+1. Both peers receive relay server information from the NetBird Management service, and each peer connects to a relay server from that list
+2. When the peers exchange connection offers through Signal, each offer includes the address of the relay server that peer is connected to
+3. Both peers use the same one of those two relay servers, chosen deterministically from the peers' keys, so no extra negotiation round is needed
 4. Traffic flows through the relay while remaining end-to-end encrypted
 
 NetBird supports multiple relay server instances for high availability. If a relay server becomes unavailable, peers can switch to an alternative.
@@ -205,7 +205,7 @@ Each peer discovers all possible ways it can be reached:
 
 - **Host candidates**: Local IP addresses on the machine (e.g., `192.168.1.50:51820`). These are gathered by enumerating all network interfaces on the device.
 - **Server reflexive candidates**: Public IP:port as seen from outside the NAT (e.g., `203.0.113.10:54321`). These are discovered by sending a STUN binding request to a STUN server, which responds with the public IP and port it observed.
-- **Relay candidates**: Addresses allocated by TURN/relay servers (fallback option). These are obtained by requesting an allocation from a TURN server, which reserves a port on the relay that can forward traffic to the peer.
+- **Relay candidates**: Addresses allocated by a TURN server. Current clients gather these only when one side of the connection has no NetBird relay to offer, such as a peer running a client older than v0.29.0. Otherwise the NetBird relay is set up alongside ICE rather than as an ICE candidate, which is why `netbird status -d` shows `ICE candidate (Local/Remote): -/-` and a `Relay server address` for a relayed connection.
 
 **2. Candidate Exchange**
 
@@ -219,8 +219,10 @@ Both peers simultaneously attempt to reach each other using all candidate pairs.
 Priority 1: Host ↔ Host         (direct LAN connection)
 Priority 2: Host ↔ Server Reflexive  (direct through NAT)
 Priority 3: Server Reflexive ↔ Server Reflexive (both behind NAT)
-Priority 4: Relay ↔ Any         (fallback via relay server)
+Priority 4: Relay ↔ Any         (TURN, only when a peer has no NetBird relay to offer)
 ```
+
+The NetBird relay connection doesn't compete in this list. It's set up in parallel with ICE, and NetBird prefers a direct path whenever ICE finds one.
 
 **4. Connection Establishment**
 
