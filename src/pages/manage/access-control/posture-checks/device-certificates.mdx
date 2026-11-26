@@ -6,7 +6,7 @@ export const description = "Use a Certificate posture check so only devices hold
 
 Most posture checks read something the device reports about itself: its client version, its operating system, a process name. Those are good at keeping unmanaged devices out, but a determined user can satisfy them on a personal laptop. What they cannot produce is a certificate your own certificate authority issued to a company device, and the private key that goes with it. The **Certificate** posture check asks for exactly that: the peer must hold a certificate that chains to a CA you name, and it must prove it still has the private key by signing a challenge from the management server. A copied certificate without its key proves nothing.
 
-Think of it as a badge check at the door, repeated. The CA is the badge printer you trust, the certificate is the badge, and the signature is the guard asking the holder to sign their name rather than just wave the badge. NetBird repeats the check every 4 hours for as long as the peer is connected, so a key that is removed from a device, or a certificate that expires, closes the door within 4 hours.
+Think of it as a badge check at the door, repeated. The CA is the badge printer you trust, the certificate is the badge, and the signature is the guard asking the holder to sign their name rather than just wave the badge. NetBird pushes the challenge every 4 hours and rotates its nonce every 12 hours for as long as the peer is connected, so a certificate that expires closes the door within 4 hours, and a key that is removed from a device closes it within about 16 hours.
 
 ## The scenario
 
@@ -30,7 +30,7 @@ Three things to do, in order:
 
 ## Create the posture check
 
-Navigate to `Networking` > `Access Control` > `Posture Checks` in the NetBird dashboard and click `Create Posture Check`. Enable `Certificate`.
+Navigate to `Networking` > `Access Control` > `Posture Checks` in the NetBird dashboard and click `Add Posture Check` (or `Create Posture Check` if you have none yet). Enable `Certificate`.
 
 ![Certificate posture check with a CA certificate field](/docs-static/img/manage/access-control/posture-checks/posture-checks-certificate.png)
 
@@ -54,11 +54,11 @@ The client proves possession with whatever the operating system already uses to 
 | macOS | the System keychain, where MDM installs device identities | the login keychain of the signed-in user who owns the active profile |
 | Linux | PEM files in `/etc/netbird/certs`, or a PKCS#11 token | not applicable |
 
-The **profile owner** is the user who created the NetBird profile the client is currently running. Only that user's store is consulted, and only while that user has a session open, so a second person signed in to the same machine cannot answer for the profile, and a laptop sitting at the sign-in screen proves device certificates alone.
+The **profile owner** is the user who created the NetBird profile the client is currently running (for the `default` profile or profiles that predate ownership, ownership is assigned during migration or claimed on first use by an eligible user). Only that user's store is consulted, and only while that user has a session open, so a second person signed in to the same machine cannot answer for the profile, and a laptop sitting at the sign-in screen proves device certificates alone.
 
 ### Windows and macOS
 
-On Windows there is nothing to configure. A certificate enrolled into the computer store is found by the service; a certificate in the owner's personal store is found through a helper that NetBird runs inside that user's session. Keys protected by a TPM work the same way, since the client only ever asks the operating system to sign.
+On Windows there is nothing to configure as long as the private key is held by a CNG key storage provider. A certificate enrolled into the computer store is found by the service; a certificate in the owner's personal store is found through a helper that NetBird runs inside that user's session. Certificates whose key is held by a legacy CryptoAPI (CSP) provider are rejected and need to be re-enrolled with a CNG template. Keys protected by a TPM work the same way, since the client only ever asks the operating system to sign.
 
 On macOS the System keychain needs one setting, described below. A certificate in the owner's login keychain is found through the helper, like on Windows, and keys held in the Secure Enclave work too.
 
@@ -146,7 +146,7 @@ In the dashboard the effect is the same as for any other posture check: a peer t
 
 ## How the check keeps itself current
 
-The management server sends each connected peer a fresh challenge every 4 hours. The client signs the newest challenge and reports its proofs only when the set of certificates it can prove has changed, so a steady fleet produces no extra traffic. A device whose key disappears fails within 4 hours, and a certificate that expires fails at the next evaluation. This is the one posture check that is refreshed on a timer; the others are driven purely by configuration and metadata changes, as described in [When Posture Checks Are Evaluated](/manage/access-control/posture-checks#when-posture-checks-are-evaluated).
+The management server rotates the challenge nonce once per 12-hour window and re-sends the current challenge to each connected peer every 4 hours. Within a window the nonce stays the same, and re-sending an unchanged challenge does not by itself make the client sign again. It reports its proofs only when the set of certificates it can prove has changed, so a steady fleet produces no extra traffic. A device whose key disappears keeps passing until the next 12-hour window starts and the peer receives the new challenge (up to about 16 hours), and a certificate that expires fails at the next evaluation. Changing the CA list in the check forces an immediate re-check. This is the one posture check that is refreshed on a timer; the others are driven purely by configuration and metadata changes, as described in [When Posture Checks Are Evaluated](/manage/access-control/posture-checks#when-posture-checks-are-evaluated).
 
 ## When not to use it
 
@@ -157,6 +157,6 @@ The management server sends each connected peer a fresh challenge every 4 hours.
 ## In one breath
 
 - A Certificate posture check trusts `Corp Root CA`; attached to the `laptops` to `internal-apps` policy, it hides the policy from any laptop without a company certificate.
-- The laptop proves it holds the key by signing a challenge from management, every 4 hours while connected.
+- The laptop proves it holds the key by signing a challenge from management, re-proving about once every 12 hours while connected.
 - Windows and macOS find the certificate in the system and the profile owner's store; Linux reads `/etc/netbird/certs` or a tpm2-pkcs11 token.
-- Lose the key, or let the certificate expire, and the policy is gone within 4 hours.
+- Let the certificate expire and the policy is gone within 4 hours; lose the key and it is gone within about 16 hours (or immediately if the check's CA list changes).

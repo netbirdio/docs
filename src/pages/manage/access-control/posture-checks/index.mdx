@@ -33,7 +33,7 @@ Limit network access based on geographical location, helping comply with data re
 
 ![Country and Region Posture Check](/docs-static/img/manage/access-control/posture-checks/posture-checks-04.png)
 <Note>
-    When allowing access from specific locations in the network settings, all other locations are automatically blocked. Conversely, blocking certain locations means only those are blocked, while access remains open for all other locations.
+    When allowing access from specific locations in the network settings, all other locations are automatically blocked. Conversely, blocking certain locations means only those are blocked, while access remains open for all other locations as long as the peer's location can be determined. Peers with no resolvable location (no public connection IP, no GeoLite database, or hidden behind a proxy) fail a `Block` check too. The exception is a peer that already has a stored location and syncs with no connection IP, or with no GeoLite database on the server. It keeps its stored location, and the check uses that.
 </Note>
 #### Peer Network Range
 This posture check lets you precisely control network access by specifying which IP ranges can connect to your network. You can create policies allowing only connections from approved locations, such as office networks or trusted remote work setups. Additionally, you can enhance security by blocking high-risk IP ranges working in tandem with geo-based posture checks. This granular control helps create a more secure network environment by limiting access to known, trusted sources while preventing connections from potentially risky or unauthorized IP addresses.
@@ -86,7 +86,7 @@ Furthermore, this process-based posture check allows you to create specific poli
 ![Process Posture Check](/docs-static/img/manage/access-control/posture-checks/posture-checks-07.png)
 
 ### Certificate
-Restrict access to peers holding a certificate issued by your own certificate authority. Unlike most other checks, this one is not satisfied by something the device reports: the peer must present a certificate that chains to one of the CAs you paste here, and sign a challenge from the management server with the certificate's private key. A certificate copied to another machine without its key does not pass, and a key that is removed or a certificate that expires fails the check within 4 hours.
+Restrict access to peers holding a certificate issued by your own certificate authority. Unlike most other checks, this one is not satisfied by something the device reports: the peer must present a certificate that chains to one of the CAs you paste here, and sign a challenge from the management server with the certificate's private key. A certificate copied to another machine without its key does not pass. A certificate that expires fails the check within 4 hours, while a key that is removed can keep passing for up to about 16 hours (until the peer receives a challenge for the next 12-hour window).
 
 ![Certificate Posture Check](/docs-static/img/manage/access-control/posture-checks/posture-checks-certificate.png)
 
@@ -117,7 +117,7 @@ Note that you can add multiple posture checks to a single policy as needed for c
 
 ![Add Posture Check to Access Control Policy](/docs-static/img/manage/access-control/posture-checks/posture-checks-10.png)
 
-After adding the posture check, it will appear in the `POSTURE CHECKS` column. For easy management, you can click on it to edit the access control policy, allowing you to add or remove posture checks as needed.
+After adding the posture check, it appears on the policy's `Posture Checks` tab, where you can add or remove posture checks as needed.
 
 ![Access Control Policies Dashboard](/docs-static/img/manage/access-control/posture-checks/posture-checks-11.png)
 
@@ -131,10 +131,10 @@ Following these steps, you can effectively implement and manage NetBird's Postur
 
 NetBird evaluates posture checks when a peer connects or logs in. Checks are also re-evaluated during an active session whenever a peer reports changed system metadata. The management server replays each check against the peer's previous and current metadata, and when a check's verdict flips, it recomputes the network map and distributes the update to the affected peers.
 
-When you add or change a posture check on a policy, the updated configuration is distributed to connected peers immediately. A peer that is already connected is evaluated against the new check on its next connection. There is no periodic redistribution interval; distribution is driven by configuration changes and peer metadata changes, not a timer. The one exception is the Certificate check, whose challenge the management server renews every four hours so a connected peer keeps re-proving possession of its key; see [How the check keeps itself current](/manage/access-control/posture-checks/device-certificates#how-the-check-keeps-itself-current). For more on how changes reach peers, see [How Policy Changes Are Distributed](/manage/access-control#how-policy-changes-are-distributed).
+When you add or change a posture check on a policy, the updated configuration is distributed to connected peers immediately. A peer that is already connected is evaluated against the new check right away, without reconnecting. There is no periodic redistribution interval; distribution is driven by configuration changes and peer metadata changes, not a timer. The one exception is the Certificate check, where the management server rotates the challenge nonce once per 12-hour window (re-sending it every 4 hours) so a connected peer re-proves possession of its key about once every 12 hours; see [How the check keeps itself current](/manage/access-control/posture-checks/device-certificates#how-the-check-keeps-itself-current). For more on how changes reach peers, see [How Policy Changes Are Distributed](/manage/access-control#how-policy-changes-are-distributed).
 
 <Note>
-Mid-session re-evaluation requires a NetBird management server running [0.74.0](https://github.com/netbirdio/netbird/releases) or newer, and is driven by the peer reporting a metadata change rather than by a continuous poll. A peer that passes a posture check and later changes state during a long-lived session (for example an operating system downgrade or a required process stopping) is re-evaluated on its next metadata sync. On management servers older than 0.74.0, that state change is not picked up until the peer reconnects.
+Mid-session re-evaluation is driven by the peer reporting a metadata change rather than by a continuous poll. A peer that passes a posture check and later changes state during a long-lived session (for example an operating system downgrade or a required process stopping) is re-evaluated on its next metadata sync. A process starting or stopping, or a change in local interface addresses, does not itself trigger a metadata sync, so such a change may not be picked up until the peer reconnects.
 </Note>
 
 ## Known Limitations
