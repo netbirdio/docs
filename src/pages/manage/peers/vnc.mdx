@@ -2,44 +2,46 @@ import {Note, Warning} from "@/components/mdx";
 
 # VNC Access
 
-NetBird includes an embedded VNC server, so you can view and control the screen of a peer from the NetBird Dashboard without installing separate VNC software. The connection runs through your private network. Nothing is exposed to the internet, and no extra port has to be opened on the peer.
-
-The session is opened from the browser viewer in the Dashboard. Native VNC clients cannot connect to the embedded server, because the connection is authenticated with a key that only the browser viewer holds. To reach a third-party VNC server that already runs on a peer, see [Using an external VNC server](#using-an-external-vnc-server).
+NetBird includes a built-in VNC server, so you can see and control the screen of a peer from the NetBird Dashboard. There is nothing to install on the machine you connect from, and no port is opened to the internet: the connection runs through your private network.
 
 <Note>
-    VNC access is disabled by default. It has to be enabled on the peer you want
-    to reach, and you need a Dashboard role that is allowed to start remote
-    access to peers.
+    VNC access is disabled by default. Enable it on the peer you want to reach.
+    You also need a Dashboard role that is allowed to start remote access to
+    peers.
 </Note>
 
-## How it works
+## NetBird server or external server
 
-- Each peer can run an embedded VNC server. A client connects to port `5900` on the peer's NetBird address, and the NetBird client redirects that to the embedded server, which listens on `25900`. The server only accepts connections whose source address belongs to the NetBird network.
-- When you open VNC from the Dashboard, the browser starts a NetBird client of its own that joins the network as a temporary peer. It creates a one-time key pair for the session, and management grants that temporary peer access to the target peer for this session only.
-- Before any screen data is sent, the browser and the peer authenticate each other (a Noise IK handshake). The peer checks that the key belongs to a NetBird user who is allowed to reach it, and the browser checks that it is talking to the peer it asked for. The private key never leaves the browser.
-- Unless approval is turned off, the person signed in on the peer is asked to accept the connection first.
+You can reach a peer's screen in two ways. They differ in what NetBird can guarantee.
+
+| | NetBird VNC server | External VNC server |
+| --- | --- | --- |
+| What it is | The server built into the NetBird client | Any VNC server already running on the peer |
+| Who can connect | Only NetBird users who are allowed to reach the peer | Whoever knows the server's password. NetBird does not check |
+| Approval | The signed-in user on the peer approves each connection, unless approval is turned off | None. The peer's user is not asked |
+| View-only sessions | Yes | No |
+| Typed paste and remote cursor | Yes | No |
+| **New desktop** mode | Linux and FreeBSD | No |
+| Platforms | Linux, FreeBSD, macOS, Windows | Any system the server runs on |
+| Viewer | The Dashboard's browser viewer | The Dashboard's browser viewer, or any VNC client if an access policy allows the port |
+
+The NetBird server can be used only through the Dashboard's browser viewer. Other VNC clients cannot connect to it.
 
 ## Requirements
 
 To use VNC access, you need:
 
 1. **NetBird v0.84.0 or later** on the peer you want to reach.
-2. **A supported operating system** on that peer: Linux, FreeBSD, macOS or Windows. The embedded server is not available on Android or iOS.
+2. **A supported system** on that peer for the NetBird server: Linux, FreeBSD, macOS or Windows. It is not available on Android or iOS.
 3. **The VNC server enabled on the peer.** See [Enabling VNC](#enabling-vnc).
 4. **A Dashboard role that can start remote access to peers.** The **VNC** button is disabled for users without permission.
-5. **The peer online**, and the NetBird app running on it if connection approval is on.
+5. **The peer online.** If connection approval is on, the NetBird app also has to be running on it.
 
-<Note>
-    NetBird v0.84.0 or later is only needed on the peer. The browser viewer
-    brings its own client, so nothing has to be installed on the machine you
-    connect from.
-</Note>
+Nothing needs to be installed on the machine you connect from. The viewer runs in your browser.
 
 ## Enabling VNC
 
-### Step 1: Enable the VNC server on the peer
-
-On the machine you want to reach, enable the embedded VNC server.
+On the machine you want to reach, enable the VNC server.
 
 **Using the GUI:**
 
@@ -57,165 +59,178 @@ sudo netbird up --allow-server-vnc
 On Windows, run the same commands from an elevated prompt without `sudo`.
 
 <Note>
-  **Enable VNC Server** and turning connection approval off require privileges on
-  every platform, because the background service runs as root or LocalSystem while
-  the desktop app runs as you. The app shows those switches as unavailable and puts
-  the equivalent command next to them. On a machine where you do not have those
-  rights, an administrator has to run the command, or set
-  [`allowServerVNC`](/client/mdm-integration#allowServerVNC) through MDM, which the
-  client applies itself. Turning the server off, or turning approval back on,
-  never requires privileges.
+  **Enable VNC Server** and turning connection approval off require administrator
+  rights, because the VNC server shows the screen of whoever is signed in. The app
+  shows those switches as unavailable and gives you the command to run. On a managed
+  workstation, an administrator has to run it, or set
+  [`allowServerVNC`](/client/mdm-integration#allowServerVNC) through MDM. Turning
+  the server off, or turning approval back on, never requires administrator rights.
 </Note>
 
 <Note>
-  The VNC server stays off while the peer blocks inbound connections, even if it is
-  enabled.
+  The VNC server stays off while the peer blocks inbound connections.
 </Note>
 
-### Step 2: Connect from the Dashboard
+## Connecting from the Dashboard
 
 1. Open **Peers** and select the peer, or use the actions menu of its row in the peers table.
 2. Under **Remote Access**, click **VNC**. A viewer window opens.
 3. Choose how to connect, then click **Connect**.
 4. If connection approval is on, the person signed in on the peer sees a prompt and has to accept it. See [Connection approval](#connection-approval).
 
-The **VNC** button is disabled, with an explanation, when the peer is offline, when you lack permission, or when the NetBird VNC server is not available or not enabled on the peer. An external server can still be used in the last two cases.
+The **VNC** button is disabled, with an explanation, when the peer is offline, when you lack permission, or when the NetBird VNC server is not available or not enabled on the peer. You can still connect to an external server in the last two cases.
 
-## Connection options
+<p>
+    <img src="/docs-static/img/manage/peers/vnc/vnc-connect-modal.png" alt="vnc-connect-modal" className="imagewrapper-big"/>
+</p>
 
-The connection screen shows the peer name and address, and these options:
+The connection screen has these options:
 
 | Option | Values | Notes |
 | --- | --- | --- |
-| **Server** | **NetBird** or **External** | **NetBird** uses the embedded server and is authenticated. **External** reaches a VNC server that is already running on the peer. |
+| **Server** | **NetBird** or **External** | **NetBird** uses the built-in server. **External** reaches a VNC server that is already running on the peer. |
 | **Port** | 1 to 65535, default 5900 | Only for **External**. |
-| **Session** | **Current screen** or **New desktop** | **New desktop** is only offered for Linux and FreeBSD peers running the NetBird server. See [Connection modes](#connection-modes). |
+| **Session** | **Current screen** or **New desktop** | **New desktop** is offered for Linux and FreeBSD peers running the NetBird server. |
 | **User** | An operating system user | Only for **New desktop**. |
 | **IP Version** | **Automatic**, **IPv4** or **IPv6** | **IPv6** is disabled when the peer has no IPv6 address. |
 
 ## Connection modes
 
-### Current screen
+| | Current screen | New desktop |
+| --- | --- | --- |
+| Available on | Linux, FreeBSD, macOS, Windows | Linux and FreeBSD |
+| What you see | The screen of the user signed in on the peer | A separate desktop for the user you name |
+| Needs on the peer | Someone signed in at the console | `Xvfb`, or `Xorg` with the dummy driver, installed, and an existing operating system user |
+| **User** field | Not used | Required |
+| Several viewers | They share the screen | They share one desktop per user |
 
-**Current screen** shows what is on the peer's display now and lets you control it. This is the only mode on macOS and Windows.
+**Current screen** is the right choice when you want to help someone or look at what they see. **New desktop** lets you work on a Linux or FreeBSD machine without disturbing whoever is using its screen. The desktop closes a few minutes after the last viewer leaves.
 
-### New desktop
+### Text console
 
-**New desktop** starts a separate desktop session for an operating system user, so you can work on a Linux or FreeBSD peer without disturbing whoever is using its screen. It is available on Linux and FreeBSD only.
+On a Linux or FreeBSD peer that has no graphical session, such as a server, **Current screen** shows the text console instead of failing. You can watch boot messages, see the login prompt and work in a shell, with nothing extra installed on the peer.
 
-- You have to enter the operating system user to start the desktop as. That user also has to be authorized for the connection.
-- The peer needs `Xvfb`, or `Xorg` with the dummy driver. If neither is installed, the connection is refused with a message to install `xvfb` or `xserver-xorg`.
-- The desktop starts as the target user with the session found under `/usr/share/xsessions`. If none is found, NetBird tries `startplasma-x11`, `gnome-session`, `xfce4-session`, `mate-session`, `cinnamon-session`, `openbox-session` and `xterm`, in that order.
-- The desktop opens at 1280 by 800 unless the viewer asks for another size, up to 8192 pixels in either direction.
-- A desktop is shared by every connection for the same user, and it is closed after 5 minutes without any connection.
+| | Linux | FreeBSD |
+| --- | --- | --- |
+| What you see | The text console | The text console |
+| Needs on the peer | A framebuffer console (`/dev/fb0`) that the NetBird service can read | A console driver that allows capturing the screen |
+| Keyboard and mouse | Yes, when the `uinput` kernel module is available (`/dev/uinput`). Without it the session is view-only | No. The session is view-only |
+
+NetBird switches to the text console on its own when it finds no graphical session. Most servers and virtual machines have a framebuffer console already. A peer without the NetBird app cannot show the approval prompt, so turn [connection approval](#connection-approval) off for unattended servers.
 
 ## Connection approval
 
-By default the person signed in on the peer has to approve every connection. The prompt is shown by the NetBird desktop app and appears before any screen data is sent.
-
-The prompt is titled **Allow VNC Connection?** and shows who is connecting: the user, the key fingerprint, the peer the connection comes through, the source address and the operating system user. It offers three choices:
+By default, the person signed in on the peer has to approve every connection. The NetBird app on the peer shows a prompt, **Allow VNC Connection?**, that says who is connecting, and offers three choices:
 
 - **Allow**: the viewer can see and control the screen.
-- **Allow (view only)**: the viewer can see the screen, and its keyboard and mouse input is dropped.
+- **Allow (view only)**: the viewer can see the screen, but its keyboard and mouse input is ignored.
 - **Deny**: the connection is refused.
 
-If nobody answers within 60 seconds, the connection is denied. The viewer waits long enough to show that outcome.
+If nobody answers within 60 seconds, the connection is denied.
 
-To accept connections without asking, for example on an unattended machine, start the client with `--disable-vnc-approval`, clear **Require Connection Approval** under **Settings → VNC**, or set [`disableVNCApproval`](/client/mdm-integration#disableVNCApproval) through MDM. Turning approval off needs administrator rights, for the same reason as enabling the server.
+To accept connections without asking, for example on an unattended machine, start the client with `--disable-vnc-approval`, clear **Require Connection Approval** under **Settings → VNC**, or set [`disableVNCApproval`](/client/mdm-integration#disableVNCApproval) through MDM.
 
 <Warning>
-    With approval turned off, anyone who is authorized to reach the peer can view
-    and control its screen without the signed-in user knowing. Leave approval on
-    for machines that people use.
+    With approval turned off, anyone who is allowed to reach the peer can view and
+    control its screen without the signed-in user knowing. Leave approval on for
+    machines that people use.
 </Warning>
 
 ## Using the viewer
 
-Move the pointer to the top edge of the window to show the toolbar. Drag the handle to move it.
+Move the pointer to the top edge of the window to show the toolbar. Drag its handle to move it.
 
 | Control | What it does |
 | --- | --- |
-| **Ctrl+Alt+Del** | Sends the secure attention sequence. Shown for Windows peers, and hidden in view-only sessions. |
-| **Paste** | Types the text on your clipboard on the remote machine as keystrokes. It works on login screens, where the clipboard is not shared. Not available for external servers. |
-| **Remote cursor** | Shows the remote machine's own cursor. Not shown for external servers, in view-only sessions, or for macOS peers, where the cursor is already part of the picture. |
-| **End session** | Ends your session. The peer is not asked and nothing changes on it. The window offers **Reconnect**. |
+| **Ctrl+Alt+Del** | Sends Ctrl+Alt+Del to the peer. Shown for Windows peers, and hidden in view-only sessions. |
+| **Paste** | Types the text on your clipboard on the remote machine. It works on login screens, where the clipboard is not shared. Not available for external servers. |
+| **Remote cursor** | Also shows the remote machine's own pointer. Not available for external servers, in view-only sessions, or for macOS peers. |
+| **End session** | Ends your session. Nothing changes on the peer. The window offers **Reconnect**. |
 
 A **View-only** badge appears when the peer's user chose **Allow (view only)**. An **External VNC** badge stays visible for the whole session when you connected to an external server.
 
 ### Clipboard
 
 - Text copied on the remote machine is copied to your browser clipboard.
-- When the viewer window gets focus, the text on your browser clipboard is sent to the remote machine's clipboard, if your browser allows reading it. The browser may ask you once.
-- `Ctrl+V` and **Paste** type the text on the remote machine instead of relying on the remote clipboard.
+- When the viewer window gets focus, the text on your browser clipboard is sent to the remote machine, if your browser allows it. The browser may ask you once.
+- `Ctrl+V` and **Paste** type the text on the remote machine instead.
 
 <Note>
     The clipboard is sent on window focus for external servers too. If you do not
-    want the contents of your clipboard to reach a server that NetBird does not
-    authenticate, clear the clipboard before you focus the window.
+    want your clipboard to reach a server that NetBird does not check, clear it
+    before you focus the window.
 </Note>
 
-## Platform notes
+## Supported features
 
-### Linux and FreeBSD
+- Screen, keyboard and mouse, including the scroll wheel.
+- Copy and paste of text. Text you copy on the peer is available in your browser, and the **Paste** button in the toolbar sends your clipboard text to the peer, including to login screens. See [Clipboard](#clipboard).
+- Ctrl+Alt+Del for Windows peers, including the sign-in screen, UAC prompts and the lock screen.
+- View-only sessions.
+- Remote cursor.
+- IPv4 and IPv6.
+- Two modes on Linux and FreeBSD: the current screen, or a separate desktop.
+- The text console of Linux and FreeBSD machines without a graphical session. See [Text console](#text-console).
 
-- **Current screen** captures the X server on the active virtual terminal. Input is sent through XTest. If the X server has no XTest support, the session is view-only.
-- When no X server is running, the server falls back to the console framebuffer and injects input through `/dev/uinput`. Without `uinput`, that session is view-only too.
-- If the active X server cannot be identified unambiguously, the server attaches to nothing rather than guess.
+## What works where
 
-### Windows
+| | Linux and FreeBSD | Windows | macOS |
+| --- | --- | --- | --- |
+| **New desktop** | Yes | No | No |
+| Needs a user signed in | A graphical session, or the text console when there is none | A locked or sign-in screen is refused while approval is on. It works with approval off | Yes. At the login window the connection is refused |
+| Remote cursor | Yes | Yes | No. The cursor is already part of the picture |
+| Text console | Linux: yes, with input when `uinput` is available. FreeBSD: view-only | Not applicable | Not applicable |
+| Display shown | The screen | The primary screen | The main display only, at half resolution on Retina displays |
+| The peer's user has to grant | Nothing | Nothing | **Screen Recording** and **Accessibility** |
+| **Ctrl+Alt+Del** | Not applicable | Yes, except on Windows Server Core | Not applicable |
 
-- The NetBird service starts a helper in the active console session, which does the capture and input. This also covers the sign-in screen, UAC prompts and the lock screen.
-- **Ctrl+Alt+Del** works through the Windows secure attention sequence. NetBird turns on the required policy while the server runs and restores it on shutdown. On Windows Server Core the sequence is not available and the key is dropped.
-- With approval on, a locked workstation or sign-in screen is refused, because nobody can answer the prompt. To reach a locked machine, turn approval off.
-- The picture is the primary screen only.
+### macOS permissions
 
-### macOS
+The first time someone connects, macOS asks the signed-in user to allow NetBird to record the screen and to control the computer. Without **Screen Recording**, the viewer shows the desktop wallpaper and no windows. Without **Accessibility**, the viewer shows the screen but your keyboard and mouse do nothing. Both can be granted under **System Settings → Privacy & Security**.
 
-- The signed-in user has to grant **Screen Recording** to NetBird. Without it, the viewer shows the wallpaper and no windows.
-- The user also has to grant **Accessibility** so that keyboard and mouse input works. NetBird asks again every few seconds until it is granted, and opens **Privacy & Security → Accessibility** when it cannot prompt.
-- The picture is the main display only. Retina displays are sent at half resolution. Set `NB_VNC_DISABLE_DOWNSCALE=1` on the peer to send full resolution.
-- At the macOS login window nobody is signed in, so the connection is refused.
+### Windows sign-in and lock screens
+
+You can reach the sign-in screen and a locked session only when connection approval is off, because nobody is signed in to answer the prompt. **Ctrl+Alt+Del** works in a signed-in session whether approval is on or off.
 
 ## Using an external VNC server
 
-Choose **External** to reach a VNC server that is already running on the peer, whatever its operating system, and enter its port.
+Choose **External** to reach a VNC server that is already running on the peer, on any operating system, and enter its port.
 
-- The browser opens the connection through your NetBird network, using a temporary grant for that one port.
-- NetBird does not authenticate the server, and the peer's user is not asked to approve. There is no view-only mode, and the **Paste** and **Remote cursor** controls are not shown.
-- If the server asks for a password, the viewer shows a **VNC Password** prompt. Only password-only authentication is supported. A server that also asks for a username, or for something else, is refused with a message naming what it asked for.
+- NetBird does not check who connects to it, and the peer's user is not asked to approve.
+- There is no view-only mode, and the **Paste** and **Remote cursor** controls are not shown.
+- If the server asks for a password, the viewer shows a **VNC Password** prompt. Only servers that ask for a password alone are supported. A server that also asks for a username is refused.
+
+## Security
+
+- Only a NetBird user who is allowed to reach the peer can open a session on the built-in server. The browser proves its identity with a key created for that session alone.
+- The access the Dashboard grants for a session is temporary and is removed when the session ends.
+- If access is withdrawn while a session is open, the session is closed.
+- Unless you turn approval off, the person on the peer decides every time.
 
 ## Monitoring
 
-`netbird status` shows the state of the server on a peer: `VNC Server: Disabled`, `Enabled`, or `Enabled (N active session(s))`. The JSON and YAML output include a `vncServer` object.
-
-The desktop app shows a **Screen shared** badge while a VNC session is active. Disconnecting NetBird ends the session, so someone connected through VNC loses access.
-
-## Revoking access
-
-- The access granted to the browser is temporary and tied to that session. Management removes the temporary peer and its access when it is deleted, and removes it automatically after 10 minutes of inactivity.
-- When an access policy changes, live sessions that are no longer authorized are closed.
+`netbird status` shows whether the server is on, and how many sessions are active: `VNC Server: Disabled`, `Enabled`, or `Enabled (N active session(s))`. The desktop app on the peer shows a **Screen shared** badge while someone is connected.
 
 ## Troubleshooting
 
 | Message | What it means |
 | --- | --- |
-| You are not allowed to connect to this peer. | Your user is not authorized for this peer, or for the operating system user you asked for. |
+| You are not allowed to connect to this peer. | Your user is not allowed to reach this peer, or the operating system user you asked for. |
 | The peer's user declined the connection request. | The person on the peer chose **Deny**. |
-| The peer's user did not answer the connection request in time. | Nobody answered within 60 seconds. Try again, or ask the user to watch for the prompt. |
-| The connection request could not be shown to the peer's user. Make sure the NetBird app is running on the peer. | The prompt could not be delivered. Start the NetBird desktop app on the peer. |
-| Nobody is signed in on the peer. | There is no signed-in user to approve or to capture, for example at a login screen or a locked Windows machine. Turn approval off, or have someone sign in. |
-| The peer cannot capture its screen. | The server could not start capturing. On macOS, check **Screen Recording**. On Linux, check that an X server or the framebuffer is available. |
-| Could not start the virtual session on the peer. | **New desktop** failed. Check that `Xvfb` or `Xorg` with the dummy driver is installed, and that the user exists. |
-| This action is not supported on the peer's platform. | For example **New desktop** on Windows or macOS. Use **Current screen**. |
+| The peer's user did not answer the connection request in time. | Nobody answered within 60 seconds. Try again and ask the user to watch for the prompt. |
+| The connection request could not be shown to the peer's user. Make sure the NetBird app is running on the peer. | Start the NetBird app on the peer. |
+| Nobody is signed in on the peer. | There is no signed-in user, for example at a login screen or on a locked Windows machine. Have someone sign in, or turn approval off. |
+| The peer cannot capture its screen. | On macOS, check that **Screen Recording** is allowed. On Linux, check that a graphical session or console is available. |
+| Could not start the virtual session on the peer. | **New desktop** failed. Check that `Xvfb` or `Xorg` with the dummy driver is installed and that the user exists. |
+| This action is not supported on the peer's platform. | For example, **New desktop** on Windows or macOS. Use **Current screen**. |
 | Could not reach the peer. It may be offline. | The connection timed out. The viewer retries once on its own. |
 | Nothing is listening on port N on the peer. | For an external server, the port is wrong or the server is not running. |
 | The VNC session keys could not be obtained. The NetBird client may not support VNC. | The NetBird client your Dashboard serves to the browser is older than v0.84.0. On a self-hosted Dashboard, ask your administrator to update it. |
-| This VNC server asked for credentials the viewer cannot supply. | An external server wants a username or another credential. Configure it for password-only authentication. |
+| This VNC server asked for credentials the viewer cannot supply. | An external server wants a username or another credential. Set it to ask for a password only. |
 
 ## Limitations
 
-- VNC access is available only through the Dashboard's browser viewer. Native VNC clients are not supported for the embedded server.
+- The built-in server is reachable only through the Dashboard's browser viewer.
 - Access policies have no VNC rule type. Access is granted for each session, to the Dashboard user who starts it.
-- The server shows one display. On macOS this is the main display, and on Windows the primary screen.
-- **New desktop** exists on Linux and FreeBSD only.
-- A peer accepts at most 64 concurrent VNC connections.
+- Only one display is shown per peer.
+- Settings such as image quality and scaling cannot be changed from the interface.
