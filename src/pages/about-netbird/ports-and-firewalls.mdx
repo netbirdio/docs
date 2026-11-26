@@ -184,7 +184,7 @@ When another tool also manages firewall rules, conflicts can occur:
 - **Incoming**: Deny all
 - **Outgoing**: Allow all
 
-UFW's default deny doesn't normally block NetBird traffic. With the kernel nftables or iptables backend, the NetBird client inserts its rules for the `wt0` interface at the top of the `INPUT` and `FORWARD` chains when it starts, ahead of UFW's chains. It does this for IPv4, and for IPv6 when the peer has a NetBird IPv6 address. UFW appends its own rules, so `ufw reload` or turning UFW off and on again doesn't change that order. NetBird still enforces your access control policies in its own chains, so these rules don't bypass your NetBird policies.
+UFW's default deny doesn't normally block NetBird traffic. With the kernel nftables or iptables backend, the NetBird client inserts its rules for the `wt0` interface at the top of the `INPUT` and `FORWARD` chains when it starts, ahead of UFW's chains. It does this for IPv4, and for IPv6 when the peer has a NetBird IPv6 address. UFW appends its own rules, so `ufw reload` or turning UFW off and on again doesn't change that order, as long as `/etc/default/ufw` has `MANAGE_BUILTINS=no` (the default). With `MANAGE_BUILTINS=yes`, `ufw reload` flushes the built-in chains and removes NetBird's rules, so check that setting first. NetBird still enforces your access control policies in its own chains, so these rules don't bypass your NetBird policies.
 
 If traffic on `wt0` is blocked while UFW is active, check that NetBird's rule is still the first rule in the `INPUT` chain:
 
@@ -209,7 +209,7 @@ sudo systemctl restart netbird
 sudo ufw status verbose
 ```
 
-If another tool keeps removing NetBird's rule, add a UFW rule for the NetBird interface so UFW's default deny doesn't block `wt0` traffic. A UFW rule can't override a drop rule that another tool inserts above UFW's chains; fix that tool's rules instead.
+If another tool keeps removing NetBird's rule, add a UFW rule for the NetBird interface so UFW's default deny doesn't block `wt0` traffic. Only do this with the nftables firewall manager, which enforces your access control policies in its own nftables table. With the iptables firewall manager, the removed `INPUT` rules are what send `wt0` traffic through NetBird's policies, so a UFW allow rule would admit all `wt0` traffic. Restart NetBird to restore its rules and fix the tool that removes them instead. A UFW rule can't override a drop rule that another tool inserts above UFW's chains; fix that tool's rules instead.
 
 **Allow traffic on the NetBird interface**:
 ```bash
