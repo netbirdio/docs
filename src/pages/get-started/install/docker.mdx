@@ -19,7 +19,7 @@ The experience may vary depending on the docker daemon, operating system, or ker
 docker run --rm --name PEER_NAME --hostname PEER_NAME --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --cap-add=SYS_RESOURCE -d -e NB_SETUP_KEY=<SETUP KEY> -v netbird-client:/var/lib/netbird netbirdio/netbird:latest
 ```
 
-See [Docker example](/use-cases/examples#net-bird-client-in-docker) for details.
+For a self-hosted deployment, also pass your NetBird domain as the management URL, for example `-e NB_MANAGEMENT_URL=https://netbird.example.com`.
 
 ### IPv6 overlay
 
@@ -45,18 +45,13 @@ services:
 With `network_mode: host` the container inherits the host's sysctls, so the flags can be dropped as long as the host has IPv6 forwarding enabled.
 
 ### Troubleshooting
-1. If you are using self-hosted version and haven't specified `--management-url`, the client app will use the default URL
-which is ```https://api.netbird.io:443```.
+1. If you self-host NetBird and start a container with a new volume without `NB_MANAGEMENT_URL`, the client uses NetBird Cloud (`https://api.netbird.io:443`). Your setup key isn't valid there, so the container exits and its log shows `using default Management URL https://api.netbird.io:443` followed by `setup key is invalid`. A volume that already holds a configuration keeps the management URL saved in it.
 
-2. If you have specified a wrong `--management-url` (e.g., just by mistake when self-hosting)
-to override it you can do the following:
+2. To fix a missing or wrong management URL, start the container again with the correct `NB_MANAGEMENT_URL`, keeping the same volume. If the container still exists, remove it first with `docker rm -f PEER_NAME`:
 
 ```bash
-netbird down
-netbird up --management-url https://<CORRECT HOST:PORT>/
+docker run --rm --name PEER_NAME --hostname PEER_NAME --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --cap-add=SYS_RESOURCE -d -e NB_SETUP_KEY=<SETUP KEY> -e NB_MANAGEMENT_URL=https://netbird.example.com -v netbird-client:/var/lib/netbird netbirdio/netbird:latest
 ```
-
-To override it see the solution #1 above.
 
 ## Docker Compose
 If you prefer to run NetBird as a Docker compose stack below is an example. Configure to your specific needs.
@@ -93,21 +88,19 @@ For unattended deployments across many containers, pre-populate the client confi
 1. Login to the Management Service. You need to have a `setup key` in hand (see [setup keys](/manage/peers/register-machines-using-setup-keys)).
 
 ```bash
-docker run --network host --privileged --rm -d -e NB_SETUP_KEY=<SETUP KEY> -v netbird-client:/var/lib/netbird netbirdio/netbird:<TAG>
+docker run --name PEER_NAME --network host --privileged --rm -d -e NB_SETUP_KEY=<SETUP KEY> -v netbird-client:/var/lib/netbird netbirdio/netbird:<TAG>
 ```
 
-You could also omit the `--setup-key` property. In this case, the tool will prompt for the key.
-
-2. Check connection status:
+2. Check connection status. Run the CLI inside the container, using the container name or ID:
 ```bash
-  netbird status
+  docker exec PEER_NAME netbird status
 ```
 
-3. Check your IP:
+3. Check the peer's NetBird IP:
 
-````bash
-  sudo ifconfig utun100
-````
+```bash
+  docker exec PEER_NAME netbird status --ipv4
+```
 
 ## Rootless Image
 
