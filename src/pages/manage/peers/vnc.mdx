@@ -56,7 +56,7 @@ sudo netbird down
 sudo netbird up --allow-server-vnc
 ```
 
-On Windows, run the same commands from an elevated prompt without `sudo`.
+On Windows, run the same commands from an elevated prompt without `sudo`. To turn the server off again, run `netbird up --allow-server-vnc=false`.
 
 <Note>
   **Enable VNC Server** and turning connection approval off require administrator
@@ -78,7 +78,11 @@ On Windows, run the same commands from an elevated prompt without `sudo`.
 3. Choose how to connect, then click **Connect**.
 4. If connection approval is on, the person signed in on the peer sees a prompt and has to accept it. See [Connection approval](#connection-approval).
 
-The **VNC** button is disabled, with an explanation, when the peer is offline, when you lack permission, or when the NetBird VNC server is not available or not enabled on the peer. You can still connect to an external server in the last two cases.
+The **VNC** button sits next to **SSH** and **RDP** under **Remote Access**. It is disabled, and a tooltip explains why, when:
+
+- you do not have permission to launch a VNC session;
+- the peer is offline;
+- NetBird's VNC server is not available on the peer's operating system, or is not enabled on the peer. You can still connect to an external server in these two cases.
 
 <p>
     <img src="/docs-static/img/manage/peers/vnc/vnc-connect-modal.png" alt="vnc-connect-modal" className="imagewrapper-big"/>
@@ -120,15 +124,27 @@ NetBird switches to the text console on its own when it finds no graphical sessi
 
 ## Connection approval
 
-By default, the person signed in on the peer has to approve every connection. The NetBird app on the peer shows a prompt, **Allow VNC Connection?**, that says who is connecting, and offers three choices:
+By default, the person signed in on the peer has to approve every connection. The NetBird app on the peer opens a small window titled **Allow VNC Connection?** that shows who is asking:
+
+| Field | What it shows |
+| --- | --- |
+| **From user** | The NetBird user who started the session |
+| **Key fingerprint** | The fingerprint of the key the session was created with |
+| **Via peer** | The peer the connection comes through |
+| **Source IP** | The address the connection comes from |
+| **OS user** | The operating system user the session runs as |
+
+Below the details, a countdown reads **Auto-deny in 60s** and counts down, and three buttons offer the choices:
 
 - **Allow**: the viewer can see and control the screen.
-- **Allow (view only)**: the viewer can see the screen, but its keyboard and mouse input is ignored.
-- **Deny**: the connection is refused.
+- **Allow (view only)**: the viewer can see the screen, but its keyboard and mouse input is ignored. It sits on its own row above **Deny** and **Allow**.
+- **Deny**: the connection is refused. This button has the focus when the window opens.
+
+The allow buttons become available a moment after the window appears, so a stray key press or click cannot accept a connection by accident.
 
 If nobody answers within 60 seconds, the connection is denied.
 
-To accept connections without asking, for example on an unattended machine, start the client with `--disable-vnc-approval`, clear **Require Connection Approval** under **Settings → VNC**, or set [`disableVNCApproval`](/client/mdm-integration#disableVNCApproval) through MDM.
+To accept connections without asking, for example on an unattended machine, start the client with `--disable-vnc-approval` (and `--disable-vnc-approval=false` to turn the prompt back on), clear **Require Connection Approval** under **Settings → VNC**, or set [`disableVNCApproval`](/client/mdm-integration#disableVNCApproval) through MDM.
 
 <Warning>
     With approval turned off, anyone who is allowed to reach the peer can view and
@@ -147,7 +163,19 @@ Move the pointer to the top edge of the window to show the toolbar. Drag its han
 | **Remote cursor** | Also shows the remote machine's own pointer. Not available for external servers, in view-only sessions, or for macOS peers. |
 | **End session** | Ends your session. Nothing changes on the peer. The window offers **Reconnect**. |
 
-A **View-only** badge appears when the peer's user chose **Allow (view only)**. An **External VNC** badge stays visible for the whole session when you connected to an external server.
+The toolbar remembers where you put it. **Remote cursor** is a switch: it stays highlighted while it is on.
+
+A **View-only** badge appears when the peer's user chose **Allow (view only)**. An **External VNC** tag stays visible under the handle for the whole session when you connected to an external server, even when the toolbar is hidden.
+
+### What the viewer shows
+
+While a connection is being set up, the viewer window tells you what it is waiting for:
+
+- **Requesting temporary peer access…** while the Dashboard asks for access for this session.
+- **Bringing up NetBird overlay…** while the browser joins your network.
+- **Connecting to VNC server…** while it reaches the peer. If it takes a while, the message adds that the peer may be asking its user for approval.
+
+If the connection fails, the connection screen comes back with the reason. When a session ends, or you choose **End session**, the window shows **Disconnected from** the peer's name with a **Reconnect** link. If the viewer cannot find the peer, it says **No peer selected** or **Could not load this peer**. Close the window and open it again from the peer.
 
 ### Clipboard
 
@@ -186,11 +214,36 @@ A **View-only** badge appears when the peer's user chose **Allow (view only)**. 
 
 ### macOS permissions
 
-The first time someone connects, macOS asks the signed-in user to allow NetBird to record the screen and to control the computer. Without **Screen Recording**, the viewer shows the desktop wallpaper and no windows. Without **Accessibility**, the viewer shows the screen but your keyboard and mouse do nothing. Both can be granted under **System Settings → Privacy & Security**.
+macOS only lets an app capture the screen and send keyboard and mouse input after the user of that Mac has allowed it. NetBird needs two permissions:
 
-### Windows sign-in and lock screens
+- **Screen Recording**, to see the screen. Without it, the viewer shows the desktop wallpaper and no windows.
+- **Accessibility**, to type and click. Without it, the viewer shows the screen but your keyboard and mouse do nothing.
 
-You can reach the sign-in screen and a locked session only when connection approval is off, because nobody is signed in to answer the prompt. **Ctrl+Alt+Del** works in a signed-in session whether approval is on or off.
+The first time someone connects, NetBird asks for these on the Mac's own screen, so the person sitting at the Mac has to respond. NetBird asks for Accessibility again every few seconds until it is granted, and if macOS cannot show the prompt, NetBird opens **System Settings → Privacy & Security → Accessibility** for the user.
+
+To grant the permissions without waiting for the prompt, do this on the Mac:
+
+1. Open **System Settings → Privacy & Security**.
+2. Open **Screen Recording** (called **Screen & System Audio Recording** on newer versions of macOS) and turn on **NetBird**.
+3. Open **Accessibility** and turn on **NetBird**.
+4. Connect again from the Dashboard. A new connection picks up the permissions.
+
+Do this before you need to reach an unattended Mac, because nobody is there to approve the prompts. If a permission is removed later, NetBird asks for it again at the next connection.
+
+### Windows sessions
+
+Windows can have several sessions at once: the one on the machine's own screen (the console) and one for each user connected over Remote Desktop. VNC shows one of them, and NetBird picks it like this:
+
+1. An active session with a signed-in user. That is the user at the console, or a user connected over Remote Desktop.
+2. Otherwise, the console at the sign-in screen.
+3. Otherwise, the console session.
+
+If more than one session has a signed-in user, NetBird picks the first active one it finds. You cannot choose a session from the viewer.
+
+- **Approval** goes to the user in the session being shown. If that session is locked, or is at the sign-in screen, nobody can answer, so the connection is refused while approval is on.
+- **Sign-in and lock screens** can be reached only with connection approval off. **Ctrl+Alt+Del** works in a signed-in session whether approval is on or off.
+- **Changes of session**, such as a user switch, or Remote Desktop connecting or disconnecting, make NetBird follow the new session. A VNC session that is open at that moment can end, and you can reconnect.
+- **A user connected over Remote Desktop** is shown when theirs is the active session with a signed-in user.
 
 ## Using an external VNC server
 
@@ -198,7 +251,8 @@ Choose **External** to reach a VNC server that is already running on the peer, o
 
 - NetBird does not check who connects to it, and the peer's user is not asked to approve.
 - There is no view-only mode, and the **Paste** and **Remote cursor** controls are not shown.
-- If the server asks for a password, the viewer shows a **VNC Password** prompt. Only servers that ask for a password alone are supported. A server that also asks for a username is refused.
+- If the server asks for a password, the viewer shows a **VNC Password** prompt for the peer and port. The password is the one set on that server, not a NetBird password. If the server rejects it, the prompt comes back with **The server rejected that password.** and you can try again. If the server stops waiting, the prompt says so and you use **Reconnect**. **Cancel** takes you back to the connection screen.
+- Only servers that ask for a password alone are supported. A server that also asks for a username is refused.
 
 ## Security
 
@@ -209,7 +263,7 @@ Choose **External** to reach a VNC server that is already running on the peer, o
 
 ## Monitoring
 
-`netbird status` shows whether the server is on, and how many sessions are active: `VNC Server: Disabled`, `Enabled`, or `Enabled (N active session(s))`. The desktop app on the peer shows a **Screen shared** badge while someone is connected.
+`netbird status` shows whether the server is on, and how many sessions are active: `VNC Server: Disabled`, `Enabled`, or `Enabled (N active session(s))`. `netbird status --detail` also lists each session, with who is connected, from which address, as which operating system user, and in which mode. The desktop app on the peer shows a **Screen shared** badge while someone is connected.
 
 ## Troubleshooting
 
