@@ -1,0 +1,274 @@
+import { Note, Warning } from '@/components/mdx'
+
+export const description =
+  'Point Claude Code, Codex, OpenCode, or Pi at your Agent Network endpoint from the NetBird desktop app or with netbird agent-network setup: preview, backup, and undo.'
+
+# Set Up Coding Agents with the Client
+
+The NetBird client can write a coding agent's configuration for you, so the agent sends its
+model requests to your Agent Network endpoint. It uses the endpoint, providers, and models
+this computer can actually reach, shows the changes before writing them, backs up the file
+first, and can undo them later. Use the **Agent Networks** tab in the desktop app or the
+`netbird agent-network setup` command.
+
+Supported agents: [Claude Code](#claude-code), [Codex](#codex), [OpenCode](#open-code), and
+[Pi](#pi).
+
+<Note>
+    This needs Agent Network enabled on your account, a policy that gives this computer
+    access to a provider, NetBird client **vX.Y.Z** or later, and a management server of the
+    same version or later.
+</Note>
+
+No API key is written. The endpoint recognizes this computer by its NetBird identity, and
+NetBird adds the provider key on the server side. Where an agent insists on a key, setup
+writes a placeholder such as `not-needed`. This works the same for a peer added with a
+setup key.
+
+To configure an agent by hand instead, see the [Integrations](/agent-network/integrations)
+guides.
+
+## Desktop App
+
+1. Connect NetBird and open the **Agent Networks** tab.
+2. Under **Connect your agent**, click **Connect** next to the agent. The button is disabled
+   when none of your providers works with that agent. A provider whose policy allows no
+   model is not offered, since every request through it would be refused.
+
+    <p>
+        <img src="/docs-static/img/agent-network/client/agent-network-client-agents.png" alt="Connect your agent section of the NetBird desktop app listing Claude Code, Codex, OpenCode, and Pi" className="imagewrapper-big" />
+    </p>
+
+3. Pick a **Provider** and a **Model**. If you leave the model empty, the agent picks its
+   own. For a Vertex AI provider, also enter the **Google Cloud project ID**.
+4. Review the preview. It lists each file and setting with its current value and the value
+   NetBird will write. A setting marked **Not set by NetBird** already holds a value you or
+   another tool set; it will be replaced, and the button reads **Replace and Connect**.
+
+    <p>
+        <img src="/docs-static/img/agent-network/client/agent-network-client-connect-claude-code.png" alt="Connect Claude Code dialog with provider and model pickers and a preview where one setting is marked Not set by NetBird" className="imagewrapper-big" />
+    </p>
+
+5. Click **Connect**. The agent's row now shows **Connected**.
+
+    <p>
+        <img src="/docs-static/img/agent-network/client/agent-network-client-connected.png" alt="Claude Code shown as Connected, with Disconnect and Change buttons" className="imagewrapper-big" />
+    </p>
+
+Use **Change** to pick another provider or model, and **Disconnect** to [undo](#undo) the
+changes. A row marked **Edited** was connected by NetBird, but its settings were changed
+afterwards or the file can no longer be read.
+
+If a file contains comments or anything else NetBird cannot rewrite without losing it, the
+dialog shows the settings to add by hand instead, with a copy button:
+
+<p>
+    <img src="/docs-static/img/agent-network/client/agent-network-client-add-by-hand.png" alt="Connect OpenCode dialog asking to add the settings by hand because the file has comments" className="imagewrapper-big" />
+</p>
+
+## Command Line
+
+Run setup as the user who uses the agent, without `sudo`:
+
+```shell
+netbird agent-network setup claude-code
+```
+
+```shell
+Provider: Anthropic
+Model: claude-opus-5 (the provider's first model, pass --model to choose another)
+/home/alice/.claude/settings.json:
+    set     apiKeyHelper: (absent) -> "echo '-'"
+    set     model: (absent) -> "claude-opus-5"
+    set     env.ANTHROPIC_BASE_URL: (absent) -> "https://<your-endpoint>"
+Backup: /home/alice/.claude/settings.json.netbird-backup-<timestamp>
+Claude Code is set up for Agent Networks.
+While these settings are in place, Claude Code sends its requests to Agent Networks instead of your claude.ai account. Your claude.ai login stays saved; run `netbird agent-network setup undo claude-code` to switch back.
+```
+
+The `Backup:` line appears only when the file already existed. Running setup again with the
+same choices writes nothing and prints `Claude Code is already set up.`
+
+By default, setup uses the first provider the agent can use and that provider's first
+model. Choose others with `--provider` (the provider's name, ID, or catalog ID) and
+`--model`:
+
+```shell
+netbird agent-network setup claude-code --provider Anthropic --model claude-opus-5
+```
+
+Other useful commands:
+
+```shell
+# Show the changes without writing anything
+netbird agent-network setup claude-code --dry-run
+
+# Print the settings to add by hand, without touching any file
+netbird agent-network setup claude-code --print
+
+# List the supported agents, whether each is set up, and their files
+netbird agent-network setup list
+```
+
+`setup list` prints one line per agent:
+
+```shell
+claude-code    Claude Code    not configured (/home/alice/.claude/settings.json)
+codex          Codex          not configured (/home/alice/.codex/config.toml)
+opencode       OpenCode       not configured (/home/alice/.config/opencode/opencode.jsonc)
+pi             Pi             not configured (/home/alice/.pi/agent/models.json, /home/alice/.pi/agent/settings.json)
+```
+
+The status is `configured`, `configured, edited since`, or `not configured`.
+
+### Existing Settings and `--force`
+
+If a setting setup wants to write already holds a value NetBird did not write, setup marks
+it with `!`, writes nothing, and stops:
+
+```shell
+/home/alice/.claude/settings.json:
+    set     apiKeyHelper: (absent) -> "echo '-'"
+  ! set     env.ANTHROPIC_BASE_URL: "https://llm-gateway.example.com" -> "https://<your-endpoint>"
+Error: keys marked (!) hold values NetBird did not write; rerun with --force to replace them, undo restores them
+```
+
+Rerun with `--force` to replace them. The values they held are kept, so undo can put them
+back.
+
+## Undo
+
+In the desktop app, click **Disconnect** on the agent's row. On the command line, run:
+
+```shell
+netbird agent-network setup undo claude-code
+```
+
+Undo restores each setting setup changed to the value it had before, and removes the
+settings that did not exist before. Add `--dry-run` to preview it. Undo does not need
+NetBird to be connected.
+
+A setting you edited after setup wrote it is left alone and reported:
+
+```shell
+    keep    model: "claude-sonnet-5-5" (changed since NetBird wrote it, left alone)
+```
+
+The desktop app reports the same as `Disconnected. Kept your own changes to: <settings>`.
+
+<p>
+    <img src="/docs-static/img/agent-network/client/agent-network-client-disconnect-kept.png" alt="Pi row after Disconnect, reporting that a setting the user changed was kept" className="imagewrapper-big" />
+</p>
+
+Every write, including an undo, first copies the file to
+`<file>.netbird-backup-<timestamp>` next to it. Backups are never overwritten and never
+removed; delete them when you no longer need them. NetBird keeps track of what it wrote in
+`netbird/agent-network-setup.json` in your user configuration directory (for example
+`~/.config/netbird/` on Linux).
+
+## Coding Agents
+
+The paths below are the defaults. If the agent's own environment variable for its
+configuration directory is set, setup writes there instead.
+
+### Claude Code
+
+| | |
+| --- | --- |
+| Agent name | `claude-code` |
+| File | `~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json` |
+| Providers | Anthropic, AWS Bedrock, Google Vertex AI (needs `--vertex-project`), Kimi (Moonshot AI) |
+
+Setup writes the same settings as the [Claude Code integration guide](/agent-network/integrations/claude-code),
+for example `apiKeyHelper` and `env.ANTHROPIC_BASE_URL` for an Anthropic provider. While
+they are in place, Claude Code sends its requests to Agent Network instead of your claude.ai
+account. Your claude.ai login stays saved, and undo switches back to it.
+
+Undo: `netbird agent-network setup undo claude-code`
+
+### Codex
+
+| | |
+| --- | --- |
+| Agent name | `codex` |
+| File | `~/.codex/config.toml`, or `$CODEX_HOME/config.toml` |
+| Providers | OpenAI-compatible |
+
+Setup adds a `netbird` model provider pointing at your endpoint and makes it the default:
+
+```toml
+model = "gpt-5.5"
+model_provider = "netbird"
+
+[model_providers.netbird]
+base_url = "https://<your-endpoint>/v1"
+name = "NetBird"
+wire_api = "responses"
+```
+
+Comments, ordering, and other settings in the file are kept. Your ChatGPT login or OpenAI
+API key stays saved, and undo switches back to it.
+
+Undo: `netbird agent-network setup undo codex`
+
+### OpenCode
+
+| | |
+| --- | --- |
+| Agent name | `opencode` |
+| File | `~/.config/opencode/opencode.jsonc`, or `$XDG_CONFIG_HOME/opencode/opencode.jsonc`. On Windows too, the default is `%USERPROFILE%\.config\opencode\opencode.jsonc`. |
+| Providers | Anthropic, OpenAI-compatible |
+
+Setup adds a `netbird` provider and makes it the default model. A project's own
+`opencode.json` can still choose another provider. NetBird rewrites the file only if it is
+plain JSON: if it has comments or trailing commas, setup prints the settings to add by hand
+instead.
+
+Undo: `netbird agent-network setup undo opencode`
+
+### Pi
+
+| | |
+| --- | --- |
+| Agent name | `pi` |
+| Files | `~/.pi/agent/models.json` and `~/.pi/agent/settings.json`, or the same files in `$PI_CODING_AGENT_DIR` |
+| Providers | Anthropic, OpenAI-compatible |
+
+Setup adds a `netbird` provider to `models.json` and sets `defaultProvider` and
+`defaultModel` in `settings.json`, so Pi starts on it.
+
+Undo: `netbird agent-network setup undo pi`
+
+## Errors and Warnings
+
+| Message | What to do |
+| --- | --- |
+| `... is owned by uid ..., not by the user running setup ...: run setup as the file's owner, without sudo` | Run setup as your own user. Setup refuses a file, or for a missing file its nearest existing folder, that belongs to another user, so it never leaves your config owned by root. This check is skipped on Windows. |
+| `keys marked (!) hold values NetBird did not write; rerun with --force to replace them, undo restores them` | See [Existing Settings](#existing-settings-and-force). |
+| `NetBird only rewrites files it can parse without losing anything, such as strict JSON. Add these settings by hand:` | The JSON file has comments or trailing commas, or the TOML file has syntax NetBird cannot read or is not valid UTF-8. Paste the printed settings into the file yourself. |
+| `no model on <provider> is allowed for this peer: ask your administrator to allow one` | Your policy allows no model on that provider, so every request would be refused. Ask your administrator. |
+| `model "<model>" is not allowed on <provider>, allowed: ...` | Pick one of the listed models with `--model`. |
+| `<agent> cannot use any provider available to you: ...` | None of your providers speaks an API this agent supports. Try another agent or ask your administrator. |
+| `provider "<provider>" needs --vertex-project` | Pass your Google Cloud project ID with `--vertex-project`. |
+| `no Agent Networks provider is available to this peer yet: ask your administrator for a policy` | No policy gives this computer access to a provider. |
+| `this account has no Agent Network enabled` | Agent Network is off for your account. |
+| `not available: your NetBird user is blocked or pending approval` | Ask your administrator. |
+| `the management server is too old to report Agent Networks access` | Ask your administrator to upgrade the management server. |
+| `Warning: the endpoint did not answer over NetBird, check 'netbird status'` | Setup still writes the settings. Check that NetBird is connected. If `HTTPS_PROXY` or `HTTP_PROXY` is set, add the endpoint to `NO_PROXY`. |
+| `Warning: the endpoint's TLS certificate is not trusted` | Setup still writes the settings. If the endpoint uses a certificate from a private CA, point the agent at that CA: `NODE_EXTRA_CA_CERTS` for Claude Code, OpenCode, and Pi, `CODEX_CA_CERTIFICATE` for Codex. |
+
+## Known Limitations
+
+<Warning>
+    - In a Codex `config.toml`, if `--force` replaced a value that was a list or a date, undo
+      restores it as a quoted string. Fix it by hand or from the backup.
+    - In a Codex `config.toml`, setup cannot add to the `model_providers.netbird` table when
+      a dotted key defines it, for example `model_providers.netbird.name = "..."` or
+      `model_providers.netbird.http_headers.X = "..."`, instead of a
+      `[model_providers.netbird]` header. Setup shows the preview (and `--dry-run`
+      succeeds), then refuses with `cannot add to model_providers.netbird: it is defined
+      with dotted keys` and writes nothing. Rewrite the table with a header, or add the
+      settings by hand with `--print`.
+    - JSON files are rewritten with two-space indentation and keys in alphabetical order. The
+      backup keeps the original layout.
+</Warning>
