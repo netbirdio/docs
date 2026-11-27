@@ -2,79 +2,169 @@ import {Note, Warning} from "@/components/mdx";
 
 # Enable Quantum-Resistance
 
-<Warning>
-    Rosenpass support in NetBird is deprecated. Starting v0.82.0, `netbird up` prints a deprecation warning when
-    `--enable-rosenpass` or `--rosenpass-permissive` is used, and the desktop app shows a notice under
-    **Settings → Security**. Rosenpass keeps working for now, but it may be
-    removed in a future release, so avoid making new deployments depend on it.
-</Warning>
-
 Post-quantum cryptography aims to mitigate risks associated with quantum computing's potential to undermine existing encryption methods.
 Current concerns include the possibility of bad actors collecting encrypted network traffic to decrypt it once quantum computers become available.
 This 'harvest and decrypt later' strategy threatens the confidentiality of presently secure communications.
-[Rosenpass](https://rosenpass.eu), a post-quantum secure protocol, addresses these concerns by offering advanced cryptographic measures to protect VPN connections against such future threats.
 
+NetBird protects a tunnel against it with **ML-KEM**: the WireGuard pre-shared key is derived from a post-quantum
+key exchange built into the client.
 
-## About Rosenpass
-[Rosenpass](https://rosenpass.eu) is a post-quantum secure key-exchange protocol that enhances [WireGuard](https://www.wireguard.com/) VPNs against quantum computer attacks.
-It employs advanced cryptographic methods [Classic McEliece](https://classic.mceliece.org) and [Kyber](https://pq-crystals.org/kyber/).
-The software is [open-source](https://github.com/rosenpass/rosenpass) and designed for easy integration with existing WireGuard installations.
-It ensures future-proof security against quantum threats by continuously generating and rotating WireGuard pre-shared keys every two minutes.
-Rosenpass can also be used as a generic key-exchange mechanism for other protocols.
-
-Starting [v0.25.4](https://github.com/netbirdio/netbird/releases), the NetBird client runs an embedded Rosenpass server
-that automatically rotates and applies WireGuard pre-shared keys to every point-to-point connection.
 <Note>
-    NetBird uses a [Golang implementation](https://github.com/cunicu/go-rosenpass) of the Rosenpass protocol by the [cunīcu](https://cunicu.li) project.
+    NetBird previously offered Rosenpass for the same purpose. Rosenpass is deprecated, see
+    [Rosenpass (deprecated)](#rosenpass-deprecated) to move away from it.
 </Note>
 
-## Enable Rosenpass in NetBird
+## ML-KEM
+
+<Warning>
+    ML-KEM support is experimental. It is off by default and is configured only through environment variables,
+    which may change before the feature is generally available. It is available on Linux, macOS, Windows and
+    FreeBSD, and in Docker. It is not available on Android, iOS or tvOS, which cannot set these variables.
+</Warning>
+
+### How it works
+
+1. When two peers connect, they run a hybrid key exchange, **X25519MLKEM768**: ML-KEM-768 (FIPS 203) combined
+   with X25519, as specified in [draft-ietf-tls-ecdhe-mlkem](https://datatracker.ietf.org/doc/draft-ietf-tls-ecdhe-mlkem/).
+   Against an attacker who records traffic today to decrypt it later, the key stays secret as long as either of
+   the two holds.
+2. The exchange travels inside the connection offer and answer the peers already send each other through the
+   Signal service, which are end-to-end encrypted with the peers' WireGuard keys. When the peer that does not
+   start the exchange sends the first offer, the other peer replies with its own offer, which adds one Signal
+   message. The key is derived before the connection is configured, so the first WireGuard handshake normally
+   already uses it.
+3. Both peers derive the same WireGuard pre-shared key from the two shared secrets with HKDF-SHA256. The key is
+   bound to the exchange transcript and to both peers' WireGuard public keys, so it cannot be reused for another
+   pair of peers or another exchange. A pre-shared key set with `--preshared-key` is mixed in as well.
+4. While traffic flows, the peers repeat the exchange at every WireGuard rekey (about every two minutes) over the
+   tunnel itself, on UDP port `51833` of the NetBird interface, and switch to the new key. Rotation messages are
+   authenticated with a key derived from the current pre-shared key. In userspace and netstack mode an idle tunnel
+   stops rotating, so [lazy connections](/manage/peers/lazy-connection) can still go back to idle. In kernel mode
+   (Linux with the WireGuard kernel module) the client cannot tell user traffic from keepalives, so the exchange
+   keeps repeating while the tunnel is up.
+
+The same peer, the one that also controls connection setup, always starts the exchange, so both sides always end
+up with a single key.
+
+<Warning>
+    Only the pre-shared key is post-quantum. Peer authentication still relies on the WireGuard keys and on Signal's
+    end-to-end encryption, both based on X25519, so ML-KEM does not protect against an attacker who can break
+    X25519 while the exchange runs.
+</Warning>
+
 <Note>
-    Rosenpass is deprecated. The steps below are kept for existing setups; new deployments should not enable it.
+    The client accepts inbound traffic on UDP port `51833` of the NetBird interface on its own, so access control
+    policies do not need to allow it. If the port is taken, the client picks another one and tells its peers.
 </Note>
 
-### Enabling via the desktop app
+### Strict and permissive mode
 
-1. Open the NetBird desktop app.
-2. Go to **Settings → Security**.
-3. Toggle **Enable Quantum-Resistance**.
+| Mode | Peer that runs ML-KEM | Peer that does not |
+|---|---|---|
+| Permissive (default) | Normally the tunnel comes up on the post-quantum key. If the exchange has not completed (it failed or timed out), the tunnel comes up without it and switches when a later exchange completes. | Classic WireGuard connection, without a post-quantum key (uses `--preshared-key` if set). |
+| Strict | No traffic flows until the post-quantum key is in place. | No traffic flows. |
 
-### Enabling via the CLI
+Peers that do not run ML-KEM include older clients, mobile clients and clients with the feature off. They keep
+working with each other and with permissive peers. Turn on strict mode only once every peer it must reach runs
+ML-KEM.
 
-Rosenpass can be enabled by setting a flag on client start-up.
-```bash
-netbird up --enable-rosenpass
+### Enable ML-KEM
+
+Set the environment variables on the **daemon**, not on the CLI. See
+[setting environment variables](/client/environment-variables#setting-environment-variables).
+
+```shell
+# Permissive mode
+sudo netbird service reconfigure --service-env NB_ENABLE_PQ_MLKEM=true,NB_PQ_MLKEM_STRICT=false
+
+# Strict mode
+sudo netbird service reconfigure --service-env NB_ENABLE_PQ_MLKEM=true,NB_PQ_MLKEM_STRICT=true
 ```
-Rosenpass respects a provided pre-shared key and uses it for its initial key generation. It is possible to define a manually generated pre-shared key.
-```bash
-netbird up --enable-rosenpass --preshared-key <preshared-key>
+
+In Docker, pass them to the container:
+
+```shell
+docker run -d --cap-add=NET_ADMIN --device /dev/net/tun \
+  -e NB_SETUP_KEY=<setup-key> \
+  -e NB_ENABLE_PQ_MLKEM=true \
+  -v netbird-client:/var/lib/netbird \
+  netbirdio/netbird:latest
 ```
-This configuration is persistent and preserved by the client during restarts.
+
+| Variable | Description |
+|---|---|
+| `NB_ENABLE_PQ_MLKEM` | `true` enables the ML-KEM exchange. Default `false`. |
+| `NB_PQ_MLKEM_STRICT` | `true` selects strict mode. Default `false` (permissive). Ignored unless `NB_ENABLE_PQ_MLKEM` is `true`. |
+| `NB_PQ_MLKEM_LOG_LEVEL` | Log level of the exchange: `trace`, `debug`, `info`, `warn`, `error`. Default `info`. ML-KEM logs still pass through the client log level, so `debug` and `trace` only appear when the client log level is at least as verbose. |
 
 <Note>
-    If the Rosenpass feature is enabled on a peer it will only be able to communicate with other peers that have Rosenpass enabled.
+    If Rosenpass is also enabled, ML-KEM takes precedence: Rosenpass does not start and the client logs a warning.
+    Both peers need the same `--preshared-key`, if one is set, as without ML-KEM.
 </Note>
 
-## Disable Rosenpass
+### Check the status
 
-To disable Rosenpass again use the following command.
+`netbird status` shows the configured mechanism, and `netbird status -d` also shows for each peer whether its tunnel
+is protected:
+
+```text
+Quantum resistance mechanism: ML-KEM strict
+...
+  Quantum resistance: true
+```
+
+When a peer is not protected, the line says why, for example
+`false (ML-KEM: not converged yet, or peer does not run the exchange)`.
+
+The mechanism line reflects the configuration. If the client cannot open its ML-KEM port, permissive mode carries
+on without ML-KEM, and strict mode stops the client from starting.
+
+To turn ML-KEM off again:
+
+```shell
+sudo netbird service reconfigure --service-env NB_ENABLE_PQ_MLKEM=false
+```
+
+## Rosenpass (deprecated)
+
+<Warning>
+    Rosenpass support is deprecated and may be removed in a future release. Do not enable it on new deployments.
+    Starting v0.82.0, `netbird up` prints a deprecation warning when `--enable-rosenpass` or `--rosenpass-permissive`
+    is used, and the desktop app shows a notice under **Settings → Security**.
+</Warning>
+
+The client can also rotate the WireGuard pre-shared key with an embedded [Rosenpass](https://rosenpass.eu) server
+(since v0.25.4). It still works, but may be removed in a future release. It is turned on by `netbird up --enable-rosenpass`, by **Enable Quantum-Resistance** under
+**Settings → Security** in the desktop app, or by the `rosenpassEnabled` [MDM key](/client/mdm-integration).
+A peer with Rosenpass on only connects to peers that also run it, unless permissive mode is on.
+
+### Disable Rosenpass
+
+Turn off **Enable Quantum-Resistance** in the desktop app, or run:
+
 ```bash
 netbird down
 netbird up --enable-rosenpass=false
 ```
 
-## Enable permissive mode
+### Move to ML-KEM
 
-Enabling Rosenpass on one peer assumes that all peers have Rosenpass enabled. If one of the peers does not enable this feature
-or run an older version that lacks Rosenpass, the connection won't work.
-To allow non-Rosenpass enabled peers to connect to a Rosenpass peer, the permissive mode can be activated. In this case,
-the NetBird client will default to a standard WireGuard connection without pre-shared keys for those connections that
-don't support Rosenpass. It will continue negotiating PSKs with Rosenpass for the rest, ensuring enhanced security wherever possible:
+When a peer enables ML-KEM, its Rosenpass stops, so a peer still on strict Rosenpass can no longer connect to it.
+Move a network over in this order:
+
+1. Turn on Rosenpass [permissive mode](#enable-permissive-mode) on every peer.
+2. [Enable ML-KEM](#enable-ml-kem) in permissive mode, peer by peer.
+3. [Disable Rosenpass](#disable-rosenpass) on every peer.
+4. Switch ML-KEM to strict mode only once every peer runs it.
+
+### Enable permissive mode
+
+For a setup that still runs Rosenpass, permissive mode lets its peers connect to peers without Rosenpass, over a
+standard WireGuard connection without a post-quantum key:
 
 ```bash
 netbird up --enable-rosenpass --rosenpass-permissive
 ```
-
 
 ## Get started
 <div>
