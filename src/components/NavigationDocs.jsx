@@ -163,6 +163,7 @@ export const docsNavigation = [
                     },
                     { title: 'Approve Peers', href: '/manage/peers/approve-peers' },
                     { title: 'SSH', href: '/manage/peers/ssh' },
+                    { title: 'VNC', href: '/manage/peers/vnc' },
                     { title: 'Lazy Connections', href: '/manage/peers/lazy-connection' },
                     { title: 'Remote Jobs', href: '/manage/peers/remote-jobs' },
                     { title: 'Auto Update', href: '/manage/peers/auto-update' },
